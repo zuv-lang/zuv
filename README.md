@@ -94,7 +94,7 @@ main {
 | **Fluent Dot Methods** | Built-in `.len`, `.push`, `.pop`, `.contains`, `.substr` for strings and arrays. |
 | **Native Multithreading** | OS thread creation (`spn`) and synchronization (`jn`) with `wrk` task definitions. |
 | **Async / Await** | Asynchronous coroutines with `asc` and `awt`. |
-| **All-in-One CLI** | `zuv init`, `build`, `run`, `check`, `test`, `fmt`, and `lsp`. |
+| **Self-Hosting Compiler** | Builds the Zuv compiler source through its current self-hosting entry point. |
 
 ---
 
@@ -114,7 +114,7 @@ zuv/
     ├── parser.zv           # Recursive descent AST parser
     ├── checker.zv          # Compile-time borrow checker & safety validator
     ├── codegen.zv          # LLVM IR emitter & in-process C-API bindings
-    ├── cli.zv              # CLI driver (init/check/build/run/test/fmt)
+    ├── cli.zv              # Compiler build and validation helpers
     └── main.zv             # Compiler entry point
 ```
 
@@ -122,21 +122,11 @@ zuv/
 
 ## 🛠️ Building & Running Zuv
 
-### 1. Build the Self-Hosting Compiler
-```bash
-# Debug build
-zuv build src/main.zv
+### Build the Self-Hosting Compiler
 
-# Optimized release build (-O3)
-zuv build src/main.zv --release
-```
+The current entry point builds `src/main.zv` in release mode. Command-line commands such as `zuv build` and `zuv test` are not implemented yet.
 
-### 2. Verify with the Test Suite
-```bash
-zuv test
-```
-
-### 3. Run the Generated Binary
+### Run the Generated Binary
 ```bash
 .\output.exe
 ```

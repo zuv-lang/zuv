@@ -7,6 +7,7 @@ on:
     branches: [ main ]
 
 env:
+  BOOTSTRAP_REPOSITORY: zuv-lang/zuv
   # Set the BOOTSTRAP_RELEASE_TAG repository variable to upgrade this without editing the workflow.
   BOOTSTRAP_RELEASE_TAG: ${{ vars.BOOTSTRAP_RELEASE_TAG || 'v0.0.1' }}
 
@@ -39,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           New-Item -ItemType Directory -Force -Path ./bin | Out-Null
-          gh release download $env:BOOTSTRAP_RELEASE_TAG --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin
+          gh release download $env:BOOTSTRAP_RELEASE_TAG --repo $env:BOOTSTRAP_REPOSITORY --pattern "*${{ matrix.target }}*" --dir ./bin
           if ($LASTEXITCODE -eq 0) {
             Expand-Archive -Path "./bin/zuv-windows-x64.zip" -DestinationPath ./bin -Force
             Write-Host "Bootstrap compiler downloaded successfully."
@@ -54,7 +55,7 @@ jobs:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ./bin
-          if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin; then
+          if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo "$BOOTSTRAP_REPOSITORY" --pattern "*${{ matrix.target }}*" --dir ./bin; then
             tar -xzf "./bin/zuv-${{ matrix.target }}.tar.gz" -C ./bin
             chmod +x "./bin/zuv"
             echo "Bootstrap compiler downloaded successfully."
