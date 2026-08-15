@@ -1,0 +1,108 @@
+// AST Nodes & Recursive Descent Parser for Zuv Self-Hosting Compiler (src/parser.zv)
+imp str, arr
+
+createParser tokens {
+    l = tokens.len
+    p = { tokens: tokens, pos: 0, totalLen: l }
+    -> p
+}
+
+curToken p {
+    if p.pos >= p.totalLen {
+        eof = { kind: "EOF", val: "", line: 0 }
+        -> eof
+    }
+    tok = p.tokens[p.pos]
+    -> tok
+}
+
+advanceToken p {
+    tok = curToken p
+    if p.pos < p.totalLen {
+        p.pos = p.pos + 1
+    }
+    -> tok
+}
+
+createNode kind, name, val {
+    node = { kind: kind, name: name, val: val }
+    -> node
+}
+
+parseProgramFull tokens {
+    lg "==========================================="
+    lg "    Zuv Self-Hosting Parser Processing     "
+    lg "==========================================="
+
+    p = createParser tokens
+    mut statements = []
+
+    wh p.pos < p.totalLen {
+        tok = curToken p
+        if tok.kind == "EOF" {
+            p.pos = p.totalLen
+        } els if tok.kind == "KEYWORD" && tok.val == "imp" {
+            advanceToken p
+            mut impPaths = []
+            wh p.pos < p.totalLen {
+                idTok = advanceToken p
+                impPaths.push idTok.val
+                nextTok = curToken p
+                if nextTok.kind == "SYM" && nextTok.val == "," {
+                    advanceToken p
+                } els {
+                    if nextTok.kind == "KEYWORD" && nextTok.val == "frm" {
+                        advanceToken p
+                        frmTok = advanceToken p
+                        stmt = { kind: "ImportFrom", symbols: impPaths, path: frmTok.val }
+                        statements.push stmt
+                    } els {
+                        stmt = { kind: "Import", paths: impPaths }
+                        statements.push stmt
+                    }
+                    p.pos = p.pos + 0
+                }
+            }
+        } els if tok.kind == "KEYWORD" && (tok.val == "prnt" || tok.val == "lg" || tok.val == "wrn" || tok.val == "err" || tok.val == "inf") {
+            logType = tok.val
+            advanceToken p
+            argTok = advanceToken p
+            stmt = { kind: "Print", level: logType, value: argTok.val, valueKind: argTok.kind }
+            statements.push stmt
+        } els if tok.kind == "KEYWORD" && tok.val == "main" {
+            advanceToken p
+            stmt = { kind: "MainFunc", name: "main" }
+            statements.push stmt
+        } els if tok.kind == "KEYWORD" && tok.val == "obj" {
+            advanceToken p
+            nameTok = advanceToken p
+            stmt = { kind: "StructDecl", name: nameTok.val }
+            statements.push stmt
+        } els if tok.kind == "KEYWORD" && tok.val == "if" {
+            advanceToken p
+            condTok = advanceToken p
+            stmt = { kind: "If", cond: condTok.val }
+            statements.push stmt
+        } els if tok.kind == "KEYWORD" && tok.val == "wh" {
+            advanceToken p
+            condTok = advanceToken p
+            stmt = { kind: "While", cond: condTok.val }
+            statements.push stmt
+        } els if tok.kind == "ARROW" || (tok.kind == "SYM" && tok.val == "->") {
+            advanceToken p
+            retTok = advanceToken p
+            stmt = { kind: "Return", val: retTok.val }
+            statements.push stmt
+        } els {
+            t = advanceToken p
+            stmt = { kind: "ExprStmt", val: t.val }
+            statements.push stmt
+        }
+    }
+
+    lg "Parser Completed. Total Statements Parsed:"
+    lg statements.len
+
+    res = { statements: statements }
+    -> res
+}

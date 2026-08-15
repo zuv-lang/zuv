@@ -1,0 +1,180 @@
+// Full Lexer Scanner Engine for Zuv Self-Hosting Compiler (src/lexer.zv)
+imp str, arr
+imp createToken frm tokens
+
+createLexer code {
+    l = code.len
+    lexer = { src: code, pos: 0, totalLen: l, line: 1 }
+    -> lexer
+}
+
+peekChar lexer {
+    if lexer.pos >= lexer.totalLen { -> "" }
+    ch = lexer.src.charAt lexer.pos
+    -> ch
+}
+
+peekNextChar lexer {
+    nextPos = lexer.pos + 1
+    if nextPos >= lexer.totalLen { -> "" }
+    ch = lexer.src.charAt nextPos
+    -> ch
+}
+
+advanceChar lexer {
+    if lexer.pos >= lexer.totalLen { -> "" }
+    ch = lexer.src.charAt lexer.pos
+    lexer.pos = lexer.pos + 1
+    if ch == "\n" {
+        lexer.line = lexer.line + 1
+    }
+    -> ch
+}
+
+isDigit ch {
+    if ch == "0" || ch == "1" || ch == "2" || ch == "3" || ch == "4" ||
+       ch == "5" || ch == "6" || ch == "7" || ch == "8" || ch == "9" {
+        -> 1
+    }
+    -> 0
+}
+
+isAlpha ch {
+    if ch == "a" || ch == "b" || ch == "c" || ch == "d" || ch == "e" ||
+       ch == "f" || ch == "g" || ch == "h" || ch == "i" || ch == "j" ||
+       ch == "k" || ch == "l" || ch == "m" || ch == "n" || ch == "o" ||
+       ch == "p" || ch == "q" || ch == "r" || ch == "s" || ch == "t" ||
+       ch == "u" || ch == "v" || ch == "w" || ch == "x" || ch == "y" ||
+       ch == "z" || ch == "_" ||
+       ch == "A" || ch == "B" || ch == "C" || ch == "D" || ch == "E" ||
+       ch == "F" || ch == "G" || ch == "H" || ch == "I" || ch == "J" ||
+       ch == "K" || ch == "L" || ch == "M" || ch == "N" || ch == "O" ||
+       ch == "P" || ch == "Q" || ch == "R" || ch == "S" || ch == "T" ||
+       ch == "U" || ch == "V" || ch == "W" || ch == "X" || ch == "Y" ||
+       ch == "Z" {
+        -> 1
+    }
+    -> 0
+}
+
+isKeyword word {
+    if word == "main" || word == "obj" || word == "if" || word == "els" ||
+       word == "wh" || word == "fr" || word == "brk" || word == "cont" ||
+       word == "mch" || word == "imp" || word == "frm" || word == "asc" ||
+       word == "awt" || word == "spn" || word == "jn" || word == "wrk" ||
+       word == "mut" || word == "ok" || word == "err" || word == "prnt" ||
+       word == "lg" || word == "wrn" || word == "inf" {
+        -> 1
+    }
+    -> 0
+}
+
+tokenizeFull lexer {
+    lg "==========================================="
+    lg "    Zuv Self-Hosting Lexer Processing      "
+    lg "==========================================="
+
+    mut tokensList = []
+
+    wh lexer.pos < lexer.totalLen {
+        ch = peekChar lexer
+
+        // Whitespace skipping
+        if ch == " " || ch == "\t" || ch == "\r" || ch == "\n" {
+            advanceChar lexer
+        } els if ch == "/" && (peekNextChar lexer) == "/" {
+            // Line comment
+            advanceChar lexer
+            advanceChar lexer
+            wh lexer.pos < lexer.totalLen && (peekChar lexer) != "\n" {
+                advanceChar lexer
+            }
+        } els if ch == "-" && (peekNextChar lexer) == ">" {
+            advanceChar lexer
+            advanceChar lexer
+            tok = createToken "ARROW", "->", lexer.line
+            tokensList.push tok
+        } els if ch == "=" && (peekNextChar lexer) == "=" {
+            advanceChar lexer
+            advanceChar lexer
+            tok = createToken "EQ", "==", lexer.line
+            tokensList.push tok
+        } els if ch == "!" && (peekNextChar lexer) == "=" {
+            advanceChar lexer
+            advanceChar lexer
+            tok = createToken "NE", "!=", lexer.line
+            tokensList.push tok
+        } els if ch == "<" && (peekNextChar lexer) == "=" {
+            advanceChar lexer
+            advanceChar lexer
+            tok = createToken "LE", "<=", lexer.line
+            tokensList.push tok
+        } els if ch == ">" && (peekNextChar lexer) == "=" {
+            advanceChar lexer
+            advanceChar lexer
+            tok = createToken "GE", ">=", lexer.line
+            tokensList.push tok
+        } els if ch == "&" && (peekNextChar lexer) == "&" {
+            advanceChar lexer
+            advanceChar lexer
+            tok = createToken "AND", "&&", lexer.line
+            tokensList.push tok
+        } els if ch == "|" && (peekNextChar lexer) == "|" {
+            advanceChar lexer
+            advanceChar lexer
+            tok = createToken "OR", "||", lexer.line
+            tokensList.push tok
+        } els if ch == "\"" {
+            // String literal
+            advanceChar lexer
+            startPos = lexer.pos
+            wh lexer.pos < lexer.totalLen && (peekChar lexer) != "\"" {
+                if (peekChar lexer) == "\\" {
+                    advanceChar lexer
+                }
+                advanceChar lexer
+            }
+            strLen = lexer.pos - startPos
+            strVal = lexer.src.substr startPos, strLen
+            advanceChar lexer
+            tok = createToken "STR", strVal, lexer.line
+            tokensList.push tok
+        } els if isDigit ch {
+            startPos = lexer.pos
+            wh lexer.pos < lexer.totalLen && (isDigit (peekChar lexer) || (peekChar lexer) == ".") {
+                advanceChar lexer
+            }
+            numLen = lexer.pos - startPos
+            numVal = lexer.src.substr startPos, numLen
+            tok = createToken "NUM", numVal, lexer.line
+            tokensList.push tok
+        } els if isAlpha ch {
+            startPos = lexer.pos
+            wh lexer.pos < lexer.totalLen && (isAlpha (peekChar lexer) || isDigit (peekChar lexer)) {
+                advanceChar lexer
+            }
+            wordLen = lexer.pos - startPos
+            wordVal = lexer.src.substr startPos, wordLen
+            if isKeyword wordVal {
+                tok = createToken "KEYWORD", wordVal, lexer.line
+                tokensList.push tok
+            } els {
+                tok = createToken "IDENT", wordVal, lexer.line
+                tokensList.push tok
+            }
+        } els {
+            // Single char delimiter / operator
+            advanceChar lexer
+            tok = createToken "SYM", ch, lexer.line
+            tokensList.push tok
+        }
+    }
+
+    // EOF Token
+    eofTok = createToken "EOF", "", lexer.line
+    tokensList.push eofTok
+
+    lg "Lexer Completed. Total Tokens Scanned:"
+    lg tokensList.len
+    -> tokensList
+}

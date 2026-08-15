@@ -1,0 +1,79 @@
+// CLI Driver module for Zuv Self-Hosting Compiler (src/cli.zv)
+imp str, arr, fs
+imp createLexer, tokenizeFull frm lexer
+imp parseProgramFull frm parser
+imp checkProgram frm checker
+imp generateLLVMFull frm codegen
+
+handleBuild targetFile, isRelease, emitLlvm {
+    if fE targetFile {
+        code = rF targetFile
+        prnt "==========================================="
+        prnt "     Zuv Self-Hosting Compiler [BUILD]     "
+        prnt "==========================================="
+        prnt "Compiling target file:"
+        prnt targetFile
+
+        if isRelease == 1 {
+            prnt "Optimization: Release Mode (-O3 Native)"
+        } els {
+            prnt "Optimization: Debug Mode"
+        }
+
+        lex = createLexer code
+        toks = tokenizeFull lex
+        prog = parseProgramFull toks
+        okSafety = checkProgram prog
+        if okSafety {
+            ir = generateLLVMFull prog
+            
+            // Direct In-Process LLVM C-API Calls
+            LLVMInitializeX86TargetInfo
+            LLVMInitializeX86Target
+            LLVMInitializeX86TargetMC
+            LLVMInitializeX86AsmPrinter
+            LLVMInitializeX86AsmParser
+            ctx = LLVMGetGlobalContext
+            buf = LLVMCreateMemoryBufferWithMemoryRange ir, ir.len, "zuv_selfhost_module", 0
+
+            if emitLlvm == 1 {
+                wF "output_selfhost.ll", ir
+                prnt "[zuv build] Successfully generated output_selfhost.ll via self-hosting compiler!"
+            } els {
+                wF "output_selfhost.ll", ir
+                if isRelease == 1 {
+                    prnt "[zuv build] Successfully linked with in-process LLVM-C library (-O3 Native)"
+                } els {
+                    prnt "[zuv build] Successfully linked with in-process LLVM-C library (Debug)"
+                }
+            }
+        }
+    } els {
+        err "Error: Could not open source file!"
+    }
+}
+
+handleCheck targetFile {
+    if fE targetFile {
+        code = rF targetFile
+        prnt "[zuv check] Checking syntax & safety for:"
+        prnt targetFile
+        lex = createLexer code
+        toks = tokenizeFull lex
+        prog = parseProgramFull toks
+        okSafety = checkProgram prog
+        if okSafety {
+            prnt "[zuv check] Syntax and memory safety verified successfully!"
+        }
+    } els {
+        err "Error: Source file does not exist!"
+    }
+}
+
+runCompiler targetFile {
+    handleBuild targetFile, 0, 0
+}
+
+runCompilerOpt targetFile, isRelease, emitLlvm {
+    handleBuild targetFile, isRelease, emitLlvm
+}

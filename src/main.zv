@@ -1,0 +1,11 @@
+// Zuv Self-Hosting Compiler Main Entry Point (src/main.zv)
+imp str, arr, fs
+imp handleBuild, handleCheck frm cli
+
+main {
+    prnt "==========================================="
+    prnt "        Zuv Self-Hosting Compiler (zuv)"
+    prnt "==========================================="
+
+    handleBuild "src/main.zv", 1, 0
+}

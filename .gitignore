@@ -1,0 +1,20 @@
+# Executables & Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.obj
+*.o
+*.pdb
+*.ilk
+
+# LLVM IR
+*.ll
+*.bc
+*.s
+
+# Outputs
+*.out
+*.log

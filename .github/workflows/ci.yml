@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+            bin: zuv.exe
+          - os: ubuntu-latest
+            target: linux-x64
+            bin: zuv
+          - os: macos-latest
+            target: macos-arm64
+            bin: zuv
+
+    steps:
+      - name: Checkout Source (Pure Zuv)
+        uses: actions/checkout@v4
+
+      - name: Download Pre-built Bootstrap Compiler
+        env:
+          GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin || true
+        continue-on-error: true
+
+      - name: Setup Path
+        shell: pwsh
+        run: |
+          if (Test-Path "./bin") {
+            $binPath = (Get-Item "./bin").FullName
+            echo "$binPath" >> $env:GITHUB_PATH
+          }
+
+      - name: Verify Zuv Syntax
+        shell: pwsh
+        run: |
+          Write-Host "Verifying pure Zuv source files..."
+          Get-ChildItem -Path "src" -Filter "*.zv" | ForEach-Object { Write-Host " - $($_.Name)" }

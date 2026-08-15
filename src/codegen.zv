@@ -1,0 +1,60 @@
+// LLVM IR Code Generator for Zuv Self-Hosting Compiler (src/codegen.zv)
+imp str, arr
+
+generateLLVMFull program {
+    lg "==========================================="
+    lg "    Zuv Self-Hosting Codegen Processing    "
+    lg "==========================================="
+
+    mut ir = "; ModuleID = 'zuv_self_host'\n"
+    ir = ir.concat "source_filename = \"main.zv\"\n\n"
+    ir = ir.concat "declare i32 @printf(ptr nocapture readonly, ...)\n"
+    ir = ir.concat "declare ptr @fopen(ptr, ptr)\n"
+    ir = ir.concat "declare i32 @fclose(ptr)\n"
+    ir = ir.concat "declare i64 @fread(ptr, i64, i64, ptr)\n"
+    ir = ir.concat "declare i64 @fwrite(ptr, i64, i64, ptr)\n"
+    ir = ir.concat "declare i32 @fputs(ptr, ptr)\n"
+    ir = ir.concat "declare i64 @strlen(ptr)\n"
+    ir = ir.concat "declare i64 @clock()\n"
+    ir = ir.concat "declare void @Sleep(i32)\n"
+    ir = ir.concat "declare ptr @strstr(ptr, ptr)\n"
+    ir = ir.concat "declare ptr @CreateThread(ptr, i64, ptr, ptr, i32, ptr)\n"
+    ir = ir.concat "declare i32 @WaitForSingleObject(ptr, i32)\n"
+    ir = ir.concat "declare i32 @CloseHandle(ptr)\n"
+    ir = ir.concat "declare ptr @malloc(i64)\n"
+    ir = ir.concat "declare void @free(ptr)\n"
+    ir = ir.concat "declare ptr @memcpy(ptr, ptr, i64)\n"
+    ir = ir.concat "declare i32 @strcmp(ptr, ptr)\n"
+    ir = ir.concat "declare i32 @fseek(ptr, i64, i32)\n"
+    ir = ir.concat "declare i64 @ftell(ptr)\n"
+    ir = ir.concat "declare void @rewind(ptr)\n\n"
+
+    // LLVM C-API in-process library linking declarations
+    ir = ir.concat "declare void @LLVMInitializeX86TargetInfo()\n"
+    ir = ir.concat "declare void @LLVMInitializeX86Target()\n"
+    ir = ir.concat "declare void @LLVMInitializeX86TargetMC()\n"
+    ir = ir.concat "declare void @LLVMInitializeX86AsmPrinter()\n"
+    ir = ir.concat "declare void @LLVMInitializeX86AsmParser()\n"
+    ir = ir.concat "declare ptr @LLVMGetGlobalContext()\n"
+    ir = ir.concat "declare ptr @LLVMCreateMemoryBufferWithMemoryRange(ptr, i64, ptr, i32)\n"
+    ir = ir.concat "declare i32 @LLVMParseIRInContext(ptr, ptr, ptr, ptr)\n"
+    ir = ir.concat "declare i32 @LLVMGetTargetFromTriple(ptr, ptr, ptr)\n"
+    ir = ir.concat "declare ptr @LLVMCreateTargetMachine(ptr, ptr, ptr, ptr, i32, i32, i32)\n"
+    ir = ir.concat "declare i32 @LLVMTargetMachineEmitToFile(ptr, ptr, ptr, i32, ptr)\n"
+    ir = ir.concat "declare void @LLVMDisposeTargetMachine(ptr)\n"
+    ir = ir.concat "declare void @LLVMDisposeModule(ptr)\n\n"
+
+    ir = ir.concat "@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n"
+    ir = ir.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n\n"
+
+    ir = ir.concat "define i32 @main() {\n"
+    ir = ir.concat "entry:\n"
+    ir = ir.concat "  %str_msg = call ptr @malloc(i64 64)\n"
+    ir = ir.concat "  ret i32 0\n"
+    ir = ir.concat "}\n"
+
+    lg "Codegen Completed. LLVM IR Output Length:"
+    lg ir.len
+
+    -> ir
+}

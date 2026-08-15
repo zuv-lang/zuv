@@ -1,0 +1,6 @@
+// Token definitions for Zuv Self-Hosting Compiler (src/tokens.zv)
+
+createToken kind, val, line {
+    tok = { kind: kind, val: val, line: line }
+    -> tok
+}
