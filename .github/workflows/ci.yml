@@ -33,6 +33,10 @@ jobs:
       - name: Checkout Source (Pure Zuv)
         uses: actions/checkout@v4
 
+      - name: Install LLVM Runtime (macOS)
+        if: runner.os == 'macOS'
+        run: brew install llvm
+
       - name: Download Bootstrap Compiler (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -58,6 +62,9 @@ jobs:
           if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo "$BOOTSTRAP_REPOSITORY" --pattern "*${{ matrix.target }}*" --dir ./bin; then
             tar -xzf "./bin/zuv-${{ matrix.target }}.tar.gz" -C ./bin
             chmod +x "./bin/zuv"
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" ./bin/zuv
+            fi
             echo "Bootstrap compiler downloaded successfully."
           else
             echo "No bootstrap release found, proceeding with pure source validation."
