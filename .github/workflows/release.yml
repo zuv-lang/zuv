@@ -1,15 +1,17 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  pull_request:
+    branches: [ main ]
+    types: [ closed ]
   workflow_dispatch:
     inputs:
-      version:
-        description: Release version (without the v prefix)
+      release_type:
+        description: Semantic version increment to apply
         required: true
-        type: string
+        default: patch
+        type: choice
+        options: [ patch, minor, major ]
 
 env:
   BOOTSTRAP_REPOSITORY: zuv-lang/zuv
@@ -18,10 +20,75 @@ env:
 
 permissions:
   contents: write
+  pull-requests: read
+
+# Serialize releases so two merged PRs cannot calculate the same next tag.
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
+  determine-version:
+    name: Determine Release Version
+    # A closed pull request only creates a release when it was actually merged.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      target_commit: ${{ steps.commit.outputs.sha }}
+
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || github.sha }}
+
+      - name: Select target commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate next semantic version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MANUAL_RELEASE_TYPE: ${{ inputs.release_type }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_type="$MANUAL_RELEASE_TYPE"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            labels="$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')"
+            matching_labels="$(grep -Ex 'release:(major|minor|patch)' <<< "$labels" || true)"
+            if [ "$(sed '/^$/d' <<< "$matching_labels" | wc -l)" -gt 1 ]; then
+              echo 'Use only one of: release:major, release:minor, release:patch.' >&2
+              exit 1
+            elif grep -qx 'release:major' <<< "$labels"; then
+              release_type=major
+            elif grep -qx 'release:minor' <<< "$labels"; then
+              release_type=minor
+            else
+              release_type=patch
+            fi
+          fi
+
+          latest_tag="$(git tag -l 'v[0-9]*' --sort=-version:refname | head -n 1)"
+          latest_version="${latest_tag#v}"
+          if [ -z "$latest_tag" ]; then latest_version='0.0.0'; fi
+          IFS=. read -r major minor patch <<< "$latest_version"
+
+          case "$release_type" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            *) echo "Unsupported release type: $release_type" >&2; exit 1 ;;
+          esac
+
+          echo "tag=v${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+
   package:
     name: Package Release (${{ matrix.target }})
+    needs: determine-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -43,6 +110,8 @@ jobs:
     steps:
       - name: Checkout Source (Pure Zuv)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.target_commit }}
 
       - name: Download Pre-built Compiler Binary (Windows)
         if: runner.os == 'Windows'
@@ -101,11 +170,12 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: package
+    needs: [determine-version, package]
     runs-on: ubuntu-latest
     if: needs.package.result == 'success'
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+      RELEASE_TAG: ${{ needs.determine-version.outputs.tag }}
+      TARGET_COMMIT: ${{ needs.determine-version.outputs.target_commit }}
 
     steps:
       - name: Download Release Assets
@@ -118,6 +188,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ env.TARGET_COMMIT }}
           files: release-assets/*
           generate_release_notes: true
