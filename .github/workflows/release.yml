@@ -6,6 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  # Set the BOOTSTRAP_RELEASE_TAG repository variable to upgrade this without editing the workflow.
+  BOOTSTRAP_RELEASE_TAG: ${{ vars.BOOTSTRAP_RELEASE_TAG || 'v0.0.1' }}
+
 permissions:
   contents: write
 
@@ -40,20 +44,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          try {
-            gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./dist
-          } catch {
-            Write-Host "No release found on rohitsoni007/rujs, packaging source release."
+          New-Item -ItemType Directory -Force -Path ./dist | Out-Null
+          gh release download $env:BOOTSTRAP_RELEASE_TAG --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./dist
+          if ($LASTEXITCODE -eq 0) {
+            Expand-Archive -Path "./dist/zuv-windows-x64.zip" -DestinationPath ./dist -Force
+          } else {
+            Write-Host "No bootstrap release found, packaging source release."
+            exit 0
           }
-        continue-on-error: true
 
       - name: Download Pre-built Compiler Binary (Unix)
         if: runner.os != 'Windows'
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./dist 2>/dev/null || echo "No release found on rohitsoni007/rujs, packaging source release."
-        continue-on-error: true
+          mkdir -p ./dist
+          if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./dist; then
+            tar -xzf "./dist/zuv-${{ matrix.target }}.tar.gz" -C ./dist
+            chmod +x "./dist/zuv"
+          else
+            echo "No bootstrap release found, packaging source release."
+          fi
 
       - name: Package Release Archive (Windows)
         if: runner.os == 'Windows'
@@ -61,9 +72,9 @@ jobs:
         run: |
           if (Test-Path "./dist/${{ matrix.bin_name }}") {
             Copy-Item "./dist/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
-            Compress-Archive -Path "${{ matrix.bin_name }}", src, zuv.yml, README.md, LICENSE, CHANGELOG.md -DestinationPath ${{ matrix.asset_name }}
+            Compress-Archive -Path "${{ matrix.bin_name }}", src, zuv.yml -DestinationPath ${{ matrix.asset_name }}
           } else {
-            Compress-Archive -Path src, zuv.yml, README.md, LICENSE, CHANGELOG.md -DestinationPath ${{ matrix.asset_name }}
+            Compress-Archive -Path src, zuv.yml -DestinationPath ${{ matrix.asset_name }}
           }
 
       - name: Package Release Archive (Unix)
@@ -71,9 +82,9 @@ jobs:
         run: |
           if [ -f "./dist/${{ matrix.bin_name }}" ]; then
             cp "./dist/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
-            tar -czvf ${{ matrix.asset_name }} "${{ matrix.bin_name }}" src zuv.yml README.md LICENSE CHANGELOG.md
+            tar -czvf ${{ matrix.asset_name }} "${{ matrix.bin_name }}" src zuv.yml
           else
-            tar -czvf ${{ matrix.asset_name }} src zuv.yml README.md LICENSE CHANGELOG.md
+            tar -czvf ${{ matrix.asset_name }} src zuv.yml
           fi
 
       - name: Upload Build Artifacts

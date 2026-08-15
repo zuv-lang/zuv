@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  # Set the BOOTSTRAP_RELEASE_TAG repository variable to upgrade this without editing the workflow.
+  BOOTSTRAP_RELEASE_TAG: ${{ vars.BOOTSTRAP_RELEASE_TAG || 'v0.0.1' }}
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
@@ -34,21 +38,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          try {
-            gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin
+          New-Item -ItemType Directory -Force -Path ./bin | Out-Null
+          gh release download $env:BOOTSTRAP_RELEASE_TAG --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin
+          if ($LASTEXITCODE -eq 0) {
+            Expand-Archive -Path "./bin/zuv-windows-x64.zip" -DestinationPath ./bin -Force
             Write-Host "Bootstrap compiler downloaded successfully."
-          } catch {
-            Write-Host "No release found on rohitsoni007/rujs, proceeding with pure source validation."
+          } else {
+            Write-Host "No bootstrap release found, proceeding with pure source validation."
+            exit 0
           }
-        continue-on-error: true
 
       - name: Download Bootstrap Compiler (Unix)
         if: runner.os != 'Windows'
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin 2>/dev/null || echo "No release found on rohitsoni007/rujs, proceeding with pure source validation."
-        continue-on-error: true
+          mkdir -p ./bin
+          if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin; then
+            tar -xzf "./bin/zuv-${{ matrix.target }}.tar.gz" -C ./bin
+            chmod +x "./bin/zuv"
+            echo "Bootstrap compiler downloaded successfully."
+          else
+            echo "No bootstrap release found, proceeding with pure source validation."
+          fi
 
       - name: Setup Path & Run Validation
         shell: pwsh
