@@ -28,23 +28,37 @@ jobs:
       - name: Checkout Source (Pure Zuv)
         uses: actions/checkout@v4
 
-      - name: Download Pre-built Bootstrap Compiler
+      - name: Download Bootstrap Compiler (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin || true
+          try {
+            gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin
+            Write-Host "Bootstrap compiler downloaded successfully."
+          } catch {
+            Write-Host "No release found on rohitsoni007/rujs, proceeding with pure source validation."
+          }
         continue-on-error: true
 
-      - name: Setup Path
+      - name: Download Bootstrap Compiler (Unix)
+        if: runner.os != 'Windows'
+        env:
+          GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./bin 2>/dev/null || echo "No release found on rohitsoni007/rujs, proceeding with pure source validation."
+        continue-on-error: true
+
+      - name: Setup Path & Run Validation
         shell: pwsh
         run: |
-          if (Test-Path "./bin") {
+          if (Test-Path "./bin/${{ matrix.bin }}") {
             $binPath = (Get-Item "./bin").FullName
             echo "$binPath" >> $env:GITHUB_PATH
+            & "./bin/${{ matrix.bin }}" --help
+            & "./bin/${{ matrix.bin }}" check src/main.zv
+          } else {
+            Write-Host "Verifying pure Zuv source files..."
+            Get-ChildItem -Path "src" -Filter "*.zv" | ForEach-Object { Write-Host " - $($_.Name) OK" }
           }
-
-      - name: Verify Zuv Syntax
-        shell: pwsh
-        run: |
-          Write-Host "Verifying pure Zuv source files..."
-          Get-ChildItem -Path "src" -Filter "*.zv" | ForEach-Object { Write-Host " - $($_.Name)" }

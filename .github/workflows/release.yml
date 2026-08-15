@@ -34,11 +34,25 @@ jobs:
       - name: Checkout Source (Pure Zuv)
         uses: actions/checkout@v4
 
-      - name: Download Pre-built Compiler Binary
+      - name: Download Pre-built Compiler Binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./dist || true
+          try {
+            gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./dist
+          } catch {
+            Write-Host "No release found on rohitsoni007/rujs, packaging source release."
+          }
+        continue-on-error: true
+
+      - name: Download Pre-built Compiler Binary (Unix)
+        if: runner.os != 'Windows'
+        env:
+          GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download --repo rohitsoni007/rujs --pattern "*${{ matrix.target }}*" --dir ./dist 2>/dev/null || echo "No release found on rohitsoni007/rujs, packaging source release."
         continue-on-error: true
 
       - name: Package Release Archive (Windows)
@@ -47,16 +61,20 @@ jobs:
         run: |
           if (Test-Path "./dist/${{ matrix.bin_name }}") {
             Copy-Item "./dist/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
+            Compress-Archive -Path "${{ matrix.bin_name }}", src, zuv.yml, README.md, LICENSE, CHANGELOG.md -DestinationPath ${{ matrix.asset_name }}
+          } else {
+            Compress-Archive -Path src, zuv.yml, README.md, LICENSE, CHANGELOG.md -DestinationPath ${{ matrix.asset_name }}
           }
-          Compress-Archive -Path src, zuv.yml, README.md, LICENSE, CHANGELOG.md -DestinationPath ${{ matrix.asset_name }}
 
       - name: Package Release Archive (Unix)
         if: runner.os != 'Windows'
         run: |
           if [ -f "./dist/${{ matrix.bin_name }}" ]; then
             cp "./dist/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
+            tar -czvf ${{ matrix.asset_name }} "${{ matrix.bin_name }}" src zuv.yml README.md LICENSE CHANGELOG.md
+          else
+            tar -czvf ${{ matrix.asset_name }} src zuv.yml README.md LICENSE CHANGELOG.md
           fi
-          tar -czvf ${{ matrix.asset_name }} src zuv.yml README.md LICENSE CHANGELOG.md
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
