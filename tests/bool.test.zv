@@ -1,0 +1,22 @@
+flagTrue = yes
+flagFalse = no
+
+lg "Testing boolean literals:"
+if flagTrue {
+    lg "flagTrue is yes"
+}
+
+if flagFalse {
+    lg "ERROR: flagFalse triggered"
+} els {
+    lg "flagFalse is no"
+}
+
+if flagTrue && !flagFalse {
+    lg "Symbol && and ! work correctly"
+}
+
+if flagFalse || flagTrue {
+    lg "Symbol || works correctly"
+}
+

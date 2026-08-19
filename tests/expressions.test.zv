@@ -1,0 +1,9 @@
+a = 10
+b = 20
+c = a + b * 2
+lg "Expression test c = 10 + 20 * 2:"
+lg c
+
+isEqual = c == 50
+lg "Is equal to 50:"
+lg isEqual

@@ -7,8 +7,30 @@ checkProgram program {
     lg "==========================================="
 
     stmts = program.statements
+    mut errors = 0
+    mut i = 0
+    wh i < stmts.len {
+        s = stmts[i]
+        if s.kind == "VarDecl" {
+            // Check var declaration
+            if s.name == "" {
+                err "Semantic Error: Anonymous variable declaration"
+                errors = errors + 1
+            }
+        } els if s.kind == "ImportFrom" {
+            if s.path == "" {
+                err "Semantic Error: Import from empty path"
+                errors = errors + 1
+            }
+        }
+        i = i + 1
+    }
+
     lg "Statements verified for safety:"
     lg stmts.len
 
+    if errors > 0 {
+        -> 0
+    }
     -> 1
 }

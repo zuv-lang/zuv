@@ -1,0 +1,26 @@
+// Test global variable access and mutation inside functions
+
+counter = 10
+
+incrementCounter {
+    counter = counter + 5
+}
+
+resetCounter {
+    counter = 0
+}
+
+lg "Initial global counter:"
+lg counter
+
+incrementCounter
+lg "After incrementCounter (+5):"
+lg counter
+
+incrementCounter
+lg "After incrementCounter (+5 again):"
+lg counter
+
+resetCounter
+lg "After resetCounter (0):"
+lg counter

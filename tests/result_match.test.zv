@@ -1,0 +1,24 @@
+resOk = ok(200)
+resErr = err(404)
+
+mch resOk {
+    ok(v) => {
+        lg "Ok status:"
+        lg v
+    }
+    err(e) => {
+        lg "Err status:"
+        lg e
+    }
+}
+
+mch resErr {
+    ok(v) => {
+        lg "Ok status:"
+        lg v
+    }
+    err(e) => {
+        lg "Err status:"
+        lg e
+    }
+}

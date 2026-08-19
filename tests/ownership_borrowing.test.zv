@@ -1,0 +1,19 @@
+// Dedicated Test for Ownership & Borrowing Semantics (v0.4)
+
+// 1. Immutable & Mutable Variable Bindings
+val = 10
+mut counter = 50
+
+counter = counter + 10
+lg "Mutated counter:"
+lg counter
+
+// 2. Borrowing References (& and &mut)
+refVal = &val
+refMut = &mut counter
+
+lg "Immutable Reference Borrow:"
+lg refVal
+
+lg "Mutable Reference Borrow:"
+lg refMut

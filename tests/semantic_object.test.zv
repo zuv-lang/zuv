@@ -1,0 +1,7 @@
+obj User {
+    id: num
+}
+
+u = User{ id: 42 }
+lg "User ID semantic test:"
+lg u.id

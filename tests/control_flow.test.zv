@@ -1,0 +1,31 @@
+x = 15
+if x > 10 {
+    lg "x is greater than 10"
+} els {
+    lg "x is 10 or less"
+}
+
+count = 0
+wh count < 5 {
+    count = count + 1
+    if count == 2 {
+        cont
+    }
+    if count == 4 {
+        brk
+    }
+    lg "while loop iteration:"
+    lg count
+}
+
+lg "Testing fr loop:"
+fr i = 0; i < 5; i = i + 1 {
+    if i == 1 {
+        cont
+    }
+    if i == 3 {
+        brk
+    }
+    lg "for loop index:"
+    lg i
+}

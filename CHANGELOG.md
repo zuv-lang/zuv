@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Phase 1: Pure Zuv Lexer & Tokenizer Subsystem (`src/tokens.zv`, `src/lexer.zv`)**:
+  - Complete Token definition with line and column tracking (`{ kind, val, line, col }`) and classification predicates (`isKeywordTok`, `isIdentTok`, `isNumberTok`, `isStringTok`, `isBoolTok`, `isSymbolTok`, `isEOFTok`).
+  - Full tokenization support for all language keywords (`imp`, `frm`, `wrk`, `prnt`, `lg`, `wrn`, `inf`, `ret`, `els`, `wh`, `fr`, `brk`, `cont`, `dn`, `mch`, `ok`, `err`, `if`, `and`, `or`, `not`, `mut`, `asc`, `awt`, `obj`, `num`, `bool`, `str`, `main`).
+  - Boolean literals (`yes`, `no`, `true`, `false`), Nil literals (`nil`, `und`), numbers (integer & float), and string literals with escape sequences (`\n`, `\t`, `\r`, `\"`, `\'`, `\\`, `\0`).
+  - Single-line comment parsing (`// ... \n`) and multi-char/single-char operators (`==`, `=>`, `->`, `!=`, `<=`, `>=`, `&&`, `||`, `!`, `&`, `|`, `+`, `-`, `*`, `/`, `%`, `?`, `:`, `;`, `,`, `.`, `(`, `)`, `{`, `}`, `[`, `]`).
+- **Phase 2: AST & Recursive Descent Parser Subsystem (`src/parser.zv`)**:
+  - Formal AST Node constructor hierarchy for all expressions and statements (`NumberExpr`, `StringExpr`, `BoolExpr`, `NilExpr`, `VariableExpr`, `BinaryExpr`, `UnaryExpr`, `CallExpr`, `ArrayExpr`, `IndexExpr`, `PropertyAccess`, `StructLiteral`, `VarDecl`, `ReturnStmt`, `PrintStmt`, `IfStmt`, `WhileStmt`, `FunctionDecl`, `ImportStmt`, `BlockStmt`).
+  - Pratt precedence climbing expression parser covering lowest, assignment, logical OR/AND, equality, relational, additive, multiplicative, unary, and call/index/dot access precedences.
+  - Recursive descent statement parser for module imports (`imp a, b frm mod`), variable declarations (`mut` & immutable), `main` entry points with CLI argument parameters, struct declarations (`obj`), control flow (`if/els`, `wh`), returns (`ret`, `->`), and logging statements.
+  - Parser syntax error collection and line-based diagnostic reporting.
+
+### Changed
+- Replaced stubbed placeholder functions in `sub_projects/zuv` with genuine, modular compiler frontend components.
+- Formatted AST constructors and function blocks to clean multi-line representations.
+
+### Fixed
+- Upgraded `isFunctionDeclaration()` in `src/Parser.cpp` to perform token-level lookahead, preventing string literals with braces (e.g., `"{"`) from triggering false function declaration parses.
+- Implemented chained property access call and mutation support in `src/Parser.cpp` (`a.b.c = d`, `p.errors.psh(...)`).
+
 ## [0.0.2] - 2026-08-15
 
 ### In-Process LLVM Compiler & CLI Toolchain

@@ -1,0 +1,7 @@
+identity[T] x: T {
+    -> x
+}
+
+val = identity[num] 777
+lg "Generic function return value:"
+lg val

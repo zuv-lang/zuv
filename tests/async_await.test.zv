@@ -1,0 +1,11 @@
+// Dedicated Test for Async / Await & Thread Worker Functions without brackets
+
+asc fetchStatus {
+    status = 200
+    -> status
+}
+
+res = awt fetchStatus
+
+lg "Async fetchStatus resolved:"
+lg res

@@ -1,0 +1,13 @@
+// Dedicated test for logging statements: prnt, lg, wrn, inf, err
+
+prnt "Print output message"
+lg "Standard lg message"
+inf "System status operational"
+wrn "Resource usage is high"
+err "Unhandled exception occurred"
+
+count = 42
+prnt count
+lg count
+wrn count
+err count

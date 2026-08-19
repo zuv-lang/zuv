@@ -1,0 +1,13 @@
+// Test for Anonymous Object Literals: pt = { x: 12, y: 34 }
+
+pt = { x: 12, y: 34 }
+
+lg "Testing Anonymous Object Literal x:"
+lg pt.x
+
+lg "Testing Anonymous Object Literal y:"
+lg pt.y
+
+pt.x = 99
+lg "Testing Mutated Object Field x:"
+lg pt.x

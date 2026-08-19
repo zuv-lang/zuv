@@ -1,6 +1,69 @@
-// Token definitions for Zuv Self-Hosting Compiler (src/tokens.zv)
+// Token definitions and classification module for Zuv Self-Hosting Compiler (src/tokens.zv)
 
-createToken kind, val, line {
-    tok = { kind: kind, val: val, line: line }
+createToken kind, val, line, col {
+    tok = { kind: kind, val: val, line: line, col: col }
     -> tok
+}
+
+isTokenKind tok, expectedKind {
+    if tok.kind == expectedKind {
+        -> 1
+    }
+    -> 0
+}
+
+isTokenVal tok, expectedVal {
+    if tok.val == expectedVal {
+        -> 1
+    }
+    -> 0
+}
+
+isKeywordTok tok {
+    if tok.kind == "KEYWORD" {
+        -> 1
+    }
+    -> 0
+}
+
+isIdentTok tok {
+    if tok.kind == "IDENT" {
+        -> 1
+    }
+    -> 0
+}
+
+isNumberTok tok {
+    if tok.kind == "NUMBER" || tok.kind == "NUM" {
+        -> 1
+    }
+    -> 0
+}
+
+isStringTok tok {
+    if tok.kind == "STRING" || tok.kind == "STR" {
+        -> 1
+    }
+    -> 0
+}
+
+isBoolTok tok {
+    if tok.kind == "BOOL" || tok.kind == "BOOLEAN" {
+        -> 1
+    }
+    -> 0
+}
+
+isSymbolTok tok {
+    if tok.kind == "SYM" || tok.kind == "SYMBOL" {
+        -> 1
+    }
+    -> 0
+}
+
+isEOFTok tok {
+    if tok.kind == "EOF" {
+        -> 1
+    }
+    -> 0
 }

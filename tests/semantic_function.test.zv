@@ -1,0 +1,8 @@
+addThree a: num, b: num, c: num {
+    sum = a + b + c
+    -> sum
+}
+
+ans = addThree 10, 20, 30
+lg "Sum of three numbers:"
+lg ans

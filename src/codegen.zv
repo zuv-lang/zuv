@@ -45,13 +45,25 @@ generateLLVMFull program {
     ir = ir.concat "declare void @LLVMDisposeModule(ptr)\n\n"
 
     ir = ir.concat "@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n"
-    ir = ir.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n\n"
+    ir = ir.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n"
+    ir = ir.concat "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"\n\n"
 
-    ir = ir.concat "define i32 @main() {\n"
-    ir = ir.concat "entry:\n"
-    ir = ir.concat "  %str_msg = call ptr @malloc(i64 64)\n"
-    ir = ir.concat "  ret i32 0\n"
-    ir = ir.concat "}\n"
+    stmts = program.statements
+    mut bodyIr = "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n"
+
+    mut i = 0
+    wh i < stmts.len {
+        s = stmts[i]
+        if s.kind == "Print" {
+            bodyIr = bodyIr.concat "  ; Print statement\n"
+        } els if s.kind == "VarDecl" {
+            bodyIr = bodyIr.concat "  ; Var declaration\n"
+        }
+        i = i + 1
+    }
+
+    bodyIr = bodyIr.concat "  ret i32 0\n}\n\n"
+    ir = ir.concat bodyIr
 
     lg "Codegen Completed. LLVM IR Output Length:"
     lg ir.len

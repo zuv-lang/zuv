@@ -1,0 +1,2 @@
+// Intentionally contains invalid syntax to test parser error detection
+badVar = 
