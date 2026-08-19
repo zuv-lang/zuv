@@ -1,72 +1,385 @@
-// LLVM IR Code Generator for Zuv Self-Hosting Compiler (src/codegen.zv)
+// Full LLVM IR Code Generator for Zuv Self-Hosting Compiler (src/codegen.zv)
 imp str, arr
 
-generateLLVMFull program {
-    lg "==========================================="
-    lg "    Zuv Self-Hosting Codegen Processing    "
-    lg "==========================================="
+createCodegen {
+    mut syms = []
+    mut strConsts = []
+    res = {
+        regCount: 0,
+        labelCount: 0,
+        strCount: 0,
+        symbols: syms,
+        strConstants: strConsts,
+        funcs: "",
+        mainBody: ""
+    }
+    -> res
+}
 
-    mut ir = "; ModuleID = 'zuv_self_host'\n"
-    ir = ir.concat "source_filename = \"main.zv\"\n\n"
-    ir = ir.concat "declare i32 @printf(ptr nocapture readonly, ...)\n"
-    ir = ir.concat "declare ptr @fopen(ptr, ptr)\n"
-    ir = ir.concat "declare i32 @fclose(ptr)\n"
-    ir = ir.concat "declare i64 @fread(ptr, i64, i64, ptr)\n"
-    ir = ir.concat "declare i64 @fwrite(ptr, i64, i64, ptr)\n"
-    ir = ir.concat "declare i32 @fputs(ptr, ptr)\n"
-    ir = ir.concat "declare i64 @strlen(ptr)\n"
-    ir = ir.concat "declare i64 @clock()\n"
-    ir = ir.concat "declare void @Sleep(i32)\n"
-    ir = ir.concat "declare ptr @strstr(ptr, ptr)\n"
-    ir = ir.concat "declare ptr @CreateThread(ptr, i64, ptr, ptr, i32, ptr)\n"
-    ir = ir.concat "declare i32 @WaitForSingleObject(ptr, i32)\n"
-    ir = ir.concat "declare i32 @CloseHandle(ptr)\n"
-    ir = ir.concat "declare ptr @malloc(i64)\n"
-    ir = ir.concat "declare void @free(ptr)\n"
-    ir = ir.concat "declare ptr @memcpy(ptr, ptr, i64)\n"
-    ir = ir.concat "declare i32 @strcmp(ptr, ptr)\n"
-    ir = ir.concat "declare i32 @fseek(ptr, i64, i32)\n"
-    ir = ir.concat "declare i64 @ftell(ptr)\n"
-    ir = ir.concat "declare void @rewind(ptr)\n\n"
+newReg cg {
+    r = "%r" + cg.regCount
+    cg.regCount = cg.regCount + 1
+    -> r
+}
 
-    // LLVM C-API in-process library linking declarations
-    ir = ir.concat "declare void @LLVMInitializeX86TargetInfo()\n"
-    ir = ir.concat "declare void @LLVMInitializeX86Target()\n"
-    ir = ir.concat "declare void @LLVMInitializeX86TargetMC()\n"
-    ir = ir.concat "declare void @LLVMInitializeX86AsmPrinter()\n"
-    ir = ir.concat "declare void @LLVMInitializeX86AsmParser()\n"
-    ir = ir.concat "declare ptr @LLVMGetGlobalContext()\n"
-    ir = ir.concat "declare ptr @LLVMCreateMemoryBufferWithMemoryRange(ptr, i64, ptr, i32)\n"
-    ir = ir.concat "declare i32 @LLVMParseIRInContext(ptr, ptr, ptr, ptr)\n"
-    ir = ir.concat "declare i32 @LLVMGetTargetFromTriple(ptr, ptr, ptr)\n"
-    ir = ir.concat "declare ptr @LLVMCreateTargetMachine(ptr, ptr, ptr, ptr, i32, i32, i32)\n"
-    ir = ir.concat "declare i32 @LLVMTargetMachineEmitToFile(ptr, ptr, ptr, i32, ptr)\n"
-    ir = ir.concat "declare void @LLVMDisposeTargetMachine(ptr)\n"
-    ir = ir.concat "declare void @LLVMDisposeModule(ptr)\n\n"
+newLbl cg, prefix {
+    l = prefix + "_" + cg.labelCount
+    cg.labelCount = cg.labelCount + 1
+    -> l
+}
 
-    ir = ir.concat "@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n"
-    ir = ir.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n"
-    ir = ir.concat "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"\n\n"
+findCgSymbol cg, name {
+    mut i = cg.symbols.ln - 1
+    wh i >= 0 {
+        s = cg.symbols[i]
+        if s.name == name {
+            -> s
+        }
+        i = i - 1
+    }
+    emptySym = { name: "", reg: "" }
+    -> emptySym
+}
 
-    stmts = program.statements
-    mut bodyIr = "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n"
+addCgSymbol cg, name, reg {
+    s = { name: name, reg: reg }
+    cg.symbols.psh s
+}
 
+addStrConstant cg, strVal {
+    sName = "@str_" + cg.strCount
+    cg.strCount = cg.strCount + 1
+    l = strVal.ln + 1
+    decl = sName + " = private unnamed_addr constant [" + l + " x i8] c\"" + strVal + "\\00\"\n"
+    cg.strConstants.psh decl
+    -> sName
+}
+
+codegenExpr cg, expr, outBuf {
+    if expr.kind == "NumberExpr" {
+        -> expr.val
+    } els if expr.kind == "BoolExpr" {
+        if expr.val == "yes" || expr.val == "true" {
+            -> "1.0"
+        }
+        -> "0.0"
+    } els if expr.kind == "StringExpr" {
+        sName = addStrConstant cg, expr.val
+        intReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + intReg + " = ptrtoint ptr " + sName + " to i64\n")
+        dblReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + dblReg + " = sitofp i64 " + intReg + " to double\n")
+        -> dblReg
+    } els if expr.kind == "VariableExpr" {
+        sym = findCgSymbol cg, expr.name
+        if sym.name != "" {
+            valReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valReg + " = load double, ptr " + sym.reg + "\n")
+            -> valReg
+        }
+        -> "0.0"
+    } els if expr.kind == "BinaryExpr" {
+        if expr.op == "=" {
+            rightReg = codegenExpr cg, expr.right, outBuf
+            if expr.left.kind == "VariableExpr" {
+                sym = findCgSymbol cg, expr.left.name
+                if sym.name != "" {
+                    outBuf.code = outBuf.code.concat ("  store double " + rightReg + ", ptr " + sym.reg + "\n")
+                }
+            }
+            -> rightReg
+        }
+
+        leftReg = codegenExpr cg, expr.left, outBuf
+        rightReg = codegenExpr cg, expr.right, outBuf
+
+        if expr.op == "+" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = fadd double " + leftReg + ", " + rightReg + "\n")
+            -> resReg
+        } els if expr.op == "-" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = fsub double " + leftReg + ", " + rightReg + "\n")
+            -> resReg
+        } els if expr.op == "*" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = fmul double " + leftReg + ", " + rightReg + "\n")
+            -> resReg
+        } els if expr.op == "/" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = fdiv double " + leftReg + ", " + rightReg + "\n")
+            -> resReg
+        } els if expr.op == "==" || expr.op == "!=" || expr.op == "<" || expr.op == "<=" || expr.op == ">" || expr.op == ">=" {
+            cmpOp = "oeq"
+            if expr.op == "!=" { cmpOp = "one" }
+            els if expr.op == "<" { cmpOp = "olt" }
+            els if expr.op == "<=" { cmpOp = "ole" }
+            els if expr.op == ">" { cmpOp = "ogt" }
+            els if expr.op == ">=" { cmpOp = "oge" }
+
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp " + cmpOp + " double " + leftReg + ", " + rightReg + "\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        }
+
+        -> leftReg
+    } els if expr.kind == "CallExpr" {
+        if expr.callee == "wF" && expr.args.ln == 2 {
+            pathReg = codegenExpr cg, expr.args[0], outBuf
+            contReg = codegenExpr cg, expr.args[1], outBuf
+            pathInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + pathInt + " = fptosi double " + pathReg + " to i64\n")
+            pathPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + pathPtr + " = inttoptr i64 " + pathInt + " to ptr\n")
+            contInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + contInt + " = fptosi double " + contReg + " to i64\n")
+            contPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + contPtr + " = inttoptr i64 " + contInt + " to ptr\n")
+            fpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + fpReg + " = call ptr @fopen(ptr " + pathPtr + ", ptr @mode_w)\n")
+            putsReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + putsReg + " = call i32 @fputs(ptr " + contPtr + ", ptr " + fpReg + ")\n")
+            closeReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + closeReg + " = call i32 @fclose(ptr " + fpReg + ")\n")
+            -> "1.0"
+        } els if expr.callee == "fE" && expr.args.ln == 1 {
+            pathReg = codegenExpr cg, expr.args[0], outBuf
+            pathInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + pathInt + " = fptosi double " + pathReg + " to i64\n")
+            pathPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + pathPtr + " = inttoptr i64 " + pathInt + " to ptr\n")
+            fpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + fpReg + " = call ptr @fopen(ptr " + pathPtr + ", ptr @mode_r)\n")
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = icmp ne ptr " + fpReg + ", null\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        } els if expr.callee == "rF" && expr.args.ln == 1 {
+            pathReg = codegenExpr cg, expr.args[0], outBuf
+            pathInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + pathInt + " = fptosi double " + pathReg + " to i64\n")
+            pathPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + pathPtr + " = inttoptr i64 " + pathInt + " to ptr\n")
+            fpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + fpReg + " = call ptr @fopen(ptr " + pathPtr + ", ptr @mode_r)\n")
+            seekReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + seekReg + " = call i32 @fseek(ptr " + fpReg + ", i64 0, i32 2)\n")
+            szReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + szReg + " = call i64 @ftell(ptr " + fpReg + ")\n")
+            outBuf.code = outBuf.code.concat ("  call void @rewind(ptr " + fpReg + ")\n")
+            szP1 = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + szP1 + " = add i64 " + szReg + ", 1\n")
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + szP1 + ")\n")
+            readReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + readReg + " = call i64 @fread(ptr " + bufReg + ", i64 1, i64 " + szReg + ", ptr " + fpReg + ")\n")
+            nullTerm = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + readReg + "\n")
+            outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+            closeReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + closeReg + " = call i32 @fclose(ptr " + fpReg + ")\n")
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            -> bufDbl
+        }
+
+        mut argRegs = []
+        mut i = 0
+        wh i < expr.args.ln {
+            arg = expr.args[i]
+            aReg = codegenExpr cg, arg, outBuf
+            argRegs.psh aReg
+            i = i + 1
+        }
+
+        mut callArgsStr = ""
+        mut j = 0
+        wh j < argRegs.ln {
+            if j > 0 { callArgsStr = callArgsStr.concat ", " }
+            callArgsStr = callArgsStr.concat ("double " + argRegs[j])
+            j = j + 1
+        }
+
+        retReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + retReg + " = call double @" + expr.callee + "(" + callArgsStr + ")\n")
+        -> retReg
+    }
+
+    -> "0.0"
+}
+
+codegenStmt cg, stmt, outBuf {
+    if stmt.kind == "VarDecl" {
+        valReg = codegenExpr cg, stmt.value, outBuf
+        ptrReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + ptrReg + " = alloca double\n")
+        outBuf.code = outBuf.code.concat ("  store double " + valReg + ", ptr " + ptrReg + "\n")
+        addCgSymbol cg, stmt.name, ptrReg
+    } els if stmt.kind == "PrintStmt" {
+        if stmt.value.kind == "StringExpr" {
+            sName = addStrConstant cg, stmt.value.val
+            outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sName + ")\n")
+        } els {
+            valReg = codegenExpr cg, stmt.value, outBuf
+            outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
+        }
+    } els if stmt.kind == "ReturnStmt" {
+        valReg = codegenExpr cg, stmt.value, outBuf
+        outBuf.code = outBuf.code.concat ("  ret double " + valReg + "\n")
+    } els if stmt.kind == "IfStmt" {
+        condReg = codegenExpr cg, stmt.condition, outBuf
+        cmpReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp one double " + condReg + ", 0.0\n")
+
+        thenLbl = newLbl cg, "if_then"
+        elseLbl = newLbl cg, "if_else"
+        mergeLbl = newLbl cg, "if_merge"
+
+        outBuf.code = outBuf.code.concat ("  br i1 " + cmpReg + ", label %" + thenLbl + ", label %" + elseLbl + "\n\n")
+        outBuf.code = outBuf.code.concat (thenLbl + ":\n")
+        codegenStmt cg, stmt.thenBranch, outBuf
+        outBuf.code = outBuf.code.concat ("  br label %" + mergeLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (elseLbl + ":\n")
+        if stmt.elseBranch.kind != "NilExpr" && stmt.elseBranch.kind != "" {
+            codegenStmt cg, stmt.elseBranch, outBuf
+        }
+        outBuf.code = outBuf.code.concat ("  br label %" + mergeLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (mergeLbl + ":\n")
+    } els if stmt.kind == "WhileStmt" {
+        condLbl = newLbl cg, "wh_cond"
+        bodyLbl = newLbl cg, "wh_body"
+        endLbl = newLbl cg, "wh_end"
+
+        outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
+        outBuf.code = outBuf.code.concat (condLbl + ":\n")
+        condReg = codegenExpr cg, stmt.condition, outBuf
+        cmpReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp one double " + condReg + ", 0.0\n")
+        outBuf.code = outBuf.code.concat ("  br i1 " + cmpReg + ", label %" + bodyLbl + ", label %" + endLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (bodyLbl + ":\n")
+        codegenStmt cg, stmt.body, outBuf
+        outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (endLbl + ":\n")
+    } els if stmt.kind == "BlockStmt" {
+        mut i = 0
+        wh i < stmt.statements.ln {
+            s = stmt.statements[i]
+            codegenStmt cg, s, outBuf
+            i = i + 1
+        }
+    } els if stmt.kind == "ExpressionStmt" {
+        codegenExpr cg, stmt.expr, outBuf
+    }
+}
+
+codegenFunctionDecl cg, funcStmt {
+    fnName = funcStmt.name
+    mut paramsStr = ""
     mut i = 0
-    wh i < stmts.len {
-        s = stmts[i]
-        if s.kind == "Print" {
-            bodyIr = bodyIr.concat "  ; Print statement\n"
-        } els if s.kind == "VarDecl" {
-            bodyIr = bodyIr.concat "  ; Var declaration\n"
+    wh i < funcStmt.params.ln {
+        if i > 0 { paramsStr = paramsStr.concat ", " }
+        paramsStr = paramsStr.concat ("double %arg_" + funcStmt.params[i])
+        i = i + 1
+    }
+
+    mut fnBuf = { code: ("define double @" + fnName + "(" + paramsStr + ") {\nentry:\n") }
+
+    mut j = 0
+    wh j < funcStmt.params.ln {
+        pName = funcStmt.params[j]
+        if pName != "" {
+            ptrReg = newReg cg
+            fnBuf.code = fnBuf.code.concat ("  " + ptrReg + " = alloca double\n")
+            fnBuf.code = fnBuf.code.concat ("  store double %arg_" + pName + ", ptr " + ptrReg + "\n")
+            addCgSymbol cg, pName, ptrReg
+        }
+        j = j + 1
+    }
+
+    codegenStmt cg, funcStmt.body, fnBuf
+    fnBuf.code = fnBuf.code.concat ("  ret double 0.0\n}\n\n")
+    cg.funcs = cg.funcs.concat fnBuf.code
+}
+
+generateLLVMFull program {
+    cg = createCodegen
+
+    mut header = "; ModuleID = 'zuv_self_host'\n"
+    header = header.concat "source_filename = \"main.zv\"\n\n"
+    header = header.concat "declare i32 @printf(ptr nocapture readonly, ...)\n"
+    header = header.concat "declare ptr @fopen(ptr, ptr)\n"
+    header = header.concat "declare i32 @fclose(ptr)\n"
+    header = header.concat "declare i64 @fread(ptr, i64, i64, ptr)\n"
+    header = header.concat "declare i64 @fwrite(ptr, i64, i64, ptr)\n"
+    header = header.concat "declare i32 @fputs(ptr, ptr)\n"
+    header = header.concat "declare i64 @strlen(ptr)\n"
+    header = header.concat "declare i64 @clock()\n"
+    header = header.concat "declare void @Sleep(i32)\n"
+    header = header.concat "declare ptr @strstr(ptr, ptr)\n"
+    header = header.concat "declare ptr @CreateThread(ptr, i64, ptr, ptr, i32, ptr)\n"
+    header = header.concat "declare i32 @WaitForSingleObject(ptr, i32)\n"
+    header = header.concat "declare i32 @CloseHandle(ptr)\n"
+    header = header.concat "declare ptr @malloc(i64)\n"
+    header = header.concat "declare void @free(ptr)\n"
+    header = header.concat "declare ptr @memcpy(ptr, ptr, i64)\n"
+    header = header.concat "declare i32 @strcmp(ptr, ptr)\n"
+    header = header.concat "declare i32 @fseek(ptr, i64, i32)\n"
+    header = header.concat "declare i64 @ftell(ptr)\n"
+    header = header.concat "declare void @rewind(ptr)\n\n"
+
+    header = header.concat "declare void @LLVMInitializeX86TargetInfo()\n"
+    header = header.concat "declare void @LLVMInitializeX86Target()\n"
+    header = header.concat "declare void @LLVMInitializeX86TargetMC()\n"
+    header = header.concat "declare void @LLVMInitializeX86AsmPrinter()\n"
+    header = header.concat "declare void @LLVMInitializeX86AsmParser()\n"
+    header = header.concat "declare ptr @LLVMGetGlobalContext()\n"
+    header = header.concat "declare ptr @LLVMCreateMemoryBufferWithMemoryRange(ptr, i64, ptr, i32)\n"
+    header = header.concat "declare i32 @LLVMParseIRInContext(ptr, ptr, ptr, ptr)\n"
+    header = header.concat "declare i32 @LLVMGetTargetFromTriple(ptr, ptr, ptr)\n"
+    header = header.concat "declare ptr @LLVMCreateTargetMachine(ptr, ptr, ptr, ptr, i32, i32, i32)\n"
+    header = header.concat "declare i32 @LLVMTargetMachineEmitToFile(ptr, ptr, ptr, i32, ptr)\n"
+    header = header.concat "declare void @LLVMDisposeTargetMachine(ptr)\n"
+    header = header.concat "declare void @LLVMDisposeModule(ptr)\n\n"
+
+    header = header.concat "@mode_r = private unnamed_addr constant [3 x i8] c\"rb\\00\"\n"
+    header = header.concat "@mode_w = private unnamed_addr constant [3 x i8] c\"wb\\00\"\n"
+    header = header.concat "@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n"
+    header = header.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n"
+    header = header.concat "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"\n\n"
+
+    mut mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" }
+
+    // Collect and generate function definitions & top-level statements
+    mut i = 0
+    wh i < program.statements.ln {
+        stmt = program.statements[i]
+        if stmt.kind == "FunctionDecl" {
+            codegenFunctionDecl cg, stmt
+        } els {
+            codegenStmt cg, stmt, mainBuf
         }
         i = i + 1
     }
 
-    bodyIr = bodyIr.concat "  ret i32 0\n}\n\n"
-    ir = ir.concat bodyIr
+    mainBuf.code = mainBuf.code.concat ("  ret i32 0\n}\n")
 
-    lg "Codegen Completed. LLVM IR Output Length:"
-    lg ir.len
+    // Merge constant declarations
+    mut constsStr = ""
+    mut ci = 0
+    wh ci < cg.strConstants.ln {
+        constsStr = constsStr.concat cg.strConstants[ci]
+        ci = ci + 1
+    }
 
-    -> ir
+    fullIR = header + constsStr + "\n" + cg.funcs + "\n" + mainBuf.code
+    -> fullIR
 }

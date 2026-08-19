@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Mutual exclusion of simultaneous mutable and immutable borrows.
     - Single unique mutable borrow constraint enforcement.
   - Recursive semantic traversal and validation of statements and expressions.
+- **Phase 4: LLVM IR Code Generator Subsystem (`src/codegen.zv`)**:
+  - Module header emitting full C and Win32 runtime external declarations (`printf`, `malloc`, `free`, `memcpy`, `strcmp`, `strlen`, `fopen`, `fclose`, `CreateThread`, `WaitForSingleObject`).
+  - In-process LLVM-C API declarations (`LLVMInitializeX86Target`, `LLVMParseIRInContext`, `LLVMTargetMachineEmitToFile`, `LLVMDisposeModule`).
+  - Dynamic global string constant pool generation (`@str_N`).
+  - Expression code generation: numbers, booleans, string pointer encoding, local register loading, arithmetic (`fadd`, `fsub`, `fmul`, `fdiv`), comparisons (`fcmp` with `uitofp`), assignments, and function call invocations.
+  - Statement code generation: local allocations (`alloca`), store instructions, control flow branching (`br i1`), while loop headers/latches, return statements, and print formats (`@fmt_str`, `@fmt_num`).
+  - Function code generator and `@main(i32 %argc, ptr %argv)` entry point assembler.
 
 ### Changed
 - Replaced stubbed placeholder functions in `sub_projects/zuv` with genuine, modular compiler frontend components.
