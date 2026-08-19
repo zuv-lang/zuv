@@ -1,25 +1,47 @@
 // Zuv Self-Hosting Compiler Main Entry Point (src/main.zv)
-imp str, arr, fs
-imp handleBuild, handleCheck, handleTest, handleRun, handleFmt frm cli
+imp str, arr, fs, time
+imp handleBuild, handleCheck, handleCheckAll, handleTest, handleRun, handleFmt frm cli
 imp createLexer, tokenizeFull frm lexer
 imp parseProgramFull frm parser
-main cmd {
+
+main cmd, fileArg {
+    mut targetFile = fileArg
+    if targetFile == "" {
+        if fE "src/main.zv" {
+            targetFile = "src/main.zv"
+        } els {
+            targetFile = "main.zv"
+        }
+    }
+
     if cmd == "test" {
         handleTest
     } els {
-        if cmd == "check" {
-            handleCheck "tests/expressions.test.zv"
+        if cmd == "checkall" || cmd == "check-all" {
+            handleCheckAll
         } els {
-            if cmd == "build" {
-                handleBuild "tests/expressions.test.zv", 0, 0
+            if cmd == "check" {
+                handleCheck targetFile
             } els {
-                if cmd == "run" {
-                    handleRun "tests/expressions.test.zv"
+                if cmd == "build" {
+                    handleBuild targetFile, 0, 0
                 } els {
-                    if cmd == "fmt" {
-                        handleFmt "tests/expressions.test.zv"
+                    if cmd == "run" {
+                        handleRun targetFile
                     } els {
-                        handleTest
+                        if cmd == "fmt" {
+                            handleFmt targetFile
+                        } els {
+                            if cmd == "" {
+                                handleCheckAll
+                            } els {
+                                if fE cmd {
+                                    handleCheck cmd
+                                } els {
+                                    handleCheckAll
+                                }
+                            }
+                        }
                     }
                 }
             }
