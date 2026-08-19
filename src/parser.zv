@@ -260,6 +260,18 @@ parseExpression p, precedence {
             }
             expectPeekToken p, "SYM", "}"
             left = createStructLitNode varName, fields
+        } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
+            mut args = []
+            advanceParser p
+            firstArg = parseExpression p, 0
+            args.psh firstArg
+            wh (peekTok p).val == "," {
+                advanceParser p // consume ','
+                advanceParser p
+                nextArg = parseExpression p, 0
+                args.psh nextArg
+            }
+            left = createCallNode varName, args
         } els {
             left = createVariableNode varName
         }
@@ -330,7 +342,23 @@ parseExpression p, precedence {
                     advanceParser p // consume '.'
                     advanceParser p // consume property name
                     propName = (curTok p).val
-                    left = createPropertyAccessNode left, propName
+                    if propName == "pp" || propName == "pop" {
+                        mut args = [left]
+                        left = createCallNode propName, args
+                    } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "IDENT" {
+                        advanceParser p
+                        firstArg = parseExpression p, 0
+                        mut args = [left, firstArg]
+                        wh (peekTok p).val == "," {
+                            advanceParser p // consume ','
+                            advanceParser p
+                            nextArg = parseExpression p, 0
+                            args.psh nextArg
+                        }
+                        left = createCallNode propName, args
+                    } els {
+                        left = createPropertyAccessNode left, propName
+                    }
                 } els if peekT.val == "[" {
                     advanceParser p // consume '['
                     advanceParser p
@@ -455,6 +483,10 @@ parseStatement p {
             if (curTok p).kind == "IDENT" {
                 fName = (curTok p).val
                 structFields.psh fName
+                if (peekTok p).val == ":" {
+                    advanceParser p // consume ':'
+                    advanceParser p // consume type
+                }
             }
             advanceParser p
         }
@@ -487,6 +519,38 @@ parseStatement p {
             advanceParser p
             valExpr = parseExpression p, 0
             -> createVarDeclNode identName, valExpr, 0
+        } els if (peekTok p).val == ":" {
+            advanceParser p // consume ':'
+            advanceParser p // consume type
+            if (peekTok p).val == "=" {
+                advanceParser p // consume '='
+                advanceParser p
+                valExpr = parseExpression p, 0
+                -> createVarDeclNode identName, valExpr, 0
+            }
+        } els if (peekTok p).val == "." {
+            advanceParser p // consume '.'
+            advanceParser p // consume method/prop name
+            propName = (curTok p).val
+            targetVar = createVariableNode identName
+            if (peekTok p).val == "=" {
+                advanceParser p // consume '='
+                advanceParser p
+                valExpr = parseExpression p, 0
+                propAccess = createPropertyAccessNode targetVar, propName
+                -> createBinaryNode "=", propAccess, valExpr
+            } els if propName == "pp" || propName == "pop" {
+                mut args = [targetVar]
+                -> createCallNode propName, args
+            } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
+                advanceParser p
+                argExpr = parseExpression p, 0
+                mut args = [targetVar, argExpr]
+                -> createCallNode propName, args
+            } els {
+                propAccess = createPropertyAccessNode targetVar, propName
+                -> { kind: "ExpressionStmt", expr: propAccess }
+            }
         } els if (peekTok p).val == "{" {
             // Function declaration without params: fnName { ... }
             body = parseBlock p
@@ -495,11 +559,20 @@ parseStatement p {
         } els if (peekTok p).kind == "IDENT" {
             // Function declaration with params or function call
             advanceParser p
-            mut params = [(curTok p).val]
+            pValFirst = (curTok p).val
+            if (peekTok p).val == ":" {
+                advanceParser p // consume ':'
+                advanceParser p // consume type
+            }
+            mut params = [pValFirst]
             wh (peekTok p).val == "," {
                 advanceParser p // consume ','
                 advanceParser p
                 pVal = (curTok p).val
+                if (peekTok p).val == ":" {
+                    advanceParser p // consume ':'
+                    advanceParser p // consume type
+                }
                 params.psh pVal
             }
             if (peekTok p).val == "{" {

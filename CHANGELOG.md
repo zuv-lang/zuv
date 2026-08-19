@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Expression code generation: numbers, booleans, string pointer encoding, local register loading, arithmetic (`fadd`, `fsub`, `fmul`, `fdiv`), comparisons (`fcmp` with `uitofp`), assignments, and function call invocations.
   - Statement code generation: local allocations (`alloca`), store instructions, control flow branching (`br i1`), while loop headers/latches, return statements, and print formats (`@fmt_str`, `@fmt_num`).
   - Function code generator and `@main(i32 %argc, ptr %argv)` entry point assembler.
+- **Phase 5: CLI Driver & Native Test Runner (`src/cli.zv`, `src/main.zv`)**:
+  - Implemented pure Zuv CLI handlers: `handleBuild` (self-compilation to LLVM IR and executable linking), `handleCheck` (fast lex-parse-semantic check pipeline), `handleRun` (build and run), `handleFmt` (code formatting), and `handleTest` (native self-hosting test runner).
+  - Dynamic discovery and execution across all 26 positive unit test suites and 1 expected syntax/semantic error test suite (`tests/semantic_errors.test.zv`) with pass/fail summary statistics.
+  - Complete CLI subcommand dispatcher in `src/main.zv` (`test`, `check`, `build`, `run`, `fmt`).
+  - Enhanced runtime string and number formatting across property accesses and binary concatenations.
 
 ### Changed
 - Replaced stubbed placeholder functions in `sub_projects/zuv` with genuine, modular compiler frontend components.
