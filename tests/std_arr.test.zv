@@ -1,0 +1,40 @@
+// Native Standard Library std/arr Unit Test Suite
+// Verifies imp arr with shortform methods and functions (.ln, .psh, .pp, ln, psh, pp)
+
+imp arr
+
+lg "--- Testing std/arr Shortforms (.ln, .psh, .pp) ---"
+
+mut numbers = [10, 20, 30]
+
+// 1. Array Length (.ln / ln)
+l1 = numbers.ln
+lg "Initial length via 'numbers.ln':"
+lg l1
+
+// 2. Array Push (.psh / psh)
+numbers.psh 40
+numbers.psh 50
+
+l2 = numbers.ln
+lg "Length after 'numbers.psh 40' and 'numbers.psh 50':"
+lg l2
+
+// 3. Array Pop (.pp / pp)
+p1 = numbers.pp
+lg "Popped element via 'numbers.pp':"
+lg p1
+
+l3 = numbers.ln
+lg "Length after .pp:"
+lg l3
+
+p2 = numbers.pp
+lg "Second popped element via 'numbers.pp':"
+lg p2
+
+l4 = numbers.ln
+lg "Final length via 'numbers.ln':"
+lg l4
+
+lg "std/arr Shortform Tests Completed!"

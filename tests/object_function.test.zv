@@ -1,0 +1,15 @@
+obj Point {
+    x: num,
+    y: num
+}
+
+createPoint px: num, py: num {
+    p = Point{ x: px, y: py }
+    -> p
+}
+
+pt = createPoint 12, 34
+lg "Point x:"
+lg pt.x
+lg "Point y:"
+lg pt.y

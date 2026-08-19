@@ -1,0 +1,6 @@
+arr = [10, 20, 30]
+lg "Array element at index 1:"
+lg arr[1]
+
+name: str = "Zuv Compiler"
+lg name

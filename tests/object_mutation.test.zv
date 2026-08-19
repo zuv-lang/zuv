@@ -1,0 +1,11 @@
+obj Counter {
+    val: num
+}
+
+c = Counter{ val: 100 }
+lg "Initial counter val:"
+lg c.val
+
+c.val = 250
+lg "Mutated counter val:"
+lg c.val

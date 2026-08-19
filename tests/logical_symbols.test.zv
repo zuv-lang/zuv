@@ -1,0 +1,27 @@
+// Dedicated Test Suite for Conditional Operators (and, or, not, &&, ||, !)
+
+a = yes
+b = no
+
+lg "--- Testing word-based logical operators ---"
+if a and not b {
+    lg "PASS: 'and' & 'not'"
+}
+
+if b or a {
+    lg "PASS: 'or'"
+}
+
+lg "--- Testing symbol-based logical operators ---"
+if a && !b {
+    lg "PASS: '&&' & '!'"
+}
+
+if b || a {
+    lg "PASS: '||'"
+}
+
+lg "--- Testing combined expressions ---"
+if (1 < 2 && 3 > 2) && (!b || b) {
+    lg "PASS: Complex logical condition"
+}

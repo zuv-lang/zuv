@@ -1,0 +1,53 @@
+// Native Standard Library std/str Unit Test Suite
+// Verifies imp str with pure dot-method shortforms (.ln, .cnt, .sub, .slc, .chr, .cat, .eq)
+
+imp str
+
+lg "--- Testing std/str Pure Dot Method Syntax ---"
+
+text = "Hello Zuv Standard Library"
+
+// 1. Length (.ln)
+l1 = text.ln
+lg "Length via 'text.ln':"
+lg l1
+
+// 2. Contains (.cnt)
+has1 = text.cnt "Zuv"
+lg "Contains via 'text.cnt \"Zuv\"':"
+lg has1
+
+// 3. Substring (.sub start, len)
+s1 = text.sub 6, 3
+lg "Substr via 'text.sub 6, 3':"
+lg s1
+
+// 4. Slice (.slc start, end)
+sl1 = text.slc 0, 5
+lg "Slice via 'text.slc 0, 5':"
+lg sl1
+
+// 5. CharAt (.chr)
+c1 = text.chr 0
+lg "CharAt via 'text.chr 0':"
+lg c1
+
+c2 = text.chr 6
+lg "CharAt via 'text.chr 6':"
+lg c2
+
+// 6. Concat (.cat)
+res1 = text.cat " - Fast"
+lg "Concat via 'text.cat \" - Fast\"':"
+lg res1
+
+// 7. Equality (.eq)
+match1 = text.eq "Hello Zuv Standard Library"
+lg "Equality via 'text.eq \"...\"':"
+lg match1
+
+mismatch = text.eq "Other String"
+lg "Equality via 'text.eq \"Other String\"':"
+lg mismatch
+
+lg "std/str Shortform Tests Completed!"

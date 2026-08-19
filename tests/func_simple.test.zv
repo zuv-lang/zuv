@@ -1,0 +1,6 @@
+workerTask {
+    lg "Worker Thread Started!"
+    -> 0
+}
+
+lg "done"

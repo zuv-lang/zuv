@@ -1,0 +1,22 @@
+// Native Standard Library std/time Unit Test Suite
+// Verifies imp time with shortform functions (nw, sl)
+
+imp time
+
+lg "--- Testing std/time Shortforms (nw, sl) ---"
+
+// 1. Current clock ticks (nw)
+start_time = nw
+lg "Start time tick via 'nw':"
+lg start_time
+
+// 2. Sleep milliseconds (sl ms)
+sl 25
+lg "Slept for 25ms via 'sl 25'"
+
+// 3. End clock ticks (nw)
+end_time = nw
+lg "End time tick via 'nw':"
+lg end_time
+
+lg "std/time Shortform Tests Completed!"

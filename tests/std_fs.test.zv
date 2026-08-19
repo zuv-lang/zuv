@@ -1,0 +1,31 @@
+// Native Standard Library std/fs Unit Test Suite
+// Verifies imp fs with shortform functions (wF, fE, rF, sF)
+
+imp fs
+
+lg "--- Testing std/fs Shortforms (wF, fE, rF, sF) ---"
+
+test_file = "std_fs_sample.txt"
+
+// 1. Write file (wF path, content)
+write_res = wF test_file, "Zuv std/fs shortform test successful!"
+lg "Write status via 'wF test_file, \"...\"':"
+lg write_res
+
+// 2. File exists (fE path)
+exists = fE test_file
+lg "File exists via 'fE test_file':"
+lg exists
+
+// 3. Read file (rF path)
+content = rF test_file
+lg "Read file content via 'rF test_file':"
+lg content
+
+// 4. Scan files in directory (sF dir, ext)
+files = sF "tests", ".test.zv"
+lg "Scan files count via 'sF \"tests\", \".test.zv\"':"
+lg files.ln
+
+lg "std/fs Shortform Tests Completed!"
+

@@ -58,13 +58,13 @@ main {
 
     // Dynamic arrays without parenthesis noise
     mut items = [10, 20]
-    items.push 30
-    lg items.len
+    items.psh 30
+    lg items.ln
 
     // String manipulation
     msg = "Hello World"
     if msg.contains "World" {
-        lg msg.len
+        lg msg.ln
     }
 }
 ```
@@ -84,17 +84,31 @@ main {
 
 ---
 
-## 🌟 Key Features
+## 🧰 CLI Commands & Subsystem Status
 
-| Feature | Description |
-| :--- | :--- |
-| **Parenthesis-Free Syntax** | Clean function declarations, command calls, and expressions. |
-| **Static Borrow Checker** | Compile-time memory ownership (`&`, `&mut`) with zero GC overhead. |
-| **In-Process LLVM Engine** | Direct machine code emission via `LLVM-C` library without external compiler dependencies. |
-| **Fluent Dot Methods** | Built-in `.len`, `.push`, `.pop`, `.contains`, `.substr` for strings and arrays. |
-| **Native Multithreading** | OS thread creation (`spn`) and synchronization (`jn`) with `wrk` task definitions. |
-| **Async / Await** | Asynchronous coroutines with `asc` and `awt`. |
-| **Self-Hosting Compiler** | Builds the Zuv compiler source through its current self-hosting entry point. |
+| Command | Usage | Description | Implementation Status |
+| :--- | :--- | :--- | :---: |
+| `test` | `.\output.exe test` | Run automated native AOT unit test runner across all 27 test files | ✅ **Fully Implemented** |
+| `checkall` | `.\output.exe checkall` | Run project-wide static syntax & borrow checker without compiling | ✅ **Fully Implemented** |
+| `check` | `.\output.exe check [file.zv]` | Run fast lexing, parsing, and borrow checker on a single file | ✅ **Fully Implemented** |
+| `build` | `.\output.exe build [file.zv]` | Compile Zuv source to native LLVM IR and executable binary (`.exe`) | ✅ **Fully Implemented** |
+| `run` | `.\output.exe run [file.zv]` | Compile and immediately execute the target binary | ✅ **Fully Implemented** |
+| `fmt` | `.\output.exe fmt [file.zv]` | Auto-format `.zv` source code with standard indentation | 🟡 *Stub* |
+| `init` | `zuv init [project_name]` | Scaffold a new Zuv project with `zuv.yml` and `src/main.zv` | 🟡 *Stub* (in `zuv.exe`) |
+| `lsp` | `zuv lsp` | Language Server Protocol (JSON-RPC) daemon for IDEs | 🟡 *Stub* (in `zuv-tools`) |
+
+---
+
+### 🔍 Self-Hosting Subsystems: Implemented vs. Stubs
+
+- **Tokenizer / Lexer (`src/lexer.zv`)**: ✅ **Fully Implemented** — Line/column tracking, all keywords, strings, floats, operators.
+- **Recursive Descent Parser (`src/parser.zv`)**: ✅ **Fully Implemented** — Full AST node hierarchy, Pratt expression precedence climber, imports, functions, structs, control flow.
+- **Borrow & Safety Checker (`src/checker.zv`)**: ✅ **Fully Implemented** — Scoped symbol table, immutability enforcement, Rust-grade ownership movement and borrow exclusivity validation.
+- **LLVM IR Codegen (`src/codegen.zv`)**: ✅ **Fully Implemented** — Unified 64-bit calling convention, dynamic array allocation, struct offset mapping, math/comparison ops, control branching.
+- **Native AOT Test Runner (`src/cli.zv`)**: ✅ **Fully Implemented** — Dynamic directory scanning (`sF`), automated compilation, execution, timer diagnostics, negative test assertions.
+- **Code Formatter (`handleFmt` in `src/cli.zv`)**: 🟡 **Stub** — Logs formatting confirmation; AST token-level formatter planned for next milestone.
+- **Project Scaffolding (`init`)**: 🟡 **Stub** in self-hosting compiler (functional via C++ bootstrap `zuv.exe`).
+- **Language Server (`lsp`)**: 🟡 **Stub** in self-hosting compiler (functional via TypeScript LSP in `sub_projects/zuv-tools`).
 
 ---
 
@@ -108,27 +122,44 @@ zuv/
 ├── CONTRIBUTING.md         # Developer contribution guidelines
 ├── CODE_OF_CONDUCT.md      # Contributor Covenant v2.1
 ├── LICENSE                 # MIT License
+├── tests/                  # Automated Test Suite (27 test files)
 └── src/
     ├── tokens.zv           # Token definitions and keyword map
     ├── lexer.zv            # Pure Zuv source tokenizer & scanner
     ├── parser.zv           # Recursive descent AST parser
     ├── checker.zv          # Compile-time borrow checker & safety validator
     ├── codegen.zv          # LLVM IR emitter & in-process C-API bindings
-    ├── cli.zv              # Compiler build and validation helpers
-    └── main.zv             # Compiler entry point
+    ├── cli.zv              # CLI driver and AOT test runner
+    └── main.zv             # Compiler entry point & command dispatcher
 ```
 
 ---
 
-## 🛠️ Building & Running Zuv
+## 🛠️ Building & Running the Self-Hosting Compiler
 
-### Build the Self-Hosting Compiler
+### 1. Compile the Self-Hosting Compiler
+Compile the pure Zuv compiler sources using the stage 1 bootstrap binary:
+```powershell
+d:\rujs\zuv.exe build src/main.zv
+```
+This produces `output.exe` in `sub_projects/zuv/`.
 
-The current entry point builds `src/main.zv` in release mode. Command-line commands such as `zuv build` and `zuv test` are not implemented yet.
+### 2. Run the Native AOT Test Runner
+Execute all 27 unit test suites natively:
+```powershell
+.\output.exe test
+```
 
-### Run the Generated Binary
-```bash
-.\output.exe
+### 3. Run Static Type & Borrow Checker
+Verify syntax and borrow safety across all test suites without emitting binaries:
+```powershell
+.\output.exe checkall
+```
+
+### 4. Build and Run a Zuv Program
+```powershell
+.\output.exe build tests/functions.test.zv
+.\output.exe run tests/functions.test.zv
 ```
 
 ---

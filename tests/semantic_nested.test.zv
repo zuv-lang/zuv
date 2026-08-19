@@ -1,0 +1,9 @@
+outer = 100
+if outer == 100 {
+    inner = 50
+    if inner == 50 {
+        deep = outer + inner
+        lg "Nested deep value:"
+        lg deep
+    }
+}

@@ -1,0 +1,21 @@
+// Dedicated Unit Test for Native Multithreading (spn / jn / wrk)
+// Requires imp thr, time
+
+imp thr
+imp time
+
+wrk workerTask {
+    lg "Worker Thread Started!"
+    lg "Worker Thread Completed!"
+    -> 0
+}
+
+lg "Main Thread: Spawning Worker Thread..."
+
+hThread = spn workerTask
+
+lg "Main Thread: Worker thread spawned. Waiting via jn..."
+
+jn hThread
+
+lg "Main Thread: Joined successfully. All threads finished!"

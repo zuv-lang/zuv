@@ -1,0 +1,8 @@
+// Auxiliary local module helper file for local import test
+addNumbers a, b {
+    -> a + b
+}
+
+multiplyNumbers a, b {
+    -> a * b
+}

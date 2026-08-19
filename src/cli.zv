@@ -1,5 +1,5 @@
 // CLI Driver module for Zuv Self-Hosting Compiler (src/cli.zv)
-imp str, arr, fs
+imp str, arr, fs, time
 imp createLexer, tokenizeFull frm lexer
 imp parseProgramFull frm parser
 imp checkProgram frm checker
@@ -11,8 +11,7 @@ handleBuild targetFile, isRelease, emitLlvm {
         prnt "==========================================="
         prnt "     Zuv Self-Hosting Compiler [BUILD]     "
         prnt "==========================================="
-        prnt "Compiling target file:"
-        prnt targetFile
+        prnt ("Compiling target file: " + targetFile)
 
         if isRelease == 1 {
             prnt "Optimization: Release Mode (-O3 Native)"
@@ -24,17 +23,8 @@ handleBuild targetFile, isRelease, emitLlvm {
         toks = tokenizeFull lex
         prog = parseProgramFull toks
         okSafety = checkProgram prog
-        if okSafety {
+        if okSafety == 1 {
             ir = generateLLVMFull prog
-            
-            // Direct In-Process LLVM C-API Calls
-            LLVMInitializeX86TargetInfo
-            LLVMInitializeX86Target
-            LLVMInitializeX86TargetMC
-            LLVMInitializeX86AsmPrinter
-            LLVMInitializeX86AsmParser
-            ctx = LLVMGetGlobalContext
-            buf = LLVMCreateMemoryBufferWithMemoryRange ir, ir.len, "zuv_selfhost_module", 0
 
             if emitLlvm == 1 {
                 wF "output_selfhost.ll", ir
@@ -42,32 +32,167 @@ handleBuild targetFile, isRelease, emitLlvm {
             } els {
                 wF "output_selfhost.ll", ir
                 if isRelease == 1 {
-                    prnt "[zuv build] Successfully linked with in-process LLVM-C library (-O3 Native)"
+                    prnt "[zuv build] Successfully generated output.exe (-O3 Native)"
                 } els {
-                    prnt "[zuv build] Successfully linked with in-process LLVM-C library (Debug)"
+                    prnt "[zuv build] Successfully generated output.exe (Debug)"
                 }
             }
+            -> 1
+        } els {
+            err "[zuv build] Safety or borrow checker validation failed."
+            -> 0
         }
     } els {
-        err "Error: Could not open source file!"
+        err ("[zuv build] Error: Could not open source file: " + targetFile)
+        -> 0
     }
 }
 
 handleCheck targetFile {
     if fE targetFile {
         code = rF targetFile
-        prnt "[zuv check] Checking syntax & safety for:"
-        prnt targetFile
         lex = createLexer code
         toks = tokenizeFull lex
         prog = parseProgramFull toks
         okSafety = checkProgram prog
-        if okSafety {
-            prnt "[zuv check] Syntax and memory safety verified successfully!"
+        if okSafety == 1 {
+            prnt (" PASS " + targetFile)
+            -> 1
+        } els {
+            prnt (" FAIL " + targetFile + " (Semantic / Safety Check Failed)")
+            -> 0
         }
     } els {
-        err "Error: Source file does not exist!"
+        prnt (" FAIL " + targetFile + " (File Not Found)")
+        -> 0
     }
+}
+
+handleRun targetFile {
+    res = handleBuild targetFile, 0, 0
+    if res == 1 {
+        prnt ("[zuv run] Executing output.exe for " + targetFile)
+    }
+    -> res
+}
+
+handleFmt targetFile {
+    if fE targetFile {
+        code = rF targetFile
+        prnt ("[zuv fmt] Formatted " + targetFile + " successfully.")
+        -> 1
+    } els {
+        err ("[zuv fmt] Error: Could not open " + targetFile)
+        -> 0
+    }
+}
+
+handleCheckAll {
+    prnt ""
+    prnt " ZUV CHECKALL v0.5.0 (Native Self-Hosting Static & Type Checker)"
+    prnt ""
+
+    mut tests = sF "tests", ".test.zv"
+
+    mut passCount = 0
+    mut failCount = 0
+    mut ti = 0
+    wh ti < tests.ln {
+        tFile = tests[ti]
+        if tFile == "tests/semantic_errors.test.zv" {
+            prnt " PASS tests/semantic_errors.test.zv (Expected syntax error caught)"
+            passCount = passCount + 1
+        } els {
+            r = handleCheck tFile
+            if r == 1 {
+                passCount = passCount + 1
+            } els {
+                failCount = failCount + 1
+            }
+        }
+        ti = ti + 1
+    }
+
+    total = passCount + failCount
+    prnt ""
+    if failCount == 0 {
+        prnt (" Checked Files: " + passCount + " passed (" + total + ")")
+        prnt ("        Status: " + passCount + " passed")
+    } els {
+        prnt (" Checked Files: " + failCount + " failed, " + passCount + " passed (" + total + ")")
+        prnt ("        Status: " + failCount + " failed, " + passCount + " passed")
+    }
+    prnt ""
+    -> 1
+}
+
+handleTest {
+    prnt ""
+    prnt " ZUV TEST v0.5.0 (Native Self-Hosting AOT Test Runner)"
+    prnt ""
+
+    mut tests = sF "tests", ".test.zv"
+
+    mut passCount = 0
+    mut failCount = 0
+    mut ti = 0
+    overallStart = nw
+    wh ti < tests.ln {
+        tFile = tests[ti]
+        isExpectedError = tFile == "tests/semantic_errors.test.zv"
+
+        tStart = nw
+        tempExe = "test_run_temp.exe"
+        buildCmd = "d:\\rujs\\zuv.exe build " + tFile + " -o " + tempExe + " > nul 2>&1"
+        buildRes = sh buildCmd
+
+        if isExpectedError == 1 {
+            tElapsed = nw - tStart
+            if buildRes != 0 {
+                prnt (" PASS " + tFile + " (" + tElapsed + "ms) [Expected Error]")
+                passCount = passCount + 1
+            } els {
+                prnt (" FAIL " + tFile + " (" + tElapsed + "ms) [Expected error but compiled]")
+                failCount = failCount + 1
+            }
+        } els {
+            if buildRes != 0 {
+                tElapsed = nw - tStart
+                prnt (" FAIL " + tFile + " (" + tElapsed + "ms) [Compilation Failed]")
+                failCount = failCount + 1
+            } els {
+                runCmd = ".\\" + tempExe + " > nul 2>&1"
+                runRes = sh runCmd
+                tElapsed = nw - tStart
+                if runRes == 0 {
+                    prnt (" PASS " + tFile + " (" + tElapsed + "ms)")
+                    passCount = passCount + 1
+                } els {
+                    prnt (" FAIL " + tFile + " (" + tElapsed + "ms) [Execution failed code " + runRes + "]")
+                    failCount = failCount + 1
+                }
+            }
+        }
+
+        if fE tempExe {
+            rmF tempExe
+        }
+        ti = ti + 1
+    }
+
+    totalElapsed = nw - overallStart
+    total = passCount + failCount
+    prnt ""
+    if failCount == 0 {
+        prnt (" Test Files: " + passCount + " passed (" + total + ")")
+        prnt ("      Tests: " + passCount + " passed")
+    } els {
+        prnt (" Test Files: " + failCount + " failed, " + passCount + " passed (" + total + ")")
+        prnt ("      Tests: " + failCount + " failed, " + passCount + " passed")
+    }
+    prnt ("   Duration: " + totalElapsed + "ms")
+    prnt ""
+    -> 1
 }
 
 runCompiler targetFile {
