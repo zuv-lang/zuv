@@ -184,6 +184,25 @@ checkStatement checker, stmt {
         checkExpr checker, stmt.value
     } els if stmt.kind == "ExpressionStmt" {
         checkExpr checker, stmt.expr
+    } els if stmt.kind == "ImportStmt" {
+        mut si = 0
+        wh si < stmt.symbols.ln {
+            sym = stmt.symbols[si]
+            if sym != "" {
+                declareVar checker, sym, 0
+            }
+            si = si + 1
+        }
+        mut pi = 0
+        wh pi < stmt.paths.ln {
+            p = stmt.paths[pi]
+            if p != "" {
+                declareVar checker, p, 0
+            }
+            pi = pi + 1
+        }
+    } els {
+        checkExpr checker, stmt
     }
 }
 

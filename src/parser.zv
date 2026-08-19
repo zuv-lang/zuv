@@ -218,6 +218,11 @@ createBlockNode statements {
     -> res
 }
 
+createExpressionStmtNode expr {
+    res = { kind: "ExpressionStmt", expr: expr }
+    -> res
+}
+
 // ── Expression Parser ────────────────────────────────────────────────────────
 parseExpression p, precedence {
     t = curTok p
@@ -364,7 +369,18 @@ parseExpression p, precedence {
                     advanceParser p
                     idx = parseExpression p, 0
                     expectPeekToken p, "SYM", "]"
-                    left = createIndexNode left, idx
+                    if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
+                        advanceParser p
+                        arg = parseExpression p, 0
+                        mut callArgs = [arg]
+                        if left.kind == "VariableExpr" {
+                            left = createCallNode left.name, callArgs
+                        } els {
+                            left = createCallNode "", callArgs
+                        }
+                    } els {
+                        left = createIndexNode left, idx
+                    }
                 } els if peekT.val == "(" {
                     advanceParser p // consume '('
                     mut args = []
@@ -421,29 +437,22 @@ parseStatement p {
 
     if t.kind == "KEYWORD" && t.val == "imp" {
         advanceParser p
-        mut impPaths = []
-        mut symbols = []
-        mut fromPath = ""
-
-        wh (curTok p).kind != "EOF" {
-            idName = (curTok p).val
-            if (peekTok p).val == "frm" {
-                symbols.psh idName
-                advanceParser p // consume 'frm'
-                advanceParser p // consume module name
-                fromPath = (curTok p).val
-                -> createImportNode impPaths, symbols, fromPath
-            } els {
-                impPaths.psh idName
-                if (peekTok p).val == "," {
-                    advanceParser p // consume ','
-                    advanceParser p
-                } els {
-                    -> createImportNode impPaths, symbols, fromPath
-                }
-            }
+        mut items = [(curTok p).val]
+        wh (peekTok p).val == "," {
+            advanceParser p // consume ','
+            advanceParser p // move to next item
+            items.psh (curTok p).val
         }
-        -> createImportNode impPaths, symbols, fromPath
+        if (peekTok p).val == "frm" {
+            advanceParser p // consume 'frm'
+            advanceParser p // consume module name
+            fromPath = (curTok p).val
+            mut emptyPaths = []
+            -> createImportNode emptyPaths, items, fromPath
+        } els {
+            mut emptySyms = []
+            -> createImportNode items, emptySyms, ""
+        }
     } els if t.kind == "KEYWORD" && (t.val == "prnt" || t.val == "lg" || t.val == "wrn" || t.val == "err" || t.val == "inf") {
         logLevel = t.val
         advanceParser p
@@ -538,18 +547,55 @@ parseStatement p {
                 advanceParser p
                 valExpr = parseExpression p, 0
                 propAccess = createPropertyAccessNode targetVar, propName
-                -> createBinaryNode "=", propAccess, valExpr
+                binNode = createBinaryNode "=", propAccess, valExpr
+                -> createExpressionStmtNode binNode
             } els if propName == "pp" || propName == "pop" {
                 mut args = [targetVar]
-                -> createCallNode propName, args
+                callNode = createCallNode propName, args
+                -> createExpressionStmtNode callNode
             } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
                 advanceParser p
                 argExpr = parseExpression p, 0
                 mut args = [targetVar, argExpr]
-                -> createCallNode propName, args
+                callNode = createCallNode propName, args
+                -> createExpressionStmtNode callNode
             } els {
                 propAccess = createPropertyAccessNode targetVar, propName
-                -> { kind: "ExpressionStmt", expr: propAccess }
+                -> createExpressionStmtNode propAccess
+            }
+        } els if (peekTok p).val == "[" {
+            // Generic function declaration: fnName[T] ...
+            advanceParser p // consume '['
+            advanceParser p // consume type parameter
+            if (peekTok p).val == "]" {
+                advanceParser p // consume ']'
+            }
+            if (peekTok p).val == "{" {
+                body = parseBlock p
+                mut emptyParams = []
+                -> createFuncNode identName, emptyParams, body, 0
+            } els if (peekTok p).kind == "IDENT" {
+                advanceParser p
+                pValFirst = (curTok p).val
+                if (peekTok p).val == ":" {
+                    advanceParser p // consume ':'
+                    advanceParser p // consume type
+                }
+                mut params = [pValFirst]
+                wh (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                    advanceParser p
+                    pVal = (curTok p).val
+                    if (peekTok p).val == ":" {
+                        advanceParser p // consume ':'
+                        advanceParser p // consume type
+                    }
+                    params.psh pVal
+                }
+                if (peekTok p).val == "{" {
+                    body = parseBlock p
+                    -> createFuncNode identName, params, body, 0
+                }
             }
         } els if (peekTok p).val == "{" {
             // Function declaration without params: fnName { ... }
@@ -605,10 +651,6 @@ parseStatement p {
 }
 
 parseProgramFull tokens {
-    lg "==========================================="
-    lg "    Zuv Self-Hosting Parser Processing     "
-    lg "==========================================="
-
     p = createParser tokens
     mut statements = []
 
@@ -619,9 +661,6 @@ parseProgramFull tokens {
         }
         advanceParser p
     }
-
-    lg "Parser Completed. Total Statements Parsed:"
-    lg statements.ln
 
     res = { statements: statements }
     -> res

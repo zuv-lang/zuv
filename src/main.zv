@@ -1,19 +1,29 @@
 // Zuv Self-Hosting Compiler Main Entry Point (src/main.zv)
 imp str, arr, fs
 imp handleBuild, handleCheck, handleTest, handleRun, handleFmt frm cli
-
+imp createLexer, tokenizeFull frm lexer
+imp parseProgramFull frm parser
 main cmd {
     if cmd == "test" {
         handleTest
-    } els if cmd == "check" {
-        handleCheck "src/main.zv"
-    } els if cmd == "build" {
-        handleBuild "src/main.zv", 0, 0
-    } els if cmd == "run" {
-        handleRun "src/main.zv"
-    } els if cmd == "fmt" {
-        handleFmt "src/main.zv"
     } els {
-        handleCheck "src/main.zv"
+        if cmd == "check" {
+            handleCheck "tests/expressions.test.zv"
+        } els {
+            if cmd == "build" {
+                handleBuild "tests/expressions.test.zv", 0, 0
+            } els {
+                if cmd == "run" {
+                    handleRun "tests/expressions.test.zv"
+                } els {
+                    if cmd == "fmt" {
+                        handleFmt "tests/expressions.test.zv"
+                    } els {
+                        handleTest
+                    }
+                }
+            }
+        }
     }
 }
+
