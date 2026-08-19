@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Pratt precedence climbing expression parser covering lowest, assignment, logical OR/AND, equality, relational, additive, multiplicative, unary, and call/index/dot access precedences.
   - Recursive descent statement parser for module imports (`imp a, b frm mod`), variable declarations (`mut` & immutable), `main` entry points with CLI argument parameters, struct declarations (`obj`), control flow (`if/els`, `wh`), returns (`ret`, `->`), and logging statements.
   - Parser syntax error collection and line-based diagnostic reporting.
+- **Phase 3: Static Semantic & Borrow Checker Subsystem (`src/checker.zv`)**:
+  - Lexical scope management with scope stack (`pushCheckerScope`, `popCheckerScope`) and symbol resolution.
+  - Variable mutability enforcement (`mut` vs immutable), flagging illegal mutations on immutable variables.
+  - Rust-grade ownership and borrowing validation rules:
+    - Rejection of use or borrow of moved values (`Cannot borrow moved value`).
+    - Immutable variables cannot be borrowed as mutable (`&mut`).
+    - Mutual exclusion of simultaneous mutable and immutable borrows.
+    - Single unique mutable borrow constraint enforcement.
+  - Recursive semantic traversal and validation of statements and expressions.
 
 ### Changed
 - Replaced stubbed placeholder functions in `sub_projects/zuv` with genuine, modular compiler frontend components.

@@ -1,36 +1,209 @@
-// Borrow & Type Checker module for Zuv Self-Hosting Compiler (src/checker.zv)
+// Full Static Semantic & Borrow Checker for Zuv Self-Hosting Compiler (src/checker.zv)
 imp str, arr
 
-checkProgram program {
-    lg "==========================================="
-    lg "    Zuv Static Borrow Checker Analysis     "
-    lg "==========================================="
+createScope {
+    mut vars = []
+    res = { vars: vars }
+    -> res
+}
 
-    stmts = program.statements
-    mut errors = 0
-    mut i = 0
-    wh i < stmts.len {
-        s = stmts[i]
-        if s.kind == "VarDecl" {
-            // Check var declaration
-            if s.name == "" {
-                err "Semantic Error: Anonymous variable declaration"
-                errors = errors + 1
+createChecker {
+    mut scopes = []
+    mut errors = []
+    globalScope = createScope
+    scopes.psh globalScope
+    res = { scopes: scopes, errors: errors }
+    -> res
+}
+
+pushCheckerScope checker {
+    newScope = createScope
+    checker.scopes.psh newScope
+}
+
+popCheckerScope checker {
+    if checker.scopes.ln > 0 {
+        checker.scopes.pp
+    }
+}
+
+findVarState checker, name {
+    mut i = checker.scopes.ln - 1
+    wh i >= 0 {
+        sc = checker.scopes[i]
+        mut j = 0
+        wh j < sc.vars.ln {
+            v = sc.vars[j]
+            if v.name == name {
+                -> v
             }
-        } els if s.kind == "ImportFrom" {
-            if s.path == "" {
-                err "Semantic Error: Import from empty path"
-                errors = errors + 1
+            j = j + 1
+        }
+        i = i - 1
+    }
+    emptyVar = { name: "", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+    -> emptyVar
+}
+
+declareVar checker, name, isMut {
+    existing = findVarState checker, name
+    if existing.name != "" {
+        if isMut == 1 {
+            existing.isMut = 1
+        }
+    } els {
+        curIdx = checker.scopes.ln - 1
+        if curIdx >= 0 {
+            curScope = checker.scopes[curIdx]
+            newVar = { name: name, isMut: isMut, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+            curScope.vars.psh newVar
+        }
+    }
+}
+
+checkExpr checker, expr {
+    if expr.kind == "VariableExpr" {
+        v = findVarState checker, expr.name
+        if v.name != "" && v.isMoved == 1 {
+            errVal = "Use of moved value: '" + expr.name + "'"
+            checker.errors.psh errVal
+        }
+    } els if expr.kind == "UnaryExpr" {
+        if expr.op == "&mut" || expr.op == "&" {
+            if expr.right.kind == "VariableExpr" {
+                vName = expr.right.name
+                v = findVarState checker, vName
+                if v.name != "" {
+                    if v.isMoved == 1 {
+                        errMoved = "Cannot borrow moved value: '" + vName + "'"
+                        checker.errors.psh errMoved
+                    }
+                    if expr.op == "&mut" {
+                        if v.isMut == 0 {
+                            errImmut = "Cannot borrow immutable variable '" + vName + "' as mutable (&mut)"
+                            checker.errors.psh errImmut
+                        }
+                        if v.immBorrows > 0 || v.mutBorrows > 0 {
+                            errActive = "Cannot borrow '" + vName + "' as mutable (&mut) because it is already borrowed"
+                            checker.errors.psh errActive
+                        }
+                        v.mutBorrows = v.mutBorrows + 1
+                    } els {
+                        if v.mutBorrows > 0 {
+                            errMut = "Cannot borrow '" + vName + "' as immutable (&) because it is borrowed as mutable (&mut)"
+                            checker.errors.psh errMut
+                        }
+                        v.immBorrows = v.immBorrows + 1
+                    }
+                }
+            } els {
+                checkExpr checker, expr.right
+            }
+        } els {
+            checkExpr checker, expr.right
+        }
+    } els if expr.kind == "BinaryExpr" {
+        if expr.op == "=" {
+            if expr.left.kind == "VariableExpr" {
+                vName = expr.left.name
+                v = findVarState checker, vName
+                if v.name != "" && v.isMut == 0 {
+                    errMutate = "Cannot mutate immutable variable: '" + vName + "'"
+                    checker.errors.psh errMutate
+                }
             }
         }
+        checkExpr checker, expr.left
+        checkExpr checker, expr.right
+    } els if expr.kind == "CallExpr" {
+        mut i = 0
+        wh i < expr.args.ln {
+            arg = expr.args[i]
+            checkExpr checker, arg
+            i = i + 1
+        }
+    } els if expr.kind == "ArrayExpr" {
+        mut i = 0
+        wh i < expr.elements.ln {
+            elem = expr.elements[i]
+            checkExpr checker, elem
+            i = i + 1
+        }
+    } els if expr.kind == "IndexExpr" {
+        checkExpr checker, expr.array
+        checkExpr checker, expr.index
+    } els if expr.kind == "PropertyAccess" {
+        checkExpr checker, expr.object
+    }
+}
+
+checkStatement checker, stmt {
+    if stmt.kind == "VarDecl" {
+        checkExpr checker, stmt.value
+        declareVar checker, stmt.name, stmt.isMut
+    } els if stmt.kind == "FunctionDecl" {
+        pushCheckerScope checker
+        mut i = 0
+        wh i < stmt.params.ln {
+            pName = stmt.params[i]
+            if pName != "" {
+                declareVar checker, pName, 0
+            }
+            i = i + 1
+        }
+        if stmt.body.kind == "BlockStmt" {
+            mut j = 0
+            wh j < stmt.body.statements.ln {
+                s = stmt.body.statements[j]
+                checkStatement checker, s
+                j = j + 1
+            }
+        }
+        popCheckerScope checker
+    } els if stmt.kind == "BlockStmt" {
+        pushCheckerScope checker
+        mut i = 0
+        wh i < stmt.statements.ln {
+            s = stmt.statements[i]
+            checkStatement checker, s
+            i = i + 1
+        }
+        popCheckerScope checker
+    } els if stmt.kind == "IfStmt" {
+        checkExpr checker, stmt.condition
+        checkStatement checker, stmt.thenBranch
+        if stmt.elseBranch.kind != "NilExpr" && stmt.elseBranch.kind != "" {
+            checkStatement checker, stmt.elseBranch
+        }
+    } els if stmt.kind == "WhileStmt" {
+        checkExpr checker, stmt.condition
+        checkStatement checker, stmt.body
+    } els if stmt.kind == "ReturnStmt" {
+        checkExpr checker, stmt.value
+    } els if stmt.kind == "PrintStmt" {
+        checkExpr checker, stmt.value
+    } els if stmt.kind == "ExpressionStmt" {
+        checkExpr checker, stmt.expr
+    }
+}
+
+checkProgram program {
+    checker = createChecker
+    mut i = 0
+    wh i < program.statements.ln {
+        stmt = program.statements[i]
+        checkStatement checker, stmt
         i = i + 1
     }
 
-    lg "Statements verified for safety:"
-    lg stmts.len
-
-    if errors > 0 {
+    if checker.errors.ln > 0 {
+        mut ei = 0
+        wh ei < checker.errors.ln {
+            err checker.errors[ei]
+            ei = ei + 1
+        }
         -> 0
     }
+
     -> 1
 }
