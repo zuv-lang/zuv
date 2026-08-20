@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] - 2026-08-20
+
+### 🚀 Pure Zuv Self-Hosting Compiler & 100% Test Suite Verification
+- **100% Self-Hosting Test Suite Pass Rate (27/27 Tests)**:
+  - Validated all 27 unit test suites in `tests/` running natively under the pure Zuv self-hosting compiler executable (`zuv test` / `C:\Users\rohit\zuv\bin\zuv.exe`).
+  - Achieved seamless end-to-end self-hosting execution across all core language constructs, standard library modules, multithreading, concurrency, and error handling.
+
+### 🛡️ Code Generation & Runtime Improvements
+- **Directory Scanning Runtime (`sF` / `@zuv_scan_files`)**:
+  - Implemented `@zuv_scan_files(ptr %dir, ptr %ext)` in pure Zuv code generator (`src/codegen.zv`) using Windows Win32 API (`FindFirstFileA`, `FindNextFileA`, `FindClose`, and `snprintf`), enabling zero-dependency directory scanning (`std_fs.test.zv`).
+  - Added shortform standard library support for `sF`, `sD`, and `scanDir`.
+- **Accurate Pointer & Float Conversions (`fptosi` vs `bitcast`)**:
+  - Resolved floating-point bit pattern pointer corruption in `src/Codegen.cpp` across `getStrPtr`, `getStrPtrOrFormat`, `PrintStmt`, `PropertyAccess`, `IndexExpr`, `psh`, `pp`, and `ln` by replacing `bitcast double ... to i64` with `fptosi double ... to i64`.
+- **Deterministic Struct Field Layout Synchronization**:
+  - Pre-populated and synchronized `m_fieldOffsets` in `src/Codegen.h` and `fields` in `src/codegen.zv` to guarantee deterministic memory layouts between C++ bootstrap and self-hosting compilers.
+- **String Variable Deduction (`isStrExpr`)**:
+  - Extended string variable name heuristics in `src/Codegen.cpp` to recognize `val`, `arg`, and `lbl` identifiers for correct `@strcmp` comparison and `@printf` string formatting emission.
+
+### 🧩 Parser & CLI Subsystem Fixes
+- **Pattern Matching (`mch`) AST Parsing**:
+  - Refactored `mch` statement parser in `src/parser.zv` to properly iterate match arm cases (`ok`, `err`) and block statements without token consumption desynchronization.
+- **Parser Error Diagnostics & Exit Code Handling**:
+  - Attached parser error collections (`p.errors`) directly to program AST in `parseProgramFull` (`src/parser.zv`).
+  - Added compile-time syntax error diagnostic printing and failure exit code aborts in `src/cli.zv` (`semantic_errors.test.zv`).
+- **Control Flow Loops & Generics**:
+  - Fixed `ForStmt` increment code generator in `src/codegen.zv` to call `codegenStmt` and registered loop initialization variables in Pass 1.
+  - Corrected generic function call bracket consumption and prefix array literal parsing in `src/parser.zv`.
+
+---
+
 ## [0.1.0] - 2026-08-19
 
 ### Added

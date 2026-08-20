@@ -4,16 +4,59 @@ imp str, arr
 createCodegen {
     mut syms = []
     mut strConsts = []
+    mut fields = [
+        "kind", "val", "line", "col", "name", "value", "left", "right", "op",
+        "callee", "args", "elements", "array", "index", "object",
+        "property", "typeName", "fields", "init", "condition",
+        "increment", "body", "statements", "params", "isAsync",
+        "isMut", "elseBranch", "thenBranch", "level", "symbols",
+        "paths", "fromPath", "target", "okVar", "okBody", "errVar", "errBody",
+        "src", "pos", "totalLen", "ch", "tokens", "curTok", "peekTok", "errors",
+        "regCount", "labelCount", "strCount", "strConstants", "fieldNames",
+        "breakLabels", "continueLabels", "funcs", "mainBody", "isMain"
+    ]
+    mut brkStack = []
+    mut contStack = []
     res = {
         regCount: 0,
         labelCount: 0,
         strCount: 0,
         symbols: syms,
         strConstants: strConsts,
+        fieldNames: fields,
+        breakLabels: brkStack,
+        continueLabels: contStack,
         funcs: "",
-        mainBody: ""
+        mainBody: "",
+        isMain: 0
     }
     -> res
+}
+
+strEq s1, s2 {
+    if s1.ln != s2.ln {
+        -> 0
+    }
+    mut i = 0
+    wh i < s1.ln {
+        if (s1.charAt i) != (s2.charAt i) {
+            -> 0
+        }
+        i = i + 1
+    }
+    -> 1
+}
+
+findFieldOffset cg, fieldName {
+    mut i = 0
+    wh i < cg.fieldNames.ln {
+        if (strEq cg.fieldNames[i], fieldName) == 1 {
+            -> i
+        }
+        i = i + 1
+    }
+    cg.fieldNames.psh fieldName
+    -> i
 }
 
 newReg cg {
@@ -32,7 +75,7 @@ findCgSymbol cg, name {
     mut i = cg.symbols.ln - 1
     wh i >= 0 {
         s = cg.symbols[i]
-        if s.name == name {
+        if (strEq s.name, name) == 1 {
             -> s
         }
         i = i - 1
@@ -49,15 +92,51 @@ addCgSymbol cg, name, reg {
 addStrConstant cg, strVal {
     sName = "@str_" + cg.strCount
     cg.strCount = cg.strCount + 1
-    l = strVal.ln + 1
-    decl = sName + " = private unnamed_addr constant [" + l + " x i8] c\"" + strVal + "\\00\"\n"
+    mut escaped = ""
+    mut byteCount = 0
+    mut i = 0
+    wh i < strVal.ln {
+        c = strVal.charAt i
+        if c == "\"" {
+            escaped = escaped.concat "\\22"
+            byteCount = byteCount + 1
+        } els if c == "\\" {
+            escaped = escaped.concat "\\5C"
+            byteCount = byteCount + 1
+        } els if c == "\n" {
+            escaped = escaped.concat "\\0A"
+            byteCount = byteCount + 1
+        } els {
+            escaped = escaped.concat c
+            byteCount = byteCount + 1
+        }
+        i = i + 1
+    }
+    l = byteCount + 1
+    decl = sName + " = private unnamed_addr constant [" + l + " x i8] c\"" + escaped + "\\00\"\n"
     cg.strConstants.psh decl
     -> sName
 }
 
+formatFloat valStr {
+    mut hasDot = 0
+    mut i = 0
+    wh i < valStr.ln {
+        if (valStr.charAt i) == "." {
+            hasDot = 1
+        }
+        i = i + 1
+    }
+    if hasDot == 0 {
+        resStr = valStr + ".0"
+        -> resStr
+    }
+    -> valStr
+}
+
 codegenExpr cg, expr, outBuf {
     if expr.kind == "NumberExpr" {
-        -> expr.val
+        -> formatFloat expr.val
     } els if expr.kind == "BoolExpr" {
         if expr.val == "yes" || expr.val == "true" {
             -> "1.0"
@@ -86,6 +165,34 @@ codegenExpr cg, expr, outBuf {
                 if sym.name != "" {
                     outBuf.code = outBuf.code.concat ("  store double " + rightReg + ", ptr " + sym.reg + "\n")
                 }
+            } els if expr.left.kind == "PropertyAccess" {
+                objReg = codegenExpr cg, expr.left.object, outBuf
+                objInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + objInt + " = fptosi double " + objReg + " to i64\n")
+                objPtr = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + objPtr + " = inttoptr i64 " + objInt + " to ptr\n")
+                fOffset = findFieldOffset cg, expr.left.property
+                gepReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + objPtr + ", i64 " + fOffset + "\n")
+                rInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + rInt + " = bitcast double " + rightReg + " to i64\n")
+                outBuf.code = outBuf.code.concat ("  store i64 " + rInt + ", ptr " + gepReg + "\n")
+            } els if expr.left.kind == "IndexExpr" {
+                arrReg = codegenExpr cg, expr.left.array, outBuf
+                idxReg = codegenExpr cg, expr.left.index, outBuf
+                arrInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + arrInt + " = fptosi double " + arrReg + " to i64\n")
+                arrPtr = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + arrPtr + " = inttoptr i64 " + arrInt + " to ptr\n")
+                idxInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + idxInt + " = fptosi double " + idxReg + " to i64\n")
+                elemIdx = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + elemIdx + " = add i64 " + idxInt + ", 1\n")
+                gepReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + arrPtr + ", i64 " + elemIdx + "\n")
+                rInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + rInt + " = bitcast double " + rightReg + " to i64\n")
+                outBuf.code = outBuf.code.concat ("  store i64 " + rInt + ", ptr " + gepReg + "\n")
             }
             -> rightReg
         }
@@ -186,28 +293,429 @@ codegenExpr cg, expr, outBuf {
             bufDbl = newReg cg
             outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
             -> bufDbl
+        } els if (expr.callee == "sF" || expr.callee == "sD" || expr.callee == "scanDir") && (expr.args.ln == 1 || expr.args.ln == 2) {
+            dirReg = codegenExpr cg, expr.args[0], outBuf
+            dirInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + dirInt + " = fptosi double " + dirReg + " to i64\n")
+            dirPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + dirPtr + " = inttoptr i64 " + dirInt + " to ptr\n")
+            mut extPtr = "null"
+            if expr.args.ln == 2 {
+                extReg = codegenExpr cg, expr.args[1], outBuf
+                extInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + extInt + " = fptosi double " + extReg + " to i64\n")
+                extPtr = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + extPtr + " = inttoptr i64 " + extInt + " to ptr\n")
+            }
+            arrPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + arrPtr + " = call ptr @zuv_scan_files(ptr " + dirPtr + ", ptr " + extPtr + ")\n")
+            arrInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + arrInt + " = ptrtoint ptr " + arrPtr + " to i64\n")
+            arrDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + arrDbl + " = sitofp i64 " + arrInt + " to double\n")
+            -> arrDbl
+        } els if expr.callee == "psh" && expr.args.ln == 2 {
+            arrReg = codegenExpr cg, expr.args[0], outBuf
+            valReg = codegenExpr cg, expr.args[1], outBuf
+            arrInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + arrInt + " = fptosi double " + arrReg + " to i64\n")
+            arrPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + arrPtr + " = inttoptr i64 " + arrInt + " to ptr\n")
+            curLenDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + curLenDbl + " = load double, ptr " + arrPtr + "\n")
+            curLenInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + curLenInt + " = fptosi double " + curLenDbl + " to i64\n")
+            nextIdx = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + nextIdx + " = add i64 " + curLenInt + ", 1\n")
+            gepReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + arrPtr + ", i64 " + nextIdx + "\n")
+            valInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valInt + " = bitcast double " + valReg + " to i64\n")
+            outBuf.code = outBuf.code.concat ("  store i64 " + valInt + ", ptr " + gepReg + "\n")
+            newLenDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + newLenDbl + " = sitofp i64 " + nextIdx + " to double\n")
+            outBuf.code = outBuf.code.concat ("  store double " + newLenDbl + ", ptr " + arrPtr + "\n")
+            -> newLenDbl
+        } els if expr.callee == "pp" && expr.args.ln == 1 {
+            arrReg = codegenExpr cg, expr.args[0], outBuf
+            arrInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + arrInt + " = fptosi double " + arrReg + " to i64\n")
+            arrPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + arrPtr + " = inttoptr i64 " + arrInt + " to ptr\n")
+            curLenDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + curLenDbl + " = load double, ptr " + arrPtr + "\n")
+            curLenInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + curLenInt + " = fptosi double " + curLenDbl + " to i64\n")
+            gepReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + arrPtr + ", i64 " + curLenInt + "\n")
+            loadInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gepReg + "\n")
+            loadDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + loadDbl + " = bitcast i64 " + loadInt + " to double\n")
+            newLenInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + newLenInt + " = sub i64 " + curLenInt + ", 1\n")
+            newLenDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + newLenDbl + " = sitofp i64 " + newLenInt + " to double\n")
+            outBuf.code = outBuf.code.concat ("  store double " + newLenDbl + ", ptr " + arrPtr + "\n")
+            -> loadDbl
+        } els if (expr.callee == "cnt" || expr.callee == "contains") && expr.args.ln == 2 {
+            s1Reg = codegenExpr cg, expr.args[0], outBuf
+            s2Reg = codegenExpr cg, expr.args[1], outBuf
+            s1Int = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s1Int + " = fptosi double " + s1Reg + " to i64\n")
+            s1Ptr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s1Ptr + " = inttoptr i64 " + s1Int + " to ptr\n")
+            s2Int = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s2Int + " = fptosi double " + s2Reg + " to i64\n")
+            s2Ptr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s2Ptr + " = inttoptr i64 " + s2Int + " to ptr\n")
+            foundReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + foundReg + " = call ptr @strstr(ptr " + s1Ptr + ", ptr " + s2Ptr + ")\n")
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = icmp ne ptr " + foundReg + ", null\n")
+            resDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resDbl + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resDbl
+        } els if (expr.callee == "sub" || expr.callee == "slc") && expr.args.ln >= 2 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            stReg = codegenExpr cg, expr.args[1], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
+            sPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
+            stInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + stInt + " = fptosi double " + stReg + " to i64\n")
+            mut lenInt = ""
+            if expr.args.ln == 3 {
+                arg3Reg = codegenExpr cg, expr.args[2], outBuf
+                arg3Int = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + arg3Int + " = fptosi double " + arg3Reg + " to i64\n")
+                if expr.callee == "slc" {
+                    lenInt = newReg cg
+                    outBuf.code = outBuf.code.concat ("  " + lenInt + " = sub i64 " + arg3Int + ", " + stInt + "\n")
+                } els {
+                    lenInt = arg3Int
+                }
+            } els {
+                totLen = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + totLen + " = call i64 @strlen(ptr " + sPtr + ")\n")
+                lenInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + lenInt + " = sub i64 " + totLen + ", " + stInt + "\n")
+            }
+            allocLen = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + allocLen + " = add i64 " + lenInt + ", 1\n")
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + allocLen + ")\n")
+            srcPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + srcPtr + " = getelementptr inbounds i8, ptr " + sPtr + ", i64 " + stInt + "\n")
+            cpyReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cpyReg + " = call ptr @memcpy(ptr " + bufReg + ", ptr " + srcPtr + ", i64 " + lenInt + ")\n")
+            nullTerm = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + lenInt + "\n")
+            outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            -> bufDbl
+        } els if (expr.callee == "chr" || expr.callee == "charAt") && expr.args.ln == 2 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            idxReg = codegenExpr cg, expr.args[1], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
+            sPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
+            idxInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + idxInt + " = fptosi double " + idxReg + " to i64\n")
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 2)\n")
+            srcPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + srcPtr + " = getelementptr inbounds i8, ptr " + sPtr + ", i64 " + idxInt + "\n")
+            chVal = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + chVal + " = load i8, ptr " + srcPtr + "\n")
+            outBuf.code = outBuf.code.concat ("  store i8 " + chVal + ", ptr " + bufReg + "\n")
+            nullTerm = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 1\n")
+            outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            -> bufDbl
+        } els if (expr.callee == "cat" || expr.callee == "concat") && expr.args.ln == 2 {
+            s1Reg = codegenExpr cg, expr.args[0], outBuf
+            s2Reg = codegenExpr cg, expr.args[1], outBuf
+            s1Int = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s1Int + " = fptosi double " + s1Reg + " to i64\n")
+            s1Ptr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s1Ptr + " = inttoptr i64 " + s1Int + " to ptr\n")
+            s2Int = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s2Int + " = fptosi double " + s2Reg + " to i64\n")
+            s2Ptr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s2Ptr + " = inttoptr i64 " + s2Int + " to ptr\n")
+            l1 = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + l1 + " = call i64 @strlen(ptr " + s1Ptr + ")\n")
+            l2 = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + l2 + " = call i64 @strlen(ptr " + s2Ptr + ")\n")
+            totLen = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + totLen + " = add i64 " + l1 + ", " + l2 + "\n")
+            allocLen = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + allocLen + " = add i64 " + totLen + ", 1\n")
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + allocLen + ")\n")
+            cpy1 = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cpy1 + " = call ptr @memcpy(ptr " + bufReg + ", ptr " + s1Ptr + ", i64 " + l1 + ")\n")
+            dest2 = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + dest2 + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + l1 + "\n")
+            cpy2 = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cpy2 + " = call ptr @memcpy(ptr " + dest2 + ", ptr " + s2Ptr + ", i64 " + l2 + ")\n")
+            nullTerm = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + totLen + "\n")
+            outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            -> bufDbl
+        } els if (expr.callee == "eq" || expr.callee == "streq") && expr.args.ln == 2 {
+            s1Reg = codegenExpr cg, expr.args[0], outBuf
+            s2Reg = codegenExpr cg, expr.args[1], outBuf
+            s1Int = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s1Int + " = fptosi double " + s1Reg + " to i64\n")
+            s1Ptr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s1Ptr + " = inttoptr i64 " + s1Int + " to ptr\n")
+            s2Int = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s2Int + " = fptosi double " + s2Reg + " to i64\n")
+            s2Ptr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + s2Ptr + " = inttoptr i64 " + s2Int + " to ptr\n")
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = call i32 @strcmp(ptr " + s1Ptr + ", ptr " + s2Ptr + ")\n")
+            eqReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + eqReg + " = icmp eq i32 " + cmpReg + ", 0\n")
+            resDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resDbl + " = uitofp i1 " + eqReg + " to double\n")
+            -> resDbl
+        } els if expr.callee == "spn" && expr.args.ln == 1 {
+            mut fnName = ""
+            if expr.args[0].kind == "VariableExpr" {
+                fnName = expr.args[0].name
+            } els if expr.args[0].kind == "CallExpr" {
+                fnName = expr.args[0].callee
+            } els if expr.args[0].kind == "StringExpr" {
+                fnName = expr.args[0].val
+            }
+            wrapperName = "@spn_wrapper_" + fnName
+            cg.funcs = cg.funcs.concat ("define i32 " + wrapperName + "(ptr %param) {\nentry:\n  %call_res = call double @" + fnName + "()\n  ret i32 0\n}\n\n")
+            hReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + hReg + " = call ptr @CreateThread(ptr null, i64 0, ptr " + wrapperName + ", ptr null, i32 0, ptr null)\n")
+            hInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + hInt + " = ptrtoint ptr " + hReg + " to i64\n")
+            hDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + hDbl + " = sitofp i64 " + hInt + " to double\n")
+            -> hDbl
+        } els if expr.callee == "jn" && expr.args.ln == 1 {
+            hReg = codegenExpr cg, expr.args[0], outBuf
+            hInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + hInt + " = fptosi double " + hReg + " to i64\n")
+            hPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + hPtr + " = inttoptr i64 " + hInt + " to ptr\n")
+            wReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + wReg + " = call i32 @WaitForSingleObject(ptr " + hPtr + ", i32 -1)\n")
+            cReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cReg + " = call i32 @CloseHandle(ptr " + hPtr + ")\n")
+            -> "1.0"
+        } els if expr.callee == "nw" {
+            clkReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + clkReg + " = call i64 @clock()\n")
+            resDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resDbl + " = sitofp i64 " + clkReg + " to double\n")
+            -> resDbl
+        } els if expr.callee == "ok" && expr.args.ln == 1 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 16)\n")
+            outBuf.code = outBuf.code.concat ("  store i64 1, ptr " + bufReg + "\n")
+            valGep = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valGep + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 1\n")
+            valInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valInt + " = bitcast double " + pReg + " to i64\n")
+            outBuf.code = outBuf.code.concat ("  store i64 " + valInt + ", ptr " + valGep + "\n")
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            -> bufDbl
+        } els if expr.callee == "err" && expr.args.ln == 1 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 16)\n")
+            outBuf.code = outBuf.code.concat ("  store i64 0, ptr " + bufReg + "\n")
+            valGep = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valGep + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 1\n")
+            valInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valInt + " = bitcast double " + pReg + " to i64\n")
+            outBuf.code = outBuf.code.concat ("  store i64 " + valInt + ", ptr " + valGep + "\n")
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            -> bufDbl
+        } els if expr.callee == "sl" && expr.args.ln == 1 {
+            msReg = codegenExpr cg, expr.args[0], outBuf
+            msInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + msInt + " = fptosi double " + msReg + " to i32\n")
+            outBuf.code = outBuf.code.concat ("  call void @Sleep(i32 " + msInt + ")\n")
+            -> "0.0"
         }
 
-        mut argRegs = []
+        mut callArgsStr = ""
         mut i = 0
         wh i < expr.args.ln {
             arg = expr.args[i]
             aReg = codegenExpr cg, arg, outBuf
-            argRegs.psh aReg
+            if i > 0 { callArgsStr = callArgsStr.concat ", " }
+            callArgsStr = callArgsStr.concat ("double " + aReg)
             i = i + 1
-        }
-
-        mut callArgsStr = ""
-        mut j = 0
-        wh j < argRegs.ln {
-            if j > 0 { callArgsStr = callArgsStr.concat ", " }
-            callArgsStr = callArgsStr.concat ("double " + argRegs[j])
-            j = j + 1
         }
 
         retReg = newReg cg
         outBuf.code = outBuf.code.concat ("  " + retReg + " = call double @" + expr.callee + "(" + callArgsStr + ")\n")
         -> retReg
+    } els if expr.kind == "ArrayExpr" {
+        arrSize = expr.elements.ln
+        bufReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 8216)\n")
+        outBuf.code = outBuf.code.concat ("  store double " + arrSize + ".0, ptr " + bufReg + "\n")
+        mut ai = 0
+        wh ai < arrSize {
+            elem = expr.elements[ai]
+            elemReg = codegenExpr cg, elem, outBuf
+            elemInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + elemInt + " = bitcast double " + elemReg + " to i64\n")
+            elemOffset = ai + 1
+            gepReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 " + elemOffset + "\n")
+            outBuf.code = outBuf.code.concat ("  store i64 " + elemInt + ", ptr " + gepReg + "\n")
+            ai = ai + 1
+        }
+        bufInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+        bufDbl = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+        -> bufDbl
+    } els if expr.kind == "StructLiteral" {
+        bufReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 8192)\n")
+        mut fi = 0
+        wh fi < expr.fields.ln {
+            f = expr.fields[fi]
+            fOffset = findFieldOffset cg, f.name
+            fValReg = codegenExpr cg, f.value, outBuf
+            fValInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + fValInt + " = bitcast double " + fValReg + " to i64\n")
+            gepReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 " + fOffset + "\n")
+            outBuf.code = outBuf.code.concat ("  store i64 " + fValInt + ", ptr " + gepReg + "\n")
+            fi = fi + 1
+        }
+        bufInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+        bufDbl = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+        -> bufDbl
+    } els if expr.kind == "PropertyAccess" {
+        objReg = codegenExpr cg, expr.object, outBuf
+        objInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + objInt + " = fptosi double " + objReg + " to i64\n")
+        objPtr = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + objPtr + " = inttoptr i64 " + objInt + " to ptr\n")
+
+        if expr.property == "ln" || expr.property == "len" || expr.property == "length" {
+            mut isStrObj = 0
+            if expr.object.kind == "StringExpr" {
+                isStrObj = 1
+            } els if expr.object.kind == "VariableExpr" {
+                oName = expr.object.name
+                if oName == "text" || oName == "str" || oName == "s" || oName == "msg" || oName == "content" || oName == "path" || oName == "file" {
+                    isStrObj = 1
+                }
+            }
+            if isStrObj == 1 {
+                strByteCount = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + strByteCount + " = call i64 @strlen(ptr " + objPtr + ")\n")
+                dblReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + dblReg + " = sitofp i64 " + strByteCount + " to double\n")
+                -> dblReg
+            } els {
+                arrLenReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + arrLenReg + " = load double, ptr " + objPtr + "\n")
+                -> arrLenReg
+            }
+        } els {
+            fOffset = findFieldOffset cg, expr.property
+            gepReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + objPtr + ", i64 " + fOffset + "\n")
+            loadInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gepReg + "\n")
+            loadDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + loadDbl + " = bitcast i64 " + loadInt + " to double\n")
+            -> loadDbl
+        }
+    } els if expr.kind == "ArrayExpr" {
+        arrLen = expr.elements.ln
+        arrBytes = (arrLen + 1024) * 8
+        bufReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + arrBytes + ")\n")
+        outBuf.code = outBuf.code.concat ("  store double " + arrLen + ".0, ptr " + bufReg + "\n")
+        mut ei = 0
+        wh ei < expr.elements.ln {
+            elem = expr.elements[ei]
+            eValReg = codegenExpr cg, elem, outBuf
+            eValInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + eValInt + " = bitcast double " + eValReg + " to i64\n")
+            gepReg = newReg cg
+            elemIdx = ei + 1
+            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 " + elemIdx + "\n")
+            outBuf.code = outBuf.code.concat ("  store i64 " + eValInt + ", ptr " + gepReg + "\n")
+            ei = ei + 1
+        }
+        bufInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+        bufDbl = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+        -> bufDbl
+    } els if expr.kind == "IndexExpr" {
+        arrReg = codegenExpr cg, expr.array, outBuf
+        idxReg = codegenExpr cg, expr.index, outBuf
+        arrInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + arrInt + " = fptosi double " + arrReg + " to i64\n")
+        arrPtr = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + arrPtr + " = inttoptr i64 " + arrInt + " to ptr\n")
+        idxInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + idxInt + " = fptosi double " + idxReg + " to i64\n")
+        elemIdx = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + elemIdx + " = add i64 " + idxInt + ", 1\n")
+        gepReg = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + arrPtr + ", i64 " + elemIdx + "\n")
+        loadInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gepReg + "\n")
+        loadDbl = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + loadDbl + " = bitcast i64 " + loadInt + " to double\n")
+        -> loadDbl
+    } els if expr.kind == "UnaryExpr" {
+        rReg = codegenExpr cg, expr.right, outBuf
+        if expr.op == "!" || expr.op == "not" {
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp oeq double " + rReg + ", 0.0\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        } els if expr.op == "-" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = fneg double " + rReg + "\n")
+            -> resReg
+        }
+        -> rReg
     }
 
     -> "0.0"
@@ -216,11 +724,24 @@ codegenExpr cg, expr, outBuf {
 codegenStmt cg, stmt, outBuf {
     if stmt.kind == "VarDecl" {
         valReg = codegenExpr cg, stmt.value, outBuf
-        ptrReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + ptrReg + " = alloca double\n")
-        outBuf.code = outBuf.code.concat ("  store double " + valReg + ", ptr " + ptrReg + "\n")
-        addCgSymbol cg, stmt.name, ptrReg
+        sym = findCgSymbol cg, stmt.name
+        if sym.name != "" {
+            outBuf.code = outBuf.code.concat ("  store double " + valReg + ", ptr " + sym.reg + "\n")
+        } els {
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + ptrReg + " = alloca double\n")
+            outBuf.code = outBuf.code.concat ("  store double " + valReg + ", ptr " + ptrReg + "\n")
+            addCgSymbol cg, stmt.name, ptrReg
+        }
     } els if stmt.kind == "PrintStmt" {
+        if stmt.level == "lg" || stmt.level == "wrn" || stmt.level == "inf" || stmt.level == "err" {
+            mut pfx = "[LOG] "
+            if stmt.level == "wrn" { pfx = "[WRN] " }
+            els if stmt.level == "inf" { pfx = "[INF] " }
+            els if stmt.level == "err" { pfx = "[ERR] " }
+            pfxName = addStrConstant cg, pfx
+            outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr " + pfxName + ")\n")
+        }
         if stmt.value.kind == "StringExpr" {
             sName = addStrConstant cg, stmt.value.val
             outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sName + ")\n")
@@ -229,8 +750,12 @@ codegenStmt cg, stmt, outBuf {
             outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
         }
     } els if stmt.kind == "ReturnStmt" {
-        valReg = codegenExpr cg, stmt.value, outBuf
-        outBuf.code = outBuf.code.concat ("  ret double " + valReg + "\n")
+        if cg.isMain == 1 {
+            outBuf.code = outBuf.code.concat ("  ret i32 0\n")
+        } els {
+            valReg = codegenExpr cg, stmt.value, outBuf
+            outBuf.code = outBuf.code.concat ("  ret double " + valReg + "\n")
+        }
     } els if stmt.kind == "IfStmt" {
         condReg = codegenExpr cg, stmt.condition, outBuf
         cmpReg = newReg cg
@@ -257,6 +782,9 @@ codegenStmt cg, stmt, outBuf {
         bodyLbl = newLbl cg, "wh_body"
         endLbl = newLbl cg, "wh_end"
 
+        cg.breakLabels.psh endLbl
+        cg.continueLabels.psh condLbl
+
         outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
         outBuf.code = outBuf.code.concat (condLbl + ":\n")
         condReg = codegenExpr cg, stmt.condition, outBuf
@@ -269,6 +797,115 @@ codegenStmt cg, stmt, outBuf {
         outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
 
         outBuf.code = outBuf.code.concat (endLbl + ":\n")
+
+        cg.breakLabels.pp
+        cg.continueLabels.pp
+    } els if stmt.kind == "ForStmt" {
+        condLbl = newLbl cg, "for_cond"
+        bodyLbl = newLbl cg, "for_body"
+        stepLbl = newLbl cg, "for_step"
+        endLbl = newLbl cg, "for_end"
+
+        if stmt.init.kind != "" && stmt.init.kind != "NilExpr" {
+            codegenStmt cg, stmt.init, outBuf
+        }
+
+        cg.breakLabels.psh endLbl
+        cg.continueLabels.psh stepLbl
+
+        outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
+        outBuf.code = outBuf.code.concat (condLbl + ":\n")
+        if stmt.condition.kind != "" && stmt.condition.kind != "NilExpr" {
+            condReg = codegenExpr cg, stmt.condition, outBuf
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp one double " + condReg + ", 0.0\n")
+            outBuf.code = outBuf.code.concat ("  br i1 " + cmpReg + ", label %" + bodyLbl + ", label %" + endLbl + "\n\n")
+        } els {
+            outBuf.code = outBuf.code.concat ("  br label %" + bodyLbl + "\n\n")
+        }
+
+        outBuf.code = outBuf.code.concat (bodyLbl + ":\n")
+        codegenStmt cg, stmt.body, outBuf
+        outBuf.code = outBuf.code.concat ("  br label %" + stepLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (stepLbl + ":\n")
+        if stmt.increment.kind != "" && stmt.increment.kind != "NilExpr" {
+            codegenStmt cg, stmt.increment, outBuf
+        }
+        outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (endLbl + ":\n")
+
+        cg.breakLabels.pp
+        cg.continueLabels.pp
+    } els if stmt.kind == "BreakStmt" {
+        if cg.breakLabels.ln > 0 {
+            endLabel = cg.breakLabels[cg.breakLabels.ln - 1]
+            outBuf.code = outBuf.code.concat ("  br label %" + endLabel + "\n")
+            dummyLbl = newLbl cg, "brk_after"
+            outBuf.code = outBuf.code.concat ("\n" + dummyLbl + ":\n")
+        }
+    } els if stmt.kind == "ContinueStmt" {
+        if cg.continueLabels.ln > 0 {
+            contLabel = cg.continueLabels[cg.continueLabels.ln - 1]
+            outBuf.code = outBuf.code.concat ("  br label %" + contLabel + "\n")
+            dummyLbl = newLbl cg, "cont_after"
+            outBuf.code = outBuf.code.concat ("\n" + dummyLbl + ":\n")
+        }
+    } els if stmt.kind == "MatchStmt" {
+        tReg = codegenExpr cg, stmt.target, outBuf
+        tInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + tInt + " = fptosi double " + tReg + " to i64\n")
+        tPtr = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + tPtr + " = inttoptr i64 " + tInt + " to ptr\n")
+        tagInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + tagInt + " = load i64, ptr " + tPtr + "\n")
+        isOk = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + isOk + " = icmp eq i64 " + tagInt + ", 1\n")
+
+        okLbl = newLbl cg, "match_ok"
+        errLbl = newLbl cg, "match_err"
+        mergeLbl = newLbl cg, "match_merge"
+
+        outBuf.code = outBuf.code.concat ("  br i1 " + isOk + ", label %" + okLbl + ", label %" + errLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (okLbl + ":\n")
+        if stmt.okBody.kind != "" {
+            valGep = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valGep + " = getelementptr inbounds i64, ptr " + tPtr + ", i64 1\n")
+            valInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valInt + " = load i64, ptr " + valGep + "\n")
+            valDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valDbl + " = bitcast i64 " + valInt + " to double\n")
+            if stmt.okVar != "" {
+                okPtr = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + okPtr + " = alloca double\n")
+                outBuf.code = outBuf.code.concat ("  store double " + valDbl + ", ptr " + okPtr + "\n")
+                addCgSymbol cg, stmt.okVar, okPtr
+            }
+            codegenStmt cg, stmt.okBody, outBuf
+        }
+        outBuf.code = outBuf.code.concat ("  br label %" + mergeLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (errLbl + ":\n")
+        if stmt.errBody.kind != "" {
+            valGep = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valGep + " = getelementptr inbounds i64, ptr " + tPtr + ", i64 1\n")
+            valInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valInt + " = load i64, ptr " + valGep + "\n")
+            valDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + valDbl + " = bitcast i64 " + valInt + " to double\n")
+            if stmt.errVar != "" {
+                errPtr = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + errPtr + " = alloca double\n")
+                outBuf.code = outBuf.code.concat ("  store double " + valDbl + ", ptr " + errPtr + "\n")
+                addCgSymbol cg, stmt.errVar, errPtr
+            }
+            codegenStmt cg, stmt.errBody, outBuf
+        }
+        outBuf.code = outBuf.code.concat ("  br label %" + mergeLbl + "\n\n")
+
+        outBuf.code = outBuf.code.concat (mergeLbl + ":\n")
     } els if stmt.kind == "BlockStmt" {
         mut i = 0
         wh i < stmt.statements.ln {
@@ -334,7 +971,11 @@ generateLLVMFull program {
     header = header.concat "declare i32 @strcmp(ptr, ptr)\n"
     header = header.concat "declare i32 @fseek(ptr, i64, i32)\n"
     header = header.concat "declare i64 @ftell(ptr)\n"
-    header = header.concat "declare void @rewind(ptr)\n\n"
+    header = header.concat "declare void @rewind(ptr)\n"
+    header = header.concat "declare ptr @FindFirstFileA(ptr, ptr)\n"
+    header = header.concat "declare i32 @FindNextFileA(ptr, ptr)\n"
+    header = header.concat "declare i32 @FindClose(ptr)\n"
+    header = header.concat "declare i32 @snprintf(ptr, i64, ptr, ...)\n\n"
 
     header = header.concat "declare void @LLVMInitializeX86TargetInfo()\n"
     header = header.concat "declare void @LLVMInitializeX86Target()\n"
@@ -353,18 +994,51 @@ generateLLVMFull program {
     header = header.concat "@mode_r = private unnamed_addr constant [3 x i8] c\"rb\\00\"\n"
     header = header.concat "@mode_w = private unnamed_addr constant [3 x i8] c\"wb\\00\"\n"
     header = header.concat "@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n"
+    header = header.concat "@fmt_prefix = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n"
     header = header.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n"
-    header = header.concat "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"\n\n"
+    header = header.concat "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"\n"
+    header = header.concat "@fmt_pattern = private unnamed_addr constant [5 x i8] c\"%s/*\\00\"\n"
+    header = header.concat "@fmt_filepath = private unnamed_addr constant [6 x i8] c\"%s/%s\\00\"\n"
+    header = header.concat "@dot_str = private unnamed_addr constant [2 x i8] c\".\\00\"\n"
+    header = header.concat "@dotdot_str = private unnamed_addr constant [3 x i8] c\"..\\00\"\n\n"
+
+    header = header.concat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds i64, ptr %arr, i64 %nextCount\n  store i64 %strInt, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
 
     mut mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" }
+
+    // Pass 1: Declare top-level variables as global variables
+    mut gi = 0
+    wh gi < program.statements.ln {
+        stmt = program.statements[gi]
+        if stmt.kind == "VarDecl" {
+            gSym = findCgSymbol cg, stmt.name
+            if gSym.name == "" {
+                gReg = "@" + stmt.name
+                header = header.concat (gReg + " = global double 0.0\n")
+                addCgSymbol cg, stmt.name, gReg
+            }
+        } els if stmt.kind == "ForStmt" {
+            if stmt.init.kind == "VarDecl" {
+                gSym = findCgSymbol cg, stmt.init.name
+                if gSym.name == "" {
+                    gReg = "@" + stmt.init.name
+                    header = header.concat (gReg + " = global double 0.0\n")
+                    addCgSymbol cg, stmt.init.name, gReg
+                }
+            }
+        }
+        gi = gi + 1
+    }
 
     // Collect and generate function definitions & top-level statements
     mut i = 0
     wh i < program.statements.ln {
         stmt = program.statements[i]
         if stmt.kind == "FunctionDecl" {
+            cg.isMain = 0
             codegenFunctionDecl cg, stmt
         } els {
+            cg.isMain = 1
             codegenStmt cg, stmt, mainBuf
         }
         i = i + 1

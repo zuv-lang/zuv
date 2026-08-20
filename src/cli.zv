@@ -5,7 +5,7 @@ imp parseProgramFull frm parser
 imp checkProgram frm checker
 imp generateLLVMFull frm codegen
 
-handleBuild targetFile, isRelease, emitLlvm {
+handleBuild targetFile, isRelease, emitLlvm, outExe {
     if fE targetFile {
         code = rF targetFile
         prnt "==========================================="
@@ -21,23 +21,98 @@ handleBuild targetFile, isRelease, emitLlvm {
 
         lex = createLexer code
         toks = tokenizeFull lex
-        prog = parseProgramFull toks
+        mut prog = parseProgramFull toks
+        if prog.errors.ln > 0 {
+            mut pe = 0
+            wh pe < prog.errors.ln {
+                prnt ("[zuv build] " + prog.errors[pe])
+                pe = pe + 1
+            }
+            -> 0
+        }
+
+        // Resolve module imports
+        mut importedStmts = []
+        mut ii = 0
+        wh ii < prog.statements.ln {
+            s = prog.statements[ii]
+            if s.kind == "ImportStmt" {
+                mut impPath = s.fromPath
+                if impPath == "" && s.paths.ln > 0 {
+                    impPath = s.paths[0]
+                }
+                if impPath != "" && impPath != "str" && impPath != "arr" && impPath != "fs" && impPath != "time" && impPath != "thread" && impPath != "thr" && impPath != "os" {
+                    mut fullImpPath = impPath + ".zv"
+                    if (fE fullImpPath) == 0 {
+                        fullImpPath = "tests/" + impPath + ".zv"
+                    }
+                    if (fE fullImpPath) == 1 {
+                        impCode = rF fullImpPath
+                        impLex = createLexer impCode
+                        impToks = tokenizeFull impLex
+                        impProg = parseProgramFull impToks
+                        mut ij = 0
+                        wh ij < impProg.statements.ln {
+                            importedStmts.psh impProg.statements[ij]
+                            ij = ij + 1
+                        }
+                    }
+                }
+            }
+            ii = ii + 1
+        }
+        if importedStmts.ln > 0 {
+            mut combinedStmts = []
+            mut ck = 0
+            wh ck < importedStmts.ln {
+                combinedStmts.psh importedStmts[ck]
+                ck = ck + 1
+            }
+            mut cl = 0
+            wh cl < prog.statements.ln {
+                combinedStmts.psh prog.statements[cl]
+                cl = cl + 1
+            }
+            prog.statements = combinedStmts
+        }
+
         okSafety = checkProgram prog
         if okSafety == 1 {
             ir = generateLLVMFull prog
 
+            mut targetExe = outExe
+            if targetExe == "" {
+                targetExe = "output.exe"
+            }
+
             if emitLlvm == 1 {
                 wF "output_selfhost.ll", ir
                 prnt "[zuv build] Successfully generated output_selfhost.ll via self-hosting compiler!"
+                -> 1
             } els {
-                wF "output_selfhost.ll", ir
+                llPath = targetExe + ".ll"
+                wF llPath, ir
+                mut optFlag = ""
                 if isRelease == 1 {
-                    prnt "[zuv build] Successfully generated output.exe (-O3 Native)"
+                    optFlag = "-O3"
+                }
+                clangCmd = "clang " + optFlag + " -Wl,-stack:33554432 \"" + llPath + "\" -o \"" + targetExe + "\" -Wno-override-module > nul 2>&1"
+                cRes = sh clangCmd
+                if fE llPath {
+                    rmF llPath
+                }
+                if cRes == 0 {
+                    if isRelease == 1 {
+                        prnt ("[zuv build] Successfully generated " + targetExe + " (-O3 Native)")
+                    } els {
+                        prnt ("[zuv build] Successfully generated " + targetExe + " (Debug)")
+                    }
+                    -> 1
                 } els {
-                    prnt "[zuv build] Successfully generated output.exe (Debug)"
+                    err "[zuv build] Native code compilation via Clang failed."
+                    -> 0
                 }
             }
-            -> 1
         } els {
             err "[zuv build] Safety or borrow checker validation failed."
             -> 0
@@ -69,9 +144,10 @@ handleCheck targetFile {
 }
 
 handleRun targetFile {
-    res = handleBuild targetFile, 0, 0
+    res = handleBuild targetFile, 0, 0, "output.exe"
     if res == 1 {
         prnt ("[zuv run] Executing output.exe for " + targetFile)
+        sh ".\\output.exe"
     }
     -> res
 }
@@ -143,12 +219,11 @@ handleTest {
 
         tStart = nw
         tempExe = "test_run_temp.exe"
-        buildCmd = "d:\\rujs\\zuv.exe build " + tFile + " -o " + tempExe + " > nul 2>&1"
-        buildRes = sh buildCmd
+        buildOk = handleBuild tFile, 0, 0, tempExe
 
         if isExpectedError == 1 {
             tElapsed = nw - tStart
-            if buildRes != 0 {
+            if buildOk == 0 {
                 prnt (" PASS " + tFile + " (" + tElapsed + "ms) [Expected Error]")
                 passCount = passCount + 1
             } els {
@@ -156,7 +231,7 @@ handleTest {
                 failCount = failCount + 1
             }
         } els {
-            if buildRes != 0 {
+            if buildOk == 0 {
                 tElapsed = nw - tStart
                 prnt (" FAIL " + tFile + " (" + tElapsed + "ms) [Compilation Failed]")
                 failCount = failCount + 1
@@ -196,9 +271,9 @@ handleTest {
 }
 
 runCompiler targetFile {
-    handleBuild targetFile, 0, 0
+    handleBuild targetFile, 0, 0, "output.exe"
 }
 
-runCompilerOpt targetFile, isRelease, emitLlvm {
-    handleBuild targetFile, isRelease, emitLlvm
+runCompilerOpt targetFile, isRelease, emitLlvm, outExe {
+    handleBuild targetFile, isRelease, emitLlvm, outExe
 }

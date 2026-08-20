@@ -87,13 +87,13 @@ main {
 ## 🧰 CLI Commands & Subsystem Status
 
 | Command | Usage | Description | Implementation Status |
-| :--- | :--- | :--- | :---: |
-| `test` | `.\output.exe test` | Run automated native AOT unit test runner across all 27 test files | ✅ **Fully Implemented** |
-| `checkall` | `.\output.exe checkall` | Run project-wide static syntax & borrow checker without compiling | ✅ **Fully Implemented** |
-| `check` | `.\output.exe check [file.zv]` | Run fast lexing, parsing, and borrow checker on a single file | ✅ **Fully Implemented** |
-| `build` | `.\output.exe build [file.zv]` | Compile Zuv source to native LLVM IR and executable binary (`.exe`) | ✅ **Fully Implemented** |
-| `run` | `.\output.exe run [file.zv]` | Compile and immediately execute the target binary | ✅ **Fully Implemented** |
-| `fmt` | `.\output.exe fmt [file.zv]` | Auto-format `.zv` source code with standard indentation | 🟡 *Stub* |
+| :--- | :--- | :--- | :--- |
+| `test` | `zuv test` | Run automated native AOT unit test runner across all 27 test files | ✅ **Fully Implemented** |
+| `checkall` | `zuv checkall` | Run project-wide static syntax & borrow checker without compiling | ✅ **Fully Implemented** |
+| `check` | `zuv check [file.zv]` | Run fast lexing, parsing, and borrow checker on a single file | ✅ **Fully Implemented** |
+| `build` | `zuv build [file.zv]` | Compile Zuv source to native LLVM IR and executable binary (`.exe`) | ✅ **Fully Implemented** |
+| `run` | `zuv run [file.zv]` | Compile and immediately execute the target binary | ✅ **Fully Implemented** |
+| `fmt` | `zuv fmt [file.zv]` | Auto-format `.zv` source code with standard indentation | 🟡 *Stub* |
 | `init` | `zuv init [project_name]` | Scaffold a new Zuv project with `zuv.yml` and `src/main.zv` | 🟡 *Stub* (in `zuv.exe`) |
 | `lsp` | `zuv lsp` | Language Server Protocol (JSON-RPC) daemon for IDEs | 🟡 *Stub* (in `zuv-tools`) |
 
@@ -135,31 +135,76 @@ zuv/
 
 ---
 
+## 📦 Default Installation Path & Environment PATH Setup
+
+### 1. Default Installation Path
+The standard installation location for the Zuv binary on Windows is:
+```text
+C:\Users\<username>\zuv\bin\zuv.exe
+```
+*(or `%USERPROFILE%\zuv\bin\zuv.exe`)*
+
+### 2. Setting Environment PATH
+
+To run `zuv` from anywhere in your terminal or IDE, add the `zuv\bin` directory to your User `PATH` environment variable.
+
+#### Option A: Via PowerShell (Recommended)
+Run the following command in PowerShell:
+```powershell
+# Create the directory if it doesn't exist
+New-Item -ItemType Directory -Force -Path "$HOME\zuv\bin"
+
+# Add to User PATH persistently
+[Environment]::SetEnvironmentVariable(
+    "Path",
+    [Environment]::GetEnvironmentVariable("Path", "User") + ";$HOME\zuv\bin",
+    "User"
+)
+```
+
+#### Option B: Via Windows Settings GUI
+1. Press `Win + R`, type `sysdm.cpl`, and hit **Enter**.
+2. Go to the **Advanced** tab and click **Environment Variables...**.
+3. Under **User variables for <your-username>**, select `Path` and click **Edit...**.
+4. Click **New** and add: `C:\Users\<username>\zuv\bin` (replace `<username>` with your Windows user name).
+5. Click **OK** to save and restart your terminal.
+
+#### Option C: Verify Installation
+Open a new PowerShell or Command Prompt terminal and run:
+```powershell
+zuv --help
+```
+
+---
+
 ## 🛠️ Building & Running the Self-Hosting Compiler
 
 ### 1. Compile the Self-Hosting Compiler
-Compile the pure Zuv compiler sources using the stage 1 bootstrap binary:
+Compile the pure Zuv compiler sources:
 ```powershell
-d:\rujs\zuv.exe build src/main.zv
+zuv build src/main.zv
 ```
-This produces `output.exe` in `sub_projects/zuv/`.
+To install the built compiler to your default binary folder:
+```powershell
+Copy-Item output.exe "C:\Users\$env:USERNAME\zuv\bin\zuv.exe" -Force
+```
 
 ### 2. Run the Native AOT Test Runner
-Execute all 27 unit test suites natively:
+Execute all 27 unit test suites natively using `zuv`:
 ```powershell
-.\output.exe test
+zuv test
 ```
 
 ### 3. Run Static Type & Borrow Checker
 Verify syntax and borrow safety across all test suites without emitting binaries:
 ```powershell
-.\output.exe checkall
+zuv checkall
 ```
 
 ### 4. Build and Run a Zuv Program
 ```powershell
-.\output.exe build tests/functions.test.zv
-.\output.exe run tests/functions.test.zv
+zuv build tests/functions.test.zv
+zuv run tests/functions.test.zv
 ```
 
 ---

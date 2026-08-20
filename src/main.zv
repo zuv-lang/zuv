@@ -4,7 +4,7 @@ imp handleBuild, handleCheck, handleCheckAll, handleTest, handleRun, handleFmt f
 imp createLexer, tokenizeFull frm lexer
 imp parseProgramFull frm parser
 
-main cmd, fileArg {
+main cmd, fileArg, arg3, arg4 {
     mut targetFile = fileArg
     if targetFile == "" {
         if fE "src/main.zv" {
@@ -12,6 +12,23 @@ main cmd, fileArg {
         } els {
             targetFile = "main.zv"
         }
+    }
+
+    mut isRelease = 0
+    mut emitLlvm = 0
+    mut outExe = "output.exe"
+
+    if arg3 == "-o" && arg4 != "" {
+        outExe = arg4
+    }
+    if arg3 == "--release" || arg3 == "-r" {
+        isRelease = 1
+    }
+    if arg3 == "--emit-llvm" || arg3 == "-S" {
+        emitLlvm = 1
+    }
+    if arg4 == "--release" || arg4 == "-r" {
+        isRelease = 1
     }
 
     if cmd == "test" {
@@ -24,7 +41,7 @@ main cmd, fileArg {
                 handleCheck targetFile
             } els {
                 if cmd == "build" {
-                    handleBuild targetFile, 0, 0
+                    handleBuild targetFile, isRelease, emitLlvm, outExe
                 } els {
                     if cmd == "run" {
                         handleRun targetFile
