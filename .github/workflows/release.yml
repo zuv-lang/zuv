@@ -98,14 +98,14 @@ jobs:
             target: windows-x64
             bin_name: zuv.exe
             asset_name: zuv-windows-x64.zip
-          - os: ubuntu-latest
-            target: linux-x64
-            bin_name: zuv
-            asset_name: zuv-linux-x64.tar.gz
-          - os: macos-latest
-            target: macos-arm64
-            bin_name: zuv
-            asset_name: zuv-macos-arm64.tar.gz
+          # - os: ubuntu-latest
+          #   target: linux-x64
+          #   bin_name: zuv
+          #   asset_name: zuv-linux-x64.tar.gz
+          # - os: macos-latest
+          #   target: macos-arm64
+          #   bin_name: zuv
+          #   asset_name: zuv-macos-arm64.tar.gz
 
     steps:
       - name: Checkout Source (Pure Zuv)
@@ -184,14 +184,18 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Copy-Item "./bin/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
-          Compress-Archive -Path "${{ matrix.bin_name }}", src, zuv.yml -DestinationPath ${{ matrix.asset_name }}
+          Compress-Archive -Path "./bin/${{ matrix.bin_name }}" -DestinationPath ${{ matrix.asset_name }}
 
-      - name: Package Release Archive (Unix)
-        if: runner.os != 'Windows'
+      - name: Package Release Archive (Linux)
+        if: runner.os == 'Linux'
         run: |
-          cp "./bin/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
-          tar -czvf ${{ matrix.asset_name }} "${{ matrix.bin_name }}" src zuv.yml
+          tar -czvf ${{ matrix.asset_name }} -C ./bin "${{ matrix.bin_name }}"
+
+      - name: Package Release Archive (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" "./bin/${{ matrix.bin_name }}" 2>/dev/null || true
+          tar -czvf ${{ matrix.asset_name }} -C ./bin "${{ matrix.bin_name }}"
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4

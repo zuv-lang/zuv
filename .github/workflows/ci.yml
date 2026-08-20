@@ -22,12 +22,12 @@ jobs:
           - os: windows-latest
             target: windows-x64
             bin: zuv.exe
-          - os: ubuntu-latest
-            target: linux-x64
-            bin: zuv
-          - os: macos-latest
-            target: macos-arm64
-            bin: zuv
+          # - os: ubuntu-latest
+          #   target: linux-x64
+          #   bin: zuv
+          # - os: macos-latest
+          #   target: macos-arm64
+          #   bin: zuv
 
     steps:
       - name: Checkout Source (Pure Zuv)
