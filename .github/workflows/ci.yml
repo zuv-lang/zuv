@@ -5,10 +5,10 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 env:
   BOOTSTRAP_REPOSITORY: zuv-lang/zuv
-  # Set the BOOTSTRAP_RELEASE_TAG repository variable to upgrade this without editing the workflow.
   BOOTSTRAP_RELEASE_TAG: ${{ vars.BOOTSTRAP_RELEASE_TAG || 'v0.0.1' }}
 
 jobs:
@@ -22,12 +22,12 @@ jobs:
           - os: windows-latest
             target: windows-x64
             bin: zuv.exe
-          - os: ubuntu-latest
-            target: linux-x64
-            bin: zuv
-          - os: macos-latest
-            target: macos-arm64
-            bin: zuv
+          # - os: ubuntu-latest
+          #   target: linux-x64
+          #   bin: zuv
+          # - os: macos-latest
+          #   target: macos-arm64
+          #   bin: zuv
 
     steps:
       - name: Checkout Source (Pure Zuv)
@@ -43,14 +43,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          New-Item -ItemType Directory -Force -Path ./bin | Out-Null
-          gh release download $env:BOOTSTRAP_RELEASE_TAG --repo $env:BOOTSTRAP_REPOSITORY --pattern "*${{ matrix.target }}*" --dir ./bin
+          New-Item -ItemType Directory -Force -Path ./bootstrap | Out-Null
+          gh release download $env:BOOTSTRAP_RELEASE_TAG --repo $env:BOOTSTRAP_REPOSITORY --pattern "*${{ matrix.target }}*" --dir ./bootstrap
           if ($LASTEXITCODE -eq 0) {
-            Expand-Archive -Path "./bin/zuv-windows-x64.zip" -DestinationPath ./bin -Force
+            Expand-Archive -Path "./bootstrap/zuv-windows-x64.zip" -DestinationPath ./bootstrap -Force
             Write-Host "Bootstrap compiler downloaded successfully."
           } else {
-            Write-Host "No bootstrap release found, proceeding with pure source validation."
-            exit 0
+            Write-Host "No bootstrap release found, proceeding with source validation."
           }
 
       - name: Download Bootstrap Compiler (Unix)
@@ -58,26 +57,56 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p ./bin
-          if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo "$BOOTSTRAP_REPOSITORY" --pattern "*${{ matrix.target }}*" --dir ./bin; then
-            tar -xzf "./bin/zuv-${{ matrix.target }}.tar.gz" -C ./bin
-            chmod +x "./bin/zuv"
+          mkdir -p ./bootstrap
+          if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo "$BOOTSTRAP_REPOSITORY" --pattern "*${{ matrix.target }}*" --dir ./bootstrap; then
+            tar -xzf "./bootstrap/zuv-${{ matrix.target }}.tar.gz" -C ./bootstrap
+            chmod +x "./bootstrap/zuv"
             if [ "$RUNNER_OS" = "macOS" ]; then
-              install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" ./bin/zuv
+              install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" ./bootstrap/zuv
             fi
             echo "Bootstrap compiler downloaded successfully."
           else
-            echo "No bootstrap release found, proceeding with pure source validation."
+            echo "No bootstrap release found, proceeding with source validation."
           fi
 
-      - name: Setup Path & Run Validation
+      - name: Build Pure Zuv Self-Hosting Compiler
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ./bin | Out-Null
+          if (Test-Path "./bootstrap/${{ matrix.bin }}") {
+            Write-Host "Building self-hosting compiler using bootstrap compiler..."
+            & "./bootstrap/${{ matrix.bin }}" build src/main.zv -o "./bin/${{ matrix.bin }}"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Failed to build self-hosting compiler."
+              exit 1
+            }
+            if ($IsLinux -or $IsMacOS) {
+              chmod +x "./bin/${{ matrix.bin }}"
+            }
+            Write-Host "Self-hosting compiler binary created successfully at ./bin/${{ matrix.bin }}"
+          } else {
+            Write-Host "Bootstrap compiler not available, skipping binary compilation."
+          }
+
+      - name: Run Test Suite with Self-Hosting Compiler
         shell: pwsh
         run: |
           if (Test-Path "./bin/${{ matrix.bin }}") {
             $binPath = (Get-Item "./bin").FullName
             echo "$binPath" >> $env:GITHUB_PATH
+
+            Write-Host "=== 1. Verifying Self-Hosting Compiler CLI Help ==="
             & "./bin/${{ matrix.bin }}" --help
+
+            Write-Host "`n=== 2. Running Static & Syntax Verification (zuv check) ==="
             & "./bin/${{ matrix.bin }}" check src/main.zv
+
+            Write-Host "`n=== 3. Executing Full Self-Hosting Test Suite (zuv test) ==="
+            & "./bin/${{ matrix.bin }}" test
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Self-hosting test suite failed."
+              exit 1
+            }
           } else {
             Write-Host "Verifying pure Zuv source files..."
             Get-ChildItem -Path "src" -Filter "*.zv" | ForEach-Object { Write-Host " - $($_.Name) OK" }

@@ -139,9 +139,13 @@ checkExpr checker, expr {
 
 checkStatement checker, stmt {
     if stmt.kind == "VarDecl" {
+        if stmt.value.kind == "NilExpr" || stmt.value.kind == "" {
+            checker.errors.psh ("Semantic Error: Invalid variable initialization for '" + stmt.name + "'")
+        }
         checkExpr checker, stmt.value
         declareVar checker, stmt.name, stmt.isMut
     } els if stmt.kind == "FunctionDecl" {
+        declareVar checker, stmt.name, 0
         pushCheckerScope checker
         mut i = 0
         wh i < stmt.params.ln {
@@ -178,6 +182,17 @@ checkStatement checker, stmt {
     } els if stmt.kind == "WhileStmt" {
         checkExpr checker, stmt.condition
         checkStatement checker, stmt.body
+    } els if stmt.kind == "ForStmt" {
+        if stmt.init.kind != "" {
+            checkStatement checker, stmt.init
+        }
+        if stmt.condition.kind != "" {
+            checkExpr checker, stmt.condition
+        }
+        if stmt.increment.kind != "" {
+            checkStatement checker, stmt.increment
+        }
+        checkStatement checker, stmt.body
     } els if stmt.kind == "ReturnStmt" {
         checkExpr checker, stmt.value
     } els if stmt.kind == "PrintStmt" {
@@ -201,6 +216,24 @@ checkStatement checker, stmt {
             }
             pi = pi + 1
         }
+    } els if stmt.kind == "MatchStmt" {
+        checkExpr checker, stmt.target
+        pushCheckerScope checker
+        if stmt.okVar != "" {
+            declareVar checker, stmt.okVar, 0
+        }
+        if stmt.okBody.kind != "" {
+            checkStatement checker, stmt.okBody
+        }
+        popCheckerScope checker
+        pushCheckerScope checker
+        if stmt.errVar != "" {
+            declareVar checker, stmt.errVar, 0
+        }
+        if stmt.errBody.kind != "" {
+            checkStatement checker, stmt.errBody
+        }
+        popCheckerScope checker
     } els {
         checkExpr checker, stmt
     }

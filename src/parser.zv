@@ -203,6 +203,11 @@ createWhileNode cond, body {
     -> res
 }
 
+createForNode initS, cond, incS, body {
+    res = { kind: "ForStmt", init: initS, condition: cond, increment: incS, body: body }
+    -> res
+}
+
 createFuncNode name, params, body, isAsync {
     res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync }
     -> res
@@ -238,7 +243,22 @@ parseExpression p, precedence {
         left = createBoolNode t.val
     } els if t.kind == "NIL" {
         left = createNilNode
-    } els if t.kind == "IDENT" {
+    } els if t.val == "[" {
+        mut elements = []
+        if (peekTok p).val != "]" {
+            advanceParser p
+            firstElem = parseExpression p, 0
+            elements.psh firstElem
+            wh (peekTok p).val == "," {
+                advanceParser p // consume ','
+                advanceParser p // move to next elem
+                nextElem = parseExpression p, 0
+                elements.psh nextElem
+            }
+        }
+        expectPeekToken p, "SYM", "]"
+        left = createArrayNode elements
+    } els if t.kind == "IDENT" || (t.kind == "KEYWORD" && (t.val == "ok" || t.val == "err")) {
         varName = t.val
         peekT = peekTok p
         if peekT.val == "{" {
@@ -265,7 +285,20 @@ parseExpression p, precedence {
             }
             expectPeekToken p, "SYM", "}"
             left = createStructLitNode varName, fields
-        } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
+        } els if (peekTok p).val == "(" {
+            advanceParser p // consume '('
+            advanceParser p
+            firstArg = parseExpression p, 0
+            mut args = [firstArg]
+            wh (peekTok p).val == "," {
+                advanceParser p // consume ','
+                advanceParser p
+                nextArg = parseExpression p, 0
+                args.psh nextArg
+            }
+            expectPeekToken p, "SYM", ")"
+            left = createCallNode varName, args
+        } els if (peekTok p).line == t.line && ((peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT") {
             mut args = []
             advanceParser p
             firstArg = parseExpression p, 0
@@ -323,11 +356,23 @@ parseExpression p, precedence {
         advanceParser p
         left = parseExpression p, 0
         expectPeekToken p, "SYM", ")"
-    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&")) || (t.kind == "KEYWORD" && t.val == "not") {
+    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await")) {
         op = t.val
+        if op == "&" && (peekTok p).val == "mut" {
+            advanceParser p // skip 'mut'
+        }
         advanceParser p
         right = parseExpression p, 8
-        left = createUnaryNode op, right
+        if op == "awt" || op == "await" {
+            mut emptyArgs = []
+            if right.kind == "VariableExpr" {
+                left = createCallNode right.name, emptyArgs
+            } els {
+                left = right
+            }
+        } els {
+            left = createUnaryNode op, right
+        }
     } els {
         left = createNilNode
     }
@@ -350,7 +395,7 @@ parseExpression p, precedence {
                     if propName == "pp" || propName == "pop" {
                         mut args = [left]
                         left = createCallNode propName, args
-                    } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "IDENT" {
+                    } els if (peekTok p).line == (curTok p).line && ((peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "IDENT") {
                         advanceParser p
                         firstArg = parseExpression p, 0
                         mut args = [left, firstArg]
@@ -368,8 +413,10 @@ parseExpression p, precedence {
                     advanceParser p // consume '['
                     advanceParser p
                     idx = parseExpression p, 0
-                    expectPeekToken p, "SYM", "]"
-                    if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
+                    if (peekTok p).val == "]" {
+                        advanceParser p // consume ']'
+                    }
+                    if (peekTok p).line == (curTok p).line && ((peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT") {
                         advanceParser p
                         arg = parseExpression p, 0
                         mut callArgs = [arg]
@@ -417,15 +464,20 @@ parseExpression p, precedence {
     -> left
 }
 
-// ── Statement Parser ─────────────────────────────────────────────────────────
 parseBlock p {
-    expectPeekToken p, "SYM", "{"
-    advanceParser p // consume '{' to first statement
+    if (peekTok p).val == "{" {
+        advanceParser p // move curTok to '{'
+    }
+    advanceParser p // move curTok to first statement inside block
     mut stmts = []
     wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
         s = parseStatement p
         if s.kind != "" {
             stmts.psh s
+        }
+        if (peekTok p).val == "}" {
+            advanceParser p
+            brk
         }
         advanceParser p
     }
@@ -445,8 +497,11 @@ parseStatement p {
         }
         if (peekTok p).val == "frm" {
             advanceParser p // consume 'frm'
-            advanceParser p // consume module name
-            fromPath = (curTok p).val
+            mut fromPath = ""
+            wh (peekTok p).line == t.line && (peekTok p).kind != "EOF" {
+                advanceParser p
+                fromPath = fromPath + (curTok p).val
+            }
             mut emptyPaths = []
             -> createImportNode emptyPaths, items, fromPath
         } els {
@@ -466,11 +521,62 @@ parseStatement p {
         advanceParser p
         expr = parseExpression p, 0
         -> createReturnNode expr
+    } els if t.kind == "KEYWORD" && (t.val == "wrk" || t.val == "worker" || t.val == "asc" || t.val == "async") {
+        advanceParser p
+        fnName = (curTok p).val
+        body = parseBlock p
+        mut emptyParams = []
+        -> createFuncNode fnName, emptyParams, body, 0
+    } els if t.kind == "KEYWORD" && t.val == "mch" {
+        advanceParser p
+        targetExpr = parseExpression p, 0
+        if (peekTok p).val == "{" {
+            advanceParser p // move curTok to '{'
+        }
+        advanceParser p // move curTok to first case pattern (ok, err)
+        mut okVar = ""
+        mut okBody = { kind: "" }
+        mut errVar = ""
+        mut errBody = { kind: "" }
+        wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+            armKind = (curTok p).val
+            if armKind == "ok" {
+                if (peekTok p).val == "(" {
+                    advanceParser p // consume '('
+                    advanceParser p // move to var name
+                    okVar = (curTok p).val
+                    expectPeekToken p, "SYM", ")"
+                }
+                expectPeekToken p, "SYM", "=>"
+                okBody = parseBlock p
+                if (curTok p).val == "}" {
+                    advanceParser p // move past '}' to next arm or outer '}'
+                }
+            } els if armKind == "err" {
+                if (peekTok p).val == "(" {
+                    advanceParser p // consume '('
+                    advanceParser p // move to var name
+                    errVar = (curTok p).val
+                    expectPeekToken p, "SYM", ")"
+                }
+                expectPeekToken p, "SYM", "=>"
+                errBody = parseBlock p
+                if (curTok p).val == "}" {
+                    advanceParser p // move past '}' to next arm or outer '}'
+                }
+            } els {
+                advanceParser p
+            }
+        }
+        res = { kind: "MatchStmt", target: targetExpr, okVar: okVar, okBody: okBody, errVar: errVar, errBody: errBody }
+        -> res
     } els if t.kind == "KEYWORD" && t.val == "mut" {
         advanceParser p
         vName = (curTok p).val
-        expectPeekToken p, "SYM", "="
-        advanceParser p
+        if (peekTok p).val == "=" {
+            advanceParser p // consume '='
+        }
+        advanceParser p // move to expression
         valExpr = parseExpression p, 0
         -> createVarDeclNode vName, valExpr, 1
     } els if t.kind == "KEYWORD" && t.val == "main" {
@@ -521,10 +627,37 @@ parseStatement p {
         condExpr = parseExpression p, 0
         body = parseBlock p
         -> createWhileNode condExpr, body
+    } els if t.kind == "KEYWORD" && (t.val == "fr" || t.val == "for") {
+        advanceParser p // move to init
+        initStmt = parseStatement p
+        if (curTok p).val == ";" {
+            advanceParser p
+        } els if (peekTok p).val == ";" {
+            advanceParser p // consume ';'
+            advanceParser p // move to cond
+        }
+        condExpr = parseExpression p, 0
+        if (curTok p).val == ";" {
+            advanceParser p
+        } els if (peekTok p).val == ";" {
+            advanceParser p // consume ';'
+            advanceParser p // move to inc
+        }
+        incStmt = parseStatement p
+        body = parseBlock p
+        -> createForNode initStmt, condExpr, incStmt, body
+    } els if t.kind == "KEYWORD" && (t.val == "brk" || t.val == "break") {
+        -> { kind: "BreakStmt" }
+    } els if t.kind == "KEYWORD" && (t.val == "cont" || t.val == "continue") {
+        -> { kind: "ContinueStmt" }
     } els if t.kind == "IDENT" {
         identName = t.val
         if (peekTok p).val == "=" {
             advanceParser p // consume '='
+            if (peekTok p).kind == "EOF" {
+                p.errors.psh "Syntax Error: Expected expression after '='"
+                -> { kind: "" }
+            }
             advanceParser p
             valExpr = parseExpression p, 0
             -> createVarDeclNode identName, valExpr, 0
@@ -602,7 +735,7 @@ parseStatement p {
             body = parseBlock p
             mut emptyParams = []
             -> createFuncNode identName, emptyParams, body, 0
-        } els if (peekTok p).kind == "IDENT" {
+        } els if (peekTok p).line == t.line && (peekTok p).kind == "IDENT" {
             // Function declaration with params or function call
             advanceParser p
             pValFirst = (curTok p).val
@@ -627,21 +760,23 @@ parseStatement p {
             } els {
                 // Parenthesis-free call statement
                 mut args = []
-                wh (curTok p).kind != "EOF" && (curTok p).val != "\n" {
-                    vNode = createVariableNode (curTok p).val
+                mut ai = 0
+                wh ai < params.ln {
+                    vNode = createVariableNode params[ai]
                     args.psh vNode
-                    if (peekTok p).val == "," {
-                        advanceParser p
-                        advanceParser p
-                    } els {
-                        advanceParser p
-                        -> createCallNode identName, args
-                    }
+                    ai = ai + 1
                 }
-                -> createCallNode identName, args
+                callNode = createCallNode identName, args
+                -> createExpressionStmtNode callNode
             }
         } els {
             expr = parseExpression p, 0
+            if expr.kind == "VariableExpr" && (peekTok p).line > t.line {
+                // 0-argument function call statement
+                mut emptyArgs = []
+                callNode = createCallNode expr.name, emptyArgs
+                -> createExpressionStmtNode callNode
+            }
             -> { kind: "ExpressionStmt", expr: expr }
         }
     } els {
@@ -657,11 +792,17 @@ parseProgramFull tokens {
     wh (curTok p).kind != "EOF" {
         stmt = parseStatement p
         if stmt.kind != "" {
-            statements.psh stmt
+            if stmt.kind == "ExpressionStmt" {
+                if stmt.expr.kind != "NilExpr" && stmt.expr.kind != "" {
+                    statements.psh stmt
+                }
+            } els {
+                statements.psh stmt
+            }
         }
         advanceParser p
     }
 
-    res = { statements: statements }
+    res = { statements: statements, errors: p.errors }
     -> res
 }

@@ -98,14 +98,14 @@ jobs:
             target: windows-x64
             bin_name: zuv.exe
             asset_name: zuv-windows-x64.zip
-          - os: ubuntu-latest
-            target: linux-x64
-            bin_name: zuv
-            asset_name: zuv-linux-x64.tar.gz
-          - os: macos-latest
-            target: macos-arm64
-            bin_name: zuv
-            asset_name: zuv-macos-arm64.tar.gz
+          # - os: ubuntu-latest
+          #   target: linux-x64
+          #   bin_name: zuv
+          #   asset_name: zuv-linux-x64.tar.gz
+          # - os: macos-latest
+          #   target: macos-arm64
+          #   bin_name: zuv
+          #   asset_name: zuv-macos-arm64.tar.gz
 
     steps:
       - name: Checkout Source (Pure Zuv)
@@ -113,54 +113,89 @@ jobs:
         with:
           ref: ${{ needs.determine-version.outputs.target_commit }}
 
-      - name: Download Pre-built Compiler Binary (Windows)
+      - name: Install LLVM Runtime (macOS)
+        if: runner.os == 'macOS'
+        run: brew install llvm
+
+      - name: Download Bootstrap Compiler (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          New-Item -ItemType Directory -Force -Path ./dist | Out-Null
-          gh release download $env:BOOTSTRAP_RELEASE_TAG --repo $env:BOOTSTRAP_REPOSITORY --pattern "*${{ matrix.target }}*" --dir ./dist
+          New-Item -ItemType Directory -Force -Path ./bootstrap | Out-Null
+          gh release download $env:BOOTSTRAP_RELEASE_TAG --repo $env:BOOTSTRAP_REPOSITORY --pattern "*${{ matrix.target }}*" --dir ./bootstrap
           if ($LASTEXITCODE -eq 0) {
-            Expand-Archive -Path "./dist/zuv-windows-x64.zip" -DestinationPath ./dist -Force
+            Expand-Archive -Path "./bootstrap/zuv-windows-x64.zip" -DestinationPath ./bootstrap -Force
+            Write-Host "Bootstrap compiler downloaded successfully."
           } else {
-            Write-Host "No bootstrap release found, packaging source release."
-            exit 0
+            Write-Error "Bootstrap compiler download failed."
+            exit 1
           }
 
-      - name: Download Pre-built Compiler Binary (Unix)
+      - name: Download Bootstrap Compiler (Unix)
         if: runner.os != 'Windows'
         env:
           GH_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p ./dist
-          if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo "$BOOTSTRAP_REPOSITORY" --pattern "*${{ matrix.target }}*" --dir ./dist; then
-            tar -xzf "./dist/zuv-${{ matrix.target }}.tar.gz" -C ./dist
-            chmod +x "./dist/zuv"
+          mkdir -p ./bootstrap
+          if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo "$BOOTSTRAP_REPOSITORY" --pattern "*${{ matrix.target }}*" --dir ./bootstrap; then
+            tar -xzf "./bootstrap/zuv-${{ matrix.target }}.tar.gz" -C ./bootstrap
+            chmod +x "./bootstrap/zuv"
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" ./bootstrap/zuv
+            fi
+            echo "Bootstrap compiler downloaded successfully."
           else
-            echo "No bootstrap release found, packaging source release."
+            echo "Bootstrap compiler download failed." >&2
+            exit 1
           fi
+
+      - name: Build Pure Zuv Self-Hosting Compiler
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ./bin | Out-Null
+          Write-Host "Building self-hosting compiler using bootstrap compiler..."
+          & "./bootstrap/${{ matrix.bin_name }}" build src/main.zv -o "./bin/${{ matrix.bin_name }}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to build self-hosting compiler."
+            exit 1
+          }
+          if ($IsLinux -or $IsMacOS) {
+            chmod +x "./bin/${{ matrix.bin_name }}"
+            if ($IsMacOS) {
+              install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" "./bin/${{ matrix.bin_name }}" 2>$null
+            }
+          }
+          Write-Host "Successfully generated self-hosting compiler binary at ./bin/${{ matrix.bin_name }}"
+
+      - name: Test Self-Hosting Compiler
+        shell: pwsh
+        run: |
+          Write-Host "Testing compiled self-hosting binary..."
+          & "./bin/${{ matrix.bin_name }}" --help
+          & "./bin/${{ matrix.bin_name }}" test
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Self-hosting compiler failed test suite validation."
+            exit 1
+          }
 
       - name: Package Release Archive (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if (Test-Path "./dist/${{ matrix.bin_name }}") {
-            Copy-Item "./dist/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
-            Compress-Archive -Path "${{ matrix.bin_name }}", src, zuv.yml -DestinationPath ${{ matrix.asset_name }}
-          } else {
-            Compress-Archive -Path src, zuv.yml -DestinationPath ${{ matrix.asset_name }}
-          }
+          Compress-Archive -Path "./bin/${{ matrix.bin_name }}" -DestinationPath ${{ matrix.asset_name }}
 
-      - name: Package Release Archive (Unix)
-        if: runner.os != 'Windows'
+      - name: Package Release Archive (Linux)
+        if: runner.os == 'Linux'
         run: |
-          if [ -f "./dist/${{ matrix.bin_name }}" ]; then
-            cp "./dist/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
-            tar -czvf ${{ matrix.asset_name }} "${{ matrix.bin_name }}" src zuv.yml
-          else
-            tar -czvf ${{ matrix.asset_name }} src zuv.yml
-          fi
+          tar -czvf ${{ matrix.asset_name }} -C ./bin "${{ matrix.bin_name }}"
+
+      - name: Package Release Archive (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" "./bin/${{ matrix.bin_name }}" 2>/dev/null || true
+          tar -czvf ${{ matrix.asset_name }} -C ./bin "${{ matrix.bin_name }}"
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
