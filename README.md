@@ -88,14 +88,14 @@ main {
 
 | Command | Usage | Description | Implementation Status |
 | :--- | :--- | :--- | :--- |
-| `test` | `zuv test` | Run automated native AOT unit test runner across all 27 test files | ✅ **Fully Implemented** |
-| `checkall` | `zuv checkall` | Run project-wide static syntax & borrow checker without compiling | ✅ **Fully Implemented** |
-| `check` | `zuv check [file.zv]` | Run fast lexing, parsing, and borrow checker on a single file | ✅ **Fully Implemented** |
-| `build` | `zuv build [file.zv]` | Compile Zuv source to native LLVM IR and executable binary (`.exe`) | ✅ **Fully Implemented** |
-| `run` | `zuv run [file.zv]` | Compile and immediately execute the target binary | ✅ **Fully Implemented** |
-| `fmt` | `zuv fmt [file.zv]` | Auto-format `.zv` source code with standard indentation | 🟡 *Stub* |
-| `init` | `zuv init [project_name]` | Scaffold a new Zuv project with `zuv.yml` and `src/main.zv` | 🟡 *Stub* (in `zuv.exe`) |
-| `lsp` | `zuv lsp` | Language Server Protocol (JSON-RPC) daemon for IDEs | 🟡 *Stub* (in `zuv-tools`) |
+| `test` | `zuv test` | **Native AOT Test Runner**: Automatically discovers all `*.test.zv` files in `tests/`, compiles each to a temporary executable, runs them, verifies exit codes, and prints a comprehensive timing report | ✅ **Fully Implemented** |
+| `checkall` | `zuv checkall` | **Batch Test Syntax & Type Checker**: Scans the `tests/` directory and runs the fast lexer, parser, and borrow checker across all `*.test.zv` test files without invoking LLVM codegen or building executables | ✅ **Fully Implemented** |
+| `check` | `zuv check [file.zv]` | **Single-File Static Validator**: Performs instant syntax, AST construction, and compile-time borrow/mutability safety validation on a single target file without compiling to machine code | ✅ **Fully Implemented** |
+| `build` | `zuv build [file.zv] [-o output.exe]` | **AOT Compiler**: Compiles Zuv source code directly to LLVM IR and generates a native executable binary with optional optimization flags (`-O3`) | ✅ **Fully Implemented** |
+| `run` | `zuv run [file.zv]` | **Build & Run**: Compiles the source file to a temporary binary and executes it immediately in a single step | ✅ **Fully Implemented** |
+| `fmt` | `zuv fmt [file.zv]` | **Code Formatter**: Auto-formats `.zv` source files according to standardized Zuv indentation and chat-syntax style | 🟡 *Stub* |
+| `init` | `zuv init [project_name]` | **Project Scaffolding**: Generates a standard Zuv project workspace with `zuv.yml` configuration and `src/main.zv` | 🟡 *Stub* (in `zuv.exe`) |
+| `lsp` | `zuv lsp` | **Language Server Daemon**: JSON-RPC Language Server Protocol daemon providing real-time diagnostics, hover info, and autocompletion for IDEs | 🟡 *Stub* (in `zuv-tools`) |
 
 ---
 

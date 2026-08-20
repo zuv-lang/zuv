@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed `ForStmt` increment code generator in `src/codegen.zv` to call `codegenStmt` and registered loop initialization variables in Pass 1.
   - Corrected generic function call bracket consumption and prefix array literal parsing in `src/parser.zv`.
 
+### ⚙️ CI/CD & Release Workflow Automation (`.github/workflows/`)
+- **Self-Hosting CI Pipeline (`.github/workflows/ci.yml`)**:
+  - Upgraded CI to download the bootstrap compiler, compile the pure Zuv self-hosting compiler from source (`build src/main.zv`), and execute full `zuv check` and `zuv test` validation using the newly built self-hosting binary.
+  - Added manual workflow dispatch and multi-branch triggers (`main`).
+- **Automated Self-Hosting Release Packaging (`.github/workflows/release.yml`)**:
+  - Fixed release artifact packaging to build the self-hosting compiler from source using the bootstrap compiler, validate the test suite, and bundle the genuine self-hosting binary into release archives (`.zip` / `.tar.gz`).
+
 ---
 
 ## [0.1.0] - 2026-08-19
