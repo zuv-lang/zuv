@@ -27,7 +27,7 @@ In **Zuv**, we believe:
 - ⚡ **Minimalist Keywords**: `prnt`, `mut`, `ret` or `->`, `obj`, `wh`, `fr`, `brk`, `cont`, `asc`, `awt`, `spn`, `jn`, `wrk`.
 - 🛡️ **Memory Safety Without GC**: Rust-grade static borrow checker (`&` and `&mut`) preventing memory bugs with zero runtime latency.
 - 🚀 **Blazing Fast Native Code**: Compiled Ahead-of-Time (AOT) to optimized machine binaries via an in-process LLVM engine.
-- 🔄 **100% Pure Self-Hosting**: The compiler in this repository is written completely in pure Zuv (`.zv`).
+- 🔄 **Pure Self-Hosting**: The compiler in this repository is written completely in pure Zuv (`.zv`).
 
 ---
 
