@@ -17,12 +17,14 @@ createCodegen {
     ]
     mut brkStack = []
     mut contStack = []
+    mut exts = []
     res = {
         regCount: 0,
         labelCount: 0,
         strCount: 0,
         symbols: syms,
         strConstants: strConsts,
+        externDecls: exts,
         fieldNames: fields,
         breakLabels: brkStack,
         continueLabels: contStack,
@@ -34,17 +36,10 @@ createCodegen {
 }
 
 strEq s1, s2 {
-    if s1.ln != s2.ln {
-        -> 0
+    if s1 == s2 {
+        -> 1
     }
-    mut i = 0
-    wh i < s1.ln {
-        if (s1.charAt i) != (s2.charAt i) {
-            -> 0
-        }
-        i = i + 1
-    }
-    -> 1
+    -> 0
 }
 
 findFieldOffset cg, fieldName {
@@ -89,6 +84,37 @@ addCgSymbol cg, name, reg {
     cg.symbols.psh s
 }
 
+addCgExtern cg, extDecl {
+    cg.externDecls.psh extDecl
+}
+
+findCgExtern cg, name {
+    mut i = 0
+    wh i < cg.externDecls.ln {
+        e = cg.externDecls[i]
+        if (strEq e.name, name) == 1 {
+            -> e
+        }
+        i = i + 1
+    }
+    emptyExt = { name: "", typeName: "" }
+    -> emptyExt
+}
+
+getStrPtrVal cg, expr, outBuf {
+    if expr.kind == "StringExpr" {
+        sName = addStrConstant cg, expr.val
+        -> sName
+    } els {
+        sReg = codegenExpr cg, expr, outBuf
+        sInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
+        sPtr = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
+        -> sPtr
+    }
+}
+
 addStrConstant cg, strVal {
     sName = "@str_" + cg.strCount
     cg.strCount = cg.strCount + 1
@@ -96,7 +122,7 @@ addStrConstant cg, strVal {
     mut byteCount = 0
     mut i = 0
     wh i < strVal.ln {
-        c = strVal.charAt i
+        c = strVal.sub i, 1
         if c == "\"" {
             escaped = escaped.concat "\\22"
             byteCount = byteCount + 1
@@ -119,19 +145,11 @@ addStrConstant cg, strVal {
 }
 
 formatFloat valStr {
-    mut hasDot = 0
-    mut i = 0
-    wh i < valStr.ln {
-        if (valStr.charAt i) == "." {
-            hasDot = 1
-        }
-        i = i + 1
+    if (valStr.cnt ".") == 1 {
+        -> valStr
     }
-    if hasDot == 0 {
-        resStr = valStr + ".0"
-        -> resStr
-    }
-    -> valStr
+    resStr = valStr + ".0"
+    -> resStr
 }
 
 codegenExpr cg, expr, outBuf {
@@ -150,6 +168,41 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.concat ("  " + dblReg + " = sitofp i64 " + intReg + " to double\n")
         -> dblReg
     } els if expr.kind == "VariableExpr" {
+        extInfo = findCgExtern cg, expr.name
+        if extInfo.name != "" {
+            mut retType = "void"
+            if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
+                retType = "ptr"
+            } els if extInfo.typeName == "double" {
+                retType = "double"
+            } els if extInfo.typeName == "i64" {
+                retType = "i64"
+            } els if extInfo.typeName == "num" || extInfo.typeName == "i32" {
+                retType = "i32"
+            }
+            if retType == "void" {
+                outBuf.code = outBuf.code.concat ("  call void @" + expr.name + "()\n")
+                -> "0.0"
+            }
+            cReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cReg + " = call " + retType + " @" + expr.name + "()\n")
+            if retType == "i32" {
+                dReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i32 " + cReg + " to double\n")
+                -> dReg
+            } els if retType == "i64" {
+                dReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + cReg + " to double\n")
+                -> dReg
+            } els if retType == "ptr" {
+                pInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + pInt + " = ptrtoint ptr " + cReg + " to i64\n")
+                dReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + pInt + " to double\n")
+                -> dReg
+            }
+            -> cReg
+        }
         sym = findCgSymbol cg, expr.name
         if sym.name != "" {
             valReg = newReg cg
@@ -566,6 +619,71 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.concat ("  " + msInt + " = fptosi double " + msReg + " to i32\n")
             outBuf.code = outBuf.code.concat ("  call void @Sleep(i32 " + msInt + ")\n")
             -> "0.0"
+        }
+
+        extInfo = findCgExtern cg, expr.callee
+        if extInfo.name != "" {
+            mut callArgsStr = ""
+            mut i = 0
+            wh i < expr.args.ln {
+                arg = expr.args[i]
+                mut expectedType = "num"
+                if i < extInfo.params.ln {
+                    expectedType = extInfo.params[i].typeName
+                }
+                if i > 0 { callArgsStr = callArgsStr.concat ", " }
+                if expectedType == "str" || expectedType == "ptr" {
+                    aPtr = getStrPtrVal cg, arg, outBuf
+                    callArgsStr = callArgsStr.concat ("ptr " + aPtr)
+                } els if expectedType == "i64" {
+                    aReg = codegenExpr cg, arg, outBuf
+                    aInt = newReg cg
+                    outBuf.code = outBuf.code.concat ("  " + aInt + " = fptosi double " + aReg + " to i64\n")
+                    callArgsStr = callArgsStr.concat ("i64 " + aInt)
+                } els if expectedType == "double" {
+                    aReg = codegenExpr cg, arg, outBuf
+                    callArgsStr = callArgsStr.concat ("double " + aReg)
+                } els {
+                    // default i32
+                    aReg = codegenExpr cg, arg, outBuf
+                    aInt = newReg cg
+                    outBuf.code = outBuf.code.concat ("  " + aInt + " = fptosi double " + aReg + " to i32\n")
+                    callArgsStr = callArgsStr.concat ("i32 " + aInt)
+                }
+                i = i + 1
+            }
+            mut retType = "void"
+            if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
+                retType = "ptr"
+            } els if extInfo.typeName == "double" {
+                retType = "double"
+            } els if extInfo.typeName == "i64" {
+                retType = "i64"
+            } els if extInfo.typeName == "num" || extInfo.typeName == "i32" {
+                retType = "i32"
+            }
+            if retType == "void" {
+                outBuf.code = outBuf.code.concat ("  call void @" + expr.callee + "(" + callArgsStr + ")\n")
+                -> "0.0"
+            }
+            cReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cReg + " = call " + retType + " @" + expr.callee + "(" + callArgsStr + ")\n")
+            if retType == "i32" {
+                dReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i32 " + cReg + " to double\n")
+                -> dReg
+            } els if retType == "i64" {
+                dReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + cReg + " to double\n")
+                -> dReg
+            } els if retType == "ptr" {
+                pInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + pInt + " = ptrtoint ptr " + cReg + " to i64\n")
+                dReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + pInt + " to double\n")
+                -> dReg
+            }
+            -> cReg
         }
 
         mut callArgsStr = ""
@@ -1026,6 +1144,8 @@ generateLLVMFull program {
                     addCgSymbol cg, stmt.init.name, gReg
                 }
             }
+        } els if stmt.kind == "ExternDecl" {
+            addCgExtern cg, stmt
         }
         gi = gi + 1
     }
@@ -1037,6 +1157,40 @@ generateLLVMFull program {
         if stmt.kind == "FunctionDecl" {
             cg.isMain = 0
             codegenFunctionDecl cg, stmt
+        } els if stmt.kind == "ExternDecl" {
+            mut extParams = ""
+            mut pi = 0
+            wh pi < stmt.params.ln {
+                p = stmt.params[pi]
+                mut pt = "i32"
+                if p.typeName == "str" || p.typeName == "ptr" {
+                    pt = "ptr"
+                } els if p.typeName == "double" || p.typeName == "num" {
+                    pt = "double"
+                } els if p.typeName == "i64" {
+                    pt = "i64"
+                }
+                if pi > 0 {
+                    extParams = extParams + ", "
+                }
+                extParams = extParams + pt
+                pi = pi + 1
+            }
+            mut retType = "void"
+            if stmt.typeName == "ptr" || stmt.typeName == "str" {
+                retType = "ptr"
+            } els if stmt.typeName == "double" {
+                retType = "double"
+            } els if stmt.typeName == "i64" {
+                retType = "i64"
+            } els if stmt.typeName == "num" || stmt.typeName == "i32" {
+                retType = "i32"
+            }
+            declSig = "@" + stmt.name + "("
+            if (header.cnt declSig) == 0 {
+                header = header.concat ("declare " + retType + " @" + stmt.name + "(" + extParams + ")\n")
+            }
+            addCgExtern cg, stmt
         } els {
             cg.isMain = 1
             codegenStmt cg, stmt, mainBuf

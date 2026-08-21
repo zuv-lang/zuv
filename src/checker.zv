@@ -234,6 +234,10 @@ checkStatement checker, stmt {
             checkStatement checker, stmt.errBody
         }
         popCheckerScope checker
+    } els if stmt.kind == "ExternDecl" {
+        if stmt.name != "" {
+            declareVar checker, stmt.name, 0
+        }
     } els {
         checkExpr checker, stmt
     }

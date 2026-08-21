@@ -113,6 +113,12 @@ jobs:
         with:
           ref: ${{ needs.determine-version.outputs.target_commit }}
 
+      - name: Setup LLVM & LLD (Windows)
+        if: runner.os == 'Windows'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "22.1.8"
+
       - name: Install LLVM Runtime (macOS)
         if: runner.os == 'macOS'
         run: brew install llvm

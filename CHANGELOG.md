@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.2.0] - 2026-08-20
+## [0.3.0] - 2026-08-21
+
+### ⚡ Direct In-Process LLVM & LLD Linker
+- **In-Memory Compilation & Linking**: Replaced external `clang` and `lld-link` subprocesses with direct LLVM C-API code emission and in-process `lld::coff::link`.
+- **Zero-Dependency Monolithic Executable**: Statically linked `LLVM*.lib` and `lld*.lib` into a single standalone `zuv.exe` (~106 MB) with zero external DLLs.
+
+### 🔌 C Foreign Function Interface (`extern` / `ffi`)
+- **Native C ABI Declarations**: Added `extern "<lib>" <func> <params> -> <retType>` syntax in pure Zuv and C++ bootstrap compiler.
+- **Direct LLVM C-API in Pure Zuv**: Declared and orchestrated target initialization, IR parsing, target machine creation, and object emission directly in `cli.zv`.
+- **Dynamic Library Linking**: Automatically links Windows system libraries (`user32`, `kernel32`, `ntdll`, `ws2_32`) and custom `.lib` files.
+
+### 🧪 Self-Hosting Verification
+- **100% Pass Rate (28/28)**: Validated full test suite and type checker under the pure Zuv self-hosting compiler (`zuv test` & `zuv checkall`).
 
 ### 🚀 Pure Zuv Self-Hosting Compiler & 100% Test Suite Verification
 - **100% Self-Hosting Test Suite Pass Rate (27/27 Tests)**:
