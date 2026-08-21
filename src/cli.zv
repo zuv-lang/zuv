@@ -5,6 +5,87 @@ imp parseProgramFull frm parser
 imp checkProgram frm checker
 imp generateLLVMFull frm codegen
 
+extern "LLVM-C.lib" LLVMInitializeX86TargetInfo -> void
+extern "LLVM-C.lib" LLVMInitializeX86Target -> void
+extern "LLVM-C.lib" LLVMInitializeX86TargetMC -> void
+extern "LLVM-C.lib" LLVMInitializeX86AsmPrinter -> void
+extern "LLVM-C.lib" LLVMInitializeX86AsmParser -> void
+
+extern "LLVM-C.lib" LLVMGetGlobalContext -> ptr
+extern "LLVM-C.lib" LLVMCreateMemoryBufferWithMemoryRange data: ptr, len: num, name: str, reqNull: num -> ptr
+extern "LLVM-C.lib" LLVMParseIRInContext ctx: ptr, memBuf: ptr, outMod: ptr, outMsg: ptr -> num
+extern "LLVM-C.lib" LLVMGetTargetFromTriple triple: str, target: ptr, errMsg: ptr -> num
+extern "LLVM-C.lib" LLVMCreateTargetMachine target: ptr, triple: str, cpu: str, feat: str, opt: num, reloc: num, codeModel: num -> ptr
+extern "LLVM-C.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename: str, codegenType: num, errMsg: ptr -> num
+extern "LLVM-C.lib" LLVMDisposeTargetMachine tm: ptr -> void
+extern "LLVM-C.lib" LLVMDisposeModule mod: ptr -> void
+
+extern "msvcrt.dll" system cmd: str -> num
+
+emitDirectObjectFile ir, outputObjPath, isRelease {
+    LLVMInitializeX86TargetInfo
+    LLVMInitializeX86Target
+    LLVMInitializeX86TargetMC
+    LLVMInitializeX86AsmPrinter
+    LLVMInitializeX86AsmParser
+
+    fullIr = "target triple = \"x86_64-pc-windows-msvc\"\n" + ir
+    ctx = LLVMGetGlobalContext
+    memBuf = LLVMCreateMemoryBufferWithMemoryRange fullIr, fullIr.ln, "zuv_ir", 0
+
+    mut outModPtr = malloc 8
+    mut outMsgPtr = malloc 8
+    res = LLVMParseIRInContext ctx, memBuf, outModPtr, outMsgPtr
+    if res != 0 {
+        errMsg = zuv_ptr_deref outMsgPtr
+        prnt ("[LLVM Error] IR Parse Failed: " + errMsg)
+        -> 1
+    }
+    mod = zuv_ptr_deref outModPtr
+
+    triple = "x86_64-pc-windows-msvc"
+    mut targetPtr = malloc 8
+    tRes = LLVMGetTargetFromTriple triple, targetPtr, outMsgPtr
+    if tRes != 0 {
+        errMsg2 = zuv_ptr_deref outMsgPtr
+        prnt ("[LLVM Error] Target lookup failed: " + errMsg2)
+        LLVMDisposeModule mod
+        -> 1
+    }
+    target = zuv_ptr_deref targetPtr
+
+    mut optLevel = 0
+    if isRelease == 1 {
+        optLevel = 3
+    }
+
+    tm = LLVMCreateTargetMachine target, triple, "generic", "", optLevel, 0, 0
+    emitRes = LLVMTargetMachineEmitToFile tm, mod, outputObjPath, 1, outMsgPtr
+    if emitRes != 0 {
+        errMsg3 = zuv_ptr_deref outMsgPtr
+        prnt ("[LLVM Error] Object code emission failed: " + errMsg3)
+        LLVMDisposeTargetMachine tm
+        LLVMDisposeModule mod
+        -> 1
+    }
+
+    LLVMDisposeTargetMachine tm
+    LLVMDisposeModule mod
+    -> 0
+}
+
+linkDirectObjectFile objPath, outExePath {
+    mut lldBin = "lld-link"
+    if fE "lld-link.exe" {
+        lldBin = "lld-link.exe"
+    } els if fE "bin/lld-link.exe" {
+        lldBin = "bin/lld-link.exe"
+    }
+    cmd = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" -stack:33554432 -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo"
+    res = system cmd
+    -> res
+}
+
 handleBuild targetFile, isRelease, emitLlvm, outExe {
     if fE targetFile {
         code = rF targetFile
@@ -90,35 +171,34 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                 prnt "[zuv build] Successfully generated output_selfhost.ll via self-hosting compiler!"
                 -> 1
             } els {
-                llPath = targetExe + ".ll"
-                wF llPath, ir
-                mut optFlag = ""
-                if isRelease == 1 {
-                    optFlag = "-O3"
+                objPath = targetExe + ".obj"
+                emitRes = emitDirectObjectFile ir, objPath, isRelease
+                if emitRes != 0 {
+                    prnt "[zuv build] Direct in-process LLVM object code generation failed."
+                    -> 0
                 }
-                clangCmd = "clang " + optFlag + " -Wl,-stack:33554432 \"" + llPath + "\" -o \"" + targetExe + "\" -Wno-override-module > nul 2>&1"
-                cRes = sh clangCmd
-                if fE llPath {
-                    rmF llPath
+                linkRes = linkDirectObjectFile objPath, targetExe
+                if fE objPath {
+                    rmF objPath
                 }
-                if cRes == 0 {
+                if linkRes == 0 {
                     if isRelease == 1 {
-                        prnt ("[zuv build] Successfully generated " + targetExe + " (-O3 Native)")
+                        prnt ("[zuv build] Successfully generated " + targetExe + " (-O3 Native In-Process)")
                     } els {
-                        prnt ("[zuv build] Successfully generated " + targetExe + " (Debug)")
+                        prnt ("[zuv build] Successfully generated " + targetExe + " (Debug In-Process)")
                     }
                     -> 1
                 } els {
-                    err "[zuv build] Native code compilation via Clang failed."
+                    prnt "[zuv build] Direct in-process LLD linking failed."
                     -> 0
                 }
             }
         } els {
-            err "[zuv build] Safety or borrow checker validation failed."
+            prnt "[zuv build] Safety or borrow checker validation failed."
             -> 0
         }
     } els {
-        err ("[zuv build] Error: Could not open source file: " + targetFile)
+        prnt ("[zuv build] Error: Could not open source file: " + targetFile)
         -> 0
     }
 }

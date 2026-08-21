@@ -508,6 +508,43 @@ parseStatement p {
             mut emptySyms = []
             -> createImportNode items, emptySyms, ""
         }
+    } els if (t.kind == "KEYWORD" || t.kind == "IDENT") && (t.val == "extern" || t.val == "ffi") {
+        mut libName = ""
+        advanceParser p
+        if (curTok p).kind == "STR" || (curTok p).kind == "STRING" {
+            libName = (curTok p).val
+            advanceParser p
+        }
+        fnName = (curTok p).val
+        mut params = []
+        wh (peekTok p).line == t.line && (peekTok p).val != "->" && (peekTok p).kind != "EOF" {
+            advanceParser p
+            pName = (curTok p).val
+            mut pType = "num"
+            if (peekTok p).val == ":" {
+                advanceParser p // consume ':'
+                advanceParser p // type name
+                pType = (curTok p).val
+            }
+            paramObj = { name: pName, typeName: pType }
+            params.psh paramObj
+            if (peekTok p).val == "," {
+                advanceParser p
+            }
+        }
+        mut retType = "void"
+        if (peekTok p).val == "->" {
+            advanceParser p // consume '->'
+            advanceParser p // ret type
+            retType = (curTok p).val
+        }
+        -> {
+            kind: "ExternDecl",
+            name: fnName,
+            libName: libName,
+            params: params,
+            typeName: retType
+        }
     } els if t.kind == "KEYWORD" && (t.val == "prnt" || t.val == "lg" || t.val == "wrn" || t.val == "err" || t.val == "inf") {
         logLevel = t.val
         advanceParser p
@@ -736,7 +773,7 @@ parseStatement p {
             mut emptyParams = []
             -> createFuncNode identName, emptyParams, body, 0
         } els if (peekTok p).line == t.line && (peekTok p).kind == "IDENT" {
-            // Function declaration with params or function call
+            // Function declaration with params or identifier call statement
             advanceParser p
             pValFirst = (curTok p).val
             if (peekTok p).val == ":" {
@@ -744,7 +781,7 @@ parseStatement p {
                 advanceParser p // consume type
             }
             mut params = [pValFirst]
-            wh (peekTok p).val == "," {
+            wh (peekTok p).line == t.line && (peekTok p).val == "," {
                 advanceParser p // consume ','
                 advanceParser p
                 pVal = (curTok p).val
@@ -758,7 +795,7 @@ parseStatement p {
                 body = parseBlock p
                 -> createFuncNode identName, params, body, 0
             } els {
-                // Parenthesis-free call statement
+                // Parenthesis-free call statement with identifiers
                 mut args = []
                 mut ai = 0
                 wh ai < params.ln {
@@ -769,6 +806,19 @@ parseStatement p {
                 callNode = createCallNode identName, args
                 -> createExpressionStmtNode callNode
             }
+        } els if (peekTok p).line == t.line && ((peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "BOOL") {
+            // Parenthesis-free call statement with literal arguments
+            advanceParser p
+            firstArg = parseExpression p, 0
+            mut args = [firstArg]
+            wh (peekTok p).line == t.line && (peekTok p).val == "," {
+                advanceParser p // consume ','
+                advanceParser p
+                nextArg = parseExpression p, 0
+                args.psh nextArg
+            }
+            callNode = createCallNode identName, args
+            -> createExpressionStmtNode callNode
         } els {
             expr = parseExpression p, 0
             if expr.kind == "VariableExpr" && (peekTok p).line > t.line {

@@ -113,6 +113,12 @@ jobs:
         with:
           ref: ${{ needs.determine-version.outputs.target_commit }}
 
+      - name: Setup LLVM & LLD (Windows)
+        if: runner.os == 'Windows'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "18.1.8"
+
       - name: Install LLVM Runtime (macOS)
         if: runner.os == 'macOS'
         run: brew install llvm
@@ -184,7 +190,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "./bin/${{ matrix.bin_name }}" -DestinationPath ${{ matrix.asset_name }}
+          $lldPath = (Get-Command lld-link.exe -ErrorAction SilentlyContinue)?.Source
+          if (-not $lldPath -and (Test-Path "$env:LLVM_PATH\bin\lld-link.exe")) {
+            $lldPath = "$env:LLVM_PATH\bin\lld-link.exe"
+          }
+          if (-not $lldPath -and (Test-Path "C:\Program Files\LLVM\bin\lld-link.exe")) {
+            $lldPath = "C:\Program Files\LLVM\bin\lld-link.exe"
+          }
+          if ($lldPath) {
+            Copy-Item $lldPath "./bin/lld-link.exe" -Force
+            Compress-Archive -Path "./bin/${{ matrix.bin_name }}", "./bin/lld-link.exe" -DestinationPath ${{ matrix.asset_name }}
+          } else {
+            Compress-Archive -Path "./bin/${{ matrix.bin_name }}" -DestinationPath ${{ matrix.asset_name }}
+          }
 
       - name: Package Release Archive (Linux)
         if: runner.os == 'Linux'
