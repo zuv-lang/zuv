@@ -5,23 +5,22 @@ imp parseProgramFull frm parser
 imp checkProgram frm checker
 imp generateLLVMFull frm codegen
 
-extern "LLVMCore.lib" LLVMInitializeX86TargetInfo -> void
-extern "LLVMCore.lib" LLVMInitializeX86Target -> void
-extern "LLVMCore.lib" LLVMInitializeX86TargetMC -> void
-extern "LLVMCore.lib" LLVMInitializeX86AsmPrinter -> void
-extern "LLVMCore.lib" LLVMInitializeX86AsmParser -> void
+extern "LLVM-C.lib" LLVMInitializeX86TargetInfo -> void
+extern "LLVM-C.lib" LLVMInitializeX86Target -> void
+extern "LLVM-C.lib" LLVMInitializeX86TargetMC -> void
+extern "LLVM-C.lib" LLVMInitializeX86AsmPrinter -> void
+extern "LLVM-C.lib" LLVMInitializeX86AsmParser -> void
 
-extern "LLVMCore.lib" LLVMGetGlobalContext -> ptr
-extern "LLVMCore.lib" LLVMCreateMemoryBufferWithMemoryRange data: ptr, len: num, name: str, reqNull: num -> ptr
-extern "LLVMCore.lib" LLVMParseIRInContext ctx: ptr, memBuf: ptr, outMod: ptr, outMsg: ptr -> num
-extern "LLVMTarget.lib" LLVMGetTargetFromTriple triple: str, target: ptr, errMsg: ptr -> num
-extern "LLVMTarget.lib" LLVMCreateTargetMachine target: ptr, triple: str, cpu: str, feat: str, opt: num, reloc: num, codeModel: num -> ptr
-extern "LLVMTarget.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename: str, codegenType: num, errMsg: ptr -> num
-extern "LLVMTarget.lib" LLVMDisposeTargetMachine tm: ptr -> void
-extern "LLVMCore.lib" LLVMDisposeModule mod: ptr -> void
+extern "LLVM-C.lib" LLVMGetGlobalContext -> ptr
+extern "LLVM-C.lib" LLVMCreateMemoryBufferWithMemoryRange data: ptr, len: num, name: str, reqNull: num -> ptr
+extern "LLVM-C.lib" LLVMParseIRInContext ctx: ptr, memBuf: ptr, outMod: ptr, outMsg: ptr -> num
+extern "LLVM-C.lib" LLVMGetTargetFromTriple triple: str, target: ptr, errMsg: ptr -> num
+extern "LLVM-C.lib" LLVMCreateTargetMachine target: ptr, triple: str, cpu: str, feat: str, opt: num, reloc: num, codeModel: num -> ptr
+extern "LLVM-C.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename: str, codegenType: num, errMsg: ptr -> num
+extern "LLVM-C.lib" LLVMDisposeTargetMachine tm: ptr -> void
+extern "LLVM-C.lib" LLVMDisposeModule mod: ptr -> void
 
-extern "lldCOFF.lib" zuv_link_lld objPath: str, outExe: str -> num
-extern "c" zuv_ptr_deref p: ptr -> ptr
+extern "msvcrt.dll" system cmd: str -> num
 
 emitDirectObjectFile ir, outputObjPath, isRelease {
     LLVMInitializeX86TargetInfo
@@ -76,7 +75,10 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
 }
 
 linkDirectObjectFile objPath, outExePath {
-    -> zuv_link_lld objPath, outExePath
+    mut lldBin = "lld-link"
+    cmd = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" -stack:33554432 -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo"
+    res = system cmd
+    -> res
 }
 
 handleBuild targetFile, isRelease, emitLlvm, outExe {

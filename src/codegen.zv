@@ -621,6 +621,22 @@ codegenExpr cg, expr, outBuf {
             -> "0.0"
         }
 
+        if expr.callee == "zuv_ptr_deref" && expr.args.ln == 1 {
+            arg0 = expr.args[0]
+            aReg = codegenExpr cg, arg0, outBuf
+            aInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + aInt + " = fptosi double " + aReg + " to i64\n")
+            aPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + aPtr + " = inttoptr i64 " + aInt + " to ptr\n")
+            loadedPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + loadedPtr + " = load ptr, ptr " + aPtr + "\n")
+            pInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + pInt + " = ptrtoint ptr " + loadedPtr + " to i64\n")
+            dReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + pInt + " to double\n")
+            -> dReg
+        }
+
         extInfo = findCgExtern cg, expr.callee
         if extInfo.name != "" {
             mut callArgsStr = ""
