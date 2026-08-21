@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.1] - 2026-08-22
+
+### ⚡ Toolchain & Code Generation Improvements
+- **Inline Pointer Dereference**: Replaced external `zuv_ptr_deref` helper with direct inline LLVM IR `load ptr, ptr %arg` instruction emission in both pure Zuv and C++ code generators.
+- **Eliminated `Codegen.obj`**: Removed all intermediate C++ object dependencies from compiler builds, release packaging, and CI pipelines.
+- **Bundled `lld-link.exe` Toolchain**: Packaged `lld-link.exe` alongside `zuv.exe` in release archives for portable standalone compilation.
+- **Automatic Linker Discovery**: Added local `lld-link.exe` resolution in `cli.zv` to locate the bundled linker in the compiler directory before checking system `PATH`.
+
+---
+
 ## [0.3.0] - 2026-08-21
 
 ### ⚡ Direct In-Process LLVM & LLD Linker
