@@ -161,6 +161,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path ./bin | Out-Null
+          if (Test-Path "./bootstrap") {
+            $bootPath = (Get-Item "./bootstrap").FullName
+            echo "$bootPath" >> $env:GITHUB_PATH
+            if (Test-Path "./bootstrap/lld-link.exe") {
+              Copy-Item "./bootstrap/lld-link.exe" "./bin/lld-link.exe" -Force
+            }
+          }
           Write-Host "Building self-hosting compiler using bootstrap compiler..."
           & "./bootstrap/${{ matrix.bin_name }}" build src/main.zv -o "./bin/${{ matrix.bin_name }}"
           if ($LASTEXITCODE -ne 0) {
