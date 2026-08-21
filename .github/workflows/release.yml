@@ -117,7 +117,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: KyleMayes/install-llvm-action@v2
         with:
-          version: "22.1.8"
+          version: "18.1.8"
 
       - name: Install LLVM Runtime (macOS)
         if: runner.os == 'macOS'
