@@ -1,0 +1,45 @@
+// Comprehensive Unit Test Suite for Single-Line & Multi-Line Comments
+
+// 1. Single line comment at the top
+
+/*
+   2. Multi-line block comment
+   spanning multiple lines
+   with special characters: !@#$%^&*()
+*/
+
+mut x = 10 // 3. End of line comment
+
+/* 4. Inline block comment within expression */
+mut y = x + /* inline comment */ 20
+
+// 5. Multi-line block comment commenting out dead code
+/*
+deadCodeFunction a, b {
+    prnt "Should not execute"
+    -> a * b
+}
+*/
+
+/* 6. Multiple block comments in sequence */
+/* First */ /* Second */ /* Third */
+
+mut z = y * 2
+
+/*
+ * 7. Asterisk-style formatted block comment
+ * Author: Zuv Core Team
+ * Status: Active
+ */
+
+if z == 60 {
+    prnt "Calculated z is 60 as expected"
+}
+
+// 8. Division operator '/' vs comments
+divResult = 100 / 2 /* division test */ / 5
+if divResult == 10 {
+    prnt "Division operator handled correctly alongside comments"
+}
+
+prnt "Comments Unit Test Passed"

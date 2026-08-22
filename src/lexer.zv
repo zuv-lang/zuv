@@ -185,6 +185,25 @@ nextLexerToken lexer {
         -> nextLexerToken lexer
     }
 
+    if lexer.ch == "/" && (peekLexerChar lexer) == "*" {
+        // Skip multi-line comment: /* ... */
+        readLexerChar lexer
+        readLexerChar lexer
+        wh lexer.ch != "" {
+            if lexer.ch == "\n" {
+                lexer.line = lexer.line + 1
+                lexer.col = 0
+            }
+            if lexer.ch == "*" && (peekLexerChar lexer) == "/" {
+                readLexerChar lexer
+                readLexerChar lexer
+                brk
+            }
+            readLexerChar lexer
+        }
+        -> nextLexerToken lexer
+    }
+
     if lexer.ch == "=" {
         if (peekLexerChar lexer) == "=" {
             readLexerChar lexer
