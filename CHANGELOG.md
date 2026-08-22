@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 📦 Variables & Scope
 - **`let` Keyword**: Added `let` keyword for mutable variable declarations, replacing/aliasing `mut`.
+- **Duplicate Redeclaration Error**: Detects duplicate declarations in the same block scope while preserving child block shadowing (`{ let x = 2 }`).
 - **Codebase Migration**: Migrated internal self-hosting compiler sources to use `let`.
-- **New Test**: Added `let_variables.test.zv` covering declaration, mutation, loop scopes, and interoperability.
+- **New Tests**: Added `let_variables.test.zv` and `scope_redecl.test.zv`.
 
 ### 💬 Comments
 - **Multi-line Comments**: Added support for block comments (`/* ... */`) with newline tracking.

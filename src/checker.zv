@@ -45,18 +45,45 @@ findVarState checker, name {
     -> emptyVar
 }
 
+findVarInCurrentScope checker, name {
+    curIdx = checker.scopes.ln - 1
+    if curIdx >= 0 {
+        curScope = checker.scopes[curIdx]
+        let j = 0
+        wh j < curScope.vars.ln {
+            v = curScope.vars[j]
+            if v.name == name {
+                -> v
+            }
+            j = j + 1
+        }
+    }
+    emptyVar = { name: "", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+    -> emptyVar
+}
+
 declareVar checker, name, isMut {
-    existing = findVarState checker, name
-    if existing.name != "" {
-        if isMut == 1 {
-            existing.isMut = 1
+    existingInCurrent = findVarInCurrentScope checker, name
+    if isMut == 1 {
+        if existingInCurrent.name != "" {
+            errRedecl = "Variable '" + name + "' is already declared in this scope"
+            checker.errors.psh errRedecl
+        } els {
+            curIdx = checker.scopes.ln - 1
+            if curIdx >= 0 {
+                curScope = checker.scopes[curIdx]
+                newVar = { name: name, isMut: 1, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+                curScope.vars.psh newVar
+            }
         }
     } els {
-        curIdx = checker.scopes.ln - 1
-        if curIdx >= 0 {
-            curScope = checker.scopes[curIdx]
-            newVar = { name: name, isMut: isMut, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
-            curScope.vars.psh newVar
+        if existingInCurrent.name == "" {
+            curIdx = checker.scopes.ln - 1
+            if curIdx >= 0 {
+                curScope = checker.scopes[curIdx]
+                newVar = { name: name, isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+                curScope.vars.psh newVar
+            }
         }
     }
 }
@@ -183,7 +210,10 @@ checkStatement checker, stmt {
         checkExpr checker, stmt.condition
         checkStatement checker, stmt.body
     } els if stmt.kind == "ForStmt" {
-        if stmt.init.kind != "" {
+        pushCheckerScope checker
+        if stmt.init.kind == "VarDecl" {
+            declareVar checker, stmt.init.name, 1
+        } els if stmt.init.kind != "" {
             checkStatement checker, stmt.init
         }
         if stmt.condition.kind != "" {
@@ -193,6 +223,7 @@ checkStatement checker, stmt {
             checkStatement checker, stmt.increment
         }
         checkStatement checker, stmt.body
+        popCheckerScope checker
     } els if stmt.kind == "ReturnStmt" {
         checkExpr checker, stmt.value
     } els if stmt.kind == "PrintStmt" {

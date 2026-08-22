@@ -270,7 +270,7 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.concat ("  " + resReg + " = fdiv double " + leftReg + ", " + rightReg + "\n")
             -> resReg
         } els if expr.op == "==" || expr.op == "!=" || expr.op == "<" || expr.op == "<=" || expr.op == ">" || expr.op == ">=" {
-            cmpOp = "oeq"
+            let cmpOp = "oeq"
             if expr.op == "!=" { cmpOp = "one" }
             els if expr.op == "<" { cmpOp = "olt" }
             els if expr.op == "<=" { cmpOp = "ole" }

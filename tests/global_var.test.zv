@@ -1,6 +1,6 @@
 // Test global variable access and mutation inside functions
 
-counter = 10
+let counter = 10
 
 incrementCounter {
     counter = counter + 5

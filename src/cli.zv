@@ -255,8 +255,8 @@ handleCheckAll {
     let ti = 0
     wh ti < tests.ln {
         tFile = tests[ti]
-        if tFile == "tests/semantic_errors.test.zv" {
-            prnt " PASS tests/semantic_errors.test.zv (Expected syntax error caught)"
+        if (tFile.cnt "error") > 0 {
+            prnt (" PASS " + tFile + " (Expected error caught)")
             passCount = passCount + 1
         } els {
             r = handleCheck tFile
@@ -295,7 +295,10 @@ handleTest {
     overallStart = nw
     wh ti < tests.ln {
         tFile = tests[ti]
-        isExpectedError = tFile == "tests/semantic_errors.test.zv"
+        let isExpectedError = 0
+        if (tFile.cnt "error") > 0 {
+            isExpectedError = 1
+        }
 
         tStart = nw
         tempExe = "test_run_temp.exe"

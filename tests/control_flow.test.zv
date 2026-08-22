@@ -5,7 +5,7 @@ if x > 10 {
     lg "x is 10 or less"
 }
 
-count = 0
+let count = 0
 wh count < 5 {
     count = count + 1
     if count == 2 {
