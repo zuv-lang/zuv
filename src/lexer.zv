@@ -98,13 +98,19 @@ readLexerString lexer, quoteChar {
 
     mut strVal = ""
     wh lexer.ch != quoteChar && lexer.ch != "" {
-        if lexer.ch == "\\" {
+        if lexer.ch == "\n" {
+            lexer.line = lexer.line + 1
+            lexer.col = 0
+            strVal = strVal.concat "\n"
+        } els if lexer.ch == "\\" {
             readLexerChar lexer
             if lexer.ch == "n" { strVal = strVal.concat "\n" }
             els if lexer.ch == "t" { strVal = strVal.concat "\t" }
             els if lexer.ch == "r" { strVal = strVal.concat "\r" }
             els if lexer.ch == "\"" { strVal = strVal.concat "\"" }
             els if lexer.ch == "'" { strVal = strVal.concat "'" }
+            els if lexer.ch == "`" { strVal = strVal.concat "`" }
+            els if lexer.ch == "$" { strVal = strVal.concat "$" }
             els if lexer.ch == "\\" { strVal = strVal.concat "\\" }
             els { strVal = strVal.concat lexer.ch }
         } els {
@@ -269,7 +275,7 @@ nextLexerToken lexer {
         -> createToken "SYM", c, startLine, startCol
     }
 
-    if lexer.ch == "\"" || lexer.ch == "'" {
+    if lexer.ch == "\"" || lexer.ch == "'" || lexer.ch == "`" {
         q = lexer.ch
         -> readLexerString lexer, q
     }

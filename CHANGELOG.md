@@ -5,6 +5,18 @@ All notable changes to the **Zuv** programming language and self-hosting compile
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-08-22
+
+### 🔤 Strings & Lexer
+- **Template Strings**: Added backticks (`` `...` ``) with multiline support and embedded quotes (`'`, `"`).
+- **Interpolation**: Added `${...}` expression interpolation inside template strings.
+- **String Indexing**: Added `s[i]` character indexing.
+- **Tests**: Expanded `std_str.test.zv` to test template strings, `${...}`, and indexing.
+
+### 🔌 C FFI (.lib)
+- **Direct .lib Linking**: Added support for `.lib` in `extern` (e.g. `extern "kernel32.lib"`).
+- **New Test**: Added `c_ffi_lib.test.zv`.
+
 ---
 
 ## [0.3.1] - 2026-08-22

@@ -50,4 +50,33 @@ mismatch = text.eq "Other String"
 lg "Equality via 'text.eq \"Other String\"':"
 lg mismatch
 
+
+// 8. Template Literals with Backticks (`...`) and Quotes
+quoted = `He's often called "Johnny"`
+lg "Template literal with quotes:"
+lg quoted
+
+// 9. Multiline Template String
+multi = `Line 1
+Line 2
+Line 3`
+lg "Multiline template string:"
+lg multi
+
+// 10. String Interpolation (${...})
+dog = "bulldog"
+age = 4
+interp = `The quick brown fox jumps over the lazy ${dog} of age ${age + 1}`
+lg "String interpolation:"
+lg interp
+
+// 11. String Bracket Indexing (s[i])
+greeting = "hello"
+char0 = greeting[0]
+char1 = greeting[1]
+lg "Bracket indexing greeting[0]:"
+lg char0
+lg "Bracket indexing greeting[1]:"
+lg char1
+
 lg "std/str Shortform Tests Completed!"
