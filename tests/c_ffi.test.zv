@@ -1,0 +1,25 @@
+// C Foreign Function Interface (FFI) Test Suite
+extern "msvcrt.dll" puts s: str -> num
+extern "kernel32.dll" GetCurrentProcessId -> num
+extern "kernel32.dll" Sleep ms: num -> void
+extern "user32.dll" GetSystemMetrics nIndex: num -> num
+
+// Call C runtime function directly
+puts "=== Native C FFI Test Output ==="
+
+// Call Win32 Kernel32 API directly
+pid = GetCurrentProcessId
+if pid > 0 {
+    prnt ("Win32 PID verified: " + pid)
+}
+
+// Call Win32 User32 API (SM_CXSCREEN = 0)
+screenWidth = GetSystemMetrics 0
+if screenWidth > 0 {
+    prnt ("User32 Screen Width: " + screenWidth)
+}
+
+// Call Win32 Sleep API
+Sleep 10
+
+prnt "C FFI Test Passed"

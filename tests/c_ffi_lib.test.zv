@@ -1,0 +1,25 @@
+// C Foreign Function Interface (FFI) with .lib Test Suite
+extern "msvcrt.lib" puts s: str -> num
+extern "kernel32.lib" GetCurrentProcessId -> num
+extern "kernel32.lib" Sleep ms: num -> void
+extern "user32.lib" GetSystemMetrics nIndex: num -> num
+
+// Call C runtime function directly via .lib
+puts "=== Native C FFI (.lib) Test Output ==="
+
+// Call Win32 Kernel32 API directly via .lib
+pid = GetCurrentProcessId
+if pid > 0 {
+    prnt ("Win32 PID verified via kernel32.lib: " + pid)
+}
+
+// Call Win32 User32 API via .lib
+screenWidth = GetSystemMetrics 0
+if screenWidth > 0 {
+    prnt ("User32 Screen Width via user32.lib: " + screenWidth)
+}
+
+// Call Win32 Sleep API via .lib
+Sleep 10
+
+prnt "C FFI with .lib Test Passed"
