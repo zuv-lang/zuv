@@ -33,8 +33,8 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     ctx = LLVMGetGlobalContext
     memBuf = LLVMCreateMemoryBufferWithMemoryRange fullIr, fullIr.ln, "zuv_ir", 0
 
-    mut outModPtr = malloc 8
-    mut outMsgPtr = malloc 8
+    let outModPtr = malloc 8
+    let outMsgPtr = malloc 8
     res = LLVMParseIRInContext ctx, memBuf, outModPtr, outMsgPtr
     if res != 0 {
         errMsg = zuv_ptr_deref outMsgPtr
@@ -44,7 +44,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     mod = zuv_ptr_deref outModPtr
 
     triple = "x86_64-pc-windows-msvc"
-    mut targetPtr = malloc 8
+    let targetPtr = malloc 8
     tRes = LLVMGetTargetFromTriple triple, targetPtr, outMsgPtr
     if tRes != 0 {
         errMsg2 = zuv_ptr_deref outMsgPtr
@@ -54,7 +54,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     }
     target = zuv_ptr_deref targetPtr
 
-    mut optLevel = 0
+    let optLevel = 0
     if isRelease == 1 {
         optLevel = 3
     }
@@ -75,7 +75,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
 }
 
 linkDirectObjectFile objPath, outExePath {
-    mut lldBin = "lld-link"
+    let lldBin = "lld-link"
     if fE "lld-link.exe" {
         lldBin = "lld-link.exe"
     } els if fE "bin/lld-link.exe" {
@@ -102,9 +102,9 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
 
         lex = createLexer code
         toks = tokenizeFull lex
-        mut prog = parseProgramFull toks
+        let prog = parseProgramFull toks
         if prog.errors.ln > 0 {
-            mut pe = 0
+            let pe = 0
             wh pe < prog.errors.ln {
                 prnt ("[zuv build] " + prog.errors[pe])
                 pe = pe + 1
@@ -113,17 +113,17 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
         }
 
         // Resolve module imports
-        mut importedStmts = []
-        mut ii = 0
+        let importedStmts = []
+        let ii = 0
         wh ii < prog.statements.ln {
             s = prog.statements[ii]
             if s.kind == "ImportStmt" {
-                mut impPath = s.fromPath
+                let impPath = s.fromPath
                 if impPath == "" && s.paths.ln > 0 {
                     impPath = s.paths[0]
                 }
                 if impPath != "" && impPath != "str" && impPath != "arr" && impPath != "fs" && impPath != "time" && impPath != "thread" && impPath != "thr" && impPath != "os" {
-                    mut fullImpPath = impPath + ".zv"
+                    let fullImpPath = impPath + ".zv"
                     if (fE fullImpPath) == 0 {
                         fullImpPath = "tests/" + impPath + ".zv"
                     }
@@ -132,7 +132,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                         impLex = createLexer impCode
                         impToks = tokenizeFull impLex
                         impProg = parseProgramFull impToks
-                        mut ij = 0
+                        let ij = 0
                         wh ij < impProg.statements.ln {
                             importedStmts.psh impProg.statements[ij]
                             ij = ij + 1
@@ -143,13 +143,13 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
             ii = ii + 1
         }
         if importedStmts.ln > 0 {
-            mut combinedStmts = []
-            mut ck = 0
+            let combinedStmts = []
+            let ck = 0
             wh ck < importedStmts.ln {
                 combinedStmts.psh importedStmts[ck]
                 ck = ck + 1
             }
-            mut cl = 0
+            let cl = 0
             wh cl < prog.statements.ln {
                 combinedStmts.psh prog.statements[cl]
                 cl = cl + 1
@@ -161,7 +161,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
         if okSafety == 1 {
             ir = generateLLVMFull prog
 
-            mut targetExe = outExe
+            let targetExe = outExe
             if targetExe == "" {
                 targetExe = "output.exe"
             }
@@ -248,11 +248,11 @@ handleCheckAll {
     prnt " ZUV CHECKALL v0.5.0 (Native Self-Hosting Static & Type Checker)"
     prnt ""
 
-    mut tests = sF "tests", ".test.zv"
+    let tests = sF "tests", ".test.zv"
 
-    mut passCount = 0
-    mut failCount = 0
-    mut ti = 0
+    let passCount = 0
+    let failCount = 0
+    let ti = 0
     wh ti < tests.ln {
         tFile = tests[ti]
         if tFile == "tests/semantic_errors.test.zv" {
@@ -287,11 +287,11 @@ handleTest {
     prnt " ZUV TEST v0.5.0 (Native Self-Hosting AOT Test Runner)"
     prnt ""
 
-    mut tests = sF "tests", ".test.zv"
+    let tests = sF "tests", ".test.zv"
 
-    mut passCount = 0
-    mut failCount = 0
-    mut ti = 0
+    let passCount = 0
+    let failCount = 0
+    let ti = 0
     overallStart = nw
     wh ti < tests.ln {
         tFile = tests[ti]

@@ -2,14 +2,14 @@
 imp str, arr
 
 createScope {
-    mut vars = []
+    let vars = []
     res = { vars: vars }
     -> res
 }
 
 createChecker {
-    mut scopes = []
-    mut errors = []
+    let scopes = []
+    let errors = []
     globalScope = createScope
     scopes.psh globalScope
     res = { scopes: scopes, errors: errors }
@@ -28,10 +28,10 @@ popCheckerScope checker {
 }
 
 findVarState checker, name {
-    mut i = checker.scopes.ln - 1
+    let i = checker.scopes.ln - 1
     wh i >= 0 {
         sc = checker.scopes[i]
-        mut j = 0
+        let j = 0
         wh j < sc.vars.ln {
             v = sc.vars[j]
             if v.name == name {
@@ -116,14 +116,14 @@ checkExpr checker, expr {
         checkExpr checker, expr.left
         checkExpr checker, expr.right
     } els if expr.kind == "CallExpr" {
-        mut i = 0
+        let i = 0
         wh i < expr.args.ln {
             arg = expr.args[i]
             checkExpr checker, arg
             i = i + 1
         }
     } els if expr.kind == "ArrayExpr" {
-        mut i = 0
+        let i = 0
         wh i < expr.elements.ln {
             elem = expr.elements[i]
             checkExpr checker, elem
@@ -147,7 +147,7 @@ checkStatement checker, stmt {
     } els if stmt.kind == "FunctionDecl" {
         declareVar checker, stmt.name, 0
         pushCheckerScope checker
-        mut i = 0
+        let i = 0
         wh i < stmt.params.ln {
             pName = stmt.params[i]
             if pName != "" {
@@ -156,7 +156,7 @@ checkStatement checker, stmt {
             i = i + 1
         }
         if stmt.body.kind == "BlockStmt" {
-            mut j = 0
+            let j = 0
             wh j < stmt.body.statements.ln {
                 s = stmt.body.statements[j]
                 checkStatement checker, s
@@ -166,7 +166,7 @@ checkStatement checker, stmt {
         popCheckerScope checker
     } els if stmt.kind == "BlockStmt" {
         pushCheckerScope checker
-        mut i = 0
+        let i = 0
         wh i < stmt.statements.ln {
             s = stmt.statements[i]
             checkStatement checker, s
@@ -200,7 +200,7 @@ checkStatement checker, stmt {
     } els if stmt.kind == "ExpressionStmt" {
         checkExpr checker, stmt.expr
     } els if stmt.kind == "ImportStmt" {
-        mut si = 0
+        let si = 0
         wh si < stmt.symbols.ln {
             sym = stmt.symbols[si]
             if sym != "" {
@@ -208,7 +208,7 @@ checkStatement checker, stmt {
             }
             si = si + 1
         }
-        mut pi = 0
+        let pi = 0
         wh pi < stmt.paths.ln {
             p = stmt.paths[pi]
             if p != "" {
@@ -245,7 +245,7 @@ checkStatement checker, stmt {
 
 checkProgram program {
     checker = createChecker
-    mut i = 0
+    let i = 0
     wh i < program.statements.ln {
         stmt = program.statements[i]
         checkStatement checker, stmt
@@ -253,7 +253,7 @@ checkProgram program {
     }
 
     if checker.errors.ln > 0 {
-        mut ei = 0
+        let ei = 0
         wh ei < checker.errors.ln {
             err checker.errors[ei]
             ei = ei + 1

@@ -4,7 +4,7 @@ imp createToken frm tokens
 
 createLexer code {
     l = code.ln
-    mut lexer = { src: code, pos: 0, totalLen: l, line: 1, col: 0, ch: "" }
+    let lexer = { src: code, pos: 0, totalLen: l, line: 1, col: 0, ch: "" }
     readLexerChar lexer
     -> lexer
 }
@@ -69,7 +69,7 @@ isLexerKeyword word {
        word == "els" || word == "wh" || word == "fr" || word == "brk" ||
        word == "cont" || word == "dn" || word == "mch" || word == "ok" ||
        word == "err" || word == "if" || word == "and" || word == "or" ||
-       word == "not" || word == "mut" || word == "asc" || word == "awt" ||
+       word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" ||
        word == "obj" || word == "num" || word == "bool" || word == "str" ||
        word == "extern" || word == "ffi" || word == "main" {
         -> 1
@@ -96,7 +96,7 @@ readLexerString lexer, quoteChar {
     startCol = lexer.col
     readLexerChar lexer
 
-    mut strVal = ""
+    let strVal = ""
     wh lexer.ch != quoteChar && lexer.ch != "" {
         if lexer.ch == "\n" {
             lexer.line = lexer.line + 1
@@ -130,7 +130,7 @@ readLexerString lexer, quoteChar {
 readLexerNumber lexer {
     startLine = lexer.line
     startCol = lexer.col
-    mut numVal = ""
+    let numVal = ""
 
     wh (isLexerDigit lexer.ch) || (lexer.ch == "." && (isLexerDigit (peekLexerChar lexer))) {
         numVal = numVal.concat lexer.ch
@@ -144,7 +144,7 @@ readLexerNumber lexer {
 readLexerIdentifier lexer {
     startLine = lexer.line
     startCol = lexer.col
-    mut word = ""
+    let word = ""
 
     wh (isLexerLetter lexer.ch) || (isLexerDigit lexer.ch) {
         word = word.concat lexer.ch
@@ -313,9 +313,9 @@ nextLexerToken lexer {
 }
 
 tokenizeFull lexer {
-    mut tokensList = []
+    let tokensList = []
 
-    mut done = 0
+    let done = 0
     wh done == 0 {
         tok = nextLexerToken lexer
         tokensList.psh tok
