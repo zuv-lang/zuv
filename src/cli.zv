@@ -122,7 +122,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                 if impPath == "" && s.paths.ln > 0 {
                     impPath = s.paths[0]
                 }
-                if impPath != "" && impPath != "str" && impPath != "arr" && impPath != "fs" && impPath != "time" && impPath != "thread" && impPath != "thr" && impPath != "os" {
+                if impPath != "" && impPath != "str" && impPath != "arr" && impPath != "fs" && impPath != "time" && impPath != "thread" && impPath != "thrd" && impPath != "os" {
                     let fullImpPath = `${impPath}.zv`
                     if (fE fullImpPath) == 0 {
                         fullImpPath = `tests/${impPath}.zv`

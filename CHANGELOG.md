@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🛡️ Exceptions
+- **Structured Exception Handling (`try` / `cth` / `fin` / `thr`)**: Catch/finally landing pads with guaranteed `fin` on normal exit, early return/break/continue, and after catch. Uncaught `thr` prints and exits. Threading import renamed to `imp thrd`. New test: `try_cth_fin.test.zv`.
+
 ### 🔀 Control Flow
 - **General Value Pattern Matching (`mch` / `sw`)**: Literal arms (number/string/bool), `_` default, and expression arm bodies. `sw` is the switch alias for `mch`. Result `ok`/`err` and enum arms unchanged. Self-host desugars value/`_` arms to `if`/`els` chains. New test: `mch_value.test.zv`.
 - **Iteration Loops (`fr … of`)**: `fr item of arr` and `fr item, idx of arr` with `brk`/`cont`. New test: `fr_of.test.zv`.

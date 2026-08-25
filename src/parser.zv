@@ -296,6 +296,16 @@ createWhileNode cond, body {
     -> res
 }
 
+createTryNode tryBody, catchName, catchBody, finallyBody {
+    res = { kind: "TryStmt", tryBody: tryBody, catchName: catchName, catchBody: catchBody, finallyBody: finallyBody }
+    -> res
+}
+
+createThrowNode val {
+    res = { kind: "ThrowStmt", value: val }
+    -> res
+}
+
 createForNode initS, cond, incS, body {
     res = { kind: "ForStmt", init: initS, condition: cond, increment: incS, body: body }
     -> res
@@ -1317,6 +1327,27 @@ parseStatement p {
         p.allowIdentStruct = 1
         body = parseBlock p
         -> createWhileNode condExpr, body
+    } els if t.kind == "KEYWORD" && t.val == "try" {
+        advanceParser p
+        tryBody = parseBlock p
+        let catchName = ""
+        let catchBody = { kind: "" }
+        let finallyBody = { kind: "" }
+        if (peekTok p).kind == "KEYWORD" && (peekTok p).val == "cth" {
+            advanceParser p // at 'cth'
+            advanceParser p // binding name
+            catchName = (curTok p).val
+            catchBody = parseBlock p
+        }
+        if (peekTok p).kind == "KEYWORD" && (peekTok p).val == "fin" {
+            advanceParser p // at 'fin'
+            finallyBody = parseBlock p
+        }
+        -> createTryNode tryBody, catchName, catchBody, finallyBody
+    } els if t.kind == "KEYWORD" && t.val == "thr" {
+        advanceParser p
+        thrVal = parseExpression p, 0
+        -> createThrowNode thrVal
     } els if t.kind == "KEYWORD" && (t.val == "fr" || t.val == "for") {
         advanceParser p // move past 'fr'
         // fr item of coll | fr item, idx of coll | fr key in obj

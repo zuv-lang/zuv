@@ -98,7 +98,8 @@ isLexerKeyword word {
        word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" ||
        word == "typ" || word == "sym" || word == "enum" || word == "as" ||
        word == "obj" || word == "num" || word == "bool" || word == "str" ||
-       word == "extern" || word == "ffi" || word == "main" {
+       word == "extern" || word == "ffi" || word == "main" ||
+       word == "try" || word == "cth" || word == "fin" || word == "thr" {
         -> 1
     }
     -> 0

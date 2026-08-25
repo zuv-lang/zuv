@@ -17,10 +17,12 @@ createCodegen {
         "destructKind", "bindNames", "source",
         "enums", "enumKeys", "enumVals",
         "symKeys", "symIds", "bigintNames", "strNames",
-        "__keys", "__vals"
+        "__keys", "__vals",
+        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames"
     ]
     let brkStack = []
     let contStack = []
+    let tryStack = []
     let exts = []
     let glbDeclList = []
     let enumsList = []
@@ -42,6 +44,7 @@ createCodegen {
         fieldNames: fields,
         breakLabels: brkStack,
         continueLabels: contStack,
+        tryFrames: tryStack,
         funcs: "",
         mainBody: "",
         isMain: 0,
@@ -2542,7 +2545,28 @@ codegenStmt cg, stmt, outBuf {
             outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${valReg})\n`)
         }
     } els if stmt.kind == "ReturnStmt" {
-        if cg.isMain == 1 {
+        if cg.tryFrames.ln > 0 {
+            tf = cg.tryFrames[cg.tryFrames.ln - 1]
+            if tf.hasFinally == 1 {
+                outBuf.code = outBuf.code.cat (`  store i32 1, ptr ${tf.exitKindAlloc}\n`)
+                if cg.isMain == 1 {
+                    outBuf.code = outBuf.code.cat (`  store i64 0, ptr ${tf.retValAlloc}\n`)
+                } els {
+                    valReg = codegenExpr cg, stmt.value, outBuf
+                    retI = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${retI} = fptosi double ${valReg} to i64\n`)
+                    outBuf.code = outBuf.code.cat (`  store i64 ${retI}, ptr ${tf.retValAlloc}\n`)
+                }
+                outBuf.code = outBuf.code.cat (`  br label %${tf.finallyLabel}\n`)
+                dummyLbl = newLbl cg, "after_ret_fin"
+                outBuf.code = outBuf.code.cat (`\n${dummyLbl}:\n`)
+            } els if cg.isMain == 1 {
+                outBuf.code = outBuf.code.cat ("  ret i32 0\n")
+            } els {
+                valReg = codegenExpr cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.cat (`  ret double ${valReg}\n`)
+            }
+        } els if cg.isMain == 1 {
             outBuf.code = outBuf.code.cat ("  ret i32 0\n")
         } els {
             valReg = codegenExpr cg, stmt.value, outBuf
@@ -2628,14 +2652,40 @@ codegenStmt cg, stmt, outBuf {
         cg.breakLabels.pp
         cg.continueLabels.pp
     } els if stmt.kind == "BreakStmt" {
-        if cg.breakLabels.ln > 0 {
+        if cg.tryFrames.ln > 0 {
+            tf = cg.tryFrames[cg.tryFrames.ln - 1]
+            if tf.hasFinally == 1 {
+                outBuf.code = outBuf.code.cat (`  store i32 2, ptr ${tf.exitKindAlloc}\n`)
+                outBuf.code = outBuf.code.cat (`  br label %${tf.finallyLabel}\n`)
+                dummyLbl = newLbl cg, "after_brk_fin"
+                outBuf.code = outBuf.code.cat (`\n${dummyLbl}:\n`)
+            } els if cg.breakLabels.ln > 0 {
+                endLabel = cg.breakLabels[cg.breakLabels.ln - 1]
+                outBuf.code = outBuf.code.cat (`  br label %${endLabel}\n`)
+                dummyLbl = newLbl cg, "brk_after"
+                outBuf.code = outBuf.code.cat (`\n${dummyLbl}:\n`)
+            }
+        } els if cg.breakLabels.ln > 0 {
             endLabel = cg.breakLabels[cg.breakLabels.ln - 1]
             outBuf.code = outBuf.code.cat (`  br label %${endLabel}\n`)
             dummyLbl = newLbl cg, "brk_after"
             outBuf.code = outBuf.code.cat (`\n${dummyLbl}:\n`)
         }
     } els if stmt.kind == "ContinueStmt" {
-        if cg.continueLabels.ln > 0 {
+        if cg.tryFrames.ln > 0 {
+            tf = cg.tryFrames[cg.tryFrames.ln - 1]
+            if tf.hasFinally == 1 {
+                outBuf.code = outBuf.code.cat (`  store i32 3, ptr ${tf.exitKindAlloc}\n`)
+                outBuf.code = outBuf.code.cat (`  br label %${tf.finallyLabel}\n`)
+                dummyLbl = newLbl cg, "after_cont_fin"
+                outBuf.code = outBuf.code.cat (`\n${dummyLbl}:\n`)
+            } els if cg.continueLabels.ln > 0 {
+                contLabel = cg.continueLabels[cg.continueLabels.ln - 1]
+                outBuf.code = outBuf.code.cat (`  br label %${contLabel}\n`)
+                dummyLbl = newLbl cg, "cont_after"
+                outBuf.code = outBuf.code.cat (`\n${dummyLbl}:\n`)
+            }
+        } els if cg.continueLabels.ln > 0 {
             contLabel = cg.continueLabels[cg.continueLabels.ln - 1]
             outBuf.code = outBuf.code.cat (`  br label %${contLabel}\n`)
             dummyLbl = newLbl cg, "cont_after"
@@ -2695,6 +2745,174 @@ codegenStmt cg, stmt, outBuf {
         outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
 
         outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
+    } els if stmt.kind == "TryStmt" {
+        mut hasCatch = 0
+        mut hasFinally = 0
+        if stmt.catchBody.kind != "" {
+            hasCatch = 1
+        }
+        if stmt.finallyBody.kind != "" {
+            hasFinally = 1
+        }
+        if hasCatch == 0 && hasFinally == 0 {
+            codegenStmt cg, stmt.tryBody, outBuf
+        } els {
+            catchLbl = newLbl cg, "lpad_catch"
+            finLbl = newLbl cg, "lpad_fin"
+            endLbl = newLbl cg, "try_end"
+            exitAlloc = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${exitAlloc} = alloca i32\n`)
+            outBuf.code = outBuf.code.cat (`  store i32 0, ptr ${exitAlloc}\n`)
+            retAlloc = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${retAlloc} = alloca i64\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 0, ptr ${retAlloc}\n`)
+            frame = {
+                catchLabel: catchLbl,
+                finallyLabel: finLbl,
+                endLabel: endLbl,
+                exitKindAlloc: exitAlloc,
+                retValAlloc: retAlloc,
+                hasCatch: hasCatch,
+                hasFinally: hasFinally,
+                catchName: stmt.catchName
+            }
+            cg.tryFrames.psh frame
+            bodyLbl = newLbl cg, "try_body"
+            outBuf.code = outBuf.code.cat (`  br label %${bodyLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${bodyLbl}:\n`)
+            codegenStmt cg, stmt.tryBody, outBuf
+            if hasFinally == 1 {
+                outBuf.code = outBuf.code.cat (`  store i32 0, ptr ${exitAlloc}\n`)
+                outBuf.code = outBuf.code.cat (`  br label %${finLbl}\n\n`)
+            } els {
+                outBuf.code = outBuf.code.cat (`  br label %${endLbl}\n\n`)
+            }
+            if hasCatch == 1 {
+                outBuf.code = outBuf.code.cat (`${catchLbl}:\n`)
+                if cg.tryFrames.ln > 0 {
+                    cg.tryFrames.pp
+                }
+                loaded = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${loaded} = load i64, ptr @zuv_exc_value\n`)
+                asDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${loaded} to double\n`)
+                if stmt.catchName != "" {
+                    catchPtr = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${catchPtr} = alloca double\n`)
+                    outBuf.code = outBuf.code.cat (`  store double ${asDbl}, ptr ${catchPtr}\n`)
+                    addCgSymbol cg, stmt.catchName, catchPtr
+                    markStrVar cg, stmt.catchName
+                }
+                codegenStmt cg, stmt.catchBody, outBuf
+                if hasFinally == 1 {
+                    outBuf.code = outBuf.code.cat (`  store i32 0, ptr ${exitAlloc}\n`)
+                    outBuf.code = outBuf.code.cat (`  br label %${finLbl}\n\n`)
+                } els {
+                    outBuf.code = outBuf.code.cat (`  br label %${endLbl}\n\n`)
+                }
+            }
+            if hasFinally == 1 {
+                outBuf.code = outBuf.code.cat (`${finLbl}:\n`)
+                if cg.tryFrames.ln > 0 {
+                    topF = cg.tryFrames[cg.tryFrames.ln - 1]
+                    if topF.finallyLabel == finLbl {
+                        cg.tryFrames.pp
+                    }
+                }
+                codegenStmt cg, stmt.finallyBody, outBuf
+                ek = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ek} = load i32, ptr ${exitAlloc}\n`)
+                isRet = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${isRet} = icmp eq i32 ${ek}, 1\n`)
+                doRet = newLbl cg, "try_do_ret"
+                notRet = newLbl cg, "try_not_ret"
+                outBuf.code = outBuf.code.cat (`  br i1 ${isRet}, label %${doRet}, label %${notRet}\n\n`)
+                outBuf.code = outBuf.code.cat (`${doRet}:\n`)
+                if cg.isMain == 1 {
+                    outBuf.code = outBuf.code.cat ("  ret i32 0\n")
+                } els {
+                    rv = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${rv} = load i64, ptr ${retAlloc}\n`)
+                    rvd = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${rvd} = sitofp i64 ${rv} to double\n`)
+                    outBuf.code = outBuf.code.cat (`  ret double ${rvd}\n`)
+                }
+                afterRet = newLbl cg, "after_try_ret"
+                outBuf.code = outBuf.code.cat (`\n${afterRet}:\n`)
+                outBuf.code = outBuf.code.cat (`  br label %${endLbl}\n\n`)
+                outBuf.code = outBuf.code.cat (`${notRet}:\n`)
+                isBrk = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${isBrk} = icmp eq i32 ${ek}, 2\n`)
+                doBrk = newLbl cg, "try_do_brk"
+                notBrk = newLbl cg, "try_not_brk"
+                outBuf.code = outBuf.code.cat (`  br i1 ${isBrk}, label %${doBrk}, label %${notBrk}\n\n`)
+                outBuf.code = outBuf.code.cat (`${doBrk}:\n`)
+                if cg.breakLabels.ln > 0 {
+                    bl = cg.breakLabels[cg.breakLabels.ln - 1]
+                    outBuf.code = outBuf.code.cat (`  br label %${bl}\n\n`)
+                } els {
+                    outBuf.code = outBuf.code.cat (`  br label %${endLbl}\n\n`)
+                }
+                outBuf.code = outBuf.code.cat (`${notBrk}:\n`)
+                isCont = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${isCont} = icmp eq i32 ${ek}, 3\n`)
+                doCont = newLbl cg, "try_do_cont"
+                fall = newLbl cg, "try_fall"
+                outBuf.code = outBuf.code.cat (`  br i1 ${isCont}, label %${doCont}, label %${fall}\n\n`)
+                outBuf.code = outBuf.code.cat (`${doCont}:\n`)
+                if cg.continueLabels.ln > 0 {
+                    cl = cg.continueLabels[cg.continueLabels.ln - 1]
+                    outBuf.code = outBuf.code.cat (`  br label %${cl}\n\n`)
+                } els {
+                    outBuf.code = outBuf.code.cat (`  br label %${endLbl}\n\n`)
+                }
+                outBuf.code = outBuf.code.cat (`${fall}:\n`)
+                outBuf.code = outBuf.code.cat (`  br label %${endLbl}\n\n`)
+                outBuf.code = outBuf.code.cat (`${endLbl}:\n`)
+            } els {
+                if cg.tryFrames.ln > 0 {
+                    topF = cg.tryFrames[cg.tryFrames.ln - 1]
+                    if topF.endLabel == endLbl {
+                        cg.tryFrames.pp
+                    }
+                }
+                outBuf.code = outBuf.code.cat (`${endLbl}:\n`)
+            }
+        }
+    } els if stmt.kind == "ThrowStmt" {
+        mut payload = ""
+        if stmt.value.kind == "StringExpr" {
+            sName = addStrConstant cg, stmt.value.val
+            payload = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${payload} = ptrtoint ptr ${sName} to i64\n`)
+        } els {
+            valReg = codegenExpr cg, stmt.value, outBuf
+            payload = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${payload} = fptosi double ${valReg} to i64\n`)
+        }
+        outBuf.code = outBuf.code.cat (`  store i64 ${payload}, ptr @zuv_exc_value\n`)
+        if cg.tryFrames.ln > 0 {
+            tf = cg.tryFrames[cg.tryFrames.ln - 1]
+            mut target = tf.finallyLabel
+            if tf.hasCatch == 1 {
+                target = tf.catchLabel
+            }
+            outBuf.code = outBuf.code.cat (`  br label %${target}\n`)
+            afterThr = newLbl cg, "after_thr"
+            outBuf.code = outBuf.code.cat (`\n${afterThr}:\n`)
+        } els {
+            if stmt.value.kind == "StringExpr" {
+                sName = addStrConstant cg, stmt.value.val
+                outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @zuv_uncaught_msg, ptr ${sName})\n`)
+            } els {
+                valReg = codegenExpr cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @zuv_uncaught_num, double ${valReg})\n`)
+            }
+            outBuf.code = outBuf.code.cat ("  call void @exit(i32 1)\n")
+            outBuf.code = outBuf.code.cat ("  unreachable\n")
+            afterThr = newLbl cg, "after_thr_exit"
+            outBuf.code = outBuf.code.cat (`\n${afterThr}:\n`)
+        }
     } els if stmt.kind == "EnumDecl" {
         registerEnum cg, stmt
     } els if stmt.kind == "BlockStmt" {
@@ -2788,7 +3006,11 @@ generateLLVMFull program {
     header = header.cat "declare ptr @FindFirstFileA(ptr, ptr)\n"
     header = header.cat "declare i32 @FindNextFileA(ptr, ptr)\n"
     header = header.cat "declare i32 @FindClose(ptr)\n"
-    header = header.cat "declare i32 @snprintf(ptr, i64, ptr, ...)\n\n"
+    header = header.cat "declare i32 @snprintf(ptr, i64, ptr, ...)\n"
+    header = header.cat "declare void @exit(i32)\n"
+    header = header.cat "@zuv_exc_value = global i64 0\n"
+    header = header.cat `@zuv_uncaught_msg = private unnamed_addr constant [24 x i8] c"uncaught exception: %s\\0A\\00"\n`
+    header = header.cat `@zuv_uncaught_num = private unnamed_addr constant [24 x i8] c"uncaught exception: %g\\0A\\00"\n\n`
 
     header = header.cat "declare void @LLVMInitializeX86TargetInfo()\n"
     header = header.cat "declare void @LLVMInitializeX86Target()\n"

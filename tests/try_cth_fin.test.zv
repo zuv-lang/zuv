@@ -1,0 +1,43 @@
+// Structured exception handling: try / cth / fin / thr
+
+mut caught = 0
+mut cleaned = 0
+
+try {
+    thr "boom"
+} cth ex {
+    caught = 1
+    prnt ex
+} fin {
+    cleaned = 1
+}
+
+prnt caught
+prnt cleaned
+
+// try + fin only: thr lands in fin cleanup pad
+mut finOnly = 0
+try {
+    thr "x"
+} fin {
+    finOnly = 1
+}
+prnt finOnly
+
+// try + cth only
+mut cOnly = 0
+try {
+    thr "y"
+} cth e {
+    cOnly = 1
+}
+prnt cOnly
+
+// normal path still runs fin
+mut nFin = 0
+try {
+    mut a = 1
+} fin {
+    nFin = 1
+}
+prnt nFin

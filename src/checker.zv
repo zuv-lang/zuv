@@ -311,6 +311,23 @@ checkStatement checker, stmt {
             checkStatement checker, stmt.errBody
         }
         popCheckerScope checker
+    } els if stmt.kind == "TryStmt" {
+        if stmt.tryBody.kind != "" {
+            checkStatement checker, stmt.tryBody
+        }
+        if stmt.catchBody.kind != "" {
+            pushCheckerScope checker
+            if stmt.catchName != "" {
+                declareVar checker, stmt.catchName, 0
+            }
+            checkStatement checker, stmt.catchBody
+            popCheckerScope checker
+        }
+        if stmt.finallyBody.kind != "" {
+            checkStatement checker, stmt.finallyBody
+        }
+    } els if stmt.kind == "ThrowStmt" {
+        checkExpr checker, stmt.value
     } els if stmt.kind == "ExternDecl" {
         if stmt.name != "" {
             declareVar checker, stmt.name, 0
