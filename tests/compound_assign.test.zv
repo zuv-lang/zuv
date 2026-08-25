@@ -1,0 +1,62 @@
+// Compound assignment operators
+
+let x = 10
+x += 5
+if x == 15 {
+    prnt "+= ok"
+}
+
+x -= 3
+if x == 12 {
+    prnt "-= ok"
+}
+
+x *= 2
+if x == 24 {
+    prnt "*= ok"
+}
+
+x /= 4
+if x == 6 {
+    prnt "/= ok"
+}
+
+x %= 4
+if x == 2 {
+    prnt "%= ok"
+}
+
+let y = 2
+y **= 3
+if y == 8 {
+    prnt "**= ok"
+}
+
+let flags = 0b1100
+flags &= 0b1010
+if flags == 0b1000 {
+    prnt "&= ok"
+}
+
+flags |= 0b0011
+if flags == 0b1011 {
+    prnt "|= ok"
+}
+
+flags ^= 0b0001
+if flags == 0b1010 {
+    prnt "^= ok"
+}
+
+let s = "hi"
+s += "!"
+if s == "hi!" {
+    prnt "str += ok"
+}
+
+s += 9
+if s == "hi!9" {
+    prnt "str += num ok"
+}
+
+prnt "compound assign complete"

@@ -294,6 +294,19 @@ createExpressionStmtNode expr {
     -> res
 }
 
+compoundBaseOp op {
+    if op == "+=" { -> "+" }
+    if op == "-=" { -> "-" }
+    if op == "*=" { -> "*" }
+    if op == "/=" { -> "/" }
+    if op == "%=" { -> "%" }
+    if op == "**=" { -> "**" }
+    if op == "&=" { -> "&" }
+    if op == "|=" { -> "|" }
+    if op == "^=" { -> "^" }
+    -> ""
+}
+
 createDestructureNode destructKind, bindNames, src, isMut {
     res = { kind: "DestructureStmt", destructKind: destructKind, bindNames: bindNames, source: src, isMut: isMut }
     -> res
@@ -1211,6 +1224,22 @@ parseStatement p {
             advanceParser p
             valExpr = parseExpression p, 0
             -> createVarDeclNode identName, valExpr, 0
+        } els if (peekTok p).val == "+=" || (peekTok p).val == "-=" || (peekTok p).val == "*=" || (peekTok p).val == "/=" || (peekTok p).val == "%=" || (peekTok p).val == "**=" || (peekTok p).val == "&=" || (peekTok p).val == "|=" || (peekTok p).val == "^=" {
+            // x += rhs → x = x + rhs
+            compOp = (peekTok p).val
+            baseOp = compoundBaseOp compOp
+            advanceParser p // consume compound
+            if (peekTok p).kind == "EOF" {
+                p.errors.psh `Syntax Error: Expected expression after compound assign`
+                -> { kind: "" }
+            }
+            advanceParser p
+            valExpr = parseExpression p, 0
+            loadVar = createVariableNode identName
+            binExpr = createBinaryNode baseOp, loadVar, valExpr
+            storeVar = createVariableNode identName
+            assignExpr = createBinaryNode "=", storeVar, binExpr
+            -> createExpressionStmtNode assignExpr
         } els if (peekTok p).val == ":" {
             advanceParser p // consume ':'
             advanceParser p // consume type
@@ -1232,6 +1261,19 @@ parseStatement p {
                 propAccess = createPropertyAccessNode targetVar, propName
                 binNode = createBinaryNode "=", propAccess, valExpr
                 -> createExpressionStmtNode binNode
+            } els if (peekTok p).val == "+=" || (peekTok p).val == "-=" || (peekTok p).val == "*=" || (peekTok p).val == "/=" || (peekTok p).val == "%=" || (peekTok p).val == "**=" || (peekTok p).val == "&=" || (peekTok p).val == "|=" || (peekTok p).val == "^=" {
+                compOp = (peekTok p).val
+                baseOp = compoundBaseOp compOp
+                advanceParser p
+                advanceParser p
+                valExpr = parseExpression p, 0
+                loadObj = createVariableNode identName
+                loadProp = createPropertyAccessNode loadObj, propName
+                binExpr = createBinaryNode baseOp, loadProp, valExpr
+                storeObj = createVariableNode identName
+                storeProp = createPropertyAccessNode storeObj, propName
+                assignExpr = createBinaryNode "=", storeProp, binExpr
+                -> createExpressionStmtNode assignExpr
             } els if propName == "pp" || propName == "pop" {
                 let args = [targetVar]
                 callNode = createCallNode propName, args

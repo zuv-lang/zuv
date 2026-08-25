@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bitwise (`&`, `|`, `^`, `~`, `<<`, `>>`, `>>>`)**: Integer bitwise ops via `fptosi`/`sitofp`; prefix `&` remains borrow. New test: `bitwise.test.zv`.
 - **Explicit Cast (`as`)**: `expr as int|num|bool|str|*byte|ptr` via `fptosi`/`sitofp`/`bitcast`. New test: `as_cast.test.zv`.
 - **Implicit String + Number (`+`)**: `"Hello " + 5` / `5 + "x"` coerce the number via `snprintf`; chained concat and string vars tracked. New test: `str_num_plus.test.zv`.
+- **Compound Assignment (`+=` … `^=`)**: Desugars to `x = x op rhs` (incl. `**=`, `str +=`). Also fixed `%` → LLVM `frem`. New test: `compound_assign.test.zv`.
 
 ---
 

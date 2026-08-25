@@ -843,6 +843,12 @@ codegenExpr cg, expr, outBuf {
             -> resReg
         }
 
+        if expr.op == "%" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = frem double ${leftReg}, ${rightReg}\n`)
+            -> resReg
+        }
+
         // `as` cast may arrive as BinaryExpr if infix path used
         if expr.op == "as" {
             mut t = ""
