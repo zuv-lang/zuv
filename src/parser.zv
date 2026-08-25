@@ -63,6 +63,9 @@ getTokenPrecedence tok {
         if tok.val == "**" {
             -> 8
         }
+        if tok.val == "++" || tok.val == "--" {
+            -> 10
+        }
         if tok.val == "." || tok.val == "(" || tok.val == "[" {
             -> 10
         }
@@ -165,7 +168,12 @@ createBinaryNode op, left, right {
 }
 
 createUnaryNode op, right {
-    res = { kind: "UnaryExpr", op: op, right: right }
+    res = { kind: "UnaryExpr", op: op, right: right, prefix: 1 }
+    -> res
+}
+
+createPostfixUnaryNode op, left {
+    res = { kind: "UnaryExpr", op: op, right: left, prefix: 0 }
     -> res
 }
 
@@ -654,7 +662,7 @@ parseExpression p, precedence {
         advanceParser p
         left = parseExpression p, 0
         expectPeekToken p, "SYM", ")"
-    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
+    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "++" || t.val == "--")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
             advanceParser p // skip 'mut'
@@ -752,6 +760,10 @@ parseExpression p, precedence {
                     } els {
                         left = createCallNode "", args
                     }
+                } els if peekT.val == "++" || peekT.val == "--" {
+                    advanceParser p
+                    op = (curTok p).val
+                    left = createPostfixUnaryNode op, left
                 } els {
                     advanceParser p
                     curT = curTok p

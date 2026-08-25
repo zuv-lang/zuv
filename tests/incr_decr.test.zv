@@ -1,0 +1,60 @@
+// Increment / decrement: ++x, x++, --x, x--
+
+let x = 10
+x++
+if x == 11 {
+    prnt "postfix ++ ok"
+}
+
+++x
+if x == 12 {
+    prnt "prefix ++ ok"
+}
+
+x--
+if x == 11 {
+    prnt "postfix -- ok"
+}
+
+--x
+if x == 10 {
+    prnt "prefix -- ok"
+}
+
+let a = 5
+let b = a++
+if b == 5 {
+    prnt "postfix ++ returns old ok"
+}
+if a == 6 {
+    prnt "postfix ++ mutates ok"
+}
+
+let c = 5
+let d = ++c
+if d == 6 {
+    prnt "prefix ++ returns new ok"
+}
+if c == 6 {
+    prnt "prefix ++ mutates ok"
+}
+
+let e = 3
+let f = e--
+if f == 3 {
+    prnt "postfix -- returns old ok"
+}
+if e == 2 {
+    prnt "postfix -- mutates ok"
+}
+
+let g = 3
+let h = --g
+if h == 2 {
+    prnt "prefix -- returns new ok"
+}
+if g == 2 {
+    prnt "prefix -- mutates ok"
+}
+
+prnt "incr decr test complete"

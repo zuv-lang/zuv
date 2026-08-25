@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚡ Operators
+- **Increment & Decrement (`++` / `--`)**: Prefix and postfix on variables (`++x`, `x++`, `--x`, `x--`). New test: `incr_decr.test.zv`.
+
 ---
 
 ## [0.6.0] - 2026-08-25

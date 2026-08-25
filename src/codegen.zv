@@ -1576,6 +1576,28 @@ codegenExpr cg, expr, outBuf {
             keyReg = codegenExpr cg, expr.right, outBuf
             -> keyReg
         }
+        if expr.op == "++" || expr.op == "--" {
+            if expr.right.kind != "VariableExpr" {
+                -> "0.0"
+            }
+            cgSym = findCgSymbol cg, expr.right.name
+            if cgSym.name == "" {
+                -> "0.0"
+            }
+            oldReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${oldReg} = load double, ptr ${cgSym.reg}\n`)
+            newVal = newReg cg
+            if expr.op == "++" {
+                outBuf.code = outBuf.code.cat (`  ${newVal} = fadd double ${oldReg}, 1.0\n`)
+            } els {
+                outBuf.code = outBuf.code.cat (`  ${newVal} = fsub double ${oldReg}, 1.0\n`)
+            }
+            outBuf.code = outBuf.code.cat (`  store double ${newVal}, ptr ${cgSym.reg}\n`)
+            if expr.prefix == 0 {
+                -> oldReg
+            }
+            -> newVal
+        }
         rReg = codegenExpr cg, expr.right, outBuf
         if expr.op == "!" || expr.op == "not" {
             cmpReg = emitTruthyI1 cg, rReg, outBuf
