@@ -13,7 +13,7 @@ readLexerChar lexer {
     if lexer.pos >= lexer.totalLen {
         lexer.ch = ""
     } els {
-        lexer.ch = lexer.src.charAt lexer.pos
+        lexer.ch = lexer.src.chr lexer.pos
         lexer.pos = lexer.pos + 1
         lexer.col = lexer.col + 1
     }
@@ -23,7 +23,7 @@ peekLexerChar lexer {
     if lexer.pos >= lexer.totalLen {
         -> ""
     }
-    nextCh = lexer.src.charAt lexer.pos
+    nextCh = lexer.src.chr lexer.pos
     -> nextCh
 }
 
@@ -101,20 +101,20 @@ readLexerString lexer, quoteChar {
         if lexer.ch == "\n" {
             lexer.line = lexer.line + 1
             lexer.col = 0
-            strVal = strVal.concat "\n"
+            strVal = strVal.cat "\n"
         } els if lexer.ch == "\\" {
             readLexerChar lexer
-            if lexer.ch == "n" { strVal = strVal.concat "\n" }
-            els if lexer.ch == "t" { strVal = strVal.concat "\t" }
-            els if lexer.ch == "r" { strVal = strVal.concat "\r" }
-            els if lexer.ch == "\"" { strVal = strVal.concat "\"" }
-            els if lexer.ch == "'" { strVal = strVal.concat "'" }
-            els if lexer.ch == "`" { strVal = strVal.concat "`" }
-            els if lexer.ch == "$" { strVal = strVal.concat "$" }
-            els if lexer.ch == "\\" { strVal = strVal.concat "\\" }
-            els { strVal = strVal.concat lexer.ch }
+            if lexer.ch == "n" { strVal = strVal.cat "\n" }
+            els if lexer.ch == "t" { strVal = strVal.cat "\t" }
+            els if lexer.ch == "r" { strVal = strVal.cat "\r" }
+            els if lexer.ch == `"` { strVal = strVal.cat `"` }
+            els if lexer.ch == `'` { strVal = strVal.cat `'` }
+            els if lexer.ch == "`" { strVal = strVal.cat "`" }
+            els if lexer.ch == "$" { strVal = strVal.cat "$" }
+            els if lexer.ch == "\\" { strVal = strVal.cat "\\" }
+            els { strVal = strVal.cat lexer.ch }
         } els {
-            strVal = strVal.concat lexer.ch
+            strVal = strVal.cat lexer.ch
         }
         readLexerChar lexer
     }
@@ -133,7 +133,7 @@ readLexerNumber lexer {
     let numVal = ""
 
     wh (isLexerDigit lexer.ch) || (lexer.ch == "." && (isLexerDigit (peekLexerChar lexer))) {
-        numVal = numVal.concat lexer.ch
+        numVal = numVal.cat lexer.ch
         readLexerChar lexer
     }
 
@@ -147,7 +147,7 @@ readLexerIdentifier lexer {
     let word = ""
 
     wh (isLexerLetter lexer.ch) || (isLexerDigit lexer.ch) {
-        word = word.concat lexer.ch
+        word = word.cat lexer.ch
         readLexerChar lexer
     }
 
@@ -294,7 +294,7 @@ nextLexerToken lexer {
         -> createToken "SYM", c, startLine, startCol
     }
 
-    if lexer.ch == "\"" || lexer.ch == "'" || lexer.ch == "`" {
+    if lexer.ch == `"` || lexer.ch == `'` || lexer.ch == "`" {
         q = lexer.ch
         -> readLexerString lexer, q
     }

@@ -29,7 +29,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     LLVMInitializeX86AsmPrinter
     LLVMInitializeX86AsmParser
 
-    fullIr = "target triple = \"x86_64-pc-windows-msvc\"\n" + ir
+    fullIr = `target triple = "x86_64-pc-windows-msvc"\n${ir}`
     ctx = LLVMGetGlobalContext
     memBuf = LLVMCreateMemoryBufferWithMemoryRange fullIr, fullIr.ln, "zuv_ir", 0
 
@@ -38,7 +38,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     res = LLVMParseIRInContext ctx, memBuf, outModPtr, outMsgPtr
     if res != 0 {
         errMsg = zuv_ptr_deref outMsgPtr
-        prnt ("[LLVM Error] IR Parse Failed: " + errMsg)
+        prnt (`[LLVM Error] IR Parse Failed: ${errMsg}`)
         -> 1
     }
     mod = zuv_ptr_deref outModPtr
@@ -48,7 +48,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     tRes = LLVMGetTargetFromTriple triple, targetPtr, outMsgPtr
     if tRes != 0 {
         errMsg2 = zuv_ptr_deref outMsgPtr
-        prnt ("[LLVM Error] Target lookup failed: " + errMsg2)
+        prnt (`[LLVM Error] Target lookup failed: ${errMsg2}`)
         LLVMDisposeModule mod
         -> 1
     }
@@ -63,7 +63,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     emitRes = LLVMTargetMachineEmitToFile tm, mod, outputObjPath, 1, outMsgPtr
     if emitRes != 0 {
         errMsg3 = zuv_ptr_deref outMsgPtr
-        prnt ("[LLVM Error] Object code emission failed: " + errMsg3)
+        prnt (`[LLVM Error] Object code emission failed: ${errMsg3}`)
         LLVMDisposeTargetMachine tm
         LLVMDisposeModule mod
         -> 1
@@ -81,7 +81,7 @@ linkDirectObjectFile objPath, outExePath {
     } els if fE "bin/lld-link.exe" {
         lldBin = "bin/lld-link.exe"
     }
-    cmd = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" -stack:33554432 -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo"
+    cmd = `${lldBin} "${objPath}" -out:"${outExePath}" -stack:33554432 -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo`
     res = system cmd
     -> res
 }
@@ -92,7 +92,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
         prnt "==========================================="
         prnt "     Zuv Self-Hosting Compiler [BUILD]     "
         prnt "==========================================="
-        prnt ("Compiling target file: " + targetFile)
+        prnt (`Compiling target file: ${targetFile}`)
 
         if isRelease == 1 {
             prnt "Optimization: Release Mode (-O3 Native)"
@@ -106,7 +106,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
         if prog.errors.ln > 0 {
             let pe = 0
             wh pe < prog.errors.ln {
-                prnt ("[zuv build] " + prog.errors[pe])
+                prnt (`[zuv build] ${prog.errors[pe]}`)
                 pe = pe + 1
             }
             -> 0
@@ -123,9 +123,9 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                     impPath = s.paths[0]
                 }
                 if impPath != "" && impPath != "str" && impPath != "arr" && impPath != "fs" && impPath != "time" && impPath != "thread" && impPath != "thr" && impPath != "os" {
-                    let fullImpPath = impPath + ".zv"
+                    let fullImpPath = `${impPath}.zv`
                     if (fE fullImpPath) == 0 {
-                        fullImpPath = "tests/" + impPath + ".zv"
+                        fullImpPath = `tests/${impPath}.zv`
                     }
                     if (fE fullImpPath) == 1 {
                         impCode = rF fullImpPath
@@ -171,7 +171,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                 prnt "[zuv build] Successfully generated output_selfhost.ll via self-hosting compiler!"
                 -> 1
             } els {
-                objPath = targetExe + ".obj"
+                objPath = `${targetExe}.obj`
                 emitRes = emitDirectObjectFile ir, objPath, isRelease
                 if emitRes != 0 {
                     prnt "[zuv build] Direct in-process LLVM object code generation failed."
@@ -183,9 +183,9 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                 }
                 if linkRes == 0 {
                     if isRelease == 1 {
-                        prnt ("[zuv build] Successfully generated " + targetExe + " (-O3 Native In-Process)")
+                        prnt (`[zuv build] Successfully generated ${targetExe} (-O3 Native In-Process)`)
                     } els {
-                        prnt ("[zuv build] Successfully generated " + targetExe + " (Debug In-Process)")
+                        prnt (`[zuv build] Successfully generated ${targetExe} (Debug In-Process)`)
                     }
                     -> 1
                 } els {
@@ -198,7 +198,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
             -> 0
         }
     } els {
-        prnt ("[zuv build] Error: Could not open source file: " + targetFile)
+        prnt (`[zuv build] Error: Could not open source file: ${targetFile}`)
         -> 0
     }
 }
@@ -211,14 +211,14 @@ handleCheck targetFile {
         prog = parseProgramFull toks
         okSafety = checkProgram prog
         if okSafety == 1 {
-            prnt (" PASS " + targetFile)
+            prnt (` PASS ${targetFile}`)
             -> 1
         } els {
-            prnt (" FAIL " + targetFile + " (Semantic / Safety Check Failed)")
+            prnt (` FAIL ${targetFile} (Semantic / Safety Check Failed)`)
             -> 0
         }
     } els {
-        prnt (" FAIL " + targetFile + " (File Not Found)")
+        prnt (` FAIL ${targetFile} (File Not Found)`)
         -> 0
     }
 }
@@ -226,7 +226,7 @@ handleCheck targetFile {
 handleRun targetFile {
     res = handleBuild targetFile, 0, 0, "output.exe"
     if res == 1 {
-        prnt ("[zuv run] Executing output.exe for " + targetFile)
+        prnt (`[zuv run] Executing output.exe for ${targetFile}`)
         sh ".\\output.exe"
     }
     -> res
@@ -235,10 +235,10 @@ handleRun targetFile {
 handleFmt targetFile {
     if fE targetFile {
         code = rF targetFile
-        prnt ("[zuv fmt] Formatted " + targetFile + " successfully.")
+        prnt (`[zuv fmt] Formatted ${targetFile} successfully.`)
         -> 1
     } els {
-        err ("[zuv fmt] Error: Could not open " + targetFile)
+        err (`[zuv fmt] Error: Could not open ${targetFile}`)
         -> 0
     }
 }
@@ -256,7 +256,7 @@ handleCheckAll {
     wh ti < tests.ln {
         tFile = tests[ti]
         if (tFile.cnt "error") > 0 {
-            prnt (" PASS " + tFile + " (Expected error caught)")
+            prnt (` PASS ${tFile} (Expected error caught)`)
             passCount = passCount + 1
         } els {
             r = handleCheck tFile
@@ -272,11 +272,11 @@ handleCheckAll {
     total = passCount + failCount
     prnt ""
     if failCount == 0 {
-        prnt (" Checked Files: " + passCount + " passed (" + total + ")")
-        prnt ("        Status: " + passCount + " passed")
+        prnt (` Checked Files: ${passCount} passed (${total})`)
+        prnt (`        Status: ${passCount} passed`)
     } els {
-        prnt (" Checked Files: " + failCount + " failed, " + passCount + " passed (" + total + ")")
-        prnt ("        Status: " + failCount + " failed, " + passCount + " passed")
+        prnt (` Checked Files: ${failCount} failed, ${passCount} passed (${total})`)
+        prnt (`        Status: ${failCount} failed, ${passCount} passed`)
     }
     prnt ""
     -> 1
@@ -307,26 +307,26 @@ handleTest {
         if isExpectedError == 1 {
             tElapsed = nw - tStart
             if buildOk == 0 {
-                prnt (" PASS " + tFile + " (" + tElapsed + "ms) [Expected Error]")
+                prnt (` PASS ${tFile} (${tElapsed}ms) [Expected Error]`)
                 passCount = passCount + 1
             } els {
-                prnt (" FAIL " + tFile + " (" + tElapsed + "ms) [Expected error but compiled]")
+                prnt (` FAIL ${tFile} (${tElapsed}ms) [Expected error but compiled]`)
                 failCount = failCount + 1
             }
         } els {
             if buildOk == 0 {
                 tElapsed = nw - tStart
-                prnt (" FAIL " + tFile + " (" + tElapsed + "ms) [Compilation Failed]")
+                prnt (` FAIL ${tFile} (${tElapsed}ms) [Compilation Failed]`)
                 failCount = failCount + 1
             } els {
-                runCmd = ".\\" + tempExe + " > nul 2>&1"
+                runCmd = `.\\${tempExe} > nul 2>&1`
                 runRes = sh runCmd
                 tElapsed = nw - tStart
                 if runRes == 0 {
-                    prnt (" PASS " + tFile + " (" + tElapsed + "ms)")
+                    prnt (` PASS ${tFile} (${tElapsed}ms)`)
                     passCount = passCount + 1
                 } els {
-                    prnt (" FAIL " + tFile + " (" + tElapsed + "ms) [Execution failed code " + runRes + "]")
+                    prnt (` FAIL ${tFile} (${tElapsed}ms) [Execution failed code ${runRes}]`)
                     failCount = failCount + 1
                 }
             }
@@ -342,13 +342,13 @@ handleTest {
     total = passCount + failCount
     prnt ""
     if failCount == 0 {
-        prnt (" Test Files: " + passCount + " passed (" + total + ")")
-        prnt ("      Tests: " + passCount + " passed")
+        prnt (` Test Files: ${passCount} passed (${total})`)
+        prnt (`      Tests: ${passCount} passed`)
     } els {
-        prnt (" Test Files: " + failCount + " failed, " + passCount + " passed (" + total + ")")
-        prnt ("      Tests: " + failCount + " failed, " + passCount + " passed")
+        prnt (` Test Files: ${failCount} failed, ${passCount} passed (${total})`)
+        prnt (`      Tests: ${failCount} failed, ${passCount} passed`)
     }
-    prnt ("   Duration: " + totalElapsed + "ms")
+    prnt (`   Duration: ${totalElapsed}ms`)
     prnt ""
     -> 1
 }

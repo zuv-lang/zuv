@@ -5,6 +5,14 @@ All notable changes to the **Zuv** programming language and self-hosting compile
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🔤 Self-Hosting Source Style
+- **Template Literals**: Migrated self-hosting compiler sources (`src/*.zv`) from `"..." + expr` concatenation and escaped `\"` strings to backtick templates with `${...}` interpolation (e.g. `` `tests/${impPath}.zv` ``). Plain string literals left unchanged.
+- **Shortform Methods**: Replaced long-form std method calls with shortforms used in the test suite — `.concat` → `.cat`, `.charAt` → `.chr`.
+
+---
+
 ## [0.5.0] - 2026-08-25
 
 ### 📦 Variables & Scope

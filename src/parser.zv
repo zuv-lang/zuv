@@ -113,7 +113,7 @@ expectPeekToken p, expectedKind, expectedVal {
             -> 1
         }
     }
-    p.errors.psh ("Syntax Error: Expected " + expectedVal + " at line " + peekT.line)
+    p.errors.psh (`Syntax Error: Expected ${expectedVal} at line ${peekT.line}`)
     -> 0
 }
 
@@ -362,7 +362,7 @@ parseArrayDestructure p, isMut {
         advanceParser p
     }
     src = parseExpression p, 0
-    tempName = "__darr" + p.desCount
+    tempName = `__darr${p.desCount}`
     p.desCount = p.desCount + 1
     let stmts = []
     stmts.psh (createVarDeclNode tempName, src, 1)
@@ -413,7 +413,7 @@ parseObjectDestructure p, isMut {
         advanceParser p
     }
     src = parseExpression p, 0
-    tempName = "__dobj" + p.desCount
+    tempName = `__dobj${p.desCount}`
     p.desCount = p.desCount + 1
     let stmts = []
     stmts.psh (createVarDeclNode tempName, src, 1)
@@ -454,7 +454,7 @@ parseMultiVarAssign p, isMut {
     }
     advanceParser p
     src = parseExpression p, 0
-    tempName = "__dmul" + p.desCount
+    tempName = `__dmul${p.desCount}`
     p.desCount = p.desCount + 1
     let stmts = []
     stmts.psh (createVarDeclNode tempName, src, 1)
@@ -977,7 +977,7 @@ parseStatement p {
         } els if (peekTok p).val == "=" {
             advanceParser p // consume '='
             if (peekTok p).kind == "EOF" {
-                p.errors.psh "Syntax Error: Expected expression after '='"
+                p.errors.psh `Syntax Error: Expected expression after '='`
                 -> { kind: "" }
             }
             advanceParser p
