@@ -53,7 +53,27 @@ jobs:
           gh release download $env:BOOTSTRAP_RELEASE_TAG --repo $env:BOOTSTRAP_REPOSITORY --pattern "*${{ matrix.target }}*" --dir ./bootstrap
           if ($LASTEXITCODE -eq 0) {
             Expand-Archive -Path "./bootstrap/zuv-windows-x64.zip" -DestinationPath ./bootstrap -Force
-            Write-Host "Bootstrap compiler downloaded successfully."
+            # Flatten nested folder layouts (e.g. zuv-windows-x64/zuv.exe → bootstrap/zuv.exe)
+            if (-not (Test-Path "./bootstrap/zuv.exe")) {
+              $nested = Get-ChildItem ./bootstrap -Recurse -Filter "zuv.exe" -File | Select-Object -First 1
+              if ($nested) {
+                $srcDir = $nested.Directory.FullName
+                Get-ChildItem $srcDir -Force | ForEach-Object {
+                  $dest = Join-Path "./bootstrap" $_.Name
+                  if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+                  Move-Item $_.FullName $dest -Force
+                }
+                if (($srcDir -ne (Resolve-Path ./bootstrap).Path) -and (Test-Path $srcDir)) {
+                  Remove-Item $srcDir -Recurse -Force -ErrorAction SilentlyContinue
+                }
+              }
+            }
+            if (Test-Path "./bootstrap/zuv.exe") {
+              Write-Host "Bootstrap compiler ready at ./bootstrap/zuv.exe"
+            } else {
+              Write-Host "Bootstrap zip extracted but zuv.exe not found; proceeding with source validation."
+              Get-ChildItem ./bootstrap -Recurse | Select-Object -First 40 FullName | ForEach-Object { Write-Host $_ }
+            }
           } else {
             Write-Host "No bootstrap release found, proceeding with source validation."
           }
@@ -66,11 +86,25 @@ jobs:
           mkdir -p ./bootstrap
           if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo "$BOOTSTRAP_REPOSITORY" --pattern "*${{ matrix.target }}*" --dir ./bootstrap; then
             tar -xzf "./bootstrap/zuv-${{ matrix.target }}.tar.gz" -C ./bootstrap
-            chmod +x "./bootstrap/zuv"
-            if [ "$RUNNER_OS" = "macOS" ]; then
-              install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" ./bootstrap/zuv
+            if [ ! -f "./bootstrap/zuv" ]; then
+              nested="$(find ./bootstrap -type f -name zuv | head -n 1)"
+              if [ -n "$nested" ]; then
+                src_dir="$(dirname "$nested")"
+                shopt -s dotglob
+                mv "$src_dir"/* ./bootstrap/ 2>/dev/null || true
+                shopt -u dotglob
+                rmdir "$src_dir" 2>/dev/null || true
+              fi
             fi
-            echo "Bootstrap compiler downloaded successfully."
+            if [ -f "./bootstrap/zuv" ]; then
+              chmod +x "./bootstrap/zuv"
+              if [ "$RUNNER_OS" = "macOS" ]; then
+                install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" ./bootstrap/zuv
+              fi
+              echo "Bootstrap compiler ready at ./bootstrap/zuv"
+            else
+              echo "Bootstrap archive extracted but zuv binary not found; proceeding with source validation."
+            fi
           else
             echo "No bootstrap release found, proceeding with source validation."
           fi
