@@ -16,7 +16,7 @@ createCodegen {
         "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
         "destructKind", "bindNames", "source",
         "enums", "enumKeys", "enumVals",
-        "symKeys", "symIds", "bigintNames"
+        "symKeys", "symIds", "bigintNames", "strNames"
     ]
     let brkStack = []
     let contStack = []
@@ -28,6 +28,7 @@ createCodegen {
     let symKeys = []
     let symIds = []
     let bigintNames = []
+    let strNames = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -47,7 +48,8 @@ createCodegen {
         enumVals: enumVals,
         symKeys: symKeys,
         symIds: symIds,
-        bigintNames: bigintNames
+        bigintNames: bigintNames,
+        strNames: strNames
     }
     -> res
 }
@@ -267,6 +269,58 @@ isBigIntVar cg, name {
     -> 0
 }
 
+markStrVar cg, name {
+    cg.strNames.psh name
+}
+
+isStrVar cg, name {
+    let i = 0
+    wh i < cg.strNames.ln {
+        if (strEq cg.strNames[i], name) == 1 {
+            -> 1
+        }
+        i = i + 1
+    }
+    -> 0
+}
+
+// True if this expr should participate in string + (concat / number coercion)
+isStrPlusOperand cg, expr {
+    if expr.kind == "StringExpr" {
+        -> 1
+    }
+    if expr.kind == "UnaryExpr" {
+        if expr.op == "typ" {
+            -> 1
+        }
+    }
+    if expr.kind == "CastExpr" {
+        if expr.targetType == "str" {
+            -> 1
+        }
+    }
+    if expr.kind == "VariableExpr" {
+        if (isStrVar cg, expr.name) == 1 {
+            -> 1
+        }
+        n = expr.name
+        if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" {
+            -> 1
+        }
+    }
+    if expr.kind == "BinaryExpr" {
+        if expr.op == "+" {
+            if (isStrPlusOperand cg, expr.left) == 1 {
+                -> 1
+            }
+            if (isStrPlusOperand cg, expr.right) == 1 {
+                -> 1
+            }
+        }
+    }
+    -> 0
+}
+
 addCgExtern cg, extDecl {
     cg.externDecls.psh extDecl
 }
@@ -305,6 +359,9 @@ getStrPtrVal cg, expr, outBuf {
         }
         if expr.kind == "VariableExpr" {
             n = expr.name
+            if (isStrVar cg, n) == 1 {
+                isStr = 1
+            }
             if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || (n.cnt "type") == 1 || (n.cnt "Type") == 1 {
                 isStr = 1
             }
@@ -334,7 +391,12 @@ getStrPtrVal cg, expr, outBuf {
         }
         if expr.kind == "BinaryExpr" {
             if expr.op == "+" {
-                isStr = 1
+                if (isStrPlusOperand cg, expr.left) == 1 {
+                    isStr = 1
+                }
+                if (isStrPlusOperand cg, expr.right) == 1 {
+                    isStr = 1
+                }
             }
         }
         if expr.kind == "UnaryExpr" {
@@ -510,8 +572,10 @@ classifyTyp cg, expr {
     }
     if expr.kind == "BinaryExpr" {
         if expr.op == "+" {
-            // string concat if either side looks like string
-            if expr.left.kind == "StringExpr" || expr.right.kind == "StringExpr" {
+            if (isStrPlusOperand cg, expr.left) == 1 {
+                -> "str"
+            }
+            if (isStrPlusOperand cg, expr.right) == 1 {
                 -> "str"
             }
         }
@@ -576,6 +640,9 @@ classifyTyp cg, expr {
         n = expr.name
         if (isBigIntVar cg, n) == 1 {
             -> "bigint"
+        }
+        if (isStrVar cg, n) == 1 {
+            -> "str"
         }
         if n == "ch" || n == "char" || (n.cnt "str") == 1 || (n.cnt "name") == 1 || (n.cnt "path") == 1 || (n.cnt "msg") == 1 || (n.cnt "text") == 1 || (n.cnt "code") == 1 || (n.cnt "file") == 1 {
             -> "str"
@@ -711,22 +778,11 @@ codegenExpr cg, expr, outBuf {
         rightReg = codegenExpr cg, expr.right, outBuf
 
         mut isStrAdd = 0
-        if expr.left.kind == "StringExpr" {
+        if (isStrPlusOperand cg, expr.left) == 1 {
             isStrAdd = 1
         }
-        if expr.right.kind == "StringExpr" {
+        if (isStrPlusOperand cg, expr.right) == 1 {
             isStrAdd = 1
-        }
-        if expr.left.kind == "VariableExpr" {
-            if expr.left.name == "greeting" {
-                isStrAdd = 1
-            }
-            if expr.left.name == "name" {
-                isStrAdd = 1
-            }
-            if expr.left.name == "msg" {
-                isStrAdd = 1
-            }
         }
 
         if expr.op == "+" {
@@ -1830,6 +1886,12 @@ codegenStmt cg, stmt, outBuf {
                 markBigIntVar cg, stmt.name
             }
         }
+        if (isStrPlusOperand cg, stmt.value) == 1 {
+            markStrVar cg, stmt.name
+        }
+        if stmt.value.kind == "StringExpr" {
+            markStrVar cg, stmt.name
+        }
         cgSym = findCgSymbol cg, stmt.name
         if cgSym.name != "" {
             outBuf.code = outBuf.code.cat (`  store double ${valReg}, ptr ${cgSym.reg}\n`)
@@ -1884,13 +1946,25 @@ codegenStmt cg, stmt, outBuf {
             sName = addStrConstant cg, stmt.value.val
             outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sName})\n`)
         } els if stmt.value.kind == "BinaryExpr" {
+            mut printStrAdd = 0
             if stmt.value.op == "+" {
+                if (isStrPlusOperand cg, stmt.value.left) == 1 {
+                    printStrAdd = 1
+                }
+                if (isStrPlusOperand cg, stmt.value.right) == 1 {
+                    printStrAdd = 1
+                }
+            }
+            if printStrAdd == 1 {
                 sPtr = getStrPtrVal cg, stmt.value, outBuf
                 outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sPtr})\n`)
             } els {
                 valReg = codegenExpr cg, stmt.value, outBuf
                 outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${valReg})\n`)
             }
+        } els if stmt.value.kind == "VariableExpr" && (isStrVar cg, stmt.value.name) == 1 {
+            sPtr = getStrPtrVal cg, stmt.value, outBuf
+            outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sPtr})\n`)
         } els if stmt.value.kind == "PropertyAccess" {
             prop = stmt.value.property
             mut isStrProp = 0
