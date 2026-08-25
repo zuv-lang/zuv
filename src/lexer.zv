@@ -510,15 +510,32 @@ nextLexerToken lexer {
             readLexerChar lexer
             -> createToken "SYM", "??", startLine, startCol
         }
+        if lexer.ch == "." {
+            readLexerChar lexer
+            -> createToken "SYM", "?.", startLine, startCol
+        }
         -> createToken "SYM", "?", startLine, startCol
     }
 
     if lexer.ch == "~" || lexer.ch == "(" || lexer.ch == ")" || lexer.ch == "{" || lexer.ch == "}" ||
-       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "." || lexer.ch == "," ||
+       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "," ||
        lexer.ch == ":" || lexer.ch == ";" {
         c = lexer.ch
         readLexerChar lexer
         -> createToken "SYM", c, startLine, startCol
+    }
+
+    if lexer.ch == "." {
+        readLexerChar lexer
+        if lexer.ch == "." {
+            readLexerChar lexer
+            if lexer.ch == "." {
+                readLexerChar lexer
+                -> createToken "SYM", "...", startLine, startCol
+            }
+            -> createToken "ILLEGAL", "..", startLine, startCol
+        }
+        -> createToken "SYM", ".", startLine, startCol
     }
 
     if lexer.ch == `"` || lexer.ch == `'` || lexer.ch == "`" {

@@ -29,6 +29,8 @@ createCodegen {
     let symIds = []
     let bigintNames = []
     let strNames = []
+    let restNames = []
+    let restIdxs = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -49,9 +51,23 @@ createCodegen {
         symKeys: symKeys,
         symIds: symIds,
         bigintNames: bigintNames,
-        strNames: strNames
+        strNames: strNames,
+        restNames: restNames,
+        restIdxs: restIdxs
     }
     -> res
+}
+
+findRestIdx cg, name {
+    let i = 0
+    wh i < cg.restNames.ln {
+        if (strEq cg.restNames[i], name) == 1 {
+            -> cg.restIdxs[i]
+        }
+        i = i + 1
+    }
+    missing = 0 - 1
+    -> missing
 }
 
 ensureGlbProp cg, prop {
@@ -252,6 +268,24 @@ findCgSymbol cg, name {
 addCgSymbol cg, name, reg {
     s = { name: name, reg: reg }
     cg.symbols.psh s
+}
+
+clearCgLocals cg {
+    // Keep only module globals (@...) between function bodies
+    let kept = []
+    let i = 0
+    wh i < cg.symbols.ln {
+        s = cg.symbols[i]
+        r = s.reg
+        if r.ln > 0 {
+            pref = r.chr 0
+            if pref == "@" {
+                kept.psh s
+            }
+        }
+        i = i + 1
+    }
+    cg.symbols = kept
 }
 
 markBigIntVar cg, name {
@@ -1689,19 +1723,158 @@ codegenExpr cg, expr, outBuf {
         }
 
         let callArgsStr = ""
-        let i = 0
-        wh i < expr.args.ln {
-            arg = expr.args[i]
-            aReg = codegenExpr cg, arg, outBuf
-            if i > 0 { callArgsStr = callArgsStr.cat ", " }
-            callArgsStr = callArgsStr.cat (`double ${aReg}`)
-            i = i + 1
+        restIdx = findRestIdx cg, expr.callee
+        if restIdx >= 0 {
+            let i = 0
+            wh i < restIdx {
+                if i < expr.args.ln {
+                    arg = expr.args[i]
+                    aReg = codegenExpr cg, arg, outBuf
+                    if i > 0 { callArgsStr = callArgsStr.cat ", " }
+                    callArgsStr = callArgsStr.cat (`double ${aReg}`)
+                }
+                i = i + 1
+            }
+            mut restCount = 0
+            if expr.args.ln > restIdx {
+                restCount = expr.args.ln - restIdx
+            }
+            restBytes = (restCount + 1024) * 8
+            restPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${restPtr} = call ptr @malloc(i64 ${restBytes})\n`)
+            outBuf.code = outBuf.code.cat (`  store double ${restCount}.0, ptr ${restPtr}\n`)
+            let ri = 0
+            wh ri < restCount {
+                arg = expr.args[restIdx + ri]
+                aReg = codegenExpr cg, arg, outBuf
+                aInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${aInt} = bitcast double ${aReg} to i64\n`)
+                gepReg = newReg cg
+                elemIdx = ri + 1
+                outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${restPtr}, i64 ${elemIdx}\n`)
+                outBuf.code = outBuf.code.cat (`  store i64 ${aInt}, ptr ${gepReg}\n`)
+                ri = ri + 1
+            }
+            restInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${restInt} = ptrtoint ptr ${restPtr} to i64\n`)
+            restDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${restDbl} = sitofp i64 ${restInt} to double\n`)
+            if restIdx > 0 { callArgsStr = callArgsStr.cat ", " }
+            callArgsStr = callArgsStr.cat (`double ${restDbl}`)
+        } els {
+            let i = 0
+            wh i < expr.args.ln {
+                arg = expr.args[i]
+                aReg = codegenExpr cg, arg, outBuf
+                if i > 0 { callArgsStr = callArgsStr.cat ", " }
+                callArgsStr = callArgsStr.cat (`double ${aReg}`)
+                i = i + 1
+            }
         }
 
         retReg = newReg cg
         outBuf.code = outBuf.code.cat (`  ${retReg} = call double @${expr.callee}(${callArgsStr})\n`)
         -> retReg
     } els if expr.kind == "ArrayExpr" {
+        // Detect spreads
+        mut hasSpread = 0
+        let si = 0
+        wh si < expr.elements.ln {
+            if expr.elements[si].kind == "SpreadExpr" {
+                hasSpread = 1
+            }
+            si = si + 1
+        }
+        if hasSpread == 1 {
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
+            outBuf.code = outBuf.code.cat (`  store double 0.0, ptr ${bufReg}\n`)
+            let ei = 0
+            wh ei < expr.elements.ln {
+                elem = expr.elements[ei]
+                if elem.kind == "SpreadExpr" {
+                    srcReg = codegenExpr cg, elem.expr, outBuf
+                    srcInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${srcInt} = fptosi double ${srcReg} to i64\n`)
+                    isNil = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${isNil} = icmp eq i64 ${srcInt}, 0\n`)
+                    skipLbl = newLbl cg, "spread_skip"
+                    copyLbl = newLbl cg, "spread_copy"
+                    mergeLbl = newLbl cg, "spread_merge"
+                    outBuf.code = outBuf.code.cat (`  br i1 ${isNil}, label %${skipLbl}, label %${copyLbl}\n\n`)
+                    outBuf.code = outBuf.code.cat (`${copyLbl}:\n`)
+                    srcPtr = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${srcPtr} = inttoptr i64 ${srcInt} to ptr\n`)
+                    srcLenDbl = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${srcLenDbl} = load double, ptr ${srcPtr}\n`)
+                    srcLen = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${srcLen} = fptosi double ${srcLenDbl} to i64\n`)
+                    iSlot = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${iSlot} = alloca i64\n`)
+                    outBuf.code = outBuf.code.cat (`  store i64 0, ptr ${iSlot}\n`)
+                    loopCond = newLbl cg, "spread_cond"
+                    loopBody = newLbl cg, "spread_body"
+                    loopEnd = newLbl cg, "spread_end"
+                    outBuf.code = outBuf.code.cat (`  br label %${loopCond}\n\n`)
+                    outBuf.code = outBuf.code.cat (`${loopCond}:\n`)
+                    iVal = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${iVal} = load i64, ptr ${iSlot}\n`)
+                    cmp = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${cmp} = icmp slt i64 ${iVal}, ${srcLen}\n`)
+                    outBuf.code = outBuf.code.cat (`  br i1 ${cmp}, label %${loopBody}, label %${loopEnd}\n\n`)
+                    outBuf.code = outBuf.code.cat (`${loopBody}:\n`)
+                    elemIdx = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${elemIdx} = add i64 ${iVal}, 1\n`)
+                    srcGep = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${srcGep} = getelementptr inbounds i64, ptr ${srcPtr}, i64 ${elemIdx}\n`)
+                    elemVal = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${elemVal} = load i64, ptr ${srcGep}\n`)
+                    curLenDbl = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${curLenDbl} = load double, ptr ${bufReg}\n`)
+                    curLenInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${curLenInt} = fptosi double ${curLenDbl} to i64\n`)
+                    nextIdx = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${nextIdx} = add i64 ${curLenInt}, 1\n`)
+                    dstGep = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dstGep} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${nextIdx}\n`)
+                    outBuf.code = outBuf.code.cat (`  store i64 ${elemVal}, ptr ${dstGep}\n`)
+                    newLenDbl = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${newLenDbl} = sitofp i64 ${nextIdx} to double\n`)
+                    outBuf.code = outBuf.code.cat (`  store double ${newLenDbl}, ptr ${bufReg}\n`)
+                    iNext = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${iNext} = add i64 ${iVal}, 1\n`)
+                    outBuf.code = outBuf.code.cat (`  store i64 ${iNext}, ptr ${iSlot}\n`)
+                    outBuf.code = outBuf.code.cat (`  br label %${loopCond}\n\n`)
+                    outBuf.code = outBuf.code.cat (`${loopEnd}:\n`)
+                    outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+                    outBuf.code = outBuf.code.cat (`${skipLbl}:\n`)
+                    outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+                    outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
+                } els {
+                    eValReg = codegenExpr cg, elem, outBuf
+                    eValInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${eValInt} = bitcast double ${eValReg} to i64\n`)
+                    curLenDbl = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${curLenDbl} = load double, ptr ${bufReg}\n`)
+                    curLenInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${curLenInt} = fptosi double ${curLenDbl} to i64\n`)
+                    nextIdx = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${nextIdx} = add i64 ${curLenInt}, 1\n`)
+                    dstGep = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dstGep} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${nextIdx}\n`)
+                    outBuf.code = outBuf.code.cat (`  store i64 ${eValInt}, ptr ${dstGep}\n`)
+                    newLenDbl = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${newLenDbl} = sitofp i64 ${nextIdx} to double\n`)
+                    outBuf.code = outBuf.code.cat (`  store double ${newLenDbl}, ptr ${bufReg}\n`)
+                }
+                ei = ei + 1
+            }
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+            -> bufDbl
+        }
         arrSize = expr.elements.ln
         bufReg = newReg cg
         outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8216)\n`)
@@ -1726,16 +1899,49 @@ codegenExpr cg, expr, outBuf {
     } els if expr.kind == "StructLiteral" {
         bufReg = newReg cg
         outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
+        mut anySpread = 0
+        let sfi = 0
+        wh sfi < expr.fields.ln {
+            if expr.fields[sfi].isSpread == 1 {
+                anySpread = 1
+            }
+            sfi = sfi + 1
+        }
+        if anySpread == 1 {
+            zReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${zReg} = call ptr @memset(ptr ${bufReg}, i32 0, i64 8192)\n`)
+        }
         let fi = 0
         wh fi < expr.fields.ln {
             f = expr.fields[fi]
-            fOffset = findFieldOffset cg, f.name
-            fValReg = codegenExpr cg, f.value, outBuf
-            fValInt = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${fValInt} = bitcast double ${fValReg} to i64\n`)
-            gepReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${fOffset}\n`)
-            outBuf.code = outBuf.code.cat (`  store i64 ${fValInt}, ptr ${gepReg}\n`)
+            if f.isSpread == 1 {
+                srcReg = codegenExpr cg, f.value, outBuf
+                srcInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${srcInt} = fptosi double ${srcReg} to i64\n`)
+                isNil = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${isNil} = icmp eq i64 ${srcInt}, 0\n`)
+                skipLbl = newLbl cg, "objspread_skip"
+                copyLbl = newLbl cg, "objspread_copy"
+                mergeLbl = newLbl cg, "objspread_merge"
+                outBuf.code = outBuf.code.cat (`  br i1 ${isNil}, label %${skipLbl}, label %${copyLbl}\n\n`)
+                outBuf.code = outBuf.code.cat (`${copyLbl}:\n`)
+                srcPtr = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${srcPtr} = inttoptr i64 ${srcInt} to ptr\n`)
+                cpy = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cpy} = call ptr @memcpy(ptr ${bufReg}, ptr ${srcPtr}, i64 8192)\n`)
+                outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+                outBuf.code = outBuf.code.cat (`${skipLbl}:\n`)
+                outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+                outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
+            } els {
+                fOffset = findFieldOffset cg, f.name
+                fValReg = codegenExpr cg, f.value, outBuf
+                fValInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${fValInt} = bitcast double ${fValReg} to i64\n`)
+                gepReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${fOffset}\n`)
+                outBuf.code = outBuf.code.cat (`  store i64 ${fValInt}, ptr ${gepReg}\n`)
+            }
             fi = fi + 1
         }
         bufInt = newReg cg
@@ -1744,6 +1950,45 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
         -> bufDbl
     } els if expr.kind == "PropertyAccess" {
+        if expr.optional == 1 {
+            objE = expr.object
+            propName = expr.property
+            slot = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${slot} = alloca double\n`)
+            objReg = codegenExpr cg, objE, outBuf
+            // Match normal property: pointers are sitofp-encoded → fptosi to recover
+            objInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${objInt} = fptosi double ${objReg} to i64\n`)
+            isNil = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isNil} = icmp eq i64 ${objInt}, 0\n`)
+            isUnd = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isUnd} = icmp eq i64 ${objInt}, 1\n`)
+            isNullish = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isNullish} = or i1 ${isNil}, ${isUnd}\n`)
+            nilLbl = newLbl cg, "optprop_nil"
+            accLbl = newLbl cg, "optprop_acc"
+            mergeLbl = newLbl cg, "optprop_merge"
+            outBuf.code = outBuf.code.cat (`  br i1 ${isNullish}, label %${nilLbl}, label %${accLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${nilLbl}:\n`)
+            outBuf.code = outBuf.code.cat (`  store double 0.0, ptr ${slot}\n`)
+            outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${accLbl}:\n`)
+            objPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${objPtr} = inttoptr i64 ${objInt} to ptr\n`)
+            fOffset = findFieldOffset cg, propName
+            gepReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${objPtr}, i64 ${fOffset}\n`)
+            loadInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
+            loadDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
+            outBuf.code = outBuf.code.cat (`  store double ${loadDbl}, ptr ${slot}\n`)
+            outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = load double, ptr ${slot}\n`)
+            -> resReg
+        }
         // Enum variant: Status.Active → discriminant double
         if expr.object.kind == "VariableExpr" {
             // Build "Enum.Variant" without template interpolation
@@ -1778,7 +2023,7 @@ codegenExpr cg, expr, outBuf {
         objPtr = newReg cg
         outBuf.code = outBuf.code.cat (`  ${objPtr} = inttoptr i64 ${objInt} to ptr\n`)
 
-        if expr.property == "ln" || expr.property == "len" || expr.property == "length" {
+        if (strEq expr.property, "ln") == 1 || (strEq expr.property, "len") == 1 || (strEq expr.property, "length") == 1 {
             let isStrObj = 0
             if expr.object.kind == "StringExpr" {
                 isStrObj = 1
@@ -1833,6 +2078,49 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
         -> bufDbl
     } els if expr.kind == "IndexExpr" {
+        if expr.optional == 1 {
+            arrE = expr.array
+            idxE = expr.index
+            slot = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${slot} = alloca double\n`)
+            arrReg = codegenExpr cg, arrE, outBuf
+            // Match normal index: arrays are sitofp-encoded → fptosi for nullish + access
+            arrInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
+            isNil = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isNil} = icmp eq i64 ${arrInt}, 0\n`)
+            isUnd = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isUnd} = icmp eq i64 ${arrInt}, 1\n`)
+            isNullish = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isNullish} = or i1 ${isNil}, ${isUnd}\n`)
+            nilLbl = newLbl cg, "optidx_nil"
+            accLbl = newLbl cg, "optidx_acc"
+            mergeLbl = newLbl cg, "optidx_merge"
+            outBuf.code = outBuf.code.cat (`  br i1 ${isNullish}, label %${nilLbl}, label %${accLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${nilLbl}:\n`)
+            outBuf.code = outBuf.code.cat (`  store double 0.0, ptr ${slot}\n`)
+            outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${accLbl}:\n`)
+            idxReg = codegenExpr cg, idxE, outBuf
+            arrPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
+            idxInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${idxInt} = fptosi double ${idxReg} to i64\n`)
+            elemIdx = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${elemIdx} = add i64 ${idxInt}, 1\n`)
+            gepReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${elemIdx}\n`)
+            loadInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
+            loadDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
+            outBuf.code = outBuf.code.cat (`  store double ${loadDbl}, ptr ${slot}\n`)
+            outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = load double, ptr ${slot}\n`)
+            -> resReg
+        }
         arrReg = codegenExpr cg, expr.array, outBuf
         idxReg = codegenExpr cg, expr.index, outBuf
         arrInt = newReg cg
@@ -2326,6 +2614,7 @@ codegenStmt cg, stmt, outBuf {
 }
 
 codegenFunctionDecl cg, funcStmt {
+    clearCgLocals cg
     let fnNameRaw = funcStmt.name
     let fnName = fnNameRaw
     if fnNameRaw == "main" {
@@ -2387,6 +2676,7 @@ generateLLVMFull program {
     header = header.cat "declare ptr @malloc(i64)\n"
     header = header.cat "declare void @free(ptr)\n"
     header = header.cat "declare ptr @memcpy(ptr, ptr, i64)\n"
+    header = header.cat "declare ptr @memset(ptr, i32, i64)\n"
     header = header.cat "declare i32 @strcmp(ptr, ptr)\n"
     header = header.cat "declare double @llvm.pow.f64(double, double)\n"
     header = header.cat "declare i32 @fseek(ptr, i64, i32)\n"
@@ -2456,6 +2746,22 @@ generateLLVMFull program {
             addCgExtern cg, stmt
         }
         gi = gi + 1
+    }
+
+    // Pass: register rest-param indices before generating any function bodies
+    let ri = 0
+    wh ri < program.statements.ln {
+        rst = program.statements[ri]
+        if rst.kind == "FunctionDecl" {
+            if rst.hasRest == 1 {
+                if rst.params.ln > 0 {
+                    cg.restNames.psh rst.name
+                    rIdx = rst.params.ln - 1
+                    cg.restIdxs.psh rIdx
+                }
+            }
+        }
+        ri = ri + 1
     }
 
     // Collect and generate function definitions & top-level statements

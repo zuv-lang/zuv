@@ -1,0 +1,61 @@
+// Spread & Rest: ... in arrays, objects, and function params
+
+other = [3, 4]
+merged = [1, 2, ...other, 5]
+if merged[0] == 1 {
+    if merged[2] == 3 {
+        if merged[4] == 5 {
+            if merged.ln == 5 {
+                prnt "array spread ok"
+            }
+        }
+    }
+}
+
+user = { id: 1, role: "guest" }
+updated = { ...user, role: "admin", active: 1 }
+if updated.id == 1 {
+    // role is string — compare via typ / presence of active
+    if updated.active == 1 {
+        prnt "object spread ok"
+    }
+}
+
+sumAll ...nums {
+    mut total = 0
+    mut i = 0
+    wh i < nums.ln {
+        total = total + nums[i]
+        i = i + 1
+    }
+    -> total
+}
+
+s = sumAll 10, 20, 30
+if s == 60 {
+    prnt "rest params ok"
+}
+
+sumPref a, ...rest {
+    mut acc = a
+    mut j = 0
+    wh j < rest.ln {
+        acc = acc + rest[j]
+        j = j + 1
+    }
+    -> acc
+}
+
+s2 = sumPref 1, 2, 3
+if s2 == 6 {
+    prnt "rest with fixed ok"
+}
+
+emptySpread = [9, ...nil]
+if emptySpread[0] == 9 {
+    if emptySpread.ln == 1 {
+        prnt "nil array spread ok"
+    }
+}
+
+prnt "spread rest complete"

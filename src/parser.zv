@@ -110,7 +110,7 @@ getTokenPrecedence tok {
         if tok.val == "++" || tok.val == "--" {
             -> 17
         }
-        if tok.val == "." || tok.val == "(" || tok.val == "[" {
+        if tok.val == "." || tok.val == "?." || tok.val == "(" || tok.val == "[" {
             -> 17
         }
     } els if tok.kind == "KEYWORD" {
@@ -241,13 +241,28 @@ createArrayNode elements {
     -> res
 }
 
+createSpreadNode expr {
+    res = { kind: "SpreadExpr", expr: expr }
+    -> res
+}
+
 createIndexNode array, index {
-    res = { kind: "IndexExpr", array: array, index: index }
+    res = { kind: "IndexExpr", array: array, index: index, optional: 0 }
+    -> res
+}
+
+createOptIndexNode array, index {
+    res = { kind: "IndexExpr", array: array, index: index, optional: 1 }
     -> res
 }
 
 createPropertyAccessNode targetObj, prop {
-    res = { kind: "PropertyAccess", object: targetObj, property: prop }
+    res = { kind: "PropertyAccess", object: targetObj, property: prop, optional: 0 }
+    -> res
+}
+
+createOptPropertyAccessNode targetObj, prop {
+    res = { kind: "PropertyAccess", object: targetObj, property: prop, optional: 1 }
     -> res
 }
 
@@ -286,8 +301,8 @@ createForNode initS, cond, incS, body {
     -> res
 }
 
-createFuncNode name, params, body, isAsync {
-    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync }
+createFuncNode name, params, body, isAsync, hasRest {
+    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest }
     -> res
 }
 
@@ -615,16 +630,31 @@ parseExpression p, precedence {
             left = createNilNode
         }
     } els if t.val == "[" {
+        // Array Literal (supports ...spread)
         let elements = []
         if (peekTok p).val != "]" {
             advanceParser p
-            firstElem = parseExpression p, 0
-            elements.psh firstElem
+            if (curTok p).val == "..." {
+                advanceParser p
+                firstInner = parseExpression p, 0
+                sp0 = createSpreadNode firstInner
+                elements.psh sp0
+            } els {
+                firstElem = parseExpression p, 0
+                elements.psh firstElem
+            }
             wh (peekTok p).val == "," {
                 advanceParser p // consume ','
                 advanceParser p // move to next elem
-                nextElem = parseExpression p, 0
-                elements.psh nextElem
+                if (curTok p).val == "..." {
+                    advanceParser p
+                    nextInner = parseExpression p, 0
+                    spN = createSpreadNode nextInner
+                    elements.psh spN
+                } els {
+                    nextElem = parseExpression p, 0
+                    elements.psh nextElem
+                }
             }
         }
         expectPeekToken p, "SYM", "]"
@@ -640,17 +670,24 @@ parseExpression p, precedence {
             let fields = []
             wh (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
                 advanceParser p
-                fName = (curTok p).val
-                if (peekTok p).val == ":" {
-                    advanceParser p // consume ':'
+                if (curTok p).val == "..." {
                     advanceParser p
                     fVal = parseExpression p, 0
-                    fField = { name: fName, value: fVal }
+                    fField = { name: "", value: fVal, isSpread: 1 }
                     fields.psh fField
                 } els {
-                    fVar = createVariableNode fName
-                    fField = { name: fName, value: fVar }
-                    fields.psh fField
+                    fName = (curTok p).val
+                    if (peekTok p).val == ":" {
+                        advanceParser p // consume ':'
+                        advanceParser p
+                        fVal = parseExpression p, 0
+                        fField = { name: fName, value: fVal, isSpread: 0 }
+                        fields.psh fField
+                    } els {
+                        fVar = createVariableNode fName
+                        fField = { name: fName, value: fVar, isSpread: 0 }
+                        fields.psh fField
+                    }
                 }
                 if (peekTok p).val == "," {
                     advanceParser p // consume ','
@@ -691,17 +728,24 @@ parseExpression p, precedence {
         let fields = []
         wh (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
             advanceParser p
-            fName = (curTok p).val
-            if (peekTok p).val == ":" {
-                advanceParser p // consume ':'
+            if (curTok p).val == "..." {
                 advanceParser p
                 fVal = parseExpression p, 0
-                fField = { name: fName, value: fVal }
+                fField = { name: "", value: fVal, isSpread: 1 }
                 fields.psh fField
             } els {
-                fVar = createVariableNode fName
-                fField = { name: fName, value: fVar }
-                fields.psh fField
+                fName = (curTok p).val
+                if (peekTok p).val == ":" {
+                    advanceParser p // consume ':'
+                    advanceParser p
+                    fVal = parseExpression p, 0
+                    fField = { name: fName, value: fVal, isSpread: 0 }
+                    fields.psh fField
+                } els {
+                    fVar = createVariableNode fName
+                    fField = { name: fName, value: fVar, isSpread: 0 }
+                    fields.psh fField
+                }
             }
             if (peekTok p).val == "," {
                 advanceParser p // consume ','
@@ -710,17 +754,29 @@ parseExpression p, precedence {
         expectPeekToken p, "SYM", "}"
         left = createStructLitNode "", fields
     } els if t.kind == "SYM" && t.val == "[" {
-        // Array Literal
+        // Array Literal (supports ...spread)
         let elements = []
         if (peekTok p).val != "]" {
             advanceParser p
-            firstElem = parseExpression p, 0
-            elements.psh firstElem
+            if (curTok p).val == "..." {
+                advanceParser p
+                firstInner = parseExpression p, 0
+                elements.psh (createSpreadNode firstInner)
+            } els {
+                firstElem = parseExpression p, 0
+                elements.psh firstElem
+            }
             wh (peekTok p).val == "," {
                 advanceParser p // consume ','
                 advanceParser p
-                nextElem = parseExpression p, 0
-                elements.psh nextElem
+                if (curTok p).val == "..." {
+                    advanceParser p
+                    nextInner = parseExpression p, 0
+                    elements.psh (createSpreadNode nextInner)
+                } els {
+                    nextElem = parseExpression p, 0
+                    elements.psh nextElem
+                }
             }
         }
         expectPeekToken p, "SYM", "]"
@@ -820,6 +876,21 @@ parseExpression p, precedence {
                         left = createCallNode propName, args
                     } els {
                         left = createPropertyAccessNode left, propName
+                    }
+                } els if peekT.val == "?." {
+                    advanceParser p // consume '?.'
+                    if (peekTok p).val == "[" {
+                        advanceParser p // consume '['
+                        advanceParser p
+                        idx = parseExpression p, 0
+                        if (peekTok p).val == "]" {
+                            advanceParser p // consume ']'
+                        }
+                        left = createOptIndexNode left, idx
+                    } els {
+                        advanceParser p // property name
+                        propName = (curTok p).val
+                        left = createOptPropertyAccessNode left, propName
                     }
                 } els if peekT.val == "[" {
                     // Do not treat '[' on a following line as indexing — that starts
@@ -1002,7 +1073,7 @@ parseStatement p {
         fnName = (curTok p).val
         body = parseBlock p
         let emptyParams = []
-        -> createFuncNode fnName, emptyParams, body, 0
+        -> createFuncNode fnName, emptyParams, body, 0, 0
     } els if t.kind == "KEYWORD" && t.val == "mch" {
         advanceParser p
         // Match target must NOT use parseExpression — `ident {` is struct-literal
@@ -1151,7 +1222,7 @@ parseStatement p {
         }
         body = parseBlock p
         let mainParams = [paramName]
-        -> createFuncNode "main", mainParams, body, 0
+        -> createFuncNode "main", mainParams, body, 0, 0
     } els if t.kind == "KEYWORD" && t.val == "obj" {
         advanceParser p
         structName = (curTok p).val
@@ -1334,57 +1405,89 @@ parseStatement p {
             if (peekTok p).val == "{" {
                 body = parseBlock p
                 let emptyParams = []
-                -> createFuncNode identName, emptyParams, body, 0
-            } els if (peekTok p).kind == "IDENT" {
+                -> createFuncNode identName, emptyParams, body, 0, 0
+            } els if (peekTok p).kind == "IDENT" || (peekTok p).val == "..." {
                 advanceParser p
-                pValFirst = (curTok p).val
-                if (peekTok p).val == ":" {
-                    advanceParser p // consume ':'
-                    advanceParser p // consume type
-                }
-                let params = [pValFirst]
-                wh (peekTok p).val == "," {
-                    advanceParser p // consume ','
+                mut hasRest = 0
+                let params = []
+                if (curTok p).val == "..." {
                     advanceParser p
-                    pVal = (curTok p).val
+                    pRest = (curTok p).val
+                    params.psh pRest
+                    hasRest = 1
+                } els {
+                    pValFirst = (curTok p).val
                     if (peekTok p).val == ":" {
                         advanceParser p // consume ':'
                         advanceParser p // consume type
                     }
-                    params.psh pVal
+                    params.psh pValFirst
+                    wh (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                        advanceParser p
+                        if (curTok p).val == "..." {
+                            advanceParser p
+                            pRest2 = (curTok p).val
+                            params.psh pRest2
+                            hasRest = 1
+                        } els {
+                            pVal = (curTok p).val
+                            if (peekTok p).val == ":" {
+                                advanceParser p // consume ':'
+                                advanceParser p // consume type
+                            }
+                            params.psh pVal
+                        }
+                    }
                 }
                 if (peekTok p).val == "{" {
                     body = parseBlock p
-                    -> createFuncNode identName, params, body, 0
+                    -> createFuncNode identName, params, body, 0, hasRest
                 }
             }
         } els if (peekTok p).val == "{" {
             // Function declaration without params: fnName { ... }
             body = parseBlock p
             let emptyParams = []
-            -> createFuncNode identName, emptyParams, body, 0
-        } els if (peekTok p).line == t.line && (peekTok p).kind == "IDENT" {
+            -> createFuncNode identName, emptyParams, body, 0, 0
+        } els if (peekTok p).line == t.line && ((peekTok p).kind == "IDENT" || (peekTok p).val == "...") {
             // Function declaration with params or identifier call statement
             advanceParser p
-            pValFirst = (curTok p).val
-            if (peekTok p).val == ":" {
-                advanceParser p // consume ':'
-                advanceParser p // consume type
-            }
-            let params = [pValFirst]
-            wh (peekTok p).line == t.line && (peekTok p).val == "," {
-                advanceParser p // consume ','
+            mut hasRest = 0
+            let params = []
+            if (curTok p).val == "..." {
                 advanceParser p
-                pVal = (curTok p).val
+                pRest = (curTok p).val
+                params.psh pRest
+                hasRest = 1
+            } els {
+                pValFirst = (curTok p).val
                 if (peekTok p).val == ":" {
                     advanceParser p // consume ':'
                     advanceParser p // consume type
                 }
-                params.psh pVal
+                params.psh pValFirst
+                wh (peekTok p).line == t.line && (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                    advanceParser p
+                    if (curTok p).val == "..." {
+                        advanceParser p
+                        pRest2 = (curTok p).val
+                        params.psh pRest2
+                        hasRest = 1
+                    } els {
+                        pVal = (curTok p).val
+                        if (peekTok p).val == ":" {
+                            advanceParser p // consume ':'
+                            advanceParser p // consume type
+                        }
+                        params.psh pVal
+                    }
+                }
             }
             if (peekTok p).val == "{" {
                 body = parseBlock p
-                -> createFuncNode identName, params, body, 0
+                -> createFuncNode identName, params, body, 0, hasRest
             } els {
                 // Parenthesis-free call statement with identifiers
                 let args = []

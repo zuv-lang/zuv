@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Strict `==` / `!=`**: Different known concrete types never coerce (`"5"==5`, `nil==0` false). Single-digit `0`/`1` are bool-compatible (`yes==1`, `true==1`). New test: `strict_eq.test.zv`.
 - **Ternary (`? :`)**: `cond ? then : else` with right-associative nesting and branch short-circuit via alloca merge. New test: `ternary.test.zv`.
 - **Nullish Coalescing (`??`)**: `left ?? right` uses right only when left is `nil`/`und`; right-associative, short-circuiting. New test: `nullish.test.zv`.
+- **Optional Chaining (`?.` / `?.[]`)**: Short-circuits to `nil` when the receiver is `nil`/`und`. New test: `optional_chain.test.zv`.
+- **Spread & Rest (`...`)**: Array spread, object spread (memcpy + overlay), and rest params that pack trailing call args into an array. New test: `spread_rest.test.zv`.
 
 ---
 
