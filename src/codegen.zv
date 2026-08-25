@@ -19,6 +19,7 @@ createCodegen {
     let brkStack = []
     let contStack = []
     let exts = []
+    let glbDeclList = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -31,9 +32,22 @@ createCodegen {
         continueLabels: contStack,
         funcs: "",
         mainBody: "",
-        isMain: 0
+        isMain: 0,
+        glbDeclList: glbDeclList
     }
     -> res
+}
+
+ensureGlbProp cg, prop {
+    // Register LLVM module global `@glb_<prop>` for project-wide storage
+    gKey = "glb_" + prop
+    gName = "@" + gKey
+    gSym = findCgSymbol cg, gKey
+    if gSym.name == "" {
+        addCgSymbol cg, gKey, gName
+        cg.glbDeclList.psh (gName + " = global i64 0\n")
+    }
+    -> gName
 }
 
 strEq s1, s2 {
@@ -106,13 +120,57 @@ getStrPtrVal cg, expr, outBuf {
     if expr.kind == "StringExpr" {
         sName = addStrConstant cg, expr.val
         -> sName
+    } els if expr.kind == "NumberExpr" {
+        // Format number as string constant at codegen time when possible
+        sName = addStrConstant cg, expr.val
+        -> sName
     } els {
         sReg = codegenExpr cg, expr, outBuf
-        sInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
-        sPtr = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
-        -> sPtr
+        // Heuristic: VariableExpr/PropertyAccess with string-ish names are pointers;
+        // otherwise format the numeric value with snprintf.
+        mut isStr = 0
+        if expr.kind == "StringExpr" {
+            isStr = 1
+        }
+        if expr.kind == "VariableExpr" {
+            n = expr.name
+            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" {
+                isStr = 1
+            }
+        }
+        if expr.kind == "PropertyAccess" {
+            prop = expr.property
+            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" || prop == "file" || prop == "cmd" || prop == "kind" {
+                isStr = 1
+            }
+            if expr.object.kind == "VariableExpr" {
+                if expr.object.name == "glb" {
+                    if prop == "appName" || prop == "name" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" {
+                        isStr = 1
+                    } els {
+                        isStr = 0
+                    }
+                }
+            }
+        }
+        if expr.kind == "BinaryExpr" {
+            if expr.op == "+" {
+                isStr = 1
+            }
+        }
+        if isStr == 1 {
+            sInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
+            sPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
+            -> sPtr
+        } els {
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 64)\n")
+            snpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + snpReg + " = call i32 (ptr, i64, ptr, ...) @snprintf(ptr " + bufReg + ", i64 64, ptr @fmt_g, double " + sReg + ")\n")
+            -> bufReg
+        }
     }
 }
 
@@ -171,8 +229,10 @@ codegenExpr cg, expr, outBuf {
     } els if expr.kind == "VariableExpr" {
         extInfo = findCgExtern cg, expr.name
         if extInfo.name != "" {
-            let retType = "void"
-            if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
+            let retType = "i32"
+            if extInfo.typeName == "void" {
+                retType = "void"
+            } els if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
                 retType = "ptr"
             } els if extInfo.typeName == "double" {
                 retType = "double"
@@ -220,6 +280,16 @@ codegenExpr cg, expr, outBuf {
                     outBuf.code = outBuf.code.concat ("  store double " + rightReg + ", ptr " + sym.reg + "\n")
                 }
             } els if expr.left.kind == "PropertyAccess" {
+                // Project-wide `glb.prop` → LLVM store to module global @glb_<prop>
+                if expr.left.object.kind == "VariableExpr" {
+                    if expr.left.object.name == "glb" {
+                        gName = ensureGlbProp cg, expr.left.property
+                        rInt = newReg cg
+                        outBuf.code = outBuf.code.concat ("  " + rInt + " = bitcast double " + rightReg + " to i64\n")
+                        outBuf.code = outBuf.code.concat ("  store i64 " + rInt + ", ptr " + gName + "\n")
+                        -> rightReg
+                    }
+                }
                 objReg = codegenExpr cg, expr.left.object, outBuf
                 objInt = newReg cg
                 outBuf.code = outBuf.code.concat ("  " + objInt + " = fptosi double " + objReg + " to i64\n")
@@ -800,8 +870,10 @@ codegenExpr cg, expr, outBuf {
                 }
                 i = i + 1
             }
-            let retType = "void"
-            if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
+            let retType = "i32"
+            if extInfo.typeName == "void" {
+                retType = "void"
+            } els if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
                 retType = "ptr"
             } els if extInfo.typeName == "double" {
                 retType = "double"
@@ -890,6 +962,17 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
         -> bufDbl
     } els if expr.kind == "PropertyAccess" {
+        // Project-wide `glb.prop` → LLVM load from module global @glb_<prop>
+        if expr.object.kind == "VariableExpr" {
+            if expr.object.name == "glb" {
+                gName = ensureGlbProp cg, expr.property
+                loadInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gName + "\n")
+                valReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + valReg + " = bitcast i64 " + loadInt + " to double\n")
+                -> valReg
+            }
+        }
         objReg = codegenExpr cg, expr.object, outBuf
         objInt = newReg cg
         outBuf.code = outBuf.code.concat ("  " + objInt + " = fptosi double " + objReg + " to i64\n")
@@ -1043,6 +1126,34 @@ codegenStmt cg, stmt, outBuf {
         if stmt.value.kind == "StringExpr" {
             sName = addStrConstant cg, stmt.value.val
             outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sName + ")\n")
+        } els if stmt.value.kind == "BinaryExpr" {
+            if stmt.value.op == "+" {
+                sPtr = getStrPtrVal cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sPtr + ")\n")
+            } els {
+                valReg = codegenExpr cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
+            }
+        } els if stmt.value.kind == "PropertyAccess" {
+            prop = stmt.value.property
+            mut isStrProp = 0
+            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "content" || prop == "path" || prop == "file" || prop == "cmd" {
+                isStrProp = 1
+            }
+            if stmt.value.object.kind == "VariableExpr" {
+                if stmt.value.object.name == "glb" {
+                    if prop == "appName" || prop == "name" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" {
+                        isStrProp = 1
+                    }
+                }
+            }
+            if isStrProp == 1 {
+                sPtr = getStrPtrVal cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sPtr + ")\n")
+            } els {
+                valReg = codegenExpr cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
+            }
         } els {
             valReg = codegenExpr cg, stmt.value, outBuf
             outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
@@ -1305,6 +1416,7 @@ generateLLVMFull program {
     header = header.concat "@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n"
     header = header.concat "@fmt_prefix = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n"
     header = header.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n"
+    header = header.concat "@fmt_g = private unnamed_addr constant [3 x i8] c\"%g\\00\"\n"
     header = header.concat "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"\n"
     header = header.concat "@fmt_pattern = private unnamed_addr constant [5 x i8] c\"%s/*\\00\"\n"
     header = header.concat "@fmt_filepath = private unnamed_addr constant [6 x i8] c\"%s/%s\\00\"\n"
@@ -1314,6 +1426,10 @@ generateLLVMFull program {
     header = header.concat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds i64, ptr %arr, i64 %nextCount\n  store i64 %strInt, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
 
     let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" }
+
+    // Built-in project-wide `glb` — properties registered as LLVM globals `@glb_<prop>`
+    header = header.concat "@glb = global i64 0\n"
+    addCgSymbol cg, "glb", "@glb"
 
     // Pass 1: Declare top-level variables as global variables
     let gi = 0
@@ -1367,8 +1483,11 @@ generateLLVMFull program {
                 extParams = extParams + pt
                 pi = pi + 1
             }
-            let retType = "void"
-            if stmt.typeName == "ptr" || stmt.typeName == "str" {
+            // Default to i32 (Win32 / C int); only use void when explicitly declared
+            let retType = "i32"
+            if stmt.typeName == "void" {
+                retType = "void"
+            } els if stmt.typeName == "ptr" || stmt.typeName == "str" {
                 retType = "ptr"
             } els if stmt.typeName == "double" {
                 retType = "double"
@@ -1410,6 +1529,13 @@ generateLLVMFull program {
         ci = ci + 1
     }
 
-    fullIR = header + constsStr + "\n" + cg.funcs + "\n" + mainBuf.code
+    let glbDeclsStr = ""
+    let gdi = 0
+    wh gdi < cg.glbDeclList.ln {
+        glbDeclsStr = glbDeclsStr.concat cg.glbDeclList[gdi]
+        gdi = gdi + 1
+    }
+
+    fullIR = header + glbDeclsStr + constsStr + "\n" + cg.funcs + "\n" + mainBuf.code
     -> fullIR
 }

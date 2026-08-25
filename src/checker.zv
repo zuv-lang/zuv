@@ -12,6 +12,9 @@ createChecker {
     let errors = []
     globalScope = createScope
     scopes.psh globalScope
+    // Built-in project-wide global object (immutable binding; properties are writable)
+    glbVar = { name: "glb", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+    globalScope.vars.psh glbVar
     res = { scopes: scopes, errors: errors }
     -> res
 }

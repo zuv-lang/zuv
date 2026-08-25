@@ -1,0 +1,31 @@
+// Unit Test for Project-Wide Global Object (`glb`)
+
+glb.appName = "rujs"
+glb.count = 42
+
+setFromFunc {
+    glb.fromFunc = 99
+    glb.appName = "zuv"
+}
+
+prnt glb.appName
+
+if glb.count == 42 {
+    prnt "glb number property ok"
+}
+
+if glb.appName == "rujs" {
+    prnt "glb string property ok"
+}
+
+setFromFunc
+
+if glb.fromFunc == 99 {
+    prnt "glb mutation from function ok"
+}
+
+if glb.appName == "zuv" {
+    prnt "glb string update from function ok"
+}
+
+prnt "glb test complete"
