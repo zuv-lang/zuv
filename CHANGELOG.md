@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.6.0] - 2026-08-25
+
 ### 🧱 Data Types
 - **Type Inspection Operator (`typ`)**: Added prefix `typ` operator returning type strings (`"str"`, `"num"`, `"bool"`, `"obj"`, `"arr"`, `"nil"`, `"und"`, `"sym"`, `"bigint"`). Implemented in C++ bootstrap and self-hosting compiler. `und` literal now distinct from `nil` for `typ und`. New test: `typ.test.zv`.
 - **Enums (`enum`)**: Named variants as integer discriminants (`0..n-1`). `Status.Active` property access, `mch` arms with qualified (`Status.Pending`) or bare (`Pending`) patterns. C++ bootstrap keeps native enum match; self-host desugars enum `mch` to nested `if`/`els`. Fixed self-host match-target parsing so `ident {` is not swallowed as a struct literal. New test: `enum.test.zv`.
@@ -15,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BigInt Primitives (`BigInt` / `...n`)**: Digit-string bigint literals (`123n`) and `BigInt(...)` constructor. Equality via content (`strcmp`); distinct from numbers (`123n != 123`). `typ` → `"bigint"`. New test: `bigint.test.zv`.
 - **Scientific Exponent Literals (`123e5`, `1.5E-2`)**: Lexer support for `e`/`E` with optional `+`/`-` in C++ bootstrap and self-host. New test: `sci_notation.test.zv`.
 - **Number Bases (`0x` / `0b` / `0o`)**: Hex, binary, and octal integer literals in C++ bootstrap and self-host. New test: `bases.test.zv`.
+- **Special Numbers (`nan`, `inf` / `Infinity`)**: IEEE-754 NaN/+Inf literals; statement `inf expr` remains info logging. Helpers `isNan` / `isFin`. New test: `nan_inf.test.zv`.
+
+### ⚡ Operators
+- **Exponentiation (`**`)**: Right-associative `**` via `llvm.pow.f64`. New test: `pow.test.zv`.
 
 ### 🔤 Self-Hosting Source Style
 - **Template Literals**: Migrated self-hosting compiler sources (`src/*.zv`) from `"..." + expr` concatenation and escaped `\"` strings to backtick templates with `${...}` interpolation (e.g. `` `tests/${impPath}.zv` ``). Plain string literals left unchanged.

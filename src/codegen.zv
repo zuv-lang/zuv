@@ -408,6 +408,13 @@ digitValue ch {
 }
 
 formatFloat valStr {
+    // IEEE specials (must run before 0x base conversion)
+    if valStr == "nan" {
+        -> "0x7FF8000000000000"
+    }
+    if valStr == "inf" {
+        -> "0x7FF0000000000000"
+    }
     // Convert 0x / 0b / 0o literals to decimal before emitting LLVM constants
     if valStr.ln >= 3 {
         p0 = valStr.sub 0, 1
@@ -519,6 +526,9 @@ classifyTyp cg, expr {
     if expr.kind == "CallExpr" {
         if expr.callee == "BigInt" {
             -> "bigint"
+        }
+        if expr.callee == "isNan" || expr.callee == "isnan" || expr.callee == "isFin" || expr.callee == "isfinite" || expr.callee == "isFinite" {
+            -> "bool"
         }
         if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" {
             -> "str"
@@ -743,6 +753,12 @@ codegenExpr cg, expr, outBuf {
             -> resReg
         }
 
+        if expr.op == "**" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @llvm.pow.f64(double ${leftReg}, double ${rightReg})\n`)
+            -> resReg
+        }
+
         if expr.op == "/" {
             resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = fdiv double ${leftReg}, ${rightReg}\n`)
@@ -896,7 +912,31 @@ codegenExpr cg, expr, outBuf {
 
         -> leftReg
     } els if expr.kind == "CallExpr" {
-        if expr.callee == "BigInt" && expr.args.ln == 1 {
+        if (expr.callee == "isNan" || expr.callee == "isnan") && expr.args.ln == 1 {
+            argReg = codegenExpr cg, expr.args[0], outBuf
+            cmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmp} = fcmp uno double ${argReg}, ${argReg}\n`)
+            res = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${res} = uitofp i1 ${cmp} to double\n`)
+            -> res
+        } els if (expr.callee == "isFin" || expr.callee == "isfinite" || expr.callee == "isFinite") && expr.args.ln == 1 {
+            argReg = codegenExpr cg, expr.args[0], outBuf
+            isNanCmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isNanCmp} = fcmp uno double ${argReg}, ${argReg}\n`)
+            isPosInf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isPosInf} = fcmp oeq double ${argReg}, 0x7FF0000000000000\n`)
+            isNegInf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isNegInf} = fcmp oeq double ${argReg}, 0xFFF0000000000000\n`)
+            isInf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isInf} = or i1 ${isPosInf}, ${isNegInf}\n`)
+            bad = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bad} = or i1 ${isNanCmp}, ${isInf}\n`)
+            finOk = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finOk} = xor i1 ${bad}, true\n`)
+            res = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${res} = uitofp i1 ${finOk} to double\n`)
+            -> res
+        } els if expr.callee == "BigInt" && expr.args.ln == 1 {
             arg = expr.args[0]
             if arg.kind == "BigIntExpr" {
                 -> codegenExpr cg, arg, outBuf
@@ -1889,6 +1929,7 @@ generateLLVMFull program {
     header = header.cat "declare void @free(ptr)\n"
     header = header.cat "declare ptr @memcpy(ptr, ptr, i64)\n"
     header = header.cat "declare i32 @strcmp(ptr, ptr)\n"
+    header = header.cat "declare double @llvm.pow.f64(double, double)\n"
     header = header.cat "declare i32 @fseek(ptr, i64, i32)\n"
     header = header.cat "declare i64 @ftell(ptr)\n"
     header = header.cat "declare void @rewind(ptr)\n"

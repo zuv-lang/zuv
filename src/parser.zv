@@ -27,11 +27,14 @@ getPrecSum {
 getPrecProduct {
     -> 7
 }
-getPrecPrefix {
+getPrecPow {
     -> 8
 }
-getPrecCall {
+getPrecPrefix {
     -> 9
+}
+getPrecCall {
+    -> 10
 }
 
 getTokenPrecedence tok {
@@ -57,8 +60,11 @@ getTokenPrecedence tok {
         if tok.val == "*" || tok.val == "/" || tok.val == "%" {
             -> 7
         }
+        if tok.val == "**" {
+            -> 8
+        }
         if tok.val == "." || tok.val == "(" || tok.val == "[" {
-            -> 9
+            -> 10
         }
     } els if tok.kind == "KEYWORD" {
         if tok.val == "or" {
@@ -516,6 +522,11 @@ parseExpression p, precedence {
     // Prefix Parsing
     if t.kind == "NUMBER" || t.kind == "NUM" {
         left = createNumberNode t.val
+    } els if t.kind == "KEYWORD" && t.val == "nan" {
+        left = createNumberNode "nan"
+    } els if t.kind == "KEYWORD" && (t.val == "Infinity" || t.val == "inf") {
+        // Expression-level `inf` / `Infinity` → +∞ (statement `inf expr` remains logging)
+        left = createNumberNode "inf"
     } els if t.kind == "BIGINT" {
         left = createBigIntNode t.val
     } els if t.kind == "STRING" || t.kind == "STR" {
@@ -649,7 +660,7 @@ parseExpression p, precedence {
             advanceParser p // skip 'mut'
         }
         advanceParser p
-        right = parseExpression p, 8
+        right = parseExpression p, 9
         if op == "awt" || op == "await" {
             let emptyArgs = []
             if right.kind == "VariableExpr" {
@@ -747,7 +758,12 @@ parseExpression p, precedence {
                     op = curT.val
                     prec = getTokenPrecedence curT
                     advanceParser p
-                    right = parseExpression p, prec
+                    // ** is right-associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
+                    mut rhsPrec = prec
+                    if op == "**" {
+                        rhsPrec = prec - 1
+                    }
+                    right = parseExpression p, rhsPrec
                     left = createBinaryNode op, left, right
                 }
             }

@@ -91,7 +91,7 @@ isLexerLetter ch {
 
 isLexerKeyword word {
     if word == "imp" || word == "frm" || word == "wrk" || word == "prnt" ||
-       word == "lg" || word == "wrn" || word == "inf" || word == "ret" ||
+       word == "lg" || word == "wrn" || word == "inf" || word == "nan" || word == "Infinity" || word == "ret" ||
        word == "els" || word == "wh" || word == "fr" || word == "brk" ||
        word == "cont" || word == "dn" || word == "mch" || word == "ok" ||
        word == "err" || word == "if" || word == "and" || word == "or" ||
@@ -405,7 +405,17 @@ nextLexerToken lexer {
         }
     }
 
-    if lexer.ch == "+" || lexer.ch == "*" || lexer.ch == "/" || lexer.ch == "%" ||
+    if lexer.ch == "*" {
+        if (peekLexerChar lexer) == "*" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "**", startLine, startCol
+        }
+        readLexerChar lexer
+        -> createToken "SYM", "*", startLine, startCol
+    }
+
+    if lexer.ch == "+" || lexer.ch == "/" || lexer.ch == "%" ||
        lexer.ch == "(" || lexer.ch == ")" || lexer.ch == "{" || lexer.ch == "}" ||
        lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "." || lexer.ch == "," ||
        lexer.ch == ":" || lexer.ch == ";" || lexer.ch == "?" {
