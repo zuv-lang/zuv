@@ -134,7 +134,12 @@ createBoolNode val {
 }
 
 createNilNode {
-    res = { kind: "NilExpr", val: 0 }
+    res = { kind: "NilExpr", val: "nil" }
+    -> res
+}
+
+createUndNode {
+    res = { kind: "NilExpr", val: "und" }
     -> res
 }
 
@@ -511,7 +516,11 @@ parseExpression p, precedence {
     } els if t.kind == "BOOL" {
         left = createBoolNode t.val
     } els if t.kind == "NIL" {
-        left = createNilNode
+        if t.val == "und" {
+            left = createUndNode
+        } els {
+            left = createNilNode
+        }
     } els if t.val == "[" {
         let elements = []
         if (peekTok p).val != "]" {
@@ -625,7 +634,7 @@ parseExpression p, precedence {
         advanceParser p
         left = parseExpression p, 0
         expectPeekToken p, "SYM", ")"
-    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await")) {
+    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
             advanceParser p // skip 'mut'

@@ -70,6 +70,7 @@ isLexerKeyword word {
        word == "cont" || word == "dn" || word == "mch" || word == "ok" ||
        word == "err" || word == "if" || word == "and" || word == "or" ||
        word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" ||
+       word == "typ" ||
        word == "obj" || word == "num" || word == "bool" || word == "str" ||
        word == "extern" || word == "ffi" || word == "main" {
         -> 1

@@ -1,0 +1,56 @@
+// Unit Test for Type Inspection Operator (`typ`)
+
+typeStr = typ "text"
+if typeStr == "str" {
+    prnt "typ str ok"
+}
+
+typeNum = typ 42
+if typeNum == "num" {
+    prnt "typ num ok"
+}
+
+typeBool = typ yes
+if typeBool == "bool" {
+    prnt "typ bool ok"
+}
+
+typeArr = typ [1, 2, 3]
+if typeArr == "arr" {
+    prnt "typ arr ok"
+}
+
+typeObj = typ { name: "zuv", ver: 1 }
+if typeObj == "obj" {
+    prnt "typ obj ok"
+}
+
+typeNil = typ nil
+if typeNil == "nil" {
+    prnt "typ nil ok"
+}
+
+typeUnd = typ und
+if typeUnd == "und" {
+    prnt "typ und ok"
+}
+
+if (typ "hello") == "str" {
+    prnt "typ inline str ok"
+}
+
+typeEq = typ (1 == 1)
+prnt "typ (1==1) =>"
+prnt typeEq
+if typeEq == "bool" {
+    prnt "typ 1==1 ok"
+}
+
+typeNeq = typ (1 != 1)
+prnt "typ (1!=1) =>"
+prnt typeNeq
+if typeNeq == "bool" {
+    prnt "typ 1!=1 ok"
+}
+
+prnt "typ test complete"

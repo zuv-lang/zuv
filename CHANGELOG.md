@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🧱 Data Types
+- **Type Inspection Operator (`typ`)**: Added prefix `typ` operator returning type strings (`"str"`, `"num"`, `"bool"`, `"obj"`, `"arr"`, `"nil"`, `"und"`; `"sym"` / `"bigint"` reserved). Implemented in C++ bootstrap and self-hosting compiler. `und` literal now distinct from `nil` for `typ und`. New test: `typ.test.zv`.
+
 ### 🔤 Self-Hosting Source Style
 - **Template Literals**: Migrated self-hosting compiler sources (`src/*.zv`) from `"..." + expr` concatenation and escaped `\"` strings to backtick templates with `${...}` interpolation (e.g. `` `tests/${impPath}.zv` ``). Plain string literals left unchanged.
 - **Shortform Methods**: Replaced long-form std method calls with shortforms used in the test suite — `.concat` → `.cat`, `.charAt` → `.chr`.
