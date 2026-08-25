@@ -1,0 +1,45 @@
+// Unit Test for 'let' Variable Declarations & Mutations
+
+// 1. Declare variables using 'let'
+let count = 0
+let greeting = "Hello"
+let isReady = yes
+
+if count == 0 {
+    prnt "Initial let count is 0"
+}
+
+// 2. Reassign / mutate 'let' variables
+count = count + 10
+greeting = greeting + " World"
+isReady = no
+
+if count == 10 {
+    prnt "Mutated let count is 10"
+}
+
+if greeting == "Hello World" {
+    prnt "Mutated let greeting is Hello World"
+}
+
+// 3. 'let' inside loops and blocks
+let total = 0
+let i = 0
+wh i < 5 {
+    total = total + i
+    i = i + 1
+}
+
+if total == 10 {
+    prnt "Loop with let accumulator passed"
+}
+
+// 4. Interoperability between 'let' and 'mut'
+mut a = 5
+let b = 15
+let c = a + b
+if c == 20 {
+    prnt "Interoperability between let and mut passed"
+}
+
+prnt "Let Variables Unit Test Passed"

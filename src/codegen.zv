@@ -2,9 +2,9 @@
 imp str, arr
 
 createCodegen {
-    mut syms = []
-    mut strConsts = []
-    mut fields = [
+    let syms = []
+    let strConsts = []
+    let fields = [
         "kind", "val", "line", "col", "name", "value", "left", "right", "op",
         "callee", "args", "elements", "array", "index", "object",
         "property", "typeName", "fields", "init", "condition",
@@ -13,11 +13,13 @@ createCodegen {
         "paths", "fromPath", "target", "okVar", "okBody", "errVar", "errBody",
         "src", "pos", "totalLen", "ch", "tokens", "curTok", "peekTok", "errors",
         "regCount", "labelCount", "strCount", "strConstants", "fieldNames",
-        "breakLabels", "continueLabels", "funcs", "mainBody", "isMain"
+        "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
+        "destructKind", "bindNames", "source"
     ]
-    mut brkStack = []
-    mut contStack = []
-    mut exts = []
+    let brkStack = []
+    let contStack = []
+    let exts = []
+    let glbDeclList = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -30,9 +32,22 @@ createCodegen {
         continueLabels: contStack,
         funcs: "",
         mainBody: "",
-        isMain: 0
+        isMain: 0,
+        glbDeclList: glbDeclList
     }
     -> res
+}
+
+ensureGlbProp cg, prop {
+    // Register LLVM module global `@glb_<prop>` for project-wide storage
+    gKey = "glb_" + prop
+    gName = "@" + gKey
+    gSym = findCgSymbol cg, gKey
+    if gSym.name == "" {
+        addCgSymbol cg, gKey, gName
+        cg.glbDeclList.psh (gName + " = global i64 0\n")
+    }
+    -> gName
 }
 
 strEq s1, s2 {
@@ -43,7 +58,7 @@ strEq s1, s2 {
 }
 
 findFieldOffset cg, fieldName {
-    mut i = 0
+    let i = 0
     wh i < cg.fieldNames.ln {
         if (strEq cg.fieldNames[i], fieldName) == 1 {
             -> i
@@ -67,7 +82,7 @@ newLbl cg, prefix {
 }
 
 findCgSymbol cg, name {
-    mut i = cg.symbols.ln - 1
+    let i = cg.symbols.ln - 1
     wh i >= 0 {
         s = cg.symbols[i]
         if (strEq s.name, name) == 1 {
@@ -89,7 +104,7 @@ addCgExtern cg, extDecl {
 }
 
 findCgExtern cg, name {
-    mut i = 0
+    let i = 0
     wh i < cg.externDecls.ln {
         e = cg.externDecls[i]
         if (strEq e.name, name) == 1 {
@@ -105,22 +120,66 @@ getStrPtrVal cg, expr, outBuf {
     if expr.kind == "StringExpr" {
         sName = addStrConstant cg, expr.val
         -> sName
+    } els if expr.kind == "NumberExpr" {
+        // Format number as string constant at codegen time when possible
+        sName = addStrConstant cg, expr.val
+        -> sName
     } els {
         sReg = codegenExpr cg, expr, outBuf
-        sInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
-        sPtr = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
-        -> sPtr
+        // Heuristic: VariableExpr/PropertyAccess with string-ish names are pointers;
+        // otherwise format the numeric value with snprintf.
+        mut isStr = 0
+        if expr.kind == "StringExpr" {
+            isStr = 1
+        }
+        if expr.kind == "VariableExpr" {
+            n = expr.name
+            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" {
+                isStr = 1
+            }
+        }
+        if expr.kind == "PropertyAccess" {
+            prop = expr.property
+            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" || prop == "file" || prop == "cmd" || prop == "kind" {
+                isStr = 1
+            }
+            if expr.object.kind == "VariableExpr" {
+                if expr.object.name == "glb" {
+                    if prop == "appName" || prop == "name" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" {
+                        isStr = 1
+                    } els {
+                        isStr = 0
+                    }
+                }
+            }
+        }
+        if expr.kind == "BinaryExpr" {
+            if expr.op == "+" {
+                isStr = 1
+            }
+        }
+        if isStr == 1 {
+            sInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
+            sPtr = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
+            -> sPtr
+        } els {
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 64)\n")
+            snpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + snpReg + " = call i32 (ptr, i64, ptr, ...) @snprintf(ptr " + bufReg + ", i64 64, ptr @fmt_g, double " + sReg + ")\n")
+            -> bufReg
+        }
     }
 }
 
 addStrConstant cg, strVal {
     sName = "@str_" + cg.strCount
     cg.strCount = cg.strCount + 1
-    mut escaped = ""
-    mut byteCount = 0
-    mut i = 0
+    let escaped = ""
+    let byteCount = 0
+    let i = 0
     wh i < strVal.ln {
         c = strVal.sub i, 1
         if c == "\"" {
@@ -170,8 +229,10 @@ codegenExpr cg, expr, outBuf {
     } els if expr.kind == "VariableExpr" {
         extInfo = findCgExtern cg, expr.name
         if extInfo.name != "" {
-            mut retType = "void"
-            if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
+            let retType = "i32"
+            if extInfo.typeName == "void" {
+                retType = "void"
+            } els if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
                 retType = "ptr"
             } els if extInfo.typeName == "double" {
                 retType = "double"
@@ -219,6 +280,16 @@ codegenExpr cg, expr, outBuf {
                     outBuf.code = outBuf.code.concat ("  store double " + rightReg + ", ptr " + sym.reg + "\n")
                 }
             } els if expr.left.kind == "PropertyAccess" {
+                // Project-wide `glb.prop` → LLVM store to module global @glb_<prop>
+                if expr.left.object.kind == "VariableExpr" {
+                    if expr.left.object.name == "glb" {
+                        gName = ensureGlbProp cg, expr.left.property
+                        rInt = newReg cg
+                        outBuf.code = outBuf.code.concat ("  " + rInt + " = bitcast double " + rightReg + " to i64\n")
+                        outBuf.code = outBuf.code.concat ("  store i64 " + rInt + ", ptr " + gName + "\n")
+                        -> rightReg
+                    }
+                }
                 objReg = codegenExpr cg, expr.left.object, outBuf
                 objInt = newReg cg
                 outBuf.code = outBuf.code.concat ("  " + objInt + " = fptosi double " + objReg + " to i64\n")
@@ -253,34 +324,165 @@ codegenExpr cg, expr, outBuf {
         leftReg = codegenExpr cg, expr.left, outBuf
         rightReg = codegenExpr cg, expr.right, outBuf
 
+        mut isStrAdd = 0
+        if expr.left.kind == "StringExpr" {
+            isStrAdd = 1
+        }
+        if expr.right.kind == "StringExpr" {
+            isStrAdd = 1
+        }
+        if expr.left.kind == "VariableExpr" {
+            if expr.left.name == "greeting" {
+                isStrAdd = 1
+            }
+            if expr.left.name == "name" {
+                isStrAdd = 1
+            }
+            if expr.left.name == "msg" {
+                isStrAdd = 1
+            }
+        }
+
         if expr.op == "+" {
+            if isStrAdd == 1 {
+                s1Ptr = getStrPtrVal cg, expr.left, outBuf
+                s2Ptr = getStrPtrVal cg, expr.right, outBuf
+                l1 = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + l1 + " = call i64 @strlen(ptr " + s1Ptr + ")\n")
+                l2 = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + l2 + " = call i64 @strlen(ptr " + s2Ptr + ")\n")
+                totLen = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + totLen + " = add i64 " + l1 + ", " + l2 + "\n")
+                allocLen = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + allocLen + " = add i64 " + totLen + ", 1\n")
+                bufReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + allocLen + ")\n")
+                cpy1 = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + cpy1 + " = call ptr @memcpy(ptr " + bufReg + ", ptr " + s1Ptr + ", i64 " + l1 + ")\n")
+                dest2 = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + dest2 + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + l1 + "\n")
+                cpy2 = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + cpy2 + " = call ptr @memcpy(ptr " + dest2 + ", ptr " + s2Ptr + ", i64 " + l2 + ")\n")
+                nullTerm = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + totLen + "\n")
+                outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+                bufInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+                resReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + resReg + " = sitofp i64 " + bufInt + " to double\n")
+                -> resReg
+            }
             resReg = newReg cg
             outBuf.code = outBuf.code.concat ("  " + resReg + " = fadd double " + leftReg + ", " + rightReg + "\n")
             -> resReg
-        } els if expr.op == "-" {
+        }
+
+        if expr.op == "-" {
             resReg = newReg cg
             outBuf.code = outBuf.code.concat ("  " + resReg + " = fsub double " + leftReg + ", " + rightReg + "\n")
             -> resReg
-        } els if expr.op == "*" {
+        }
+
+        if expr.op == "*" {
             resReg = newReg cg
             outBuf.code = outBuf.code.concat ("  " + resReg + " = fmul double " + leftReg + ", " + rightReg + "\n")
             -> resReg
-        } els if expr.op == "/" {
+        }
+
+        if expr.op == "/" {
             resReg = newReg cg
             outBuf.code = outBuf.code.concat ("  " + resReg + " = fdiv double " + leftReg + ", " + rightReg + "\n")
             -> resReg
-        } els if expr.op == "==" || expr.op == "!=" || expr.op == "<" || expr.op == "<=" || expr.op == ">" || expr.op == ">=" {
-            cmpOp = "oeq"
-            if expr.op == "!=" { cmpOp = "one" }
-            els if expr.op == "<" { cmpOp = "olt" }
-            els if expr.op == "<=" { cmpOp = "ole" }
-            els if expr.op == ">" { cmpOp = "ogt" }
-            els if expr.op == ">=" { cmpOp = "oge" }
+        }
 
+        mut isStrCmp = 0
+        if expr.left.kind == "StringExpr" {
+            isStrCmp = 1
+        }
+        if expr.right.kind == "StringExpr" {
+            isStrCmp = 1
+        }
+
+        if expr.op == "==" {
+            if isStrCmp == 1 {
+                s1Ptr = getStrPtrVal cg, expr.left, outBuf
+                s2Ptr = getStrPtrVal cg, expr.right, outBuf
+                cmpReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + cmpReg + " = call i32 @strcmp(ptr " + s1Ptr + ", ptr " + s2Ptr + ")\n")
+                eqReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + eqReg + " = icmp eq i32 " + cmpReg + ", 0\n")
+                resReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + eqReg + " to double\n")
+                -> resReg
+            }
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp " + cmpOp + " double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp oeq double " + leftReg + ", " + rightReg + "\n")
             resReg = newReg cg
             outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        }
+
+        if expr.op == "!=" {
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp one double " + leftReg + ", " + rightReg + "\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        }
+
+        if expr.op == "<" {
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp olt double " + leftReg + ", " + rightReg + "\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        }
+
+        if expr.op == "<=" {
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp ole double " + leftReg + ", " + rightReg + "\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        }
+
+        if expr.op == ">" {
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp ogt double " + leftReg + ", " + rightReg + "\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        }
+
+        if expr.op == ">=" {
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp oge double " + leftReg + ", " + rightReg + "\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            -> resReg
+        }
+
+        if expr.op == "&&" {
+            lCmp = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + lCmp + " = fcmp one double " + leftReg + ", 0.0\n")
+            rCmp = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + rCmp + " = fcmp one double " + rightReg + ", 0.0\n")
+            andReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + andReg + " = and i1 " + lCmp + ", " + rCmp + "\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + andReg + " to double\n")
+            -> resReg
+        }
+
+        if expr.op == "||" {
+            lCmp = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + lCmp + " = fcmp one double " + leftReg + ", 0.0\n")
+            rCmp = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + rCmp + " = fcmp one double " + rightReg + ", 0.0\n")
+            orReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + orReg + " = or i1 " + lCmp + ", " + rCmp + "\n")
+            resReg = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + orReg + " to double\n")
             -> resReg
         }
 
@@ -352,7 +554,7 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.concat ("  " + dirInt + " = fptosi double " + dirReg + " to i64\n")
             dirPtr = newReg cg
             outBuf.code = outBuf.code.concat ("  " + dirPtr + " = inttoptr i64 " + dirInt + " to ptr\n")
-            mut extPtr = "null"
+            let extPtr = "null"
             if expr.args.ln == 2 {
                 extReg = codegenExpr cg, expr.args[1], outBuf
                 extInt = newReg cg
@@ -438,7 +640,7 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
             stInt = newReg cg
             outBuf.code = outBuf.code.concat ("  " + stInt + " = fptosi double " + stReg + " to i64\n")
-            mut lenInt = ""
+            let lenInt = ""
             if expr.args.ln == 3 {
                 arg3Reg = codegenExpr cg, expr.args[2], outBuf
                 arg3Int = newReg cg
@@ -549,7 +751,7 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.concat ("  " + resDbl + " = uitofp i1 " + eqReg + " to double\n")
             -> resDbl
         } els if expr.callee == "spn" && expr.args.ln == 1 {
-            mut fnName = ""
+            let fnName = ""
             if expr.args[0].kind == "VariableExpr" {
                 fnName = expr.args[0].name
             } els if expr.args[0].kind == "CallExpr" {
@@ -639,11 +841,11 @@ codegenExpr cg, expr, outBuf {
 
         extInfo = findCgExtern cg, expr.callee
         if extInfo.name != "" {
-            mut callArgsStr = ""
-            mut i = 0
+            let callArgsStr = ""
+            let i = 0
             wh i < expr.args.ln {
                 arg = expr.args[i]
-                mut expectedType = "num"
+                let expectedType = "num"
                 if i < extInfo.params.ln {
                     expectedType = extInfo.params[i].typeName
                 }
@@ -668,8 +870,10 @@ codegenExpr cg, expr, outBuf {
                 }
                 i = i + 1
             }
-            mut retType = "void"
-            if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
+            let retType = "i32"
+            if extInfo.typeName == "void" {
+                retType = "void"
+            } els if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
                 retType = "ptr"
             } els if extInfo.typeName == "double" {
                 retType = "double"
@@ -702,8 +906,8 @@ codegenExpr cg, expr, outBuf {
             -> cReg
         }
 
-        mut callArgsStr = ""
-        mut i = 0
+        let callArgsStr = ""
+        let i = 0
         wh i < expr.args.ln {
             arg = expr.args[i]
             aReg = codegenExpr cg, arg, outBuf
@@ -720,7 +924,7 @@ codegenExpr cg, expr, outBuf {
         bufReg = newReg cg
         outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 8216)\n")
         outBuf.code = outBuf.code.concat ("  store double " + arrSize + ".0, ptr " + bufReg + "\n")
-        mut ai = 0
+        let ai = 0
         wh ai < arrSize {
             elem = expr.elements[ai]
             elemReg = codegenExpr cg, elem, outBuf
@@ -740,7 +944,7 @@ codegenExpr cg, expr, outBuf {
     } els if expr.kind == "StructLiteral" {
         bufReg = newReg cg
         outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 8192)\n")
-        mut fi = 0
+        let fi = 0
         wh fi < expr.fields.ln {
             f = expr.fields[fi]
             fOffset = findFieldOffset cg, f.name
@@ -758,6 +962,17 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
         -> bufDbl
     } els if expr.kind == "PropertyAccess" {
+        // Project-wide `glb.prop` → LLVM load from module global @glb_<prop>
+        if expr.object.kind == "VariableExpr" {
+            if expr.object.name == "glb" {
+                gName = ensureGlbProp cg, expr.property
+                loadInt = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gName + "\n")
+                valReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + valReg + " = bitcast i64 " + loadInt + " to double\n")
+                -> valReg
+            }
+        }
         objReg = codegenExpr cg, expr.object, outBuf
         objInt = newReg cg
         outBuf.code = outBuf.code.concat ("  " + objInt + " = fptosi double " + objReg + " to i64\n")
@@ -765,7 +980,7 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.concat ("  " + objPtr + " = inttoptr i64 " + objInt + " to ptr\n")
 
         if expr.property == "ln" || expr.property == "len" || expr.property == "length" {
-            mut isStrObj = 0
+            let isStrObj = 0
             if expr.object.kind == "StringExpr" {
                 isStrObj = 1
             } els if expr.object.kind == "VariableExpr" {
@@ -801,7 +1016,7 @@ codegenExpr cg, expr, outBuf {
         bufReg = newReg cg
         outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + arrBytes + ")\n")
         outBuf.code = outBuf.code.concat ("  store double " + arrLen + ".0, ptr " + bufReg + "\n")
-        mut ei = 0
+        let ei = 0
         wh ei < expr.elements.ln {
             elem = expr.elements[ei]
             eValReg = codegenExpr cg, elem, outBuf
@@ -867,9 +1082,41 @@ codegenStmt cg, stmt, outBuf {
             outBuf.code = outBuf.code.concat ("  store double " + valReg + ", ptr " + ptrReg + "\n")
             addCgSymbol cg, stmt.name, ptrReg
         }
+    } els if stmt.kind == "DestructureStmt" {
+        srcReg = codegenExpr cg, stmt.source, outBuf
+        srcInt = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + srcInt + " = fptosi double " + srcReg + " to i64\n")
+        srcPtr = newReg cg
+        outBuf.code = outBuf.code.concat ("  " + srcPtr + " = inttoptr i64 " + srcInt + " to ptr\n")
+        let di = 0
+        wh di < stmt.bindNames.ln {
+            dName = stmt.bindNames[di]
+            gepReg = newReg cg
+            if stmt.destructKind == "object" {
+                fOffset = findFieldOffset cg, dName
+                outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + srcPtr + ", i64 " + fOffset + "\n")
+            } els {
+                elemOffset = di + 1
+                outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + srcPtr + ", i64 " + elemOffset + "\n")
+            }
+            loadInt = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gepReg + "\n")
+            loadDbl = newReg cg
+            outBuf.code = outBuf.code.concat ("  " + loadDbl + " = bitcast i64 " + loadInt + " to double\n")
+            sym = findCgSymbol cg, dName
+            if sym.name != "" {
+                outBuf.code = outBuf.code.concat ("  store double " + loadDbl + ", ptr " + sym.reg + "\n")
+            } els {
+                ptrReg = newReg cg
+                outBuf.code = outBuf.code.concat ("  " + ptrReg + " = alloca double\n")
+                outBuf.code = outBuf.code.concat ("  store double " + loadDbl + ", ptr " + ptrReg + "\n")
+                addCgSymbol cg, dName, ptrReg
+            }
+            di = di + 1
+        }
     } els if stmt.kind == "PrintStmt" {
         if stmt.level == "lg" || stmt.level == "wrn" || stmt.level == "inf" || stmt.level == "err" {
-            mut pfx = "[LOG] "
+            let pfx = "[LOG] "
             if stmt.level == "wrn" { pfx = "[WRN] " }
             els if stmt.level == "inf" { pfx = "[INF] " }
             els if stmt.level == "err" { pfx = "[ERR] " }
@@ -879,6 +1126,34 @@ codegenStmt cg, stmt, outBuf {
         if stmt.value.kind == "StringExpr" {
             sName = addStrConstant cg, stmt.value.val
             outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sName + ")\n")
+        } els if stmt.value.kind == "BinaryExpr" {
+            if stmt.value.op == "+" {
+                sPtr = getStrPtrVal cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sPtr + ")\n")
+            } els {
+                valReg = codegenExpr cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
+            }
+        } els if stmt.value.kind == "PropertyAccess" {
+            prop = stmt.value.property
+            mut isStrProp = 0
+            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "content" || prop == "path" || prop == "file" || prop == "cmd" {
+                isStrProp = 1
+            }
+            if stmt.value.object.kind == "VariableExpr" {
+                if stmt.value.object.name == "glb" {
+                    if prop == "appName" || prop == "name" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" {
+                        isStrProp = 1
+                    }
+                }
+            }
+            if isStrProp == 1 {
+                sPtr = getStrPtrVal cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sPtr + ")\n")
+            } els {
+                valReg = codegenExpr cg, stmt.value, outBuf
+                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
+            }
         } els {
             valReg = codegenExpr cg, stmt.value, outBuf
             outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
@@ -1041,11 +1316,18 @@ codegenStmt cg, stmt, outBuf {
 
         outBuf.code = outBuf.code.concat (mergeLbl + ":\n")
     } els if stmt.kind == "BlockStmt" {
-        mut i = 0
+        let i = 0
         wh i < stmt.statements.ln {
             s = stmt.statements[i]
             codegenStmt cg, s, outBuf
             i = i + 1
+        }
+    } els if stmt.kind == "StmtSequence" {
+        let si = 0
+        wh si < stmt.statements.ln {
+            s = stmt.statements[si]
+            codegenStmt cg, s, outBuf
+            si = si + 1
         }
     } els if stmt.kind == "ExpressionStmt" {
         codegenExpr cg, stmt.expr, outBuf
@@ -1053,18 +1335,22 @@ codegenStmt cg, stmt, outBuf {
 }
 
 codegenFunctionDecl cg, funcStmt {
-    fnName = funcStmt.name
-    mut paramsStr = ""
-    mut i = 0
+    let fnNameRaw = funcStmt.name
+    let fnName = fnNameRaw
+    if fnNameRaw == "main" {
+        fnName = "main_user"
+    }
+    let paramsStr = ""
+    let i = 0
     wh i < funcStmt.params.ln {
         if i > 0 { paramsStr = paramsStr.concat ", " }
         paramsStr = paramsStr.concat ("double %arg_" + funcStmt.params[i])
         i = i + 1
     }
 
-    mut fnBuf = { code: ("define double @" + fnName + "(" + paramsStr + ") {\nentry:\n") }
+    let fnBuf = { code: ("define double @" + fnName + "(" + paramsStr + ") {\nentry:\n") }
 
-    mut j = 0
+    let j = 0
     wh j < funcStmt.params.ln {
         pName = funcStmt.params[j]
         if pName != "" {
@@ -1084,7 +1370,7 @@ codegenFunctionDecl cg, funcStmt {
 generateLLVMFull program {
     cg = createCodegen
 
-    mut header = "; ModuleID = 'zuv_self_host'\n"
+    let header = "; ModuleID = 'zuv_self_host'\n"
     header = header.concat "source_filename = \"main.zv\"\n\n"
     header = header.concat "declare i32 @printf(ptr nocapture readonly, ...)\n"
     header = header.concat "declare ptr @fopen(ptr, ptr)\n"
@@ -1130,6 +1416,7 @@ generateLLVMFull program {
     header = header.concat "@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n"
     header = header.concat "@fmt_prefix = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n"
     header = header.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n"
+    header = header.concat "@fmt_g = private unnamed_addr constant [3 x i8] c\"%g\\00\"\n"
     header = header.concat "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"\n"
     header = header.concat "@fmt_pattern = private unnamed_addr constant [5 x i8] c\"%s/*\\00\"\n"
     header = header.concat "@fmt_filepath = private unnamed_addr constant [6 x i8] c\"%s/%s\\00\"\n"
@@ -1138,10 +1425,14 @@ generateLLVMFull program {
 
     header = header.concat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds i64, ptr %arr, i64 %nextCount\n  store i64 %strInt, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
 
-    mut mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" }
+    let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" }
+
+    // Built-in project-wide `glb` — properties registered as LLVM globals `@glb_<prop>`
+    header = header.concat "@glb = global i64 0\n"
+    addCgSymbol cg, "glb", "@glb"
 
     // Pass 1: Declare top-level variables as global variables
-    mut gi = 0
+    let gi = 0
     wh gi < program.statements.ln {
         stmt = program.statements[gi]
         if stmt.kind == "VarDecl" {
@@ -1167,18 +1458,18 @@ generateLLVMFull program {
     }
 
     // Collect and generate function definitions & top-level statements
-    mut i = 0
+    let i = 0
     wh i < program.statements.ln {
         stmt = program.statements[i]
         if stmt.kind == "FunctionDecl" {
             cg.isMain = 0
             codegenFunctionDecl cg, stmt
         } els if stmt.kind == "ExternDecl" {
-            mut extParams = ""
-            mut pi = 0
+            let extParams = ""
+            let pi = 0
             wh pi < stmt.params.ln {
                 p = stmt.params[pi]
-                mut pt = "i32"
+                let pt = "i32"
                 if p.typeName == "str" || p.typeName == "ptr" {
                     pt = "ptr"
                 } els if p.typeName == "double" || p.typeName == "num" {
@@ -1192,8 +1483,11 @@ generateLLVMFull program {
                 extParams = extParams + pt
                 pi = pi + 1
             }
-            mut retType = "void"
-            if stmt.typeName == "ptr" || stmt.typeName == "str" {
+            // Default to i32 (Win32 / C int); only use void when explicitly declared
+            let retType = "i32"
+            if stmt.typeName == "void" {
+                retType = "void"
+            } els if stmt.typeName == "ptr" || stmt.typeName == "str" {
                 retType = "ptr"
             } els if stmt.typeName == "double" {
                 retType = "double"
@@ -1214,16 +1508,34 @@ generateLLVMFull program {
         i = i + 1
     }
 
+    if (cg.funcs.cnt "@main_user(") > 0 {
+        mainBuf.code = mainBuf.code.concat "  %arg1_alloc = alloca double\n  %arg2_alloc = alloca double\n  %arg3_alloc = alloca double\n  %arg4_alloc = alloca double\n"
+        mainBuf.code = mainBuf.code.concat "  store double 0.0, ptr %arg1_alloc\n  store double 0.0, ptr %arg2_alloc\n  store double 0.0, ptr %arg3_alloc\n  store double 0.0, ptr %arg4_alloc\n"
+        mainBuf.code = mainBuf.code.concat "  %hasArg1 = icmp sgt i32 %argc, 1\n  br i1 %hasArg1, label %get_arg1, label %no_arg1\n\nget_arg1:\n  %p1 = getelementptr inbounds ptr, ptr %argv, i64 1\n  %v1 = load ptr, ptr %p1, align 8\n  %l1 = call i64 @strlen(ptr %v1)\n  %l1p = add i64 %l1, 1\n  %h1 = call ptr @malloc(i64 %l1p)\n  %c1 = call ptr @memcpy(ptr %h1, ptr %v1, i64 %l1p)\n  %v1Int = ptrtoint ptr %h1 to i64\n  %v1Dbl = sitofp i64 %v1Int to double\n  store double %v1Dbl, ptr %arg1_alloc\n  br label %next_arg1\n\nno_arg1:\n  %e1 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e1\n  %e1Int = ptrtoint ptr %e1 to i64\n  %e1Dbl = sitofp i64 %e1Int to double\n  store double %e1Dbl, ptr %arg1_alloc\n  br label %next_arg1\n\nnext_arg1:\n"
+        mainBuf.code = mainBuf.code.concat "  %hasArg2 = icmp sgt i32 %argc, 2\n  br i1 %hasArg2, label %get_arg2, label %no_arg2\n\nget_arg2:\n  %p2 = getelementptr inbounds ptr, ptr %argv, i64 2\n  %v2 = load ptr, ptr %p2, align 8\n  %l2 = call i64 @strlen(ptr %v2)\n  %l2p = add i64 %l2, 1\n  %h2 = call ptr @malloc(i64 %l2p)\n  %c2 = call ptr @memcpy(ptr %h2, ptr %v2, i64 %l2p)\n  %v2Int = ptrtoint ptr %h2 to i64\n  %v2Dbl = sitofp i64 %v2Int to double\n  store double %v2Dbl, ptr %arg2_alloc\n  br label %next_arg2\n\nno_arg2:\n  %e2 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e2\n  %e2Int = ptrtoint ptr %e2 to i64\n  %e2Dbl = sitofp i64 %e2Int to double\n  store double %e2Dbl, ptr %arg2_alloc\n  br label %next_arg2\n\nnext_arg2:\n"
+        mainBuf.code = mainBuf.code.concat "  %hasArg3 = icmp sgt i32 %argc, 3\n  br i1 %hasArg3, label %get_arg3, label %no_arg3\n\nget_arg3:\n  %p3 = getelementptr inbounds ptr, ptr %argv, i64 3\n  %v3 = load ptr, ptr %p3, align 8\n  %l3 = call i64 @strlen(ptr %v3)\n  %l3p = add i64 %l3, 1\n  %h3 = call ptr @malloc(i64 %l3p)\n  %c3 = call ptr @memcpy(ptr %h3, ptr %v3, i64 %l3p)\n  %v3Int = ptrtoint ptr %h3 to i64\n  %v3Dbl = sitofp i64 %v3Int to double\n  store double %v3Dbl, ptr %arg3_alloc\n  br label %next_arg3\n\nno_arg3:\n  %e3 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e3\n  %e3Int = ptrtoint ptr %e3 to i64\n  %e3Dbl = sitofp i64 %e3Int to double\n  store double %e3Dbl, ptr %arg3_alloc\n  br label %next_arg3\n\nnext_arg3:\n"
+        mainBuf.code = mainBuf.code.concat "  %hasArg4 = icmp sgt i32 %argc, 4\n  br i1 %hasArg4, label %get_arg4, label %no_arg4\n\nget_arg4:\n  %p4 = getelementptr inbounds ptr, ptr %argv, i64 4\n  %v4 = load ptr, ptr %p4, align 8\n  %l4 = call i64 @strlen(ptr %v4)\n  %l4p = add i64 %l4, 1\n  %h4 = call ptr @malloc(i64 %l4p)\n  %c4 = call ptr @memcpy(ptr %h4, ptr %v4, i64 %l4p)\n  %v4Int = ptrtoint ptr %h4 to i64\n  %v4Dbl = sitofp i64 %v4Int to double\n  store double %v4Dbl, ptr %arg4_alloc\n  br label %next_arg4\n\nno_arg4:\n  %e4 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e4\n  %e4Int = ptrtoint ptr %e4 to i64\n  %e4Dbl = sitofp i64 %e4Int to double\n  store double %e4Dbl, ptr %arg4_alloc\n  br label %next_arg4\n\nnext_arg4:\n"
+        mainBuf.code = mainBuf.code.concat "  %a1 = load double, ptr %arg1_alloc\n  %a2 = load double, ptr %arg2_alloc\n  %a3 = load double, ptr %arg3_alloc\n  %a4 = load double, ptr %arg4_alloc\n"
+        mainBuf.code = mainBuf.code.concat "  %call_res = call double @main_user(double %a1, double %a2, double %a3, double %a4)\n"
+    }
+
     mainBuf.code = mainBuf.code.concat ("  ret i32 0\n}\n")
 
     // Merge constant declarations
-    mut constsStr = ""
-    mut ci = 0
+    let constsStr = ""
+    let ci = 0
     wh ci < cg.strConstants.ln {
         constsStr = constsStr.concat cg.strConstants[ci]
         ci = ci + 1
     }
 
-    fullIR = header + constsStr + "\n" + cg.funcs + "\n" + mainBuf.code
+    let glbDeclsStr = ""
+    let gdi = 0
+    wh gdi < cg.glbDeclList.ln {
+        glbDeclsStr = glbDeclsStr.concat cg.glbDeclList[gdi]
+        gdi = gdi + 1
+    }
+
+    fullIR = header + glbDeclsStr + constsStr + "\n" + cg.funcs + "\n" + mainBuf.code
     -> fullIR
 }

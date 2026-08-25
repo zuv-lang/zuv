@@ -1,0 +1,5 @@
+// Intentionally contains duplicate variable declarations in the same scope
+// to verify that the BorrowChecker detects and flags the error.
+
+let item = "initial declaration"
+let item = "duplicate declaration in the same scope"

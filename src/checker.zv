@@ -2,16 +2,19 @@
 imp str, arr
 
 createScope {
-    mut vars = []
+    let vars = []
     res = { vars: vars }
     -> res
 }
 
 createChecker {
-    mut scopes = []
-    mut errors = []
+    let scopes = []
+    let errors = []
     globalScope = createScope
     scopes.psh globalScope
+    // Built-in project-wide global object (immutable binding; properties are writable)
+    glbVar = { name: "glb", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+    globalScope.vars.psh glbVar
     res = { scopes: scopes, errors: errors }
     -> res
 }
@@ -28,10 +31,10 @@ popCheckerScope checker {
 }
 
 findVarState checker, name {
-    mut i = checker.scopes.ln - 1
+    let i = checker.scopes.ln - 1
     wh i >= 0 {
         sc = checker.scopes[i]
-        mut j = 0
+        let j = 0
         wh j < sc.vars.ln {
             v = sc.vars[j]
             if v.name == name {
@@ -45,18 +48,45 @@ findVarState checker, name {
     -> emptyVar
 }
 
+findVarInCurrentScope checker, name {
+    curIdx = checker.scopes.ln - 1
+    if curIdx >= 0 {
+        curScope = checker.scopes[curIdx]
+        let j = 0
+        wh j < curScope.vars.ln {
+            v = curScope.vars[j]
+            if v.name == name {
+                -> v
+            }
+            j = j + 1
+        }
+    }
+    emptyVar = { name: "", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+    -> emptyVar
+}
+
 declareVar checker, name, isMut {
-    existing = findVarState checker, name
-    if existing.name != "" {
-        if isMut == 1 {
-            existing.isMut = 1
+    existingInCurrent = findVarInCurrentScope checker, name
+    if isMut == 1 {
+        if existingInCurrent.name != "" {
+            errRedecl = "Variable '" + name + "' is already declared in this scope"
+            checker.errors.psh errRedecl
+        } els {
+            curIdx = checker.scopes.ln - 1
+            if curIdx >= 0 {
+                curScope = checker.scopes[curIdx]
+                newVar = { name: name, isMut: 1, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+                curScope.vars.psh newVar
+            }
         }
     } els {
-        curIdx = checker.scopes.ln - 1
-        if curIdx >= 0 {
-            curScope = checker.scopes[curIdx]
-            newVar = { name: name, isMut: isMut, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
-            curScope.vars.psh newVar
+        if existingInCurrent.name == "" {
+            curIdx = checker.scopes.ln - 1
+            if curIdx >= 0 {
+                curScope = checker.scopes[curIdx]
+                newVar = { name: name, isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
+                curScope.vars.psh newVar
+            }
         }
     }
 }
@@ -116,14 +146,14 @@ checkExpr checker, expr {
         checkExpr checker, expr.left
         checkExpr checker, expr.right
     } els if expr.kind == "CallExpr" {
-        mut i = 0
+        let i = 0
         wh i < expr.args.ln {
             arg = expr.args[i]
             checkExpr checker, arg
             i = i + 1
         }
     } els if expr.kind == "ArrayExpr" {
-        mut i = 0
+        let i = 0
         wh i < expr.elements.ln {
             elem = expr.elements[i]
             checkExpr checker, elem
@@ -144,10 +174,27 @@ checkStatement checker, stmt {
         }
         checkExpr checker, stmt.value
         declareVar checker, stmt.name, stmt.isMut
+    } els if stmt.kind == "DestructureStmt" {
+        checkExpr checker, stmt.source
+        let di = 0
+        wh di < stmt.bindNames.ln {
+            dName = stmt.bindNames[di]
+            if dName != "" {
+                declareVar checker, dName, stmt.isMut
+            }
+            di = di + 1
+        }
+    } els if stmt.kind == "StmtSequence" {
+        let si = 0
+        wh si < stmt.statements.ln {
+            s = stmt.statements[si]
+            checkStatement checker, s
+            si = si + 1
+        }
     } els if stmt.kind == "FunctionDecl" {
         declareVar checker, stmt.name, 0
         pushCheckerScope checker
-        mut i = 0
+        let i = 0
         wh i < stmt.params.ln {
             pName = stmt.params[i]
             if pName != "" {
@@ -156,7 +203,7 @@ checkStatement checker, stmt {
             i = i + 1
         }
         if stmt.body.kind == "BlockStmt" {
-            mut j = 0
+            let j = 0
             wh j < stmt.body.statements.ln {
                 s = stmt.body.statements[j]
                 checkStatement checker, s
@@ -166,7 +213,7 @@ checkStatement checker, stmt {
         popCheckerScope checker
     } els if stmt.kind == "BlockStmt" {
         pushCheckerScope checker
-        mut i = 0
+        let i = 0
         wh i < stmt.statements.ln {
             s = stmt.statements[i]
             checkStatement checker, s
@@ -183,7 +230,10 @@ checkStatement checker, stmt {
         checkExpr checker, stmt.condition
         checkStatement checker, stmt.body
     } els if stmt.kind == "ForStmt" {
-        if stmt.init.kind != "" {
+        pushCheckerScope checker
+        if stmt.init.kind == "VarDecl" {
+            declareVar checker, stmt.init.name, 1
+        } els if stmt.init.kind != "" {
             checkStatement checker, stmt.init
         }
         if stmt.condition.kind != "" {
@@ -193,6 +243,7 @@ checkStatement checker, stmt {
             checkStatement checker, stmt.increment
         }
         checkStatement checker, stmt.body
+        popCheckerScope checker
     } els if stmt.kind == "ReturnStmt" {
         checkExpr checker, stmt.value
     } els if stmt.kind == "PrintStmt" {
@@ -200,7 +251,7 @@ checkStatement checker, stmt {
     } els if stmt.kind == "ExpressionStmt" {
         checkExpr checker, stmt.expr
     } els if stmt.kind == "ImportStmt" {
-        mut si = 0
+        let si = 0
         wh si < stmt.symbols.ln {
             sym = stmt.symbols[si]
             if sym != "" {
@@ -208,7 +259,7 @@ checkStatement checker, stmt {
             }
             si = si + 1
         }
-        mut pi = 0
+        let pi = 0
         wh pi < stmt.paths.ln {
             p = stmt.paths[pi]
             if p != "" {
@@ -245,7 +296,7 @@ checkStatement checker, stmt {
 
 checkProgram program {
     checker = createChecker
-    mut i = 0
+    let i = 0
     wh i < program.statements.ln {
         stmt = program.statements[i]
         checkStatement checker, stmt
@@ -253,7 +304,7 @@ checkProgram program {
     }
 
     if checker.errors.ln > 0 {
-        mut ei = 0
+        let ei = 0
         wh ei < checker.errors.ln {
             err checker.errors[ei]
             ei = ei + 1

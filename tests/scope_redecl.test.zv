@@ -1,0 +1,44 @@
+// Unit Test for Block Scoping, Child Shadowing & Reassignments
+
+// 1. Outer variable
+let x = 10
+
+if x == 10 {
+    // 2. Valid child block shadowing
+    let x = 20
+    if x == 20 {
+        prnt "Inner scope shadowed x is 20"
+    }
+}
+
+if x == 10 {
+    prnt "Outer scope x remains 10"
+}
+
+// 3. Multi-level nested block scope shadowing
+let a = 1
+{
+    let a = 2
+    {
+        let a = 3
+        if a == 3 {
+            prnt "Deeply nested shadow a is 3"
+        }
+    }
+    if a == 2 {
+        prnt "Mid nested shadow a is 2"
+    }
+}
+
+if a == 1 {
+    prnt "Outer a remains 1"
+}
+
+// 4. Same-scope mutation without redeclaration
+let count = 5
+count = 15
+if count == 15 {
+    prnt "Same-scope reassignment works"
+}
+
+prnt "Scope Shadowing & Redeclaration Unit Test Passed"

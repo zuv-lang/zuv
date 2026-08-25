@@ -5,7 +5,7 @@ imp createLexer, tokenizeFull frm lexer
 imp parseProgramFull frm parser
 
 main cmd, fileArg, arg3, arg4 {
-    mut targetFile = fileArg
+    let targetFile = fileArg
     if targetFile == "" {
         if fE "src/main.zv" {
             targetFile = "src/main.zv"
@@ -14,9 +14,9 @@ main cmd, fileArg, arg3, arg4 {
         }
     }
 
-    mut isRelease = 0
-    mut emitLlvm = 0
-    mut outExe = "output.exe"
+    let isRelease = 0
+    let emitLlvm = 0
+    let outExe = "output.exe"
 
     if arg3 == "-o" && arg4 != "" {
         outExe = arg4
