@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Undefined Literal (`und`)**: Runtime-distinct from `nil` (LLVM `bitcast i64 1 to double` sentinel). Equality/`!=`, falsy `if`/`wh`/`for`/`and`/`or`/`!` via truthiness helper, and `typ und` → `"und"`. Fixed C++ `TOK_UND` over-consume and self-host checker allowing `let x = nil|und`. New test: `und.test.zv`.
 - **Unique Symbol Primitive (`sym`)**: `sym "key"` creates an interned identity (same key → equal, different from strings). `typ (sym "k")` → `"sym"`. Symbols are truthy. Renamed self-host locals that collided with the new `sym` keyword. New test: `sym.test.zv`.
 - **BigInt Primitives (`BigInt` / `...n`)**: Digit-string bigint literals (`123n`) and `BigInt(...)` constructor. Equality via content (`strcmp`); distinct from numbers (`123n != 123`). `typ` → `"bigint"`. New test: `bigint.test.zv`.
+- **Scientific Exponent Literals (`123e5`, `1.5E-2`)**: Lexer support for `e`/`E` with optional `+`/`-` in C++ bootstrap and self-host. New test: `sci_notation.test.zv`.
+- **Number Bases (`0x` / `0b` / `0o`)**: Hex, binary, and octal integer literals in C++ bootstrap and self-host. New test: `bases.test.zv`.
 
 ### 🔤 Self-Hosting Source Style
 - **Template Literals**: Migrated self-hosting compiler sources (`src/*.zv`) from `"..." + expr` concatenation and escaped `\"` strings to backtick templates with `${...}` interpolation (e.g. `` `tests/${impPath}.zv` ``). Plain string literals left unchanged.

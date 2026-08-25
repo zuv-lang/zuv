@@ -387,7 +387,70 @@ addStrConstant cg, strVal {
     -> sName
 }
 
+digitValue ch {
+    if ch == "0" { -> 0 }
+    if ch == "1" { -> 1 }
+    if ch == "2" { -> 2 }
+    if ch == "3" { -> 3 }
+    if ch == "4" { -> 4 }
+    if ch == "5" { -> 5 }
+    if ch == "6" { -> 6 }
+    if ch == "7" { -> 7 }
+    if ch == "8" { -> 8 }
+    if ch == "9" { -> 9 }
+    if ch == "a" || ch == "A" { -> 10 }
+    if ch == "b" || ch == "B" { -> 11 }
+    if ch == "c" || ch == "C" { -> 12 }
+    if ch == "d" || ch == "D" { -> 13 }
+    if ch == "e" || ch == "E" { -> 14 }
+    if ch == "f" || ch == "F" { -> 15 }
+    -> 0
+}
+
 formatFloat valStr {
+    // Convert 0x / 0b / 0o literals to decimal before emitting LLVM constants
+    if valStr.ln >= 3 {
+        p0 = valStr.sub 0, 1
+        p1 = valStr.sub 1, 1
+        if p0 == "0" {
+            digLen = valStr.ln - 2
+            digs = valStr.sub 2, digLen
+            mut base = 0
+            if p1 == "x" || p1 == "X" { base = 16 }
+            if p1 == "b" || p1 == "B" { base = 2 }
+            if p1 == "o" || p1 == "O" { base = 8 }
+            if base != 0 {
+                let n = 0
+                let i = 0
+                wh i < digs.ln {
+                    ch = digs.sub i, 1
+                    d = digitValue ch
+                    n = n * base + d
+                    i = i + 1
+                }
+                -> `${n}.0`
+            }
+        }
+    }
+    // LLVM requires a decimal point in float constants (123e2 → 123.0e2)
+    if (valStr.cnt "e") == 1 || (valStr.cnt "E") == 1 {
+        if (valStr.cnt ".") == 1 {
+            -> valStr
+        }
+        let out = ""
+        let i = 0
+        wh i < valStr.ln {
+            c = valStr.sub i, 1
+            if c == "e" || c == "E" {
+                out = out.cat ".0"
+                out = out.cat c
+            } els {
+                out = out.cat c
+            }
+            i = i + 1
+        }
+        -> out
+    }
     if (valStr.cnt ".") == 1 {
         -> valStr
     }

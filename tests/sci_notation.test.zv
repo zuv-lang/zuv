@@ -1,0 +1,30 @@
+if 123e2 == 12300 {
+    prnt "123e2 ok"
+}
+
+if 1.5e2 == 150 {
+    prnt "1.5e2 ok"
+}
+
+if 10e+3 == 10000 {
+    prnt "10e+3 ok"
+}
+
+if 5e-1 == 0.5 {
+    prnt "5e-1 ok"
+}
+
+if 1E3 == 1000 {
+    prnt "1E3 ok"
+}
+
+if typ 123e5 == "num" {
+    prnt "typ sci ok"
+}
+
+let x = 2e4
+if x == 20000 {
+    prnt "sci var ok"
+}
+
+prnt "sci notation test complete"

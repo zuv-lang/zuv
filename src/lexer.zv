@@ -45,6 +45,32 @@ isLexerDigit ch {
     -> 0
 }
 
+isLexerHexDigit ch {
+    if (isLexerDigit ch) == 1 {
+        -> 1
+    }
+    if ch == "a" || ch == "b" || ch == "c" || ch == "d" || ch == "e" || ch == "f" ||
+       ch == "A" || ch == "B" || ch == "C" || ch == "D" || ch == "E" || ch == "F" {
+        -> 1
+    }
+    -> 0
+}
+
+isLexerBinDigit ch {
+    if ch == "0" || ch == "1" {
+        -> 1
+    }
+    -> 0
+}
+
+isLexerOctDigit ch {
+    if ch == "0" || ch == "1" || ch == "2" || ch == "3" ||
+       ch == "4" || ch == "5" || ch == "6" || ch == "7" {
+        -> 1
+    }
+    -> 0
+}
+
 isLexerLetter ch {
     if ch == "a" || ch == "b" || ch == "c" || ch == "d" || ch == "e" ||
        ch == "f" || ch == "g" || ch == "h" || ch == "i" || ch == "j" ||
@@ -132,6 +158,53 @@ readLexerNumber lexer {
     startLine = lexer.line
     startCol = lexer.col
     let numVal = ""
+
+    // Base prefixes: 0xFF, 0b1010, 0o755 (require ≥1 digit after prefix)
+    if lexer.ch == "0" {
+        p = peekLexerChar lexer
+        mut p2 = ""
+        if lexer.pos + 1 < lexer.totalLen {
+            p2Idx = lexer.pos + 1
+            p2 = lexer.src.chr p2Idx
+        }
+        if (p == "x" || p == "X") && (isLexerHexDigit p2) == 1 {
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            wh (isLexerHexDigit lexer.ch) == 1 {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            tok = createToken "NUMBER", numVal, startLine, startCol
+            -> tok
+        }
+        if (p == "b" || p == "B") && (isLexerBinDigit p2) == 1 {
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            wh (isLexerBinDigit lexer.ch) == 1 {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            tok = createToken "NUMBER", numVal, startLine, startCol
+            -> tok
+        }
+        if (p == "o" || p == "O") && (isLexerOctDigit p2) == 1 {
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            wh (isLexerOctDigit lexer.ch) == 1 {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            tok = createToken "NUMBER", numVal, startLine, startCol
+            -> tok
+        }
+    }
+
     mut hasDot = 0
 
     wh (isLexerDigit lexer.ch) || (lexer.ch == "." && (isLexerDigit (peekLexerChar lexer))) {
@@ -142,7 +215,40 @@ readLexerNumber lexer {
         readLexerChar lexer
     }
 
-    // BigInt suffix: 123n / 123N (integers only — no decimal point)
+    // Scientific exponent: 123e5, 1.5E-2, 10e+3
+    if lexer.ch == "e" || lexer.ch == "E" {
+        nxt = peekLexerChar lexer
+        mut expOk = 0
+        if (isLexerDigit nxt) == 1 {
+            expOk = 1
+        }
+        if nxt == "+" || nxt == "-" {
+            // Digit must follow the sign (lookahead two chars)
+            if lexer.pos + 1 < lexer.totalLen {
+                signIdx = lexer.pos + 1
+                afterSign = lexer.src.chr signIdx
+                if (isLexerDigit afterSign) == 1 {
+                    expOk = 1
+                }
+            }
+        }
+        if expOk == 1 {
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            if lexer.ch == "+" || lexer.ch == "-" {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            wh (isLexerDigit lexer.ch) == 1 {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            tok = createToken "NUMBER", numVal, startLine, startCol
+            -> tok
+        }
+    }
+
+    // BigInt suffix: 123n / 123N (integers only — no decimal point, no exponent)
     if hasDot == 0 {
         if lexer.ch == "n" || lexer.ch == "N" {
             readLexerChar lexer
