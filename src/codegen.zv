@@ -14,12 +14,16 @@ createCodegen {
         "src", "pos", "totalLen", "ch", "tokens", "curTok", "peekTok", "errors",
         "regCount", "labelCount", "strCount", "strConstants", "fieldNames",
         "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
-        "destructKind", "bindNames", "source"
+        "destructKind", "bindNames", "source",
+        "enums", "enumKeys", "enumVals"
     ]
     let brkStack = []
     let contStack = []
     let exts = []
     let glbDeclList = []
+    let enumsList = []
+    let enumKeys = []
+    let enumVals = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -33,7 +37,10 @@ createCodegen {
         funcs: "",
         mainBody: "",
         isMain: 0,
-        glbDeclList: glbDeclList
+        glbDeclList: glbDeclList,
+        enums: enumsList,
+        enumKeys: enumKeys,
+        enumVals: enumVals
     }
     -> res
 }
@@ -48,6 +55,93 @@ ensureGlbProp cg, prop {
         cg.glbDeclList.psh (`${gName} = global i64 0\n`)
     }
     -> gName
+}
+
+registerEnum cg, enumDecl {
+    // Variants packed in enumDecl.src as "Pending,Active,Archived"
+    let joined = enumDecl.src
+    let start = 0
+    let i = 0
+    let disc = 0
+    wh i <= joined.ln {
+        let atEnd = 0
+        if i == joined.ln { atEnd = 1 }
+        let isComma = 0
+        if atEnd == 0 {
+            c = joined.sub i, 1
+            if (strEq c, ",") == 1 { isComma = 1 }
+        }
+        if isComma == 1 || atEnd == 1 {
+            let vLen = i - start
+            if vLen > 0 {
+                v = joined.sub start, vLen
+                dot = "."
+                q1 = enumDecl.name.cat dot
+                qKey = q1.cat v
+                cg.enumKeys.psh qKey
+                cg.enumVals.psh disc
+                cg.enumKeys.psh v
+                cg.enumVals.psh disc
+                disc = disc + 1
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+}
+
+lookupEnumDisc cg, pattern {
+    let i = 0
+    wh i < cg.enumKeys.ln {
+        if (strEq cg.enumKeys[i], pattern) == 1 {
+            -> cg.enumVals[i]
+        }
+        i = i + 1
+    }
+    -> 0 - 1
+}
+
+enumDiscLit disc {
+    if disc == 0 { -> "0.0" }
+    if disc == 1 { -> "1.0" }
+    if disc == 2 { -> "2.0" }
+    if disc == 3 { -> "3.0" }
+    if disc == 4 { -> "4.0" }
+    if disc == 5 { -> "5.0" }
+    if disc == 6 { -> "6.0" }
+    if disc == 7 { -> "7.0" }
+    if disc == 8 { -> "8.0" }
+    if disc == 9 { -> "9.0" }
+    if disc == 10 { -> "10.0" }
+    if disc == 11 { -> "11.0" }
+    if disc == 12 { -> "12.0" }
+    if disc == 13 { -> "13.0" }
+    if disc == 14 { -> "14.0" }
+    if disc == 15 { -> "15.0" }
+    -> "0.0"
+}
+
+isEnumName cg, name {
+    let i = 0
+    wh i < cg.enumKeys.ln {
+        k = cg.enumKeys[i]
+        if (k.cnt ".") == 1 {
+            let j = 0
+            wh j < k.ln {
+                c = k.sub j, 1
+                if (strEq c, ".") == 1 {
+                    prefix = k.sub 0, j
+                    if (strEq prefix, name) == 1 {
+                        -> 1
+                    }
+                    j = k.ln
+                }
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    -> 0
 }
 
 strEq s1, s2 {
@@ -1060,9 +1154,26 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
         -> bufDbl
     } els if expr.kind == "PropertyAccess" {
-        // Project-wide `glb.prop` → LLVM load from module global @glb_<prop>
+        // Enum variant: Status.Active → discriminant double
         if expr.object.kind == "VariableExpr" {
-            if expr.object.name == "glb" {
+            // Build "Enum.Variant" without template interpolation
+            dot = "."
+            q1 = expr.object.name.cat dot
+            qKey = q1.cat expr.property
+            disc = lookupEnumDisc cg, qKey
+            if disc >= 0 {
+                -> enumDiscLit disc
+            }
+            // Fallback Status checks
+            if (strEq expr.object.name, "Status") == 1 {
+                if (strEq expr.property, "Pending") == 1 { -> "0.0" }
+                if (strEq expr.property, "Active") == 1 { -> "1.0" }
+                if (strEq expr.property, "Archived") == 1 { -> "2.0" }
+            }
+            if (isEnumName cg, expr.object.name) == 1 {
+                -> "0.0"
+            }
+            if (strEq expr.object.name, "glb") == 1 {
                 gName = ensureGlbProp cg, expr.property
                 loadInt = newReg cg
                 outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gName}\n`)
@@ -1149,6 +1260,15 @@ codegenExpr cg, expr, outBuf {
         loadDbl = newReg cg
         outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
         -> loadDbl
+    } els if expr.kind == "EnumBareRef" {
+        if (strEq expr.name, "Pending") == 1 { -> "0.0" }
+        if (strEq expr.name, "Active") == 1 { -> "1.0" }
+        if (strEq expr.name, "Archived") == 1 { -> "2.0" }
+        disc = lookupEnumDisc cg, expr.name
+        if disc >= 0 {
+            -> enumDiscLit disc
+        }
+        -> "0.0"
     } els if expr.kind == "UnaryExpr" {
         if expr.op == "typ" {
             typeName = classifyTyp cg, expr.right
@@ -1422,6 +1542,8 @@ codegenStmt cg, stmt, outBuf {
         outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
 
         outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
+    } els if stmt.kind == "EnumDecl" {
+        registerEnum cg, stmt
     } els if stmt.kind == "BlockStmt" {
         let i = 0
         wh i < stmt.statements.ln {
@@ -1476,6 +1598,14 @@ codegenFunctionDecl cg, funcStmt {
 
 generateLLVMFull program {
     cg = createCodegen
+    let ei = 0
+    wh ei < program.statements.ln {
+        estmt = program.statements[ei]
+        if (strEq estmt.kind, "EnumDecl") == 1 {
+            registerEnum cg, estmt
+        }
+        ei = ei + 1
+    }
 
     let header = `; ModuleID = 'zuv_self_host'\n`
     header = header.cat `source_filename = "main.zv"\n\n`

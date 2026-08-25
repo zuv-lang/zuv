@@ -1,0 +1,54 @@
+enum Status {
+    Pending,
+    Active,
+    Archived
+}
+
+let s = Status.Active
+
+if s == Status.Active {
+    prnt "enum eq Active ok"
+}
+
+let d0 = Status.Pending
+let d1 = Status.Active
+let d2 = Status.Archived
+
+if d0 == 0 {
+    prnt "enum disc Pending=0 ok"
+}
+
+if d1 == 1 {
+    prnt "enum disc Active=1 ok"
+}
+
+if d2 == 2 {
+    prnt "enum disc Archived=2 ok"
+}
+
+mch s {
+    Status.Pending => {
+        prnt "match pending"
+    }
+    Status.Active => {
+        prnt "match active ok"
+    }
+    Status.Archived => {
+        prnt "match archived"
+    }
+}
+
+let t = Status.Pending
+mch t {
+    Pending => {
+        prnt "bare Pending ok"
+    }
+    Active => {
+        prnt "bare Active"
+    }
+    Archived => {
+        prnt "bare Archived"
+    }
+}
+
+prnt "enum test complete"

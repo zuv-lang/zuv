@@ -846,7 +846,20 @@ parseStatement p {
         -> createFuncNode fnName, emptyParams, body, 0
     } els if t.kind == "KEYWORD" && t.val == "mch" {
         advanceParser p
-        targetExpr = parseExpression p, 0
+        // Match target must NOT use parseExpression — `ident {` is struct-literal
+        // sugar there and would swallow the entire mch body.
+        let targetExpr = createNilNode
+        ct = curTok p
+        if ct.kind == "IDENT" || ct.kind == "KEYWORD" {
+            targetExpr = createVariableNode ct.val
+            if (peekTok p).val == "." {
+                advanceParser p // consume '.'
+                advanceParser p // move to property
+                targetExpr = createPropertyAccessNode targetExpr, (curTok p).val
+            }
+        } els {
+            targetExpr = parseExpression p, 0
+        }
         if (peekTok p).val == "{" {
             advanceParser p // move curTok to '{'
         }
@@ -855,6 +868,9 @@ parseStatement p {
         let okBody = { kind: "" }
         let errVar = ""
         let errBody = { kind: "" }
+        let enumConds = []
+        let enumBodies = []
+        let isEnumMatch = 0
         wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
             armKind = (curTok p).val
             if armKind == "ok" {
@@ -882,8 +898,72 @@ parseStatement p {
                     advanceParser p // move past '}' to next arm or outer '}'
                 }
             } els {
-                advanceParser p
+                // Enum arm: Status.Active or bare Active — desugar to if/els chain
+                isEnumMatch = 1
+                let pattern = armKind
+                if (peekTok p).val == "." {
+                    advanceParser p // consume '.'
+                    advanceParser p // move to variant
+                    pattern = armKind
+                    // Build "Enum.Variant" via two-part name stored in src-style: use name field for enum, val for variant later
+                    // For now keep pattern as variant only and qualify via PropertyAccess below
+                    let vName = (curTok p).val
+                    enumObj = createVariableNode armKind
+                    cmpRight = createPropertyAccessNode enumObj, vName
+                    expectPeekToken p, "SYM", "=>"
+                    armBody = parseBlock p
+                    if (curTok p).val == "}" {
+                        advanceParser p
+                    }
+                    let tgt = targetExpr
+                    if targetExpr.kind == "VariableExpr" {
+                        tgt = createVariableNode targetExpr.name
+                    }
+                    cond = createBinaryNode "==", tgt, cmpRight
+                    enumConds.psh cond
+                    enumBodies.psh armBody
+                } els {
+                    // Bare variant: Pending
+                    cmpRight = { kind: "EnumBareRef", name: pattern }
+                    expectPeekToken p, "SYM", "=>"
+                    armBody = parseBlock p
+                    if (curTok p).val == "}" {
+                        advanceParser p
+                    }
+                    let tgt = targetExpr
+                    if targetExpr.kind == "VariableExpr" {
+                        tgt = createVariableNode targetExpr.name
+                    }
+                    cond = createBinaryNode "==", tgt, cmpRight
+                    enumConds.psh cond
+                    enumBodies.psh armBody
+                }
             }
+        }
+        if isEnumMatch == 1 {
+            let elseNil = createNilNode
+            if enumConds.ln == 0 {
+                -> elseNil
+            }
+            let n = enumConds.ln
+            let chain0 = createIfNode enumConds[n - 1], enumBodies[n - 1], elseNil
+            if n == 1 {
+                -> chain0
+            }
+            let chain1 = createIfNode enumConds[n - 2], enumBodies[n - 2], chain0
+            if n == 2 {
+                -> chain1
+            }
+            let chain2 = createIfNode enumConds[n - 3], enumBodies[n - 3], chain1
+            if n == 3 {
+                -> chain2
+            }
+            let chain3 = createIfNode enumConds[n - 4], enumBodies[n - 4], chain2
+            if n == 4 {
+                -> chain3
+            }
+            let chain4 = createIfNode enumConds[n - 5], enumBodies[n - 5], chain3
+            -> chain4
         }
         res = { kind: "MatchStmt", target: targetExpr, okVar: okVar, okBody: okBody, errVar: errVar, errBody: errBody }
         -> res
@@ -932,6 +1012,29 @@ parseStatement p {
         }
         structDeclNode = { kind: "StructDecl", name: structName, fields: structFields }
         -> structDeclNode
+    } els if t.kind == "KEYWORD" && t.val == "enum" {
+        advanceParser p
+        enumName = (curTok p).val
+        expectPeekToken p, "SYM", "{"
+        advanceParser p
+        let joined = ""
+        let first = 1
+        wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+            if (curTok p).kind == "IDENT" {
+                if first == 0 {
+                    joined = `${joined},`
+                }
+                joined = `${joined}${(curTok p).val}`
+                first = 0
+                if (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                }
+            }
+            advanceParser p
+        }
+        // Pack variants into `src` string (stable field): "Pending,Active,Archived"
+        enumDeclNode = { kind: "EnumDecl", name: enumName, src: joined }
+        -> enumDeclNode
     } els if t.kind == "KEYWORD" && t.val == "if" {
         advanceParser p
         condExpr = parseExpression p, 0

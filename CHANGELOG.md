@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🧱 Data Types
 - **Type Inspection Operator (`typ`)**: Added prefix `typ` operator returning type strings (`"str"`, `"num"`, `"bool"`, `"obj"`, `"arr"`, `"nil"`, `"und"`; `"sym"` / `"bigint"` reserved). Implemented in C++ bootstrap and self-hosting compiler. `und` literal now distinct from `nil` for `typ und`. New test: `typ.test.zv`.
+- **Enums (`enum`)**: Named variants as integer discriminants (`0..n-1`). `Status.Active` property access, `mch` arms with qualified (`Status.Pending`) or bare (`Pending`) patterns. C++ bootstrap keeps native enum match; self-host desugars enum `mch` to nested `if`/`els`. Fixed self-host match-target parsing so `ident {` is not swallowed as a struct literal. New test: `enum.test.zv`.
 
 ### 🔤 Self-Hosting Source Style
 - **Template Literals**: Migrated self-hosting compiler sources (`src/*.zv`) from `"..." + expr` concatenation and escaped `\"` strings to backtick templates with `${...}` interpolation (e.g. `` `tests/${impPath}.zv` ``). Plain string literals left unchanged.
