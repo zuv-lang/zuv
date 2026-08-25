@@ -93,7 +93,7 @@ isLexerKeyword word {
     if word == "imp" || word == "frm" || word == "wrk" || word == "prnt" ||
        word == "lg" || word == "wrn" || word == "inf" || word == "nan" || word == "Infinity" || word == "ret" ||
        word == "els" || word == "wh" || word == "fr" || word == "brk" ||
-       word == "cont" || word == "dn" || word == "mch" || word == "ok" ||
+       word == "cont" || word == "dn" || word == "mch" || word == "sw" || word == "ok" ||
        word == "err" || word == "if" || word == "and" || word == "or" ||
        word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" ||
        word == "typ" || word == "sym" || word == "enum" || word == "as" ||
