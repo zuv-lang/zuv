@@ -5,7 +5,7 @@ All notable changes to the **Zuv** programming language and self-hosting compile
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-25
 
 ### ⚡ Operators
 - **Increment & Decrement (`++` / `--`)**: Prefix and postfix on variables (`++x`, `x++`, `--x`, `x--`). New test: `incr_decr.test.zv`.
