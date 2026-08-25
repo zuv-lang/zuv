@@ -131,13 +131,34 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path ./bootstrap | Out-Null
           gh release download $env:BOOTSTRAP_RELEASE_TAG --repo $env:BOOTSTRAP_REPOSITORY --pattern "*${{ matrix.target }}*" --dir ./bootstrap
-          if ($LASTEXITCODE -eq 0) {
-            Expand-Archive -Path "./bootstrap/zuv-windows-x64.zip" -DestinationPath ./bootstrap -Force
-            Write-Host "Bootstrap compiler downloaded successfully."
-          } else {
+          if ($LASTEXITCODE -ne 0) {
             Write-Error "Bootstrap compiler download failed."
             exit 1
           }
+          Expand-Archive -Path "./bootstrap/zuv-windows-x64.zip" -DestinationPath ./bootstrap -Force
+          # Flatten nested folder layouts (e.g. zuv-windows-x64/zuv.exe → bootstrap/zuv.exe)
+          if (-not (Test-Path "./bootstrap/zuv.exe")) {
+            $nested = Get-ChildItem ./bootstrap -Recurse -Filter "zuv.exe" -File | Select-Object -First 1
+            if (-not $nested) {
+              Write-Error "bootstrap zuv.exe not found after extract."
+              Get-ChildItem ./bootstrap -Recurse | Select-Object -First 40 FullName | ForEach-Object { Write-Host $_ }
+              exit 1
+            }
+            $srcDir = $nested.Directory.FullName
+            Get-ChildItem $srcDir -Force | ForEach-Object {
+              $dest = Join-Path "./bootstrap" $_.Name
+              if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+              Move-Item $_.FullName $dest -Force
+            }
+            if (($srcDir -ne (Resolve-Path ./bootstrap).Path) -and (Test-Path $srcDir)) {
+              Remove-Item $srcDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+          if (-not (Test-Path "./bootstrap/zuv.exe")) {
+            Write-Error "Failed to place bootstrap/zuv.exe"
+            exit 1
+          }
+          Write-Host "Bootstrap compiler ready at ./bootstrap/zuv.exe"
 
       - name: Download Bootstrap Compiler (Unix)
         if: runner.os != 'Windows'
@@ -147,11 +168,21 @@ jobs:
           mkdir -p ./bootstrap
           if gh release download "$BOOTSTRAP_RELEASE_TAG" --repo "$BOOTSTRAP_REPOSITORY" --pattern "*${{ matrix.target }}*" --dir ./bootstrap; then
             tar -xzf "./bootstrap/zuv-${{ matrix.target }}.tar.gz" -C ./bootstrap
+            if [ ! -f "./bootstrap/zuv" ]; then
+              nested="$(find ./bootstrap -type f -name zuv | head -n 1)"
+              if [ -n "$nested" ]; then
+                src_dir="$(dirname "$nested")"
+                shopt -s dotglob
+                mv "$src_dir"/* ./bootstrap/ 2>/dev/null || true
+                shopt -u dotglob
+                rmdir "$src_dir" 2>/dev/null || true
+              fi
+            fi
             chmod +x "./bootstrap/zuv"
             if [ "$RUNNER_OS" = "macOS" ]; then
               install_name_tool -change /opt/homebrew/opt/llvm/lib/libLLVM.dylib "$(brew --prefix llvm)/lib/libLLVM.dylib" ./bootstrap/zuv
             fi
-            echo "Bootstrap compiler downloaded successfully."
+            echo "Bootstrap compiler ready at ./bootstrap/zuv"
           else
             echo "Bootstrap compiler download failed." >&2
             exit 1
