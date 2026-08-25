@@ -132,10 +132,23 @@ readLexerNumber lexer {
     startLine = lexer.line
     startCol = lexer.col
     let numVal = ""
+    mut hasDot = 0
 
     wh (isLexerDigit lexer.ch) || (lexer.ch == "." && (isLexerDigit (peekLexerChar lexer))) {
+        if lexer.ch == "." {
+            hasDot = 1
+        }
         numVal = numVal.cat lexer.ch
         readLexerChar lexer
+    }
+
+    // BigInt suffix: 123n / 123N (integers only — no decimal point)
+    if hasDot == 0 {
+        if lexer.ch == "n" || lexer.ch == "N" {
+            readLexerChar lexer
+            tok = createToken "BIGINT", numVal, startLine, startCol
+            -> tok
+        }
     }
 
     tok = createToken "NUMBER", numVal, startLine, startCol

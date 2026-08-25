@@ -76,7 +76,7 @@ createParser tokens {
     l = tokens.ln
     emptyTok = createToken "EOF", "", 0, 0
     let emptyErrors = []
-    let p = { tokens: tokens, pos: 0, totalLen: l, curTok: emptyTok, peekTok: emptyTok, errors: emptyErrors, desCount: 0 }
+    let p = { tokens: tokens, pos: 0, totalLen: l, curTok: emptyTok, peekTok: emptyTok, errors: emptyErrors, desCount: 0, allowIdentStruct: 1 }
     advanceParser p
     advanceParser p
     -> p
@@ -120,6 +120,11 @@ expectPeekToken p, expectedKind, expectedVal {
 // ── AST Node Constructors ────────────────────────────────────────────────────
 createNumberNode val {
     res = { kind: "NumberExpr", val: val }
+    -> res
+}
+
+createBigIntNode val {
+    res = { kind: "BigIntExpr", val: val }
     -> res
 }
 
@@ -511,6 +516,8 @@ parseExpression p, precedence {
     // Prefix Parsing
     if t.kind == "NUMBER" || t.kind == "NUM" {
         left = createNumberNode t.val
+    } els if t.kind == "BIGINT" {
+        left = createBigIntNode t.val
     } els if t.kind == "STRING" || t.kind == "STR" {
         left = createStringNode t.val
     } els if t.kind == "BOOL" {
@@ -539,7 +546,9 @@ parseExpression p, precedence {
     } els if t.kind == "IDENT" || (t.kind == "KEYWORD" && (t.val == "ok" || t.val == "err")) {
         varName = t.val
         peekT = peekTok p
-        if peekT.val == "{" {
+        // Typed struct literal `Name { ... }` — disabled in if/wh/fr conditions so
+        // `if a == b {` treats `{` as the block, matching the C++ bootstrap parser.
+        if peekT.val == "{" && p.allowIdentStruct == 1 {
             // Struct or anonymous object literal
             advanceParser p // consume '{'
             let fields = []
@@ -1037,7 +1046,9 @@ parseStatement p {
         -> enumDeclNode
     } els if t.kind == "KEYWORD" && t.val == "if" {
         advanceParser p
+        p.allowIdentStruct = 0
         condExpr = parseExpression p, 0
+        p.allowIdentStruct = 1
         thenBranch = parseBlock p
         let elseBranch = createNilNode
         if (peekTok p).kind == "KEYWORD" && (peekTok p).val == "els" {
@@ -1052,7 +1063,9 @@ parseStatement p {
         -> createIfNode condExpr, thenBranch, elseBranch
     } els if t.kind == "KEYWORD" && t.val == "wh" {
         advanceParser p
+        p.allowIdentStruct = 0
         condExpr = parseExpression p, 0
+        p.allowIdentStruct = 1
         body = parseBlock p
         -> createWhileNode condExpr, body
     } els if t.kind == "KEYWORD" && (t.val == "fr" || t.val == "for") {
@@ -1064,7 +1077,9 @@ parseStatement p {
             advanceParser p // consume ';'
             advanceParser p // move to cond
         }
+        p.allowIdentStruct = 0
         condExpr = parseExpression p, 0
+        p.allowIdentStruct = 1
         if (curTok p).val == ";" {
             advanceParser p
         } els if (peekTok p).val == ";" {

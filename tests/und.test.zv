@@ -1,52 +1,52 @@
 let u = und
 let n = nil
 
-if (u == und) {
+if u == und {
     prnt "u == und ok"
 }
 
-if (n == nil) {
+if n == nil {
     prnt "n == nil ok"
 }
 
-if (u != nil) {
+if u != nil {
     prnt "u != nil ok"
 }
 
-if (n != und) {
+if n != und {
     prnt "n != und ok"
 }
 
-if (u != n) {
+if u != n {
     prnt "u != n ok"
 }
 
-if (u == n) {
+if u == n {
     prnt "u == n BAD"
 }
 
-if (typ und) == "und" {
+if typ und == "und" {
     prnt "typ und ok"
 }
 
-if (typ nil) == "nil" {
+if typ nil == "nil" {
     prnt "typ nil ok"
 }
 
-if (u) {
-    prnt "if u BAD"
+if und {
+    prnt "if und BAD"
 } els {
     prnt "und falsy ok"
 }
 
-if (n) {
-    prnt "if n BAD"
+if nil {
+    prnt "if nil BAD"
 } els {
     prnt "nil falsy ok"
 }
 
 let x = und
-if (x == und) {
+if x == und {
     prnt "assigned und ok"
 }
 

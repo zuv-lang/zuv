@@ -8,10 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### 🧱 Data Types
-- **Type Inspection Operator (`typ`)**: Added prefix `typ` operator returning type strings (`"str"`, `"num"`, `"bool"`, `"obj"`, `"arr"`, `"nil"`, `"und"`; `"sym"` / `"bigint"` reserved). Implemented in C++ bootstrap and self-hosting compiler. `und` literal now distinct from `nil` for `typ und`. New test: `typ.test.zv`.
+- **Type Inspection Operator (`typ`)**: Added prefix `typ` operator returning type strings (`"str"`, `"num"`, `"bool"`, `"obj"`, `"arr"`, `"nil"`, `"und"`, `"sym"`, `"bigint"`). Implemented in C++ bootstrap and self-hosting compiler. `und` literal now distinct from `nil` for `typ und`. New test: `typ.test.zv`.
 - **Enums (`enum`)**: Named variants as integer discriminants (`0..n-1`). `Status.Active` property access, `mch` arms with qualified (`Status.Pending`) or bare (`Pending`) patterns. C++ bootstrap keeps native enum match; self-host desugars enum `mch` to nested `if`/`els`. Fixed self-host match-target parsing so `ident {` is not swallowed as a struct literal. New test: `enum.test.zv`.
 - **Undefined Literal (`und`)**: Runtime-distinct from `nil` (LLVM `bitcast i64 1 to double` sentinel). Equality/`!=`, falsy `if`/`wh`/`for`/`and`/`or`/`!` via truthiness helper, and `typ und` → `"und"`. Fixed C++ `TOK_UND` over-consume and self-host checker allowing `let x = nil|und`. New test: `und.test.zv`.
 - **Unique Symbol Primitive (`sym`)**: `sym "key"` creates an interned identity (same key → equal, different from strings). `typ (sym "k")` → `"sym"`. Symbols are truthy. Renamed self-host locals that collided with the new `sym` keyword. New test: `sym.test.zv`.
+- **BigInt Primitives (`BigInt` / `...n`)**: Digit-string bigint literals (`123n`) and `BigInt(...)` constructor. Equality via content (`strcmp`); distinct from numbers (`123n != 123`). `typ` → `"bigint"`. New test: `bigint.test.zv`.
 
 ### 🔤 Self-Hosting Source Style
 - **Template Literals**: Migrated self-hosting compiler sources (`src/*.zv`) from `"..." + expr` concatenation and escaped `\"` strings to backtick templates with `${...}` interpolation (e.g. `` `tests/${impPath}.zv` ``). Plain string literals left unchanged.

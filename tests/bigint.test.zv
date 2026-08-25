@@ -1,0 +1,50 @@
+let a = 123n
+let b = 1234567890123456789012345n
+let c = BigInt "123"
+let d = BigInt 456
+
+if 123n == 123n {
+    prnt "same literal equal ok"
+}
+
+if 123n != 456n {
+    prnt "diff literal unequal ok"
+}
+
+if a == 123n {
+    prnt "var vs literal equal ok"
+}
+
+if a == BigInt "123" {
+    prnt "literal vs BigInt string equal ok"
+}
+
+if d == 456n {
+    prnt "BigInt number vs literal equal ok"
+}
+
+if 123n != 123 {
+    prnt "bigint != number ok"
+}
+
+if typ 123n == "bigint" {
+    prnt "typ bigint literal ok"
+}
+
+if typ BigInt "99" == "bigint" {
+    prnt "typ BigInt ctor ok"
+}
+
+if typ b == "bigint" {
+    prnt "typ bigint var ok"
+}
+
+if a != 0 {
+    prnt "bigint truthy ok"
+}
+
+if b != 123n {
+    prnt "large bigint unequal ok"
+}
+
+prnt "bigint test complete"

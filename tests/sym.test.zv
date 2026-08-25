@@ -2,28 +2,28 @@ let a = sym "key"
 let b = sym "key"
 let c = sym "other"
 
-if (a == b) {
+if a == b {
     prnt "same key equal ok"
 }
 
-if (a != c) {
+if a != c {
     prnt "diff key unequal ok"
 }
 
-if (a != "key") {
+if a != "key" {
     prnt "sym != string ok"
 }
 
-if (typ (sym "key")) == "sym" {
+if typ sym "key" == "sym" {
     prnt "typ sym ok"
 }
 
-if (a) {
+if a {
     prnt "sym truthy ok"
 }
 
 let d = sym "key"
-if (d == a) {
+if d == a {
     prnt "third same key ok"
 }
 

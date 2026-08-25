@@ -16,7 +16,7 @@ createCodegen {
         "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
         "destructKind", "bindNames", "source",
         "enums", "enumKeys", "enumVals",
-        "symKeys", "symIds"
+        "symKeys", "symIds", "bigintNames"
     ]
     let brkStack = []
     let contStack = []
@@ -27,6 +27,7 @@ createCodegen {
     let enumVals = []
     let symKeys = []
     let symIds = []
+    let bigintNames = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -45,7 +46,8 @@ createCodegen {
         enumKeys: enumKeys,
         enumVals: enumVals,
         symKeys: symKeys,
-        symIds: symIds
+        symIds: symIds,
+        bigintNames: bigintNames
     }
     -> res
 }
@@ -250,6 +252,21 @@ addCgSymbol cg, name, reg {
     cg.symbols.psh s
 }
 
+markBigIntVar cg, name {
+    cg.bigintNames.psh name
+}
+
+isBigIntVar cg, name {
+    let i = 0
+    wh i < cg.bigintNames.ln {
+        if (strEq cg.bigintNames[i], name) == 1 {
+            -> 1
+        }
+        i = i + 1
+    }
+    -> 0
+}
+
 addCgExtern cg, extDecl {
     cg.externDecls.psh extDecl
 }
@@ -271,6 +288,9 @@ getStrPtrVal cg, expr, outBuf {
     if expr.kind == "StringExpr" {
         sName = addStrConstant cg, expr.val
         -> sName
+    } els if expr.kind == "BigIntExpr" {
+        sName = addStrConstant cg, expr.val
+        -> sName
     } els if expr.kind == "NumberExpr" {
         // Format number as string constant at codegen time when possible
         sName = addStrConstant cg, expr.val
@@ -286,6 +306,14 @@ getStrPtrVal cg, expr, outBuf {
         if expr.kind == "VariableExpr" {
             n = expr.name
             if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || (n.cnt "type") == 1 || (n.cnt "Type") == 1 {
+                isStr = 1
+            }
+            if (isBigIntVar cg, n) == 1 {
+                isStr = 1
+            }
+        }
+        if expr.kind == "CallExpr" {
+            if expr.callee == "BigInt" {
                 isStr = 1
             }
         }
@@ -380,6 +408,9 @@ classifyTyp cg, expr {
     if expr.kind == "NumberExpr" {
         -> "num"
     }
+    if expr.kind == "BigIntExpr" {
+        -> "bigint"
+    }
     if expr.kind == "BoolExpr" {
         -> "bool"
     }
@@ -423,6 +454,9 @@ classifyTyp cg, expr {
         -> "num"
     }
     if expr.kind == "CallExpr" {
+        if expr.callee == "BigInt" {
+            -> "bigint"
+        }
         if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" {
             -> "str"
         }
@@ -445,6 +479,9 @@ classifyTyp cg, expr {
     }
     if expr.kind == "VariableExpr" {
         n = expr.name
+        if (isBigIntVar cg, n) == 1 {
+            -> "bigint"
+        }
         if n == "ch" || n == "char" || (n.cnt "str") == 1 || (n.cnt "name") == 1 || (n.cnt "path") == 1 || (n.cnt "msg") == 1 || (n.cnt "text") == 1 || (n.cnt "code") == 1 || (n.cnt "file") == 1 {
             -> "str"
         }
@@ -456,6 +493,13 @@ classifyTyp cg, expr {
 codegenExpr cg, expr, outBuf {
     if expr.kind == "NumberExpr" {
         -> formatFloat expr.val
+    } els if expr.kind == "BigIntExpr" {
+        sName = addStrConstant cg, expr.val
+        intReg = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${sName} to i64\n`)
+        dblReg = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+        -> dblReg
     } els if expr.kind == "BoolExpr" {
         if expr.val == "yes" || expr.val == "true" {
             -> "1.0"
@@ -649,6 +693,32 @@ codegenExpr cg, expr, outBuf {
         if expr.right.kind == "StringExpr" {
             isStrCmp = 1
         }
+        if expr.left.kind == "BigIntExpr" {
+            isStrCmp = 1
+        }
+        if expr.right.kind == "BigIntExpr" {
+            isStrCmp = 1
+        }
+        if expr.left.kind == "CallExpr" {
+            if expr.left.callee == "BigInt" {
+                isStrCmp = 1
+            }
+        }
+        if expr.right.kind == "CallExpr" {
+            if expr.right.callee == "BigInt" {
+                isStrCmp = 1
+            }
+        }
+        if expr.left.kind == "VariableExpr" {
+            if (isBigIntVar cg, expr.left.name) == 1 {
+                isStrCmp = 1
+            }
+        }
+        if expr.right.kind == "VariableExpr" {
+            if (isBigIntVar cg, expr.right.name) == 1 {
+                isStrCmp = 1
+            }
+        }
         if expr.left.kind == "UnaryExpr" {
             if expr.left.op == "typ" {
                 isStrCmp = 1
@@ -658,6 +728,17 @@ codegenExpr cg, expr, outBuf {
             if expr.right.op == "typ" {
                 isStrCmp = 1
             }
+        }
+        // Don't strcmp against bare numbers/bools (123n != 123 must stay unequal)
+        mut isNumSide = 0
+        if expr.left.kind == "NumberExpr" || expr.left.kind == "BoolExpr" {
+            isNumSide = 1
+        }
+        if expr.right.kind == "NumberExpr" || expr.right.kind == "BoolExpr" {
+            isNumSide = 1
+        }
+        if isNumSide == 1 {
+            isStrCmp = 0
         }
 
         if expr.op == "==" {
@@ -680,6 +761,17 @@ codegenExpr cg, expr, outBuf {
         }
 
         if expr.op == "!=" {
+            if isStrCmp == 1 {
+                s1Ptr = getStrPtrVal cg, expr.left, outBuf
+                s2Ptr = getStrPtrVal cg, expr.right, outBuf
+                cmpReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cmpReg} = call i32 @strcmp(ptr ${s1Ptr}, ptr ${s2Ptr})\n`)
+                neReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${neReg} = icmp ne i32 ${cmpReg}, 0\n`)
+                resReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${neReg} to double\n`)
+                -> resReg
+            }
             cmpReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp one double ${leftReg}, ${rightReg}\n`)
             resReg = newReg cg
@@ -741,7 +833,40 @@ codegenExpr cg, expr, outBuf {
 
         -> leftReg
     } els if expr.kind == "CallExpr" {
-        if expr.callee == "wF" && expr.args.ln == 2 {
+        if expr.callee == "BigInt" && expr.args.ln == 1 {
+            arg = expr.args[0]
+            if arg.kind == "BigIntExpr" {
+                -> codegenExpr cg, arg, outBuf
+            }
+            if arg.kind == "NumberExpr" {
+                sName = addStrConstant cg, arg.val
+                intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${sName} to i64\n`)
+                dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            }
+            if arg.kind == "StringExpr" {
+                sName = addStrConstant cg, arg.val
+                intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${sName} to i64\n`)
+                dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            }
+            argReg = codegenExpr cg, arg, outBuf
+            asInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asInt} = fptosi double ${argReg} to i64\n`)
+            buf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${buf} = call ptr @malloc(i64 32)\n`)
+            n = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${n} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 32, ptr @fmt_bigint, i64 ${asInt})\n`)
+            outInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${outInt} = ptrtoint ptr ${buf} to i64\n`)
+            outDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${outDbl} = sitofp i64 ${outInt} to double\n`)
+            -> outDbl
+        } els if expr.callee == "wF" && expr.args.ln == 2 {
             pathReg = codegenExpr cg, expr.args[0], outBuf
             contReg = codegenExpr cg, expr.args[1], outBuf
             pathInt = newReg cg
@@ -1370,6 +1495,14 @@ codegenExpr cg, expr, outBuf {
 codegenStmt cg, stmt, outBuf {
     if stmt.kind == "VarDecl" {
         valReg = codegenExpr cg, stmt.value, outBuf
+        if stmt.value.kind == "BigIntExpr" {
+            markBigIntVar cg, stmt.name
+        }
+        if stmt.value.kind == "CallExpr" {
+            if stmt.value.callee == "BigInt" {
+                markBigIntVar cg, stmt.name
+            }
+        }
         cgSym = findCgSymbol cg, stmt.name
         if cgSym.name != "" {
             outBuf.code = outBuf.code.cat (`  store double ${valReg}, ptr ${cgSym.reg}\n`)
@@ -1721,6 +1854,7 @@ generateLLVMFull program {
     header = header.cat `@fmt_prefix = private unnamed_addr constant [3 x i8] c"%s\\00"\n`
     header = header.cat `@fmt_num = private unnamed_addr constant [4 x i8] c"%g\\0A\\00"\n`
     header = header.cat `@fmt_g = private unnamed_addr constant [3 x i8] c"%g\\00"\n`
+    header = header.cat `@fmt_bigint = private unnamed_addr constant [5 x i8] c"%lld\\00"\n`
     header = header.cat `@empty_str = private unnamed_addr constant [1 x i8] c"\\00"\n`
     header = header.cat `@fmt_pattern = private unnamed_addr constant [5 x i8] c"%s/*\\00"\n`
     header = header.cat `@fmt_filepath = private unnamed_addr constant [6 x i8] c"%s/%s\\00"\n`
