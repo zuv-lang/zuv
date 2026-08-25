@@ -169,8 +169,13 @@ checkExpr checker, expr {
 
 checkStatement checker, stmt {
     if stmt.kind == "VarDecl" {
-        if stmt.value.kind == "NilExpr" || stmt.value.kind == "" {
+        // Allow explicit nil/und literals; reject missing/placeholder inits
+        if stmt.value.kind == "" {
             checker.errors.psh (`Semantic Error: Invalid variable initialization for '${stmt.name}'`)
+        } els if stmt.value.kind == "NilExpr" {
+            if stmt.value.val != "nil" && stmt.value.val != "und" {
+                checker.errors.psh (`Semantic Error: Invalid variable initialization for '${stmt.name}'`)
+            }
         }
         checkExpr checker, stmt.value
         declareVar checker, stmt.name, stmt.isMut

@@ -1,0 +1,53 @@
+let u = und
+let n = nil
+
+if (u == und) {
+    prnt "u == und ok"
+}
+
+if (n == nil) {
+    prnt "n == nil ok"
+}
+
+if (u != nil) {
+    prnt "u != nil ok"
+}
+
+if (n != und) {
+    prnt "n != und ok"
+}
+
+if (u != n) {
+    prnt "u != n ok"
+}
+
+if (u == n) {
+    prnt "u == n BAD"
+}
+
+if (typ und) == "und" {
+    prnt "typ und ok"
+}
+
+if (typ nil) == "nil" {
+    prnt "typ nil ok"
+}
+
+if (u) {
+    prnt "if u BAD"
+} els {
+    prnt "und falsy ok"
+}
+
+if (n) {
+    prnt "if n BAD"
+} els {
+    prnt "nil falsy ok"
+}
+
+let x = und
+if (x == und) {
+    prnt "assigned und ok"
+}
+
+prnt "und test complete"

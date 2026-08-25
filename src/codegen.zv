@@ -151,6 +151,25 @@ strEq s1, s2 {
     -> 0
 }
 
+// und sentinel: bitcast i64 1 → double (distinct from nil 0.0)
+undLit {
+    -> "bitcast (i64 1 to double)"
+}
+
+emitTruthyI1 cg, condReg, outBuf {
+    bits = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${condReg} to i64\n`)
+    isNil = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${isNil} = icmp eq i64 ${bits}, 0\n`)
+    isUnd = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${isUnd} = icmp eq i64 ${bits}, 1\n`)
+    isFalsy = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${isFalsy} = or i1 ${isNil}, ${isUnd}\n`)
+    isTruthy = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${isTruthy} = xor i1 ${isFalsy}, true\n`)
+    -> isTruthy
+}
+
 findFieldOffset cg, fieldName {
     let i = 0
     wh i < cg.fieldNames.ln {
@@ -399,6 +418,11 @@ codegenExpr cg, expr, outBuf {
     } els if expr.kind == "BoolExpr" {
         if expr.val == "yes" || expr.val == "true" {
             -> "1.0"
+        }
+        -> "0.0"
+    } els if expr.kind == "NilExpr" {
+        if expr.val == "und" {
+            -> undLit
         }
         -> "0.0"
     } els if expr.kind == "StringExpr" {
@@ -654,11 +678,9 @@ codegenExpr cg, expr, outBuf {
             -> resReg
         }
 
-        if expr.op == "&&" {
-            lCmp = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${lCmp} = fcmp one double ${leftReg}, 0.0\n`)
-            rCmp = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${rCmp} = fcmp one double ${rightReg}, 0.0\n`)
+        if expr.op == "&&" || expr.op == "and" {
+            lCmp = emitTruthyI1 cg, leftReg, outBuf
+            rCmp = emitTruthyI1 cg, rightReg, outBuf
             andReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${andReg} = and i1 ${lCmp}, ${rCmp}\n`)
             resReg = newReg cg
@@ -666,11 +688,9 @@ codegenExpr cg, expr, outBuf {
             -> resReg
         }
 
-        if expr.op == "||" {
-            lCmp = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${lCmp} = fcmp one double ${leftReg}, 0.0\n`)
-            rCmp = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${rCmp} = fcmp one double ${rightReg}, 0.0\n`)
+        if expr.op == "||" || expr.op == "or" {
+            lCmp = emitTruthyI1 cg, leftReg, outBuf
+            rCmp = emitTruthyI1 cg, rightReg, outBuf
             orReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${orReg} = or i1 ${lCmp}, ${rCmp}\n`)
             resReg = newReg cg
@@ -1281,10 +1301,11 @@ codegenExpr cg, expr, outBuf {
         }
         rReg = codegenExpr cg, expr.right, outBuf
         if expr.op == "!" || expr.op == "not" {
-            cmpReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp oeq double ${rReg}, 0.0\n`)
+            cmpReg = emitTruthyI1 cg, rReg, outBuf
+            notReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${notReg} = xor i1 ${cmpReg}, true\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${notReg} to double\n`)
             -> resReg
         } els if expr.op == "-" {
             resReg = newReg cg
@@ -1394,8 +1415,7 @@ codegenStmt cg, stmt, outBuf {
         }
     } els if stmt.kind == "IfStmt" {
         condReg = codegenExpr cg, stmt.condition, outBuf
-        cmpReg = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp one double ${condReg}, 0.0\n`)
+        cmpReg = emitTruthyI1 cg, condReg, outBuf
 
         thenLbl = newLbl cg, "if_then"
         elseLbl = newLbl cg, "if_else"
@@ -1424,8 +1444,7 @@ codegenStmt cg, stmt, outBuf {
         outBuf.code = outBuf.code.cat (`  br label %${condLbl}\n\n`)
         outBuf.code = outBuf.code.cat (`${condLbl}:\n`)
         condReg = codegenExpr cg, stmt.condition, outBuf
-        cmpReg = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp one double ${condReg}, 0.0\n`)
+        cmpReg = emitTruthyI1 cg, condReg, outBuf
         outBuf.code = outBuf.code.cat (`  br i1 ${cmpReg}, label %${bodyLbl}, label %${endLbl}\n\n`)
 
         outBuf.code = outBuf.code.cat (`${bodyLbl}:\n`)
@@ -1453,8 +1472,7 @@ codegenStmt cg, stmt, outBuf {
         outBuf.code = outBuf.code.cat (`${condLbl}:\n`)
         if stmt.condition.kind != "" && stmt.condition.kind != "NilExpr" {
             condReg = codegenExpr cg, stmt.condition, outBuf
-            cmpReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp one double ${condReg}, 0.0\n`)
+            cmpReg = emitTruthyI1 cg, condReg, outBuf
             outBuf.code = outBuf.code.cat (`  br i1 ${cmpReg}, label %${bodyLbl}, label %${endLbl}\n\n`)
         } els {
             outBuf.code = outBuf.code.cat (`  br label %${bodyLbl}\n\n`)
