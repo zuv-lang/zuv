@@ -248,6 +248,17 @@ checkStatement checker, stmt {
         pushCheckerScope checker
         if stmt.init.kind == "VarDecl" {
             declareVar checker, stmt.init.name, 1
+        } els if stmt.init.kind == "StmtSequence" {
+            let si = 0
+            wh si < stmt.init.statements.ln {
+                s = stmt.init.statements[si]
+                if s.kind == "VarDecl" {
+                    declareVar checker, s.name, 1
+                } els if s.kind != "" {
+                    checkStatement checker, s
+                }
+                si = si + 1
+            }
         } els if stmt.init.kind != "" {
             checkStatement checker, stmt.init
         }

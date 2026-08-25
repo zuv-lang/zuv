@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔀 Control Flow
 - **General Value Pattern Matching (`mch` / `sw`)**: Literal arms (number/string/bool), `_` default, and expression arm bodies. `sw` is the switch alias for `mch`. Result `ok`/`err` and enum arms unchanged. Self-host desugars value/`_` arms to `if`/`els` chains. New test: `mch_value.test.zv`.
+- **Iteration Loops (`fr … of`)**: `fr item of arr` and `fr item, idx of arr` with `brk`/`cont`. New test: `fr_of.test.zv`.
+- **Iteration Loops (`fr … in`)**: `fr key in obj` / `fr key, val in obj` (object keys via `__keys`/`__vals` sidecars) and `fr i in arr` / `fr idx, el in arr` (array indices). Self-host desugars with a runtime `__keys != nil` check. New test: `fr_in.test.zv`.
 
 ---
 

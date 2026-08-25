@@ -1318,7 +1318,207 @@ parseStatement p {
         body = parseBlock p
         -> createWhileNode condExpr, body
     } els if t.kind == "KEYWORD" && (t.val == "fr" || t.val == "for") {
-        advanceParser p // move to init
+        advanceParser p // move past 'fr'
+        // fr item of coll | fr item, idx of coll | fr key in obj
+        ct = curTok p
+        pk = peekTok p
+        if (ct.kind == "IDENT" || ct.kind == "KEYWORD") && (pk.val == "of" || pk.val == "in" || pk.val == ",") {
+            let itemName = ct.val
+            let secondName = ""
+            let isIn = 0
+            if pk.val == "," {
+                advanceParser p // cur was item → now at ','
+                advanceParser p // move to second ident
+                secondName = (curTok p).val
+                if (peekTok p).val == "in" {
+                    isIn = 1
+                    expectPeekToken p, "KEYWORD", "in"
+                } els {
+                    expectPeekToken p, "KEYWORD", "of"
+                }
+            } els if pk.val == "in" {
+                isIn = 1
+                expectPeekToken p, "KEYWORD", "in"
+            } els {
+                expectPeekToken p, "KEYWORD", "of"
+            }
+            advanceParser p // move to collection expr
+            p.allowIdentStruct = 0
+            collExpr = parseExpression p, 0
+            p.allowIdentStruct = 1
+            armBody = parseBlock p
+            p.desCount = p.desCount + 1
+            let n = p.desCount
+            if isIn == 1 {
+                // fr key[, val] in coll — objects yield keys; arrays yield indices
+                collTemp = `__fin_c${n}`
+                keysTemp = `__fin_ks${n}`
+                valsTemp = `__fin_v${n}`
+                idxTemp = `__fin_i${n}`
+                strTmp = `__fin_s${n}`
+                zero0 = createNumberNode "0"
+                zero1 = createNumberNode "0"
+                outerStmts = []
+                outerStmts.psh (createVarDeclNode collTemp, collExpr, 1)
+                collVarK = createVariableNode collTemp
+                keysAccess = createPropertyAccessNode collVarK, "__keys"
+                outerStmts.psh (createVarDeclNode keysTemp, keysAccess, 1)
+                outerStmts.psh (createVarDeclNode idxTemp, zero0, 1)
+                outerStmts.psh (createVarDeclNode itemName, zero1, 1)
+                if secondName != "" {
+                    zero2 = createNumberNode "0"
+                    outerStmts.psh (createVarDeclNode secondName, zero2, 1)
+                }
+
+                // Object branch: iterate __keys / __vals
+                objStmts = []
+                if secondName != "" {
+                    collVarV = createVariableNode collTemp
+                    valsAccess = createPropertyAccessNode collVarV, "__vals"
+                    objStmts.psh (createVarDeclNode valsTemp, valsAccess, 1)
+                }
+                // String temp so array-branch item isn't marked str when both arms are codegen'd
+                zeroS = createNumberNode "0"
+                objStmts.psh (createVarDeclNode strTmp, zeroS, 1)
+                keysVarCond = createVariableNode keysTemp
+                lenKeys = createPropertyAccessNode keysVarCond, "ln"
+                idxVarCond = createVariableNode idxTemp
+                objCond = createBinaryNode "<", idxVarCond, lenKeys
+
+                objBody = []
+                idxLoad = createVariableNode idxTemp
+                keysVarIdx = createVariableNode keysTemp
+                keyElem = createIndexNode keysVarIdx, idxLoad
+                strVar = createVariableNode strTmp
+                objBody.psh (createExpressionStmtNode (createBinaryNode "=", strVar, keyElem))
+                itemVar = createVariableNode itemName
+                strVar2 = createVariableNode strTmp
+                objBody.psh (createExpressionStmtNode (createBinaryNode "=", itemVar, strVar2))
+                if secondName != "" {
+                    valsVarIdx = createVariableNode valsTemp
+                    idxLoad2 = createVariableNode idxTemp
+                    valElem = createIndexNode valsVarIdx, idxLoad2
+                    secVar = createVariableNode secondName
+                    objBody.psh (createExpressionStmtNode (createBinaryNode "=", secVar, valElem))
+                }
+                if armBody.kind == "BlockStmt" {
+                    let bi = 0
+                    wh bi < armBody.statements.ln {
+                        objBody.psh armBody.statements[bi]
+                        bi = bi + 1
+                    }
+                } els if armBody.kind != "" {
+                    objBody.psh armBody
+                }
+                loadI = createVariableNode idxTemp
+                one = createNumberNode "1"
+                addExpr = createBinaryNode "+", loadI, one
+                storeI = createVariableNode idxTemp
+                stepStmt = createExpressionStmtNode (createBinaryNode "=", storeI, addExpr)
+                emptyInit = { kind: "" }
+                objFor = createForNode emptyInit, objCond, stepStmt, (createBlockNode objBody)
+                objStmts.psh objFor
+                thenBranch = createBlockNode objStmts
+
+                // Array branch: first binding = index, optional second = element
+                arrBody = []
+                idxAsItem = createVariableNode idxTemp
+                itemVarA = createVariableNode itemName
+                arrBody.psh (createExpressionStmtNode (createBinaryNode "=", itemVarA, idxAsItem))
+                if secondName != "" {
+                    collVarIdx = createVariableNode collTemp
+                    idxLoad3 = createVariableNode idxTemp
+                    arrElem = createIndexNode collVarIdx, idxLoad3
+                    secVarA = createVariableNode secondName
+                    arrBody.psh (createExpressionStmtNode (createBinaryNode "=", secVarA, arrElem))
+                }
+                if armBody.kind == "BlockStmt" {
+                    let bi2 = 0
+                    wh bi2 < armBody.statements.ln {
+                        arrBody.psh armBody.statements[bi2]
+                        bi2 = bi2 + 1
+                    }
+                } els if armBody.kind != "" {
+                    arrBody.psh armBody
+                }
+                collVarLen = createVariableNode collTemp
+                lenArr = createPropertyAccessNode collVarLen, "ln"
+                idxVarCond2 = createVariableNode idxTemp
+                arrCond = createBinaryNode "<", idxVarCond2, lenArr
+                loadIA = createVariableNode idxTemp
+                oneA = createNumberNode "1"
+                addExprA = createBinaryNode "+", loadIA, oneA
+                storeIA = createVariableNode idxTemp
+                stepStmtA = createExpressionStmtNode (createBinaryNode "=", storeIA, addExprA)
+                emptyInitA = { kind: "" }
+                arrFor = createForNode emptyInitA, arrCond, stepStmtA, (createBlockNode arrBody)
+                elseStmts = []
+                elseStmts.psh arrFor
+                elseBranch = createBlockNode elseStmts
+
+                keysVarIf = createVariableNode keysTemp
+                nilNode = createNilNode
+                ifCond = createBinaryNode "!=", keysVarIf, nilNode
+                outerStmts.psh (createIfNode ifCond, thenBranch, elseBranch)
+                -> createBlockNode outerStmts
+            }
+            // Desugar fr … of: decls + for so cont hits index++
+            collTemp = `__fov_c${n}`
+            idxTemp = `__fov_i${n}`
+            zero0 = createNumberNode "0"
+            zero1 = createNumberNode "0"
+            outerStmts = []
+            outerStmts.psh (createVarDeclNode collTemp, collExpr, 1)
+            outerStmts.psh (createVarDeclNode idxTemp, zero0, 1)
+            outerStmts.psh (createVarDeclNode itemName, zero1, 1)
+            if secondName != "" {
+                zero2 = createNumberNode "0"
+                outerStmts.psh (createVarDeclNode secondName, zero2, 1)
+            }
+
+            collVar = createVariableNode collTemp
+            lenAccess = createPropertyAccessNode collVar, "ln"
+            idxVarCond = createVariableNode idxTemp
+            cond = createBinaryNode "<", idxVarCond, lenAccess
+
+            bodyStmts = []
+            idxLoad = createVariableNode idxTemp
+            collVarIdx = createVariableNode collTemp
+            elem = createIndexNode collVarIdx, idxLoad
+            itemVar = createVariableNode itemName
+            itemStore = createBinaryNode "=", itemVar, elem
+            bodyStmts.psh (createExpressionStmtNode itemStore)
+            if secondName != "" {
+                secVar = createVariableNode secondName
+                idxVar2 = createVariableNode idxTemp
+                idxAssign = createBinaryNode "=", secVar, idxVar2
+                bodyStmts.psh (createExpressionStmtNode idxAssign)
+            }
+            if armBody.kind == "BlockStmt" {
+                let bi = 0
+                wh bi < armBody.statements.ln {
+                    bodyStmts.psh armBody.statements[bi]
+                    bi = bi + 1
+                }
+            } els if armBody.kind != "" {
+                bodyStmts.psh armBody
+            }
+            loopBody = createBlockNode bodyStmts
+
+            loadI = createVariableNode idxTemp
+            one = createNumberNode "1"
+            addExpr = createBinaryNode "+", loadI, one
+            storeI = createVariableNode idxTemp
+            stepAssign = createBinaryNode "=", storeI, addExpr
+            stepStmt = createExpressionStmtNode stepAssign
+
+            emptyInit = { kind: "" }
+            forNode = createForNode emptyInit, cond, stepStmt, loopBody
+            outerStmts.psh forNode
+            // Block scope so repeated `fr item of ...` bindings don't redeclare
+            -> createBlockNode outerStmts
+        }
+        // C-style: fr init; cond; step
         initStmt = parseStatement p
         if (curTok p).val == ";" {
             advanceParser p

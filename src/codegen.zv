@@ -16,7 +16,8 @@ createCodegen {
         "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
         "destructKind", "bindNames", "source",
         "enums", "enumKeys", "enumVals",
-        "symKeys", "symIds", "bigintNames", "strNames"
+        "symKeys", "symIds", "bigintNames", "strNames",
+        "__keys", "__vals"
     ]
     let brkStack = []
     let contStack = []
@@ -305,6 +306,18 @@ isBigIntVar cg, name {
 
 markStrVar cg, name {
     cg.strNames.psh name
+}
+
+unmarkStrVar cg, name {
+    let kept = []
+    let i = 0
+    wh i < cg.strNames.ln {
+        if (strEq cg.strNames[i], name) == 0 {
+            kept.psh cg.strNames[i]
+        }
+        i = i + 1
+    }
+    cg.strNames = kept
 }
 
 isStrVar cg, name {
@@ -880,6 +893,24 @@ codegenExpr cg, expr, outBuf {
                 cgSym = findCgSymbol cg, expr.left.name
                 if cgSym.name != "" {
                     outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${cgSym.reg}\n`)
+                }
+                // Propagate string-ness from RHS variable or keys index
+                if expr.right.kind == "VariableExpr" {
+                    rn = expr.right.name
+                    if (rn.cnt "__fin_i") == 1 {
+                        unmarkStrVar cg, expr.left.name
+                    } els if (isStrVar cg, rn) == 1 {
+                        markStrVar cg, expr.left.name
+                    }
+                }
+                if expr.right.kind == "IndexExpr" {
+                    if expr.right.array.kind == "VariableExpr" {
+                        an = expr.right.array.name
+                        // Only mark when the keys temp name is uniquely object-side
+                        if (an.cnt "__fin_ks") == 1 {
+                            markStrVar cg, expr.left.name
+                        }
+                    }
                 }
             } els if expr.left.kind == "PropertyAccess" {
                 // Project-wide `glb.prop` → LLVM store to module global @glb_<prop>
@@ -1944,6 +1975,73 @@ codegenExpr cg, expr, outBuf {
             }
             fi = fi + 1
         }
+        // Enumerable keys/values sidecars for `fr … in`
+        let keyNames = []
+        let kfi = 0
+        wh kfi < expr.fields.ln {
+            kf = expr.fields[kfi]
+            if kf.isSpread == 0 {
+                kn0 = kf.name
+                if (strEq kn0, "") == 0 {
+                    keyNames.psh kn0
+                }
+            }
+            kfi = kfi + 1
+        }
+        if keyNames.ln > 0 {
+            kcount = keyNames.ln
+            kbytes = (kcount + 1024) * 8
+            keysBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${keysBuf} = call ptr @malloc(i64 ${kbytes})\n`)
+            outBuf.code = outBuf.code.cat (`  store double ${kcount}.0, ptr ${keysBuf}\n`)
+            valsBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valsBuf} = call ptr @malloc(i64 ${kbytes})\n`)
+            outBuf.code = outBuf.code.cat (`  store double ${kcount}.0, ptr ${valsBuf}\n`)
+            let ki = 0
+            wh ki < keyNames.ln {
+                kn = keyNames[ki]
+                sName = addStrConstant cg, kn
+                keyInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${keyInt} = ptrtoint ptr ${sName} to i64\n`)
+                keyDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${keyDbl} = sitofp i64 ${keyInt} to double\n`)
+                keyBits = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${keyBits} = bitcast double ${keyDbl} to i64\n`)
+                kgep = newReg cg
+                kslot = ki + 1
+                outBuf.code = outBuf.code.cat (`  ${kgep} = getelementptr inbounds i64, ptr ${keysBuf}, i64 ${kslot}\n`)
+                outBuf.code = outBuf.code.cat (`  store i64 ${keyBits}, ptr ${kgep}\n`)
+                fOff = findFieldOffset cg, kn
+                fgep = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${fgep} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${fOff}\n`)
+                fval = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${fval} = load i64, ptr ${fgep}\n`)
+                vgep = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${vgep} = getelementptr inbounds i64, ptr ${valsBuf}, i64 ${kslot}\n`)
+                outBuf.code = outBuf.code.cat (`  store i64 ${fval}, ptr ${vgep}\n`)
+                ki = ki + 1
+            }
+            keysInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${keysInt} = ptrtoint ptr ${keysBuf} to i64\n`)
+            keysDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${keysDbl} = sitofp i64 ${keysInt} to double\n`)
+            keysBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${keysBits} = bitcast double ${keysDbl} to i64\n`)
+            valsInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valsInt} = ptrtoint ptr ${valsBuf} to i64\n`)
+            valsDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valsDbl} = sitofp i64 ${valsInt} to double\n`)
+            valsBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valsBits} = bitcast double ${valsDbl} to i64\n`)
+            kOffX = findFieldOffset cg, "__keys"
+            vOffX = findFieldOffset cg, "__vals"
+            keysSlot = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${keysSlot} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${kOffX}\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${keysBits}, ptr ${keysSlot}\n`)
+            valsSlot = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valsSlot} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${vOffX}\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${valsBits}, ptr ${valsSlot}\n`)
+        }
         bufInt = newReg cg
         outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
         bufDbl = newReg cg
@@ -2072,6 +2170,11 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  store i64 ${eValInt}, ptr ${gepReg}\n`)
             ei = ei + 1
         }
+        // Zero __keys so `fr … in` can tell arrays from objects at runtime
+        kOffArr = findFieldOffset cg, "__keys"
+        keysGep = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${keysGep} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${kOffArr}\n`)
+        outBuf.code = outBuf.code.cat (`  store i64 0, ptr ${keysGep}\n`)
         bufInt = newReg cg
         outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
         bufDbl = newReg cg
