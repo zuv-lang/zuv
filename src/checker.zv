@@ -69,7 +69,7 @@ declareVar checker, name, isMut {
     existingInCurrent = findVarInCurrentScope checker, name
     if isMut == 1 {
         if existingInCurrent.name != "" {
-            errRedecl = "Variable '" + name + "' is already declared in this scope"
+            errRedecl = `Variable '${name}' is already declared in this scope`
             checker.errors.psh errRedecl
         } els {
             curIdx = checker.scopes.ln - 1
@@ -95,7 +95,7 @@ checkExpr checker, expr {
     if expr.kind == "VariableExpr" {
         v = findVarState checker, expr.name
         if v.name != "" && v.isMoved == 1 {
-            errVal = "Use of moved value: '" + expr.name + "'"
+            errVal = `Use of moved value: '${expr.name}'`
             checker.errors.psh errVal
         }
     } els if expr.kind == "UnaryExpr" {
@@ -105,22 +105,22 @@ checkExpr checker, expr {
                 v = findVarState checker, vName
                 if v.name != "" {
                     if v.isMoved == 1 {
-                        errMoved = "Cannot borrow moved value: '" + vName + "'"
+                        errMoved = `Cannot borrow moved value: '${vName}'`
                         checker.errors.psh errMoved
                     }
                     if expr.op == "&mut" {
                         if v.isMut == 0 {
-                            errImmut = "Cannot borrow immutable variable '" + vName + "' as mutable (&mut)"
+                            errImmut = `Cannot borrow immutable variable '${vName}' as mutable (&mut)`
                             checker.errors.psh errImmut
                         }
                         if v.immBorrows > 0 || v.mutBorrows > 0 {
-                            errActive = "Cannot borrow '" + vName + "' as mutable (&mut) because it is already borrowed"
+                            errActive = `Cannot borrow '${vName}' as mutable (&mut) because it is already borrowed`
                             checker.errors.psh errActive
                         }
                         v.mutBorrows = v.mutBorrows + 1
                     } els {
                         if v.mutBorrows > 0 {
-                            errMut = "Cannot borrow '" + vName + "' as immutable (&) because it is borrowed as mutable (&mut)"
+                            errMut = `Cannot borrow '${vName}' as immutable (&) because it is borrowed as mutable (&mut)`
                             checker.errors.psh errMut
                         }
                         v.immBorrows = v.immBorrows + 1
@@ -138,7 +138,7 @@ checkExpr checker, expr {
                 vName = expr.left.name
                 v = findVarState checker, vName
                 if v.name != "" && v.isMut == 0 {
-                    errMutate = "Cannot mutate immutable variable: '" + vName + "'"
+                    errMutate = `Cannot mutate immutable variable: '${vName}'`
                     checker.errors.psh errMutate
                 }
             }
@@ -169,8 +169,13 @@ checkExpr checker, expr {
 
 checkStatement checker, stmt {
     if stmt.kind == "VarDecl" {
-        if stmt.value.kind == "NilExpr" || stmt.value.kind == "" {
-            checker.errors.psh ("Semantic Error: Invalid variable initialization for '" + stmt.name + "'")
+        // Allow explicit nil/und literals; reject missing/placeholder inits
+        if stmt.value.kind == "" {
+            checker.errors.psh (`Semantic Error: Invalid variable initialization for '${stmt.name}'`)
+        } els if stmt.value.kind == "NilExpr" {
+            if stmt.value.val != "nil" && stmt.value.val != "und" {
+                checker.errors.psh (`Semantic Error: Invalid variable initialization for '${stmt.name}'`)
+            }
         }
         checkExpr checker, stmt.value
         declareVar checker, stmt.name, stmt.isMut
@@ -253,9 +258,9 @@ checkStatement checker, stmt {
     } els if stmt.kind == "ImportStmt" {
         let si = 0
         wh si < stmt.symbols.ln {
-            sym = stmt.symbols[si]
-            if sym != "" {
-                declareVar checker, sym, 0
+            impName = stmt.symbols[si]
+            if impName != "" {
+                declareVar checker, impName, 0
             }
             si = si + 1
         }

@@ -13,7 +13,7 @@ readLexerChar lexer {
     if lexer.pos >= lexer.totalLen {
         lexer.ch = ""
     } els {
-        lexer.ch = lexer.src.charAt lexer.pos
+        lexer.ch = lexer.src.chr lexer.pos
         lexer.pos = lexer.pos + 1
         lexer.col = lexer.col + 1
     }
@@ -23,7 +23,7 @@ peekLexerChar lexer {
     if lexer.pos >= lexer.totalLen {
         -> ""
     }
-    nextCh = lexer.src.charAt lexer.pos
+    nextCh = lexer.src.chr lexer.pos
     -> nextCh
 }
 
@@ -40,6 +40,32 @@ skipLexerWhitespace lexer {
 isLexerDigit ch {
     if ch == "0" || ch == "1" || ch == "2" || ch == "3" || ch == "4" ||
        ch == "5" || ch == "6" || ch == "7" || ch == "8" || ch == "9" {
+        -> 1
+    }
+    -> 0
+}
+
+isLexerHexDigit ch {
+    if (isLexerDigit ch) == 1 {
+        -> 1
+    }
+    if ch == "a" || ch == "b" || ch == "c" || ch == "d" || ch == "e" || ch == "f" ||
+       ch == "A" || ch == "B" || ch == "C" || ch == "D" || ch == "E" || ch == "F" {
+        -> 1
+    }
+    -> 0
+}
+
+isLexerBinDigit ch {
+    if ch == "0" || ch == "1" {
+        -> 1
+    }
+    -> 0
+}
+
+isLexerOctDigit ch {
+    if ch == "0" || ch == "1" || ch == "2" || ch == "3" ||
+       ch == "4" || ch == "5" || ch == "6" || ch == "7" {
         -> 1
     }
     -> 0
@@ -65,11 +91,12 @@ isLexerLetter ch {
 
 isLexerKeyword word {
     if word == "imp" || word == "frm" || word == "wrk" || word == "prnt" ||
-       word == "lg" || word == "wrn" || word == "inf" || word == "ret" ||
+       word == "lg" || word == "wrn" || word == "inf" || word == "nan" || word == "Infinity" || word == "ret" ||
        word == "els" || word == "wh" || word == "fr" || word == "brk" ||
        word == "cont" || word == "dn" || word == "mch" || word == "ok" ||
        word == "err" || word == "if" || word == "and" || word == "or" ||
        word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" ||
+       word == "typ" || word == "sym" || word == "enum" ||
        word == "obj" || word == "num" || word == "bool" || word == "str" ||
        word == "extern" || word == "ffi" || word == "main" {
         -> 1
@@ -101,20 +128,20 @@ readLexerString lexer, quoteChar {
         if lexer.ch == "\n" {
             lexer.line = lexer.line + 1
             lexer.col = 0
-            strVal = strVal.concat "\n"
+            strVal = strVal.cat "\n"
         } els if lexer.ch == "\\" {
             readLexerChar lexer
-            if lexer.ch == "n" { strVal = strVal.concat "\n" }
-            els if lexer.ch == "t" { strVal = strVal.concat "\t" }
-            els if lexer.ch == "r" { strVal = strVal.concat "\r" }
-            els if lexer.ch == "\"" { strVal = strVal.concat "\"" }
-            els if lexer.ch == "'" { strVal = strVal.concat "'" }
-            els if lexer.ch == "`" { strVal = strVal.concat "`" }
-            els if lexer.ch == "$" { strVal = strVal.concat "$" }
-            els if lexer.ch == "\\" { strVal = strVal.concat "\\" }
-            els { strVal = strVal.concat lexer.ch }
+            if lexer.ch == "n" { strVal = strVal.cat "\n" }
+            els if lexer.ch == "t" { strVal = strVal.cat "\t" }
+            els if lexer.ch == "r" { strVal = strVal.cat "\r" }
+            els if lexer.ch == `"` { strVal = strVal.cat `"` }
+            els if lexer.ch == `'` { strVal = strVal.cat `'` }
+            els if lexer.ch == "`" { strVal = strVal.cat "`" }
+            els if lexer.ch == "$" { strVal = strVal.cat "$" }
+            els if lexer.ch == "\\" { strVal = strVal.cat "\\" }
+            els { strVal = strVal.cat lexer.ch }
         } els {
-            strVal = strVal.concat lexer.ch
+            strVal = strVal.cat lexer.ch
         }
         readLexerChar lexer
     }
@@ -132,9 +159,102 @@ readLexerNumber lexer {
     startCol = lexer.col
     let numVal = ""
 
+    // Base prefixes: 0xFF, 0b1010, 0o755 (require ≥1 digit after prefix)
+    if lexer.ch == "0" {
+        p = peekLexerChar lexer
+        mut p2 = ""
+        if lexer.pos + 1 < lexer.totalLen {
+            p2Idx = lexer.pos + 1
+            p2 = lexer.src.chr p2Idx
+        }
+        if (p == "x" || p == "X") && (isLexerHexDigit p2) == 1 {
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            wh (isLexerHexDigit lexer.ch) == 1 {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            tok = createToken "NUMBER", numVal, startLine, startCol
+            -> tok
+        }
+        if (p == "b" || p == "B") && (isLexerBinDigit p2) == 1 {
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            wh (isLexerBinDigit lexer.ch) == 1 {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            tok = createToken "NUMBER", numVal, startLine, startCol
+            -> tok
+        }
+        if (p == "o" || p == "O") && (isLexerOctDigit p2) == 1 {
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            wh (isLexerOctDigit lexer.ch) == 1 {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            tok = createToken "NUMBER", numVal, startLine, startCol
+            -> tok
+        }
+    }
+
+    mut hasDot = 0
+
     wh (isLexerDigit lexer.ch) || (lexer.ch == "." && (isLexerDigit (peekLexerChar lexer))) {
-        numVal = numVal.concat lexer.ch
+        if lexer.ch == "." {
+            hasDot = 1
+        }
+        numVal = numVal.cat lexer.ch
         readLexerChar lexer
+    }
+
+    // Scientific exponent: 123e5, 1.5E-2, 10e+3
+    if lexer.ch == "e" || lexer.ch == "E" {
+        nxt = peekLexerChar lexer
+        mut expOk = 0
+        if (isLexerDigit nxt) == 1 {
+            expOk = 1
+        }
+        if nxt == "+" || nxt == "-" {
+            // Digit must follow the sign (lookahead two chars)
+            if lexer.pos + 1 < lexer.totalLen {
+                signIdx = lexer.pos + 1
+                afterSign = lexer.src.chr signIdx
+                if (isLexerDigit afterSign) == 1 {
+                    expOk = 1
+                }
+            }
+        }
+        if expOk == 1 {
+            numVal = numVal.cat lexer.ch
+            readLexerChar lexer
+            if lexer.ch == "+" || lexer.ch == "-" {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            wh (isLexerDigit lexer.ch) == 1 {
+                numVal = numVal.cat lexer.ch
+                readLexerChar lexer
+            }
+            tok = createToken "NUMBER", numVal, startLine, startCol
+            -> tok
+        }
+    }
+
+    // BigInt suffix: 123n / 123N (integers only — no decimal point, no exponent)
+    if hasDot == 0 {
+        if lexer.ch == "n" || lexer.ch == "N" {
+            readLexerChar lexer
+            tok = createToken "BIGINT", numVal, startLine, startCol
+            -> tok
+        }
     }
 
     tok = createToken "NUMBER", numVal, startLine, startCol
@@ -147,7 +267,7 @@ readLexerIdentifier lexer {
     let word = ""
 
     wh (isLexerLetter lexer.ch) || (isLexerDigit lexer.ch) {
-        word = word.concat lexer.ch
+        word = word.cat lexer.ch
         readLexerChar lexer
     }
 
@@ -285,7 +405,17 @@ nextLexerToken lexer {
         }
     }
 
-    if lexer.ch == "+" || lexer.ch == "*" || lexer.ch == "/" || lexer.ch == "%" ||
+    if lexer.ch == "*" {
+        if (peekLexerChar lexer) == "*" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "**", startLine, startCol
+        }
+        readLexerChar lexer
+        -> createToken "SYM", "*", startLine, startCol
+    }
+
+    if lexer.ch == "+" || lexer.ch == "/" || lexer.ch == "%" ||
        lexer.ch == "(" || lexer.ch == ")" || lexer.ch == "{" || lexer.ch == "}" ||
        lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "." || lexer.ch == "," ||
        lexer.ch == ":" || lexer.ch == ";" || lexer.ch == "?" {
@@ -294,7 +424,7 @@ nextLexerToken lexer {
         -> createToken "SYM", c, startLine, startCol
     }
 
-    if lexer.ch == "\"" || lexer.ch == "'" || lexer.ch == "`" {
+    if lexer.ch == `"` || lexer.ch == `'` || lexer.ch == "`" {
         q = lexer.ch
         -> readLexerString lexer, q
     }

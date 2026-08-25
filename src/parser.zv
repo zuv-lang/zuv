@@ -27,11 +27,14 @@ getPrecSum {
 getPrecProduct {
     -> 7
 }
-getPrecPrefix {
+getPrecPow {
     -> 8
 }
-getPrecCall {
+getPrecPrefix {
     -> 9
+}
+getPrecCall {
+    -> 10
 }
 
 getTokenPrecedence tok {
@@ -57,8 +60,11 @@ getTokenPrecedence tok {
         if tok.val == "*" || tok.val == "/" || tok.val == "%" {
             -> 7
         }
+        if tok.val == "**" {
+            -> 8
+        }
         if tok.val == "." || tok.val == "(" || tok.val == "[" {
-            -> 9
+            -> 10
         }
     } els if tok.kind == "KEYWORD" {
         if tok.val == "or" {
@@ -76,7 +82,7 @@ createParser tokens {
     l = tokens.ln
     emptyTok = createToken "EOF", "", 0, 0
     let emptyErrors = []
-    let p = { tokens: tokens, pos: 0, totalLen: l, curTok: emptyTok, peekTok: emptyTok, errors: emptyErrors, desCount: 0 }
+    let p = { tokens: tokens, pos: 0, totalLen: l, curTok: emptyTok, peekTok: emptyTok, errors: emptyErrors, desCount: 0, allowIdentStruct: 1 }
     advanceParser p
     advanceParser p
     -> p
@@ -113,13 +119,18 @@ expectPeekToken p, expectedKind, expectedVal {
             -> 1
         }
     }
-    p.errors.psh ("Syntax Error: Expected " + expectedVal + " at line " + peekT.line)
+    p.errors.psh (`Syntax Error: Expected ${expectedVal} at line ${peekT.line}`)
     -> 0
 }
 
 // ── AST Node Constructors ────────────────────────────────────────────────────
 createNumberNode val {
     res = { kind: "NumberExpr", val: val }
+    -> res
+}
+
+createBigIntNode val {
+    res = { kind: "BigIntExpr", val: val }
     -> res
 }
 
@@ -134,7 +145,12 @@ createBoolNode val {
 }
 
 createNilNode {
-    res = { kind: "NilExpr", val: 0 }
+    res = { kind: "NilExpr", val: "nil" }
+    -> res
+}
+
+createUndNode {
+    res = { kind: "NilExpr", val: "und" }
     -> res
 }
 
@@ -362,7 +378,7 @@ parseArrayDestructure p, isMut {
         advanceParser p
     }
     src = parseExpression p, 0
-    tempName = "__darr" + p.desCount
+    tempName = `__darr${p.desCount}`
     p.desCount = p.desCount + 1
     let stmts = []
     stmts.psh (createVarDeclNode tempName, src, 1)
@@ -413,7 +429,7 @@ parseObjectDestructure p, isMut {
         advanceParser p
     }
     src = parseExpression p, 0
-    tempName = "__dobj" + p.desCount
+    tempName = `__dobj${p.desCount}`
     p.desCount = p.desCount + 1
     let stmts = []
     stmts.psh (createVarDeclNode tempName, src, 1)
@@ -454,7 +470,7 @@ parseMultiVarAssign p, isMut {
     }
     advanceParser p
     src = parseExpression p, 0
-    tempName = "__dmul" + p.desCount
+    tempName = `__dmul${p.desCount}`
     p.desCount = p.desCount + 1
     let stmts = []
     stmts.psh (createVarDeclNode tempName, src, 1)
@@ -506,12 +522,23 @@ parseExpression p, precedence {
     // Prefix Parsing
     if t.kind == "NUMBER" || t.kind == "NUM" {
         left = createNumberNode t.val
+    } els if t.kind == "KEYWORD" && t.val == "nan" {
+        left = createNumberNode "nan"
+    } els if t.kind == "KEYWORD" && (t.val == "Infinity" || t.val == "inf") {
+        // Expression-level `inf` / `Infinity` → +∞ (statement `inf expr` remains logging)
+        left = createNumberNode "inf"
+    } els if t.kind == "BIGINT" {
+        left = createBigIntNode t.val
     } els if t.kind == "STRING" || t.kind == "STR" {
         left = createStringNode t.val
     } els if t.kind == "BOOL" {
         left = createBoolNode t.val
     } els if t.kind == "NIL" {
-        left = createNilNode
+        if t.val == "und" {
+            left = createUndNode
+        } els {
+            left = createNilNode
+        }
     } els if t.val == "[" {
         let elements = []
         if (peekTok p).val != "]" {
@@ -530,7 +557,9 @@ parseExpression p, precedence {
     } els if t.kind == "IDENT" || (t.kind == "KEYWORD" && (t.val == "ok" || t.val == "err")) {
         varName = t.val
         peekT = peekTok p
-        if peekT.val == "{" {
+        // Typed struct literal `Name { ... }` — disabled in if/wh/fr conditions so
+        // `if a == b {` treats `{` as the block, matching the C++ bootstrap parser.
+        if peekT.val == "{" && p.allowIdentStruct == 1 {
             // Struct or anonymous object literal
             advanceParser p // consume '{'
             let fields = []
@@ -625,13 +654,13 @@ parseExpression p, precedence {
         advanceParser p
         left = parseExpression p, 0
         expectPeekToken p, "SYM", ")"
-    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await")) {
+    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
             advanceParser p // skip 'mut'
         }
         advanceParser p
-        right = parseExpression p, 8
+        right = parseExpression p, 9
         if op == "awt" || op == "await" {
             let emptyArgs = []
             if right.kind == "VariableExpr" {
@@ -729,7 +758,12 @@ parseExpression p, precedence {
                     op = curT.val
                     prec = getTokenPrecedence curT
                     advanceParser p
-                    right = parseExpression p, prec
+                    // ** is right-associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
+                    mut rhsPrec = prec
+                    if op == "**" {
+                        rhsPrec = prec - 1
+                    }
+                    right = parseExpression p, rhsPrec
                     left = createBinaryNode op, left, right
                 }
             }
@@ -837,7 +871,20 @@ parseStatement p {
         -> createFuncNode fnName, emptyParams, body, 0
     } els if t.kind == "KEYWORD" && t.val == "mch" {
         advanceParser p
-        targetExpr = parseExpression p, 0
+        // Match target must NOT use parseExpression — `ident {` is struct-literal
+        // sugar there and would swallow the entire mch body.
+        let targetExpr = createNilNode
+        ct = curTok p
+        if ct.kind == "IDENT" || ct.kind == "KEYWORD" {
+            targetExpr = createVariableNode ct.val
+            if (peekTok p).val == "." {
+                advanceParser p // consume '.'
+                advanceParser p // move to property
+                targetExpr = createPropertyAccessNode targetExpr, (curTok p).val
+            }
+        } els {
+            targetExpr = parseExpression p, 0
+        }
         if (peekTok p).val == "{" {
             advanceParser p // move curTok to '{'
         }
@@ -846,6 +893,9 @@ parseStatement p {
         let okBody = { kind: "" }
         let errVar = ""
         let errBody = { kind: "" }
+        let enumConds = []
+        let enumBodies = []
+        let isEnumMatch = 0
         wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
             armKind = (curTok p).val
             if armKind == "ok" {
@@ -873,8 +923,72 @@ parseStatement p {
                     advanceParser p // move past '}' to next arm or outer '}'
                 }
             } els {
-                advanceParser p
+                // Enum arm: Status.Active or bare Active — desugar to if/els chain
+                isEnumMatch = 1
+                let pattern = armKind
+                if (peekTok p).val == "." {
+                    advanceParser p // consume '.'
+                    advanceParser p // move to variant
+                    pattern = armKind
+                    // Build "Enum.Variant" via two-part name stored in src-style: use name field for enum, val for variant later
+                    // For now keep pattern as variant only and qualify via PropertyAccess below
+                    let vName = (curTok p).val
+                    enumObj = createVariableNode armKind
+                    cmpRight = createPropertyAccessNode enumObj, vName
+                    expectPeekToken p, "SYM", "=>"
+                    armBody = parseBlock p
+                    if (curTok p).val == "}" {
+                        advanceParser p
+                    }
+                    let tgt = targetExpr
+                    if targetExpr.kind == "VariableExpr" {
+                        tgt = createVariableNode targetExpr.name
+                    }
+                    cond = createBinaryNode "==", tgt, cmpRight
+                    enumConds.psh cond
+                    enumBodies.psh armBody
+                } els {
+                    // Bare variant: Pending
+                    cmpRight = { kind: "EnumBareRef", name: pattern }
+                    expectPeekToken p, "SYM", "=>"
+                    armBody = parseBlock p
+                    if (curTok p).val == "}" {
+                        advanceParser p
+                    }
+                    let tgt = targetExpr
+                    if targetExpr.kind == "VariableExpr" {
+                        tgt = createVariableNode targetExpr.name
+                    }
+                    cond = createBinaryNode "==", tgt, cmpRight
+                    enumConds.psh cond
+                    enumBodies.psh armBody
+                }
             }
+        }
+        if isEnumMatch == 1 {
+            let elseNil = createNilNode
+            if enumConds.ln == 0 {
+                -> elseNil
+            }
+            let n = enumConds.ln
+            let chain0 = createIfNode enumConds[n - 1], enumBodies[n - 1], elseNil
+            if n == 1 {
+                -> chain0
+            }
+            let chain1 = createIfNode enumConds[n - 2], enumBodies[n - 2], chain0
+            if n == 2 {
+                -> chain1
+            }
+            let chain2 = createIfNode enumConds[n - 3], enumBodies[n - 3], chain1
+            if n == 3 {
+                -> chain2
+            }
+            let chain3 = createIfNode enumConds[n - 4], enumBodies[n - 4], chain2
+            if n == 4 {
+                -> chain3
+            }
+            let chain4 = createIfNode enumConds[n - 5], enumBodies[n - 5], chain3
+            -> chain4
         }
         res = { kind: "MatchStmt", target: targetExpr, okVar: okVar, okBody: okBody, errVar: errVar, errBody: errBody }
         -> res
@@ -923,9 +1037,34 @@ parseStatement p {
         }
         structDeclNode = { kind: "StructDecl", name: structName, fields: structFields }
         -> structDeclNode
+    } els if t.kind == "KEYWORD" && t.val == "enum" {
+        advanceParser p
+        enumName = (curTok p).val
+        expectPeekToken p, "SYM", "{"
+        advanceParser p
+        let joined = ""
+        let first = 1
+        wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+            if (curTok p).kind == "IDENT" {
+                if first == 0 {
+                    joined = `${joined},`
+                }
+                joined = `${joined}${(curTok p).val}`
+                first = 0
+                if (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                }
+            }
+            advanceParser p
+        }
+        // Pack variants into `src` string (stable field): "Pending,Active,Archived"
+        enumDeclNode = { kind: "EnumDecl", name: enumName, src: joined }
+        -> enumDeclNode
     } els if t.kind == "KEYWORD" && t.val == "if" {
         advanceParser p
+        p.allowIdentStruct = 0
         condExpr = parseExpression p, 0
+        p.allowIdentStruct = 1
         thenBranch = parseBlock p
         let elseBranch = createNilNode
         if (peekTok p).kind == "KEYWORD" && (peekTok p).val == "els" {
@@ -940,7 +1079,9 @@ parseStatement p {
         -> createIfNode condExpr, thenBranch, elseBranch
     } els if t.kind == "KEYWORD" && t.val == "wh" {
         advanceParser p
+        p.allowIdentStruct = 0
         condExpr = parseExpression p, 0
+        p.allowIdentStruct = 1
         body = parseBlock p
         -> createWhileNode condExpr, body
     } els if t.kind == "KEYWORD" && (t.val == "fr" || t.val == "for") {
@@ -952,7 +1093,9 @@ parseStatement p {
             advanceParser p // consume ';'
             advanceParser p // move to cond
         }
+        p.allowIdentStruct = 0
         condExpr = parseExpression p, 0
+        p.allowIdentStruct = 1
         if (curTok p).val == ";" {
             advanceParser p
         } els if (peekTok p).val == ";" {
@@ -977,7 +1120,7 @@ parseStatement p {
         } els if (peekTok p).val == "=" {
             advanceParser p // consume '='
             if (peekTok p).kind == "EOF" {
-                p.errors.psh "Syntax Error: Expected expression after '='"
+                p.errors.psh `Syntax Error: Expected expression after '='`
                 -> { kind: "" }
             }
             advanceParser p

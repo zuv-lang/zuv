@@ -1,0 +1,19 @@
+// Exponentiation operator ** (right-associative, llvm.pow.f64)
+
+if 2 ** 3 == 8 {
+    prnt "2 ** 3 ok"
+}
+
+if 2 ** 3 ** 2 == 512 {
+    prnt "right-assoc 2 ** 3 ** 2 ok"
+}
+
+if 2 * 3 ** 2 == 18 {
+    prnt "prec * vs ** ok"
+}
+
+if 9 ** 0.5 == 3 {
+    prnt "sqrt via ** ok"
+}
+
+prnt "pow test complete"

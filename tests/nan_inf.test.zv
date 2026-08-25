@@ -1,0 +1,65 @@
+let n = nan
+let p = inf
+let q = Infinity
+let ninf = 0 - inf
+
+if isNan n {
+    prnt "isNan nan ok"
+}
+
+let z0 = isNan 0
+if z0 == no {
+    prnt "isNan 0 false ok"
+}
+
+if isFin 1 {
+    prnt "isFin 1 ok"
+}
+
+let zn = isFin n
+if zn == no {
+    prnt "isFin nan false ok"
+}
+
+let zp = isFin p
+if zp == no {
+    prnt "isFin inf false ok"
+}
+
+if p == q {
+    prnt "inf == Infinity ok"
+}
+
+if p == ninf == no {
+    prnt "+inf != -inf ok"
+}
+
+if (p == ninf) == no {
+    prnt "+inf != -inf paren ok"
+}
+
+if isFin ninf == no {
+    prnt "isFin -inf false ok"
+}
+
+if (isFin ninf) == no {
+    prnt "isFin -inf paren ok"
+}
+
+if typ nan == "num" {
+    prnt "typ nan ok"
+}
+
+if typ inf == "num" {
+    prnt "typ inf ok"
+}
+
+if n == n == no {
+    prnt "nan != nan ok"
+}
+
+if (n == n) == no {
+    prnt "nan != nan paren ok"
+}
+
+prnt "nan inf test complete"

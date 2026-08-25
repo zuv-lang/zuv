@@ -1,0 +1,42 @@
+if 0xFF == 255 {
+    prnt "hex 0xFF ok"
+}
+
+if 0X10 == 16 {
+    prnt "hex 0X10 ok"
+}
+
+if 0b1010 == 10 {
+    prnt "bin 0b1010 ok"
+}
+
+if 0B1111 == 15 {
+    prnt "bin 0B1111 ok"
+}
+
+if 0o755 == 493 {
+    prnt "oct 0o755 ok"
+}
+
+if 0O10 == 8 {
+    prnt "oct 0O10 ok"
+}
+
+if typ 0xFF == "num" {
+    prnt "typ hex ok"
+}
+
+let hex = 0xFF
+let bin = 0b1010
+let oct = 0o755
+if hex == 255 {
+    prnt "hex var ok"
+}
+if bin == 10 {
+    prnt "bin var ok"
+}
+if oct == 493 {
+    prnt "oct var ok"
+}
+
+prnt "number bases test complete"

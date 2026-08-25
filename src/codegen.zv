@@ -14,12 +14,20 @@ createCodegen {
         "src", "pos", "totalLen", "ch", "tokens", "curTok", "peekTok", "errors",
         "regCount", "labelCount", "strCount", "strConstants", "fieldNames",
         "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
-        "destructKind", "bindNames", "source"
+        "destructKind", "bindNames", "source",
+        "enums", "enumKeys", "enumVals",
+        "symKeys", "symIds", "bigintNames"
     ]
     let brkStack = []
     let contStack = []
     let exts = []
     let glbDeclList = []
+    let enumsList = []
+    let enumKeys = []
+    let enumVals = []
+    let symKeys = []
+    let symIds = []
+    let bigintNames = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -33,21 +41,114 @@ createCodegen {
         funcs: "",
         mainBody: "",
         isMain: 0,
-        glbDeclList: glbDeclList
+        glbDeclList: glbDeclList,
+        enums: enumsList,
+        enumKeys: enumKeys,
+        enumVals: enumVals,
+        symKeys: symKeys,
+        symIds: symIds,
+        bigintNames: bigintNames
     }
     -> res
 }
 
 ensureGlbProp cg, prop {
     // Register LLVM module global `@glb_<prop>` for project-wide storage
-    gKey = "glb_" + prop
-    gName = "@" + gKey
+    gKey = `glb_${prop}`
+    gName = `@${gKey}`
     gSym = findCgSymbol cg, gKey
     if gSym.name == "" {
         addCgSymbol cg, gKey, gName
-        cg.glbDeclList.psh (gName + " = global i64 0\n")
+        cg.glbDeclList.psh (`${gName} = global i64 0\n`)
     }
     -> gName
+}
+
+registerEnum cg, enumDecl {
+    // Variants packed in enumDecl.src as "Pending,Active,Archived"
+    let joined = enumDecl.src
+    let start = 0
+    let i = 0
+    let disc = 0
+    wh i <= joined.ln {
+        let atEnd = 0
+        if i == joined.ln { atEnd = 1 }
+        let isComma = 0
+        if atEnd == 0 {
+            c = joined.sub i, 1
+            if (strEq c, ",") == 1 { isComma = 1 }
+        }
+        if isComma == 1 || atEnd == 1 {
+            let vLen = i - start
+            if vLen > 0 {
+                v = joined.sub start, vLen
+                dot = "."
+                q1 = enumDecl.name.cat dot
+                qKey = q1.cat v
+                cg.enumKeys.psh qKey
+                cg.enumVals.psh disc
+                cg.enumKeys.psh v
+                cg.enumVals.psh disc
+                disc = disc + 1
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+}
+
+lookupEnumDisc cg, pattern {
+    let i = 0
+    wh i < cg.enumKeys.ln {
+        if (strEq cg.enumKeys[i], pattern) == 1 {
+            -> cg.enumVals[i]
+        }
+        i = i + 1
+    }
+    -> 0 - 1
+}
+
+enumDiscLit disc {
+    if disc == 0 { -> "0.0" }
+    if disc == 1 { -> "1.0" }
+    if disc == 2 { -> "2.0" }
+    if disc == 3 { -> "3.0" }
+    if disc == 4 { -> "4.0" }
+    if disc == 5 { -> "5.0" }
+    if disc == 6 { -> "6.0" }
+    if disc == 7 { -> "7.0" }
+    if disc == 8 { -> "8.0" }
+    if disc == 9 { -> "9.0" }
+    if disc == 10 { -> "10.0" }
+    if disc == 11 { -> "11.0" }
+    if disc == 12 { -> "12.0" }
+    if disc == 13 { -> "13.0" }
+    if disc == 14 { -> "14.0" }
+    if disc == 15 { -> "15.0" }
+    -> "0.0"
+}
+
+isEnumName cg, name {
+    let i = 0
+    wh i < cg.enumKeys.ln {
+        k = cg.enumKeys[i]
+        if (k.cnt ".") == 1 {
+            let j = 0
+            wh j < k.ln {
+                c = k.sub j, 1
+                if (strEq c, ".") == 1 {
+                    prefix = k.sub 0, j
+                    if (strEq prefix, name) == 1 {
+                        -> 1
+                    }
+                    j = k.ln
+                }
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    -> 0
 }
 
 strEq s1, s2 {
@@ -55,6 +156,58 @@ strEq s1, s2 {
         -> 1
     }
     -> 0
+}
+
+// und sentinel: bitcast i64 1 → double (distinct from nil 0.0)
+undLit {
+    -> "bitcast (i64 1 to double)"
+}
+
+emitTruthyI1 cg, condReg, outBuf {
+    bits = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${condReg} to i64\n`)
+    isNil = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${isNil} = icmp eq i64 ${bits}, 0\n`)
+    isUnd = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${isUnd} = icmp eq i64 ${bits}, 1\n`)
+    isFalsy = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${isFalsy} = or i1 ${isNil}, ${isUnd}\n`)
+    isTruthy = newReg cg
+    outBuf.code = outBuf.code.cat (`  ${isTruthy} = xor i1 ${isFalsy}, true\n`)
+    -> isTruthy
+}
+
+internSymId cg, key {
+    let i = 0
+    wh i < cg.symKeys.ln {
+        if (strEq cg.symKeys[i], key) == 1 {
+            -> cg.symIds[i]
+        }
+        i = i + 1
+    }
+    let id = cg.symKeys.ln + 2
+    cg.symKeys.psh key
+    cg.symIds.psh id
+    -> id
+}
+
+symDiscLit id {
+    if id == 2 { -> "bitcast (i64 2 to double)" }
+    if id == 3 { -> "bitcast (i64 3 to double)" }
+    if id == 4 { -> "bitcast (i64 4 to double)" }
+    if id == 5 { -> "bitcast (i64 5 to double)" }
+    if id == 6 { -> "bitcast (i64 6 to double)" }
+    if id == 7 { -> "bitcast (i64 7 to double)" }
+    if id == 8 { -> "bitcast (i64 8 to double)" }
+    if id == 9 { -> "bitcast (i64 9 to double)" }
+    if id == 10 { -> "bitcast (i64 10 to double)" }
+    if id == 11 { -> "bitcast (i64 11 to double)" }
+    if id == 12 { -> "bitcast (i64 12 to double)" }
+    if id == 13 { -> "bitcast (i64 13 to double)" }
+    if id == 14 { -> "bitcast (i64 14 to double)" }
+    if id == 15 { -> "bitcast (i64 15 to double)" }
+    if id == 16 { -> "bitcast (i64 16 to double)" }
+    -> "bitcast (i64 2 to double)"
 }
 
 findFieldOffset cg, fieldName {
@@ -70,13 +223,13 @@ findFieldOffset cg, fieldName {
 }
 
 newReg cg {
-    r = "%r" + cg.regCount
+    r = `%r${cg.regCount}`
     cg.regCount = cg.regCount + 1
     -> r
 }
 
 newLbl cg, prefix {
-    l = prefix + "_" + cg.labelCount
+    l = `${prefix}_${cg.labelCount}`
     cg.labelCount = cg.labelCount + 1
     -> l
 }
@@ -97,6 +250,21 @@ findCgSymbol cg, name {
 addCgSymbol cg, name, reg {
     s = { name: name, reg: reg }
     cg.symbols.psh s
+}
+
+markBigIntVar cg, name {
+    cg.bigintNames.psh name
+}
+
+isBigIntVar cg, name {
+    let i = 0
+    wh i < cg.bigintNames.ln {
+        if (strEq cg.bigintNames[i], name) == 1 {
+            -> 1
+        }
+        i = i + 1
+    }
+    -> 0
 }
 
 addCgExtern cg, extDecl {
@@ -120,6 +288,9 @@ getStrPtrVal cg, expr, outBuf {
     if expr.kind == "StringExpr" {
         sName = addStrConstant cg, expr.val
         -> sName
+    } els if expr.kind == "BigIntExpr" {
+        sName = addStrConstant cg, expr.val
+        -> sName
     } els if expr.kind == "NumberExpr" {
         // Format number as string constant at codegen time when possible
         sName = addStrConstant cg, expr.val
@@ -134,7 +305,15 @@ getStrPtrVal cg, expr, outBuf {
         }
         if expr.kind == "VariableExpr" {
             n = expr.name
-            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" {
+            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || (n.cnt "type") == 1 || (n.cnt "Type") == 1 {
+                isStr = 1
+            }
+            if (isBigIntVar cg, n) == 1 {
+                isStr = 1
+            }
+        }
+        if expr.kind == "CallExpr" {
+            if expr.callee == "BigInt" {
                 isStr = 1
             }
         }
@@ -158,73 +337,258 @@ getStrPtrVal cg, expr, outBuf {
                 isStr = 1
             }
         }
+        if expr.kind == "UnaryExpr" {
+            if expr.op == "typ" {
+                isStr = 1
+            }
+        }
         if isStr == 1 {
             sInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
             sPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${sPtr} = inttoptr i64 ${sInt} to ptr\n`)
             -> sPtr
         } els {
             bufReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 64)\n")
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 64)\n`)
             snpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + snpReg + " = call i32 (ptr, i64, ptr, ...) @snprintf(ptr " + bufReg + ", i64 64, ptr @fmt_g, double " + sReg + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${snpReg} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${bufReg}, i64 64, ptr @fmt_g, double ${sReg})\n`)
             -> bufReg
         }
     }
 }
 
 addStrConstant cg, strVal {
-    sName = "@str_" + cg.strCount
+    sName = `@str_${cg.strCount}`
     cg.strCount = cg.strCount + 1
     let escaped = ""
     let byteCount = 0
     let i = 0
     wh i < strVal.ln {
         c = strVal.sub i, 1
-        if c == "\"" {
-            escaped = escaped.concat "\\22"
+        if c == `"` {
+            escaped = escaped.cat "\\22"
             byteCount = byteCount + 1
         } els if c == "\\" {
-            escaped = escaped.concat "\\5C"
+            escaped = escaped.cat "\\5C"
             byteCount = byteCount + 1
         } els if c == "\n" {
-            escaped = escaped.concat "\\0A"
+            escaped = escaped.cat "\\0A"
             byteCount = byteCount + 1
         } els {
-            escaped = escaped.concat c
+            escaped = escaped.cat c
             byteCount = byteCount + 1
         }
         i = i + 1
     }
     l = byteCount + 1
-    decl = sName + " = private unnamed_addr constant [" + l + " x i8] c\"" + escaped + "\\00\"\n"
+    decl = `${sName} = private unnamed_addr constant [${l} x i8] c"${escaped}\\00"\n`
     cg.strConstants.psh decl
     -> sName
 }
 
+digitValue ch {
+    if ch == "0" { -> 0 }
+    if ch == "1" { -> 1 }
+    if ch == "2" { -> 2 }
+    if ch == "3" { -> 3 }
+    if ch == "4" { -> 4 }
+    if ch == "5" { -> 5 }
+    if ch == "6" { -> 6 }
+    if ch == "7" { -> 7 }
+    if ch == "8" { -> 8 }
+    if ch == "9" { -> 9 }
+    if ch == "a" || ch == "A" { -> 10 }
+    if ch == "b" || ch == "B" { -> 11 }
+    if ch == "c" || ch == "C" { -> 12 }
+    if ch == "d" || ch == "D" { -> 13 }
+    if ch == "e" || ch == "E" { -> 14 }
+    if ch == "f" || ch == "F" { -> 15 }
+    -> 0
+}
+
 formatFloat valStr {
+    // IEEE specials (must run before 0x base conversion)
+    if valStr == "nan" {
+        -> "0x7FF8000000000000"
+    }
+    if valStr == "inf" {
+        -> "0x7FF0000000000000"
+    }
+    // Convert 0x / 0b / 0o literals to decimal before emitting LLVM constants
+    if valStr.ln >= 3 {
+        p0 = valStr.sub 0, 1
+        p1 = valStr.sub 1, 1
+        if p0 == "0" {
+            digLen = valStr.ln - 2
+            digs = valStr.sub 2, digLen
+            mut base = 0
+            if p1 == "x" || p1 == "X" { base = 16 }
+            if p1 == "b" || p1 == "B" { base = 2 }
+            if p1 == "o" || p1 == "O" { base = 8 }
+            if base != 0 {
+                let n = 0
+                let i = 0
+                wh i < digs.ln {
+                    ch = digs.sub i, 1
+                    d = digitValue ch
+                    n = n * base + d
+                    i = i + 1
+                }
+                -> `${n}.0`
+            }
+        }
+    }
+    // LLVM requires a decimal point in float constants (123e2 → 123.0e2)
+    if (valStr.cnt "e") == 1 || (valStr.cnt "E") == 1 {
+        if (valStr.cnt ".") == 1 {
+            -> valStr
+        }
+        let out = ""
+        let i = 0
+        wh i < valStr.ln {
+            c = valStr.sub i, 1
+            if c == "e" || c == "E" {
+                out = out.cat ".0"
+                out = out.cat c
+            } els {
+                out = out.cat c
+            }
+            i = i + 1
+        }
+        -> out
+    }
     if (valStr.cnt ".") == 1 {
         -> valStr
     }
-    resStr = valStr + ".0"
+    resStr = `${valStr}.0`
     -> resStr
+}
+
+classifyTyp cg, expr {
+    if expr.kind == "" || expr.kind == "NilExpr" {
+        if expr.val == "und" {
+            -> "und"
+        }
+        -> "nil"
+    }
+    if expr.kind == "StringExpr" {
+        -> "str"
+    }
+    if expr.kind == "NumberExpr" {
+        -> "num"
+    }
+    if expr.kind == "BigIntExpr" {
+        -> "bigint"
+    }
+    if expr.kind == "BoolExpr" {
+        -> "bool"
+    }
+    if expr.kind == "ArrayExpr" {
+        -> "arr"
+    }
+    if expr.kind == "StructLiteral" {
+        -> "obj"
+    }
+    if expr.kind == "ResultExpr" {
+        -> "obj"
+    }
+    if expr.kind == "TypExpr" || (expr.kind == "UnaryExpr" && expr.op == "typ") {
+        -> "str"
+    }
+    if expr.kind == "UnaryExpr" && expr.op == "sym" {
+        -> "sym"
+    }
+    if expr.kind == "UnaryExpr" {
+        if expr.op == "!" || expr.op == "not" {
+            -> "bool"
+        }
+        if expr.op == "-" {
+            -> "num"
+        }
+        -> classifyTyp cg, expr.right
+    }
+    if expr.kind == "BinaryExpr" {
+        if expr.op == "+" {
+            // string concat if either side looks like string
+            if expr.left.kind == "StringExpr" || expr.right.kind == "StringExpr" {
+                -> "str"
+            }
+        }
+        if expr.op == "==" || expr.op == "!=" || expr.op == "<" || expr.op == ">" || expr.op == "<=" || expr.op == ">=" || expr.op == "and" || expr.op == "or" {
+            -> "bool"
+        }
+        if expr.op == "=" {
+            -> classifyTyp cg, expr.right
+        }
+        -> "num"
+    }
+    if expr.kind == "CallExpr" {
+        if expr.callee == "BigInt" {
+            -> "bigint"
+        }
+        if expr.callee == "isNan" || expr.callee == "isnan" || expr.callee == "isFin" || expr.callee == "isfinite" || expr.callee == "isFinite" {
+            -> "bool"
+        }
+        if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" {
+            -> "str"
+        }
+        -> "num"
+    }
+    if expr.kind == "PropertyAccess" {
+        if expr.property == "ln" || expr.property == "len" || expr.property == "length" {
+            -> "num"
+        }
+        if expr.property == "title" || expr.property == "name" || expr.property == "msg" || expr.property == "str" || expr.property == "text" || expr.property == "content" || expr.property == "path" || expr.property == "file" || expr.property == "cmd" || expr.property == "kind" || expr.property == "ch" || expr.property == "src" || expr.property == "code" || expr.property == "reg" || expr.property == "lbl" || expr.property == "callee" || expr.property == "op" {
+            -> "str"
+        }
+        -> "num"
+    }
+    if expr.kind == "IndexExpr" {
+        if expr.array.kind == "StringExpr" {
+            -> "str"
+        }
+        -> "num"
+    }
+    if expr.kind == "VariableExpr" {
+        n = expr.name
+        if (isBigIntVar cg, n) == 1 {
+            -> "bigint"
+        }
+        if n == "ch" || n == "char" || (n.cnt "str") == 1 || (n.cnt "name") == 1 || (n.cnt "path") == 1 || (n.cnt "msg") == 1 || (n.cnt "text") == 1 || (n.cnt "code") == 1 || (n.cnt "file") == 1 {
+            -> "str"
+        }
+        -> "num"
+    }
+    -> "und"
 }
 
 codegenExpr cg, expr, outBuf {
     if expr.kind == "NumberExpr" {
         -> formatFloat expr.val
+    } els if expr.kind == "BigIntExpr" {
+        sName = addStrConstant cg, expr.val
+        intReg = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${sName} to i64\n`)
+        dblReg = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+        -> dblReg
     } els if expr.kind == "BoolExpr" {
         if expr.val == "yes" || expr.val == "true" {
             -> "1.0"
         }
         -> "0.0"
+    } els if expr.kind == "NilExpr" {
+        if expr.val == "und" {
+            -> undLit
+        }
+        -> "0.0"
     } els if expr.kind == "StringExpr" {
         sName = addStrConstant cg, expr.val
         intReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + intReg + " = ptrtoint ptr " + sName + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${sName} to i64\n`)
         dblReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + dblReg + " = sitofp i64 " + intReg + " to double\n")
+        outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
         -> dblReg
     } els if expr.kind == "VariableExpr" {
         extInfo = findCgExtern cg, expr.name
@@ -242,32 +606,32 @@ codegenExpr cg, expr, outBuf {
                 retType = "i32"
             }
             if retType == "void" {
-                outBuf.code = outBuf.code.concat ("  call void @" + expr.name + "()\n")
+                outBuf.code = outBuf.code.cat (`  call void @${expr.name}()\n`)
                 -> "0.0"
             }
             cReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cReg + " = call " + retType + " @" + expr.name + "()\n")
+            outBuf.code = outBuf.code.cat (`  ${cReg} = call ${retType} @${expr.name}()\n`)
             if retType == "i32" {
                 dReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i32 " + cReg + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i32 ${cReg} to double\n`)
                 -> dReg
             } els if retType == "i64" {
                 dReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + cReg + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${cReg} to double\n`)
                 -> dReg
             } els if retType == "ptr" {
                 pInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + pInt + " = ptrtoint ptr " + cReg + " to i64\n")
+                outBuf.code = outBuf.code.cat (`  ${pInt} = ptrtoint ptr ${cReg} to i64\n`)
                 dReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + pInt + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${pInt} to double\n`)
                 -> dReg
             }
             -> cReg
         }
-        sym = findCgSymbol cg, expr.name
-        if sym.name != "" {
+        cgSym = findCgSymbol cg, expr.name
+        if cgSym.name != "" {
             valReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valReg + " = load double, ptr " + sym.reg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${valReg} = load double, ptr ${cgSym.reg}\n`)
             -> valReg
         }
         -> "0.0"
@@ -275,9 +639,9 @@ codegenExpr cg, expr, outBuf {
         if expr.op == "=" {
             rightReg = codegenExpr cg, expr.right, outBuf
             if expr.left.kind == "VariableExpr" {
-                sym = findCgSymbol cg, expr.left.name
-                if sym.name != "" {
-                    outBuf.code = outBuf.code.concat ("  store double " + rightReg + ", ptr " + sym.reg + "\n")
+                cgSym = findCgSymbol cg, expr.left.name
+                if cgSym.name != "" {
+                    outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${cgSym.reg}\n`)
                 }
             } els if expr.left.kind == "PropertyAccess" {
                 // Project-wide `glb.prop` → LLVM store to module global @glb_<prop>
@@ -285,38 +649,38 @@ codegenExpr cg, expr, outBuf {
                     if expr.left.object.name == "glb" {
                         gName = ensureGlbProp cg, expr.left.property
                         rInt = newReg cg
-                        outBuf.code = outBuf.code.concat ("  " + rInt + " = bitcast double " + rightReg + " to i64\n")
-                        outBuf.code = outBuf.code.concat ("  store i64 " + rInt + ", ptr " + gName + "\n")
+                        outBuf.code = outBuf.code.cat (`  ${rInt} = bitcast double ${rightReg} to i64\n`)
+                        outBuf.code = outBuf.code.cat (`  store i64 ${rInt}, ptr ${gName}\n`)
                         -> rightReg
                     }
                 }
                 objReg = codegenExpr cg, expr.left.object, outBuf
                 objInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + objInt + " = fptosi double " + objReg + " to i64\n")
+                outBuf.code = outBuf.code.cat (`  ${objInt} = fptosi double ${objReg} to i64\n`)
                 objPtr = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + objPtr + " = inttoptr i64 " + objInt + " to ptr\n")
+                outBuf.code = outBuf.code.cat (`  ${objPtr} = inttoptr i64 ${objInt} to ptr\n`)
                 fOffset = findFieldOffset cg, expr.left.property
                 gepReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + objPtr + ", i64 " + fOffset + "\n")
+                outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${objPtr}, i64 ${fOffset}\n`)
                 rInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + rInt + " = bitcast double " + rightReg + " to i64\n")
-                outBuf.code = outBuf.code.concat ("  store i64 " + rInt + ", ptr " + gepReg + "\n")
+                outBuf.code = outBuf.code.cat (`  ${rInt} = bitcast double ${rightReg} to i64\n`)
+                outBuf.code = outBuf.code.cat (`  store i64 ${rInt}, ptr ${gepReg}\n`)
             } els if expr.left.kind == "IndexExpr" {
                 arrReg = codegenExpr cg, expr.left.array, outBuf
                 idxReg = codegenExpr cg, expr.left.index, outBuf
                 arrInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + arrInt + " = fptosi double " + arrReg + " to i64\n")
+                outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
                 arrPtr = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + arrPtr + " = inttoptr i64 " + arrInt + " to ptr\n")
+                outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
                 idxInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + idxInt + " = fptosi double " + idxReg + " to i64\n")
+                outBuf.code = outBuf.code.cat (`  ${idxInt} = fptosi double ${idxReg} to i64\n`)
                 elemIdx = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + elemIdx + " = add i64 " + idxInt + ", 1\n")
+                outBuf.code = outBuf.code.cat (`  ${elemIdx} = add i64 ${idxInt}, 1\n`)
                 gepReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + arrPtr + ", i64 " + elemIdx + "\n")
+                outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${elemIdx}\n`)
                 rInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + rInt + " = bitcast double " + rightReg + " to i64\n")
-                outBuf.code = outBuf.code.concat ("  store i64 " + rInt + ", ptr " + gepReg + "\n")
+                outBuf.code = outBuf.code.cat (`  ${rInt} = bitcast double ${rightReg} to i64\n`)
+                outBuf.code = outBuf.code.cat (`  store i64 ${rInt}, ptr ${gepReg}\n`)
             }
             -> rightReg
         }
@@ -348,50 +712,56 @@ codegenExpr cg, expr, outBuf {
                 s1Ptr = getStrPtrVal cg, expr.left, outBuf
                 s2Ptr = getStrPtrVal cg, expr.right, outBuf
                 l1 = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + l1 + " = call i64 @strlen(ptr " + s1Ptr + ")\n")
+                outBuf.code = outBuf.code.cat (`  ${l1} = call i64 @strlen(ptr ${s1Ptr})\n`)
                 l2 = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + l2 + " = call i64 @strlen(ptr " + s2Ptr + ")\n")
+                outBuf.code = outBuf.code.cat (`  ${l2} = call i64 @strlen(ptr ${s2Ptr})\n`)
                 totLen = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + totLen + " = add i64 " + l1 + ", " + l2 + "\n")
+                outBuf.code = outBuf.code.cat (`  ${totLen} = add i64 ${l1}, ${l2}\n`)
                 allocLen = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + allocLen + " = add i64 " + totLen + ", 1\n")
+                outBuf.code = outBuf.code.cat (`  ${allocLen} = add i64 ${totLen}, 1\n`)
                 bufReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + allocLen + ")\n")
+                outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 ${allocLen})\n`)
                 cpy1 = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + cpy1 + " = call ptr @memcpy(ptr " + bufReg + ", ptr " + s1Ptr + ", i64 " + l1 + ")\n")
+                outBuf.code = outBuf.code.cat (`  ${cpy1} = call ptr @memcpy(ptr ${bufReg}, ptr ${s1Ptr}, i64 ${l1})\n`)
                 dest2 = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + dest2 + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + l1 + "\n")
+                outBuf.code = outBuf.code.cat (`  ${dest2} = getelementptr inbounds i8, ptr ${bufReg}, i64 ${l1}\n`)
                 cpy2 = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + cpy2 + " = call ptr @memcpy(ptr " + dest2 + ", ptr " + s2Ptr + ", i64 " + l2 + ")\n")
+                outBuf.code = outBuf.code.cat (`  ${cpy2} = call ptr @memcpy(ptr ${dest2}, ptr ${s2Ptr}, i64 ${l2})\n`)
                 nullTerm = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + totLen + "\n")
-                outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+                outBuf.code = outBuf.code.cat (`  ${nullTerm} = getelementptr inbounds i8, ptr ${bufReg}, i64 ${totLen}\n`)
+                outBuf.code = outBuf.code.cat (`  store i8 0, ptr ${nullTerm}\n`)
                 bufInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+                outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
                 resReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + resReg + " = sitofp i64 " + bufInt + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${resReg} = sitofp i64 ${bufInt} to double\n`)
                 -> resReg
             }
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = fadd double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = fadd double ${leftReg}, ${rightReg}\n`)
             -> resReg
         }
 
         if expr.op == "-" {
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = fsub double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = fsub double ${leftReg}, ${rightReg}\n`)
             -> resReg
         }
 
         if expr.op == "*" {
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = fmul double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = fmul double ${leftReg}, ${rightReg}\n`)
+            -> resReg
+        }
+
+        if expr.op == "**" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @llvm.pow.f64(double ${leftReg}, double ${rightReg})\n`)
             -> resReg
         }
 
         if expr.op == "/" {
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = fdiv double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = fdiv double ${leftReg}, ${rightReg}\n`)
             -> resReg
         }
 
@@ -402,353 +772,464 @@ codegenExpr cg, expr, outBuf {
         if expr.right.kind == "StringExpr" {
             isStrCmp = 1
         }
+        if expr.left.kind == "BigIntExpr" {
+            isStrCmp = 1
+        }
+        if expr.right.kind == "BigIntExpr" {
+            isStrCmp = 1
+        }
+        if expr.left.kind == "CallExpr" {
+            if expr.left.callee == "BigInt" {
+                isStrCmp = 1
+            }
+        }
+        if expr.right.kind == "CallExpr" {
+            if expr.right.callee == "BigInt" {
+                isStrCmp = 1
+            }
+        }
+        if expr.left.kind == "VariableExpr" {
+            if (isBigIntVar cg, expr.left.name) == 1 {
+                isStrCmp = 1
+            }
+        }
+        if expr.right.kind == "VariableExpr" {
+            if (isBigIntVar cg, expr.right.name) == 1 {
+                isStrCmp = 1
+            }
+        }
+        if expr.left.kind == "UnaryExpr" {
+            if expr.left.op == "typ" {
+                isStrCmp = 1
+            }
+        }
+        if expr.right.kind == "UnaryExpr" {
+            if expr.right.op == "typ" {
+                isStrCmp = 1
+            }
+        }
+        // Don't strcmp against bare numbers/bools (123n != 123 must stay unequal)
+        mut isNumSide = 0
+        if expr.left.kind == "NumberExpr" || expr.left.kind == "BoolExpr" {
+            isNumSide = 1
+        }
+        if expr.right.kind == "NumberExpr" || expr.right.kind == "BoolExpr" {
+            isNumSide = 1
+        }
+        if isNumSide == 1 {
+            isStrCmp = 0
+        }
 
         if expr.op == "==" {
             if isStrCmp == 1 {
                 s1Ptr = getStrPtrVal cg, expr.left, outBuf
                 s2Ptr = getStrPtrVal cg, expr.right, outBuf
                 cmpReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + cmpReg + " = call i32 @strcmp(ptr " + s1Ptr + ", ptr " + s2Ptr + ")\n")
+                outBuf.code = outBuf.code.cat (`  ${cmpReg} = call i32 @strcmp(ptr ${s1Ptr}, ptr ${s2Ptr})\n`)
                 eqReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + eqReg + " = icmp eq i32 " + cmpReg + ", 0\n")
+                outBuf.code = outBuf.code.cat (`  ${eqReg} = icmp eq i32 ${cmpReg}, 0\n`)
                 resReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + eqReg + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${eqReg} to double\n`)
                 -> resReg
             }
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp oeq double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp oeq double ${leftReg}, ${rightReg}\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
             -> resReg
         }
 
         if expr.op == "!=" {
+            if isStrCmp == 1 {
+                s1Ptr = getStrPtrVal cg, expr.left, outBuf
+                s2Ptr = getStrPtrVal cg, expr.right, outBuf
+                cmpReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cmpReg} = call i32 @strcmp(ptr ${s1Ptr}, ptr ${s2Ptr})\n`)
+                neReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${neReg} = icmp ne i32 ${cmpReg}, 0\n`)
+                resReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${neReg} to double\n`)
+                -> resReg
+            }
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp one double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp one double ${leftReg}, ${rightReg}\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
             -> resReg
         }
 
         if expr.op == "<" {
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp olt double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp olt double ${leftReg}, ${rightReg}\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
             -> resReg
         }
 
         if expr.op == "<=" {
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp ole double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp ole double ${leftReg}, ${rightReg}\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
             -> resReg
         }
 
         if expr.op == ">" {
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp ogt double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp ogt double ${leftReg}, ${rightReg}\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
             -> resReg
         }
 
         if expr.op == ">=" {
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp oge double " + leftReg + ", " + rightReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = fcmp oge double ${leftReg}, ${rightReg}\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
             -> resReg
         }
 
-        if expr.op == "&&" {
-            lCmp = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + lCmp + " = fcmp one double " + leftReg + ", 0.0\n")
-            rCmp = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + rCmp + " = fcmp one double " + rightReg + ", 0.0\n")
+        if expr.op == "&&" || expr.op == "and" {
+            lCmp = emitTruthyI1 cg, leftReg, outBuf
+            rCmp = emitTruthyI1 cg, rightReg, outBuf
             andReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + andReg + " = and i1 " + lCmp + ", " + rCmp + "\n")
+            outBuf.code = outBuf.code.cat (`  ${andReg} = and i1 ${lCmp}, ${rCmp}\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + andReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${andReg} to double\n`)
             -> resReg
         }
 
-        if expr.op == "||" {
-            lCmp = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + lCmp + " = fcmp one double " + leftReg + ", 0.0\n")
-            rCmp = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + rCmp + " = fcmp one double " + rightReg + ", 0.0\n")
+        if expr.op == "||" || expr.op == "or" {
+            lCmp = emitTruthyI1 cg, leftReg, outBuf
+            rCmp = emitTruthyI1 cg, rightReg, outBuf
             orReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + orReg + " = or i1 " + lCmp + ", " + rCmp + "\n")
+            outBuf.code = outBuf.code.cat (`  ${orReg} = or i1 ${lCmp}, ${rCmp}\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + orReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${orReg} to double\n`)
             -> resReg
         }
 
         -> leftReg
     } els if expr.kind == "CallExpr" {
-        if expr.callee == "wF" && expr.args.ln == 2 {
+        if (expr.callee == "isNan" || expr.callee == "isnan") && expr.args.ln == 1 {
+            argReg = codegenExpr cg, expr.args[0], outBuf
+            cmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmp} = fcmp uno double ${argReg}, ${argReg}\n`)
+            res = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${res} = uitofp i1 ${cmp} to double\n`)
+            -> res
+        } els if (expr.callee == "isFin" || expr.callee == "isfinite" || expr.callee == "isFinite") && expr.args.ln == 1 {
+            argReg = codegenExpr cg, expr.args[0], outBuf
+            isNanCmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isNanCmp} = fcmp uno double ${argReg}, ${argReg}\n`)
+            isPosInf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isPosInf} = fcmp oeq double ${argReg}, 0x7FF0000000000000\n`)
+            isNegInf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isNegInf} = fcmp oeq double ${argReg}, 0xFFF0000000000000\n`)
+            isInf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isInf} = or i1 ${isPosInf}, ${isNegInf}\n`)
+            bad = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bad} = or i1 ${isNanCmp}, ${isInf}\n`)
+            finOk = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finOk} = xor i1 ${bad}, true\n`)
+            res = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${res} = uitofp i1 ${finOk} to double\n`)
+            -> res
+        } els if expr.callee == "BigInt" && expr.args.ln == 1 {
+            arg = expr.args[0]
+            if arg.kind == "BigIntExpr" {
+                -> codegenExpr cg, arg, outBuf
+            }
+            if arg.kind == "NumberExpr" {
+                sName = addStrConstant cg, arg.val
+                intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${sName} to i64\n`)
+                dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            }
+            if arg.kind == "StringExpr" {
+                sName = addStrConstant cg, arg.val
+                intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${sName} to i64\n`)
+                dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            }
+            argReg = codegenExpr cg, arg, outBuf
+            asInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asInt} = fptosi double ${argReg} to i64\n`)
+            buf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${buf} = call ptr @malloc(i64 32)\n`)
+            n = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${n} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 32, ptr @fmt_bigint, i64 ${asInt})\n`)
+            outInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${outInt} = ptrtoint ptr ${buf} to i64\n`)
+            outDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${outDbl} = sitofp i64 ${outInt} to double\n`)
+            -> outDbl
+        } els if expr.callee == "wF" && expr.args.ln == 2 {
             pathReg = codegenExpr cg, expr.args[0], outBuf
             contReg = codegenExpr cg, expr.args[1], outBuf
             pathInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + pathInt + " = fptosi double " + pathReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
             pathPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + pathPtr + " = inttoptr i64 " + pathInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
             contInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + contInt + " = fptosi double " + contReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${contInt} = fptosi double ${contReg} to i64\n`)
             contPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + contPtr + " = inttoptr i64 " + contInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${contPtr} = inttoptr i64 ${contInt} to ptr\n`)
             fpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + fpReg + " = call ptr @fopen(ptr " + pathPtr + ", ptr @mode_w)\n")
+            outBuf.code = outBuf.code.cat (`  ${fpReg} = call ptr @fopen(ptr ${pathPtr}, ptr @mode_w)\n`)
             putsReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + putsReg + " = call i32 @fputs(ptr " + contPtr + ", ptr " + fpReg + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${putsReg} = call i32 @fputs(ptr ${contPtr}, ptr ${fpReg})\n`)
             closeReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + closeReg + " = call i32 @fclose(ptr " + fpReg + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${closeReg} = call i32 @fclose(ptr ${fpReg})\n`)
             -> "1.0"
         } els if expr.callee == "fE" && expr.args.ln == 1 {
             pathReg = codegenExpr cg, expr.args[0], outBuf
             pathInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + pathInt + " = fptosi double " + pathReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
             pathPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + pathPtr + " = inttoptr i64 " + pathInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
             fpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + fpReg + " = call ptr @fopen(ptr " + pathPtr + ", ptr @mode_r)\n")
+            outBuf.code = outBuf.code.cat (`  ${fpReg} = call ptr @fopen(ptr ${pathPtr}, ptr @mode_r)\n`)
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = icmp ne ptr " + fpReg + ", null\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp ne ptr ${fpReg}, null\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
             -> resReg
         } els if expr.callee == "rF" && expr.args.ln == 1 {
             pathReg = codegenExpr cg, expr.args[0], outBuf
             pathInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + pathInt + " = fptosi double " + pathReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
             pathPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + pathPtr + " = inttoptr i64 " + pathInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
             fpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + fpReg + " = call ptr @fopen(ptr " + pathPtr + ", ptr @mode_r)\n")
+            outBuf.code = outBuf.code.cat (`  ${fpReg} = call ptr @fopen(ptr ${pathPtr}, ptr @mode_r)\n`)
             seekReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + seekReg + " = call i32 @fseek(ptr " + fpReg + ", i64 0, i32 2)\n")
+            outBuf.code = outBuf.code.cat (`  ${seekReg} = call i32 @fseek(ptr ${fpReg}, i64 0, i32 2)\n`)
             szReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + szReg + " = call i64 @ftell(ptr " + fpReg + ")\n")
-            outBuf.code = outBuf.code.concat ("  call void @rewind(ptr " + fpReg + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${szReg} = call i64 @ftell(ptr ${fpReg})\n`)
+            outBuf.code = outBuf.code.cat (`  call void @rewind(ptr ${fpReg})\n`)
             szP1 = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + szP1 + " = add i64 " + szReg + ", 1\n")
+            outBuf.code = outBuf.code.cat (`  ${szP1} = add i64 ${szReg}, 1\n`)
             bufReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + szP1 + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 ${szP1})\n`)
             readReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + readReg + " = call i64 @fread(ptr " + bufReg + ", i64 1, i64 " + szReg + ", ptr " + fpReg + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${readReg} = call i64 @fread(ptr ${bufReg}, i64 1, i64 ${szReg}, ptr ${fpReg})\n`)
             nullTerm = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + readReg + "\n")
-            outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+            outBuf.code = outBuf.code.cat (`  ${nullTerm} = getelementptr inbounds i8, ptr ${bufReg}, i64 ${readReg}\n`)
+            outBuf.code = outBuf.code.cat (`  store i8 0, ptr ${nullTerm}\n`)
             closeReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + closeReg + " = call i32 @fclose(ptr " + fpReg + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${closeReg} = call i32 @fclose(ptr ${fpReg})\n`)
             bufInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
             bufDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
             -> bufDbl
         } els if (expr.callee == "sF" || expr.callee == "sD" || expr.callee == "scanDir") && (expr.args.ln == 1 || expr.args.ln == 2) {
             dirReg = codegenExpr cg, expr.args[0], outBuf
             dirInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + dirInt + " = fptosi double " + dirReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${dirInt} = fptosi double ${dirReg} to i64\n`)
             dirPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + dirPtr + " = inttoptr i64 " + dirInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${dirPtr} = inttoptr i64 ${dirInt} to ptr\n`)
             let extPtr = "null"
             if expr.args.ln == 2 {
                 extReg = codegenExpr cg, expr.args[1], outBuf
                 extInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + extInt + " = fptosi double " + extReg + " to i64\n")
+                outBuf.code = outBuf.code.cat (`  ${extInt} = fptosi double ${extReg} to i64\n`)
                 extPtr = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + extPtr + " = inttoptr i64 " + extInt + " to ptr\n")
+                outBuf.code = outBuf.code.cat (`  ${extPtr} = inttoptr i64 ${extInt} to ptr\n`)
             }
             arrPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + arrPtr + " = call ptr @zuv_scan_files(ptr " + dirPtr + ", ptr " + extPtr + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${arrPtr} = call ptr @zuv_scan_files(ptr ${dirPtr}, ptr ${extPtr})\n`)
             arrInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + arrInt + " = ptrtoint ptr " + arrPtr + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${arrInt} = ptrtoint ptr ${arrPtr} to i64\n`)
             arrDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + arrDbl + " = sitofp i64 " + arrInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${arrDbl} = sitofp i64 ${arrInt} to double\n`)
             -> arrDbl
         } els if expr.callee == "psh" && expr.args.ln == 2 {
             arrReg = codegenExpr cg, expr.args[0], outBuf
             valReg = codegenExpr cg, expr.args[1], outBuf
             arrInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + arrInt + " = fptosi double " + arrReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
             arrPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + arrPtr + " = inttoptr i64 " + arrInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
             curLenDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + curLenDbl + " = load double, ptr " + arrPtr + "\n")
+            outBuf.code = outBuf.code.cat (`  ${curLenDbl} = load double, ptr ${arrPtr}\n`)
             curLenInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + curLenInt + " = fptosi double " + curLenDbl + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${curLenInt} = fptosi double ${curLenDbl} to i64\n`)
             nextIdx = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + nextIdx + " = add i64 " + curLenInt + ", 1\n")
+            outBuf.code = outBuf.code.cat (`  ${nextIdx} = add i64 ${curLenInt}, 1\n`)
             gepReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + arrPtr + ", i64 " + nextIdx + "\n")
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${nextIdx}\n`)
             valInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valInt + " = bitcast double " + valReg + " to i64\n")
-            outBuf.code = outBuf.code.concat ("  store i64 " + valInt + ", ptr " + gepReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${valInt} = bitcast double ${valReg} to i64\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${valInt}, ptr ${gepReg}\n`)
             newLenDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + newLenDbl + " = sitofp i64 " + nextIdx + " to double\n")
-            outBuf.code = outBuf.code.concat ("  store double " + newLenDbl + ", ptr " + arrPtr + "\n")
+            outBuf.code = outBuf.code.cat (`  ${newLenDbl} = sitofp i64 ${nextIdx} to double\n`)
+            outBuf.code = outBuf.code.cat (`  store double ${newLenDbl}, ptr ${arrPtr}\n`)
             -> newLenDbl
         } els if expr.callee == "pp" && expr.args.ln == 1 {
             arrReg = codegenExpr cg, expr.args[0], outBuf
             arrInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + arrInt + " = fptosi double " + arrReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
             arrPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + arrPtr + " = inttoptr i64 " + arrInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
             curLenDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + curLenDbl + " = load double, ptr " + arrPtr + "\n")
+            outBuf.code = outBuf.code.cat (`  ${curLenDbl} = load double, ptr ${arrPtr}\n`)
             curLenInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + curLenInt + " = fptosi double " + curLenDbl + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${curLenInt} = fptosi double ${curLenDbl} to i64\n`)
             gepReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + arrPtr + ", i64 " + curLenInt + "\n")
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${curLenInt}\n`)
             loadInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gepReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
             loadDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + loadDbl + " = bitcast i64 " + loadInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
             newLenInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + newLenInt + " = sub i64 " + curLenInt + ", 1\n")
+            outBuf.code = outBuf.code.cat (`  ${newLenInt} = sub i64 ${curLenInt}, 1\n`)
             newLenDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + newLenDbl + " = sitofp i64 " + newLenInt + " to double\n")
-            outBuf.code = outBuf.code.concat ("  store double " + newLenDbl + ", ptr " + arrPtr + "\n")
+            outBuf.code = outBuf.code.cat (`  ${newLenDbl} = sitofp i64 ${newLenInt} to double\n`)
+            outBuf.code = outBuf.code.cat (`  store double ${newLenDbl}, ptr ${arrPtr}\n`)
             -> loadDbl
         } els if (expr.callee == "cnt" || expr.callee == "contains") && expr.args.ln == 2 {
             s1Reg = codegenExpr cg, expr.args[0], outBuf
             s2Reg = codegenExpr cg, expr.args[1], outBuf
             s1Int = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s1Int + " = fptosi double " + s1Reg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${s1Int} = fptosi double ${s1Reg} to i64\n`)
             s1Ptr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s1Ptr + " = inttoptr i64 " + s1Int + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${s1Ptr} = inttoptr i64 ${s1Int} to ptr\n`)
             s2Int = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s2Int + " = fptosi double " + s2Reg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${s2Int} = fptosi double ${s2Reg} to i64\n`)
             s2Ptr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s2Ptr + " = inttoptr i64 " + s2Int + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${s2Ptr} = inttoptr i64 ${s2Int} to ptr\n`)
             foundReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + foundReg + " = call ptr @strstr(ptr " + s1Ptr + ", ptr " + s2Ptr + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${foundReg} = call ptr @strstr(ptr ${s1Ptr}, ptr ${s2Ptr})\n`)
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = icmp ne ptr " + foundReg + ", null\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp ne ptr ${foundReg}, null\n`)
             resDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resDbl + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resDbl} = uitofp i1 ${cmpReg} to double\n`)
             -> resDbl
         } els if (expr.callee == "sub" || expr.callee == "slc") && expr.args.ln >= 2 {
             sReg = codegenExpr cg, expr.args[0], outBuf
             stReg = codegenExpr cg, expr.args[1], outBuf
             sInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
             sPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${sPtr} = inttoptr i64 ${sInt} to ptr\n`)
             stInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + stInt + " = fptosi double " + stReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${stInt} = fptosi double ${stReg} to i64\n`)
             let lenInt = ""
             if expr.args.ln == 3 {
                 arg3Reg = codegenExpr cg, expr.args[2], outBuf
                 arg3Int = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + arg3Int + " = fptosi double " + arg3Reg + " to i64\n")
+                outBuf.code = outBuf.code.cat (`  ${arg3Int} = fptosi double ${arg3Reg} to i64\n`)
                 if expr.callee == "slc" {
                     lenInt = newReg cg
-                    outBuf.code = outBuf.code.concat ("  " + lenInt + " = sub i64 " + arg3Int + ", " + stInt + "\n")
+                    outBuf.code = outBuf.code.cat (`  ${lenInt} = sub i64 ${arg3Int}, ${stInt}\n`)
                 } els {
                     lenInt = arg3Int
                 }
             } els {
                 totLen = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + totLen + " = call i64 @strlen(ptr " + sPtr + ")\n")
+                outBuf.code = outBuf.code.cat (`  ${totLen} = call i64 @strlen(ptr ${sPtr})\n`)
                 lenInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + lenInt + " = sub i64 " + totLen + ", " + stInt + "\n")
+                outBuf.code = outBuf.code.cat (`  ${lenInt} = sub i64 ${totLen}, ${stInt}\n`)
             }
             allocLen = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + allocLen + " = add i64 " + lenInt + ", 1\n")
+            outBuf.code = outBuf.code.cat (`  ${allocLen} = add i64 ${lenInt}, 1\n`)
             bufReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + allocLen + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 ${allocLen})\n`)
             srcPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + srcPtr + " = getelementptr inbounds i8, ptr " + sPtr + ", i64 " + stInt + "\n")
+            outBuf.code = outBuf.code.cat (`  ${srcPtr} = getelementptr inbounds i8, ptr ${sPtr}, i64 ${stInt}\n`)
             cpyReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cpyReg + " = call ptr @memcpy(ptr " + bufReg + ", ptr " + srcPtr + ", i64 " + lenInt + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${cpyReg} = call ptr @memcpy(ptr ${bufReg}, ptr ${srcPtr}, i64 ${lenInt})\n`)
             nullTerm = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + lenInt + "\n")
-            outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+            outBuf.code = outBuf.code.cat (`  ${nullTerm} = getelementptr inbounds i8, ptr ${bufReg}, i64 ${lenInt}\n`)
+            outBuf.code = outBuf.code.cat (`  store i8 0, ptr ${nullTerm}\n`)
             bufInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
             bufDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
             -> bufDbl
         } els if (expr.callee == "chr" || expr.callee == "charAt") && expr.args.ln == 2 {
             sReg = codegenExpr cg, expr.args[0], outBuf
             idxReg = codegenExpr cg, expr.args[1], outBuf
             sInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + sInt + " = fptosi double " + sReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
             sPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + sPtr + " = inttoptr i64 " + sInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${sPtr} = inttoptr i64 ${sInt} to ptr\n`)
             idxInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + idxInt + " = fptosi double " + idxReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${idxInt} = fptosi double ${idxReg} to i64\n`)
             bufReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 2)\n")
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 2)\n`)
             srcPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + srcPtr + " = getelementptr inbounds i8, ptr " + sPtr + ", i64 " + idxInt + "\n")
+            outBuf.code = outBuf.code.cat (`  ${srcPtr} = getelementptr inbounds i8, ptr ${sPtr}, i64 ${idxInt}\n`)
             chVal = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + chVal + " = load i8, ptr " + srcPtr + "\n")
-            outBuf.code = outBuf.code.concat ("  store i8 " + chVal + ", ptr " + bufReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${chVal} = load i8, ptr ${srcPtr}\n`)
+            outBuf.code = outBuf.code.cat (`  store i8 ${chVal}, ptr ${bufReg}\n`)
             nullTerm = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 1\n")
-            outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+            outBuf.code = outBuf.code.cat (`  ${nullTerm} = getelementptr inbounds i8, ptr ${bufReg}, i64 1\n`)
+            outBuf.code = outBuf.code.cat (`  store i8 0, ptr ${nullTerm}\n`)
             bufInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
             bufDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
             -> bufDbl
         } els if (expr.callee == "cat" || expr.callee == "concat") && expr.args.ln == 2 {
             s1Reg = codegenExpr cg, expr.args[0], outBuf
             s2Reg = codegenExpr cg, expr.args[1], outBuf
             s1Int = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s1Int + " = fptosi double " + s1Reg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${s1Int} = fptosi double ${s1Reg} to i64\n`)
             s1Ptr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s1Ptr + " = inttoptr i64 " + s1Int + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${s1Ptr} = inttoptr i64 ${s1Int} to ptr\n`)
             s2Int = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s2Int + " = fptosi double " + s2Reg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${s2Int} = fptosi double ${s2Reg} to i64\n`)
             s2Ptr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s2Ptr + " = inttoptr i64 " + s2Int + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${s2Ptr} = inttoptr i64 ${s2Int} to ptr\n`)
             l1 = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + l1 + " = call i64 @strlen(ptr " + s1Ptr + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${l1} = call i64 @strlen(ptr ${s1Ptr})\n`)
             l2 = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + l2 + " = call i64 @strlen(ptr " + s2Ptr + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${l2} = call i64 @strlen(ptr ${s2Ptr})\n`)
             totLen = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + totLen + " = add i64 " + l1 + ", " + l2 + "\n")
+            outBuf.code = outBuf.code.cat (`  ${totLen} = add i64 ${l1}, ${l2}\n`)
             allocLen = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + allocLen + " = add i64 " + totLen + ", 1\n")
+            outBuf.code = outBuf.code.cat (`  ${allocLen} = add i64 ${totLen}, 1\n`)
             bufReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + allocLen + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 ${allocLen})\n`)
             cpy1 = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cpy1 + " = call ptr @memcpy(ptr " + bufReg + ", ptr " + s1Ptr + ", i64 " + l1 + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${cpy1} = call ptr @memcpy(ptr ${bufReg}, ptr ${s1Ptr}, i64 ${l1})\n`)
             dest2 = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + dest2 + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + l1 + "\n")
+            outBuf.code = outBuf.code.cat (`  ${dest2} = getelementptr inbounds i8, ptr ${bufReg}, i64 ${l1}\n`)
             cpy2 = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cpy2 + " = call ptr @memcpy(ptr " + dest2 + ", ptr " + s2Ptr + ", i64 " + l2 + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${cpy2} = call ptr @memcpy(ptr ${dest2}, ptr ${s2Ptr}, i64 ${l2})\n`)
             nullTerm = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + nullTerm + " = getelementptr inbounds i8, ptr " + bufReg + ", i64 " + totLen + "\n")
-            outBuf.code = outBuf.code.concat ("  store i8 0, ptr " + nullTerm + "\n")
+            outBuf.code = outBuf.code.cat (`  ${nullTerm} = getelementptr inbounds i8, ptr ${bufReg}, i64 ${totLen}\n`)
+            outBuf.code = outBuf.code.cat (`  store i8 0, ptr ${nullTerm}\n`)
             bufInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
             bufDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
             -> bufDbl
         } els if (expr.callee == "eq" || expr.callee == "streq") && expr.args.ln == 2 {
             s1Reg = codegenExpr cg, expr.args[0], outBuf
             s2Reg = codegenExpr cg, expr.args[1], outBuf
             s1Int = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s1Int + " = fptosi double " + s1Reg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${s1Int} = fptosi double ${s1Reg} to i64\n`)
             s1Ptr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s1Ptr + " = inttoptr i64 " + s1Int + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${s1Ptr} = inttoptr i64 ${s1Int} to ptr\n`)
             s2Int = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s2Int + " = fptosi double " + s2Reg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${s2Int} = fptosi double ${s2Reg} to i64\n`)
             s2Ptr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + s2Ptr + " = inttoptr i64 " + s2Int + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${s2Ptr} = inttoptr i64 ${s2Int} to ptr\n`)
             cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = call i32 @strcmp(ptr " + s1Ptr + ", ptr " + s2Ptr + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = call i32 @strcmp(ptr ${s1Ptr}, ptr ${s2Ptr})\n`)
             eqReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + eqReg + " = icmp eq i32 " + cmpReg + ", 0\n")
+            outBuf.code = outBuf.code.cat (`  ${eqReg} = icmp eq i32 ${cmpReg}, 0\n`)
             resDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resDbl + " = uitofp i1 " + eqReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resDbl} = uitofp i1 ${eqReg} to double\n`)
             -> resDbl
         } els if expr.callee == "spn" && expr.args.ln == 1 {
             let fnName = ""
@@ -759,67 +1240,67 @@ codegenExpr cg, expr, outBuf {
             } els if expr.args[0].kind == "StringExpr" {
                 fnName = expr.args[0].val
             }
-            wrapperName = "@spn_wrapper_" + fnName
-            cg.funcs = cg.funcs.concat ("define i32 " + wrapperName + "(ptr %param) {\nentry:\n  %call_res = call double @" + fnName + "()\n  ret i32 0\n}\n\n")
+            wrapperName = `@spn_wrapper_${fnName}`
+            cg.funcs = cg.funcs.cat (`define i32 ${wrapperName}(ptr %param) {\nentry:\n  %call_res = call double @${fnName}()\n  ret i32 0\n}\n\n`)
             hReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + hReg + " = call ptr @CreateThread(ptr null, i64 0, ptr " + wrapperName + ", ptr null, i32 0, ptr null)\n")
+            outBuf.code = outBuf.code.cat (`  ${hReg} = call ptr @CreateThread(ptr null, i64 0, ptr ${wrapperName}, ptr null, i32 0, ptr null)\n`)
             hInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + hInt + " = ptrtoint ptr " + hReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${hInt} = ptrtoint ptr ${hReg} to i64\n`)
             hDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + hDbl + " = sitofp i64 " + hInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${hDbl} = sitofp i64 ${hInt} to double\n`)
             -> hDbl
         } els if expr.callee == "jn" && expr.args.ln == 1 {
             hReg = codegenExpr cg, expr.args[0], outBuf
             hInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + hInt + " = fptosi double " + hReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
             hPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + hPtr + " = inttoptr i64 " + hInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${hPtr} = inttoptr i64 ${hInt} to ptr\n`)
             wReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + wReg + " = call i32 @WaitForSingleObject(ptr " + hPtr + ", i32 -1)\n")
+            outBuf.code = outBuf.code.cat (`  ${wReg} = call i32 @WaitForSingleObject(ptr ${hPtr}, i32 -1)\n`)
             cReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cReg + " = call i32 @CloseHandle(ptr " + hPtr + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${cReg} = call i32 @CloseHandle(ptr ${hPtr})\n`)
             -> "1.0"
         } els if expr.callee == "nw" {
             clkReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + clkReg + " = call i64 @clock()\n")
+            outBuf.code = outBuf.code.cat (`  ${clkReg} = call i64 @clock()\n`)
             resDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resDbl + " = sitofp i64 " + clkReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resDbl} = sitofp i64 ${clkReg} to double\n`)
             -> resDbl
         } els if expr.callee == "ok" && expr.args.ln == 1 {
             pReg = codegenExpr cg, expr.args[0], outBuf
             bufReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 16)\n")
-            outBuf.code = outBuf.code.concat ("  store i64 1, ptr " + bufReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 16)\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 1, ptr ${bufReg}\n`)
             valGep = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valGep + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 1\n")
+            outBuf.code = outBuf.code.cat (`  ${valGep} = getelementptr inbounds i64, ptr ${bufReg}, i64 1\n`)
             valInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valInt + " = bitcast double " + pReg + " to i64\n")
-            outBuf.code = outBuf.code.concat ("  store i64 " + valInt + ", ptr " + valGep + "\n")
+            outBuf.code = outBuf.code.cat (`  ${valInt} = bitcast double ${pReg} to i64\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${valInt}, ptr ${valGep}\n`)
             bufInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
             bufDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
             -> bufDbl
         } els if expr.callee == "err" && expr.args.ln == 1 {
             pReg = codegenExpr cg, expr.args[0], outBuf
             bufReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 16)\n")
-            outBuf.code = outBuf.code.concat ("  store i64 0, ptr " + bufReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 16)\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 0, ptr ${bufReg}\n`)
             valGep = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valGep + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 1\n")
+            outBuf.code = outBuf.code.cat (`  ${valGep} = getelementptr inbounds i64, ptr ${bufReg}, i64 1\n`)
             valInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valInt + " = bitcast double " + pReg + " to i64\n")
-            outBuf.code = outBuf.code.concat ("  store i64 " + valInt + ", ptr " + valGep + "\n")
+            outBuf.code = outBuf.code.cat (`  ${valInt} = bitcast double ${pReg} to i64\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${valInt}, ptr ${valGep}\n`)
             bufInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
             bufDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
             -> bufDbl
         } els if expr.callee == "sl" && expr.args.ln == 1 {
             msReg = codegenExpr cg, expr.args[0], outBuf
             msInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + msInt + " = fptosi double " + msReg + " to i32\n")
-            outBuf.code = outBuf.code.concat ("  call void @Sleep(i32 " + msInt + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${msInt} = fptosi double ${msReg} to i32\n`)
+            outBuf.code = outBuf.code.cat (`  call void @Sleep(i32 ${msInt})\n`)
             -> "0.0"
         }
 
@@ -827,15 +1308,15 @@ codegenExpr cg, expr, outBuf {
             arg0 = expr.args[0]
             aReg = codegenExpr cg, arg0, outBuf
             aInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + aInt + " = fptosi double " + aReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${aInt} = fptosi double ${aReg} to i64\n`)
             aPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + aPtr + " = inttoptr i64 " + aInt + " to ptr\n")
+            outBuf.code = outBuf.code.cat (`  ${aPtr} = inttoptr i64 ${aInt} to ptr\n`)
             loadedPtr = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + loadedPtr + " = load ptr, ptr " + aPtr + "\n")
+            outBuf.code = outBuf.code.cat (`  ${loadedPtr} = load ptr, ptr ${aPtr}\n`)
             pInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + pInt + " = ptrtoint ptr " + loadedPtr + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${pInt} = ptrtoint ptr ${loadedPtr} to i64\n`)
             dReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + pInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${pInt} to double\n`)
             -> dReg
         }
 
@@ -849,24 +1330,24 @@ codegenExpr cg, expr, outBuf {
                 if i < extInfo.params.ln {
                     expectedType = extInfo.params[i].typeName
                 }
-                if i > 0 { callArgsStr = callArgsStr.concat ", " }
+                if i > 0 { callArgsStr = callArgsStr.cat ", " }
                 if expectedType == "str" || expectedType == "ptr" {
                     aPtr = getStrPtrVal cg, arg, outBuf
-                    callArgsStr = callArgsStr.concat ("ptr " + aPtr)
+                    callArgsStr = callArgsStr.cat (`ptr ${aPtr}`)
                 } els if expectedType == "i64" {
                     aReg = codegenExpr cg, arg, outBuf
                     aInt = newReg cg
-                    outBuf.code = outBuf.code.concat ("  " + aInt + " = fptosi double " + aReg + " to i64\n")
-                    callArgsStr = callArgsStr.concat ("i64 " + aInt)
+                    outBuf.code = outBuf.code.cat (`  ${aInt} = fptosi double ${aReg} to i64\n`)
+                    callArgsStr = callArgsStr.cat (`i64 ${aInt}`)
                 } els if expectedType == "double" {
                     aReg = codegenExpr cg, arg, outBuf
-                    callArgsStr = callArgsStr.concat ("double " + aReg)
+                    callArgsStr = callArgsStr.cat (`double ${aReg}`)
                 } els {
                     // default i32
                     aReg = codegenExpr cg, arg, outBuf
                     aInt = newReg cg
-                    outBuf.code = outBuf.code.concat ("  " + aInt + " = fptosi double " + aReg + " to i32\n")
-                    callArgsStr = callArgsStr.concat ("i32 " + aInt)
+                    outBuf.code = outBuf.code.cat (`  ${aInt} = fptosi double ${aReg} to i32\n`)
+                    callArgsStr = callArgsStr.cat (`i32 ${aInt}`)
                 }
                 i = i + 1
             }
@@ -883,24 +1364,24 @@ codegenExpr cg, expr, outBuf {
                 retType = "i32"
             }
             if retType == "void" {
-                outBuf.code = outBuf.code.concat ("  call void @" + expr.callee + "(" + callArgsStr + ")\n")
+                outBuf.code = outBuf.code.cat (`  call void @${expr.callee}(${callArgsStr})\n`)
                 -> "0.0"
             }
             cReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cReg + " = call " + retType + " @" + expr.callee + "(" + callArgsStr + ")\n")
+            outBuf.code = outBuf.code.cat (`  ${cReg} = call ${retType} @${expr.callee}(${callArgsStr})\n`)
             if retType == "i32" {
                 dReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i32 " + cReg + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i32 ${cReg} to double\n`)
                 -> dReg
             } els if retType == "i64" {
                 dReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + cReg + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${cReg} to double\n`)
                 -> dReg
             } els if retType == "ptr" {
                 pInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + pInt + " = ptrtoint ptr " + cReg + " to i64\n")
+                outBuf.code = outBuf.code.cat (`  ${pInt} = ptrtoint ptr ${cReg} to i64\n`)
                 dReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + dReg + " = sitofp i64 " + pInt + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${pInt} to double\n`)
                 -> dReg
             }
             -> cReg
@@ -911,73 +1392,90 @@ codegenExpr cg, expr, outBuf {
         wh i < expr.args.ln {
             arg = expr.args[i]
             aReg = codegenExpr cg, arg, outBuf
-            if i > 0 { callArgsStr = callArgsStr.concat ", " }
-            callArgsStr = callArgsStr.concat ("double " + aReg)
+            if i > 0 { callArgsStr = callArgsStr.cat ", " }
+            callArgsStr = callArgsStr.cat (`double ${aReg}`)
             i = i + 1
         }
 
         retReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + retReg + " = call double @" + expr.callee + "(" + callArgsStr + ")\n")
+        outBuf.code = outBuf.code.cat (`  ${retReg} = call double @${expr.callee}(${callArgsStr})\n`)
         -> retReg
     } els if expr.kind == "ArrayExpr" {
         arrSize = expr.elements.ln
         bufReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 8216)\n")
-        outBuf.code = outBuf.code.concat ("  store double " + arrSize + ".0, ptr " + bufReg + "\n")
+        outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8216)\n`)
+        outBuf.code = outBuf.code.cat (`  store double ${arrSize}.0, ptr ${bufReg}\n`)
         let ai = 0
         wh ai < arrSize {
             elem = expr.elements[ai]
             elemReg = codegenExpr cg, elem, outBuf
             elemInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + elemInt + " = bitcast double " + elemReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${elemInt} = bitcast double ${elemReg} to i64\n`)
             elemOffset = ai + 1
             gepReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 " + elemOffset + "\n")
-            outBuf.code = outBuf.code.concat ("  store i64 " + elemInt + ", ptr " + gepReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${elemOffset}\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${elemInt}, ptr ${gepReg}\n`)
             ai = ai + 1
         }
         bufInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
         bufDbl = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+        outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
         -> bufDbl
     } els if expr.kind == "StructLiteral" {
         bufReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 8192)\n")
+        outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
         let fi = 0
         wh fi < expr.fields.ln {
             f = expr.fields[fi]
             fOffset = findFieldOffset cg, f.name
             fValReg = codegenExpr cg, f.value, outBuf
             fValInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + fValInt + " = bitcast double " + fValReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${fValInt} = bitcast double ${fValReg} to i64\n`)
             gepReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 " + fOffset + "\n")
-            outBuf.code = outBuf.code.concat ("  store i64 " + fValInt + ", ptr " + gepReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${fOffset}\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${fValInt}, ptr ${gepReg}\n`)
             fi = fi + 1
         }
         bufInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
         bufDbl = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+        outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
         -> bufDbl
     } els if expr.kind == "PropertyAccess" {
-        // Project-wide `glb.prop` → LLVM load from module global @glb_<prop>
+        // Enum variant: Status.Active → discriminant double
         if expr.object.kind == "VariableExpr" {
-            if expr.object.name == "glb" {
+            // Build "Enum.Variant" without template interpolation
+            dot = "."
+            q1 = expr.object.name.cat dot
+            qKey = q1.cat expr.property
+            disc = lookupEnumDisc cg, qKey
+            if disc >= 0 {
+                -> enumDiscLit disc
+            }
+            // Fallback Status checks
+            if (strEq expr.object.name, "Status") == 1 {
+                if (strEq expr.property, "Pending") == 1 { -> "0.0" }
+                if (strEq expr.property, "Active") == 1 { -> "1.0" }
+                if (strEq expr.property, "Archived") == 1 { -> "2.0" }
+            }
+            if (isEnumName cg, expr.object.name) == 1 {
+                -> "0.0"
+            }
+            if (strEq expr.object.name, "glb") == 1 {
                 gName = ensureGlbProp cg, expr.property
                 loadInt = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gName + "\n")
+                outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gName}\n`)
                 valReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + valReg + " = bitcast i64 " + loadInt + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${valReg} = bitcast i64 ${loadInt} to double\n`)
                 -> valReg
             }
         }
         objReg = codegenExpr cg, expr.object, outBuf
         objInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + objInt + " = fptosi double " + objReg + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${objInt} = fptosi double ${objReg} to i64\n`)
         objPtr = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + objPtr + " = inttoptr i64 " + objInt + " to ptr\n")
+        outBuf.code = outBuf.code.cat (`  ${objPtr} = inttoptr i64 ${objInt} to ptr\n`)
 
         if expr.property == "ln" || expr.property == "len" || expr.property == "length" {
             let isStrObj = 0
@@ -991,77 +1489,104 @@ codegenExpr cg, expr, outBuf {
             }
             if isStrObj == 1 {
                 strByteCount = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + strByteCount + " = call i64 @strlen(ptr " + objPtr + ")\n")
+                outBuf.code = outBuf.code.cat (`  ${strByteCount} = call i64 @strlen(ptr ${objPtr})\n`)
                 dblReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + dblReg + " = sitofp i64 " + strByteCount + " to double\n")
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${strByteCount} to double\n`)
                 -> dblReg
             } els {
                 arrLenReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + arrLenReg + " = load double, ptr " + objPtr + "\n")
+                outBuf.code = outBuf.code.cat (`  ${arrLenReg} = load double, ptr ${objPtr}\n`)
                 -> arrLenReg
             }
         } els {
             fOffset = findFieldOffset cg, expr.property
             gepReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + objPtr + ", i64 " + fOffset + "\n")
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${objPtr}, i64 ${fOffset}\n`)
             loadInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gepReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
             loadDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + loadDbl + " = bitcast i64 " + loadInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
             -> loadDbl
         }
     } els if expr.kind == "ArrayExpr" {
         arrLen = expr.elements.ln
         arrBytes = (arrLen + 1024) * 8
         bufReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufReg + " = call ptr @malloc(i64 " + arrBytes + ")\n")
-        outBuf.code = outBuf.code.concat ("  store double " + arrLen + ".0, ptr " + bufReg + "\n")
+        outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 ${arrBytes})\n`)
+        outBuf.code = outBuf.code.cat (`  store double ${arrLen}.0, ptr ${bufReg}\n`)
         let ei = 0
         wh ei < expr.elements.ln {
             elem = expr.elements[ei]
             eValReg = codegenExpr cg, elem, outBuf
             eValInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + eValInt + " = bitcast double " + eValReg + " to i64\n")
+            outBuf.code = outBuf.code.cat (`  ${eValInt} = bitcast double ${eValReg} to i64\n`)
             gepReg = newReg cg
             elemIdx = ei + 1
-            outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + bufReg + ", i64 " + elemIdx + "\n")
-            outBuf.code = outBuf.code.concat ("  store i64 " + eValInt + ", ptr " + gepReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${elemIdx}\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${eValInt}, ptr ${gepReg}\n`)
             ei = ei + 1
         }
         bufInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufInt + " = ptrtoint ptr " + bufReg + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
         bufDbl = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + bufDbl + " = sitofp i64 " + bufInt + " to double\n")
+        outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
         -> bufDbl
     } els if expr.kind == "IndexExpr" {
         arrReg = codegenExpr cg, expr.array, outBuf
         idxReg = codegenExpr cg, expr.index, outBuf
         arrInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + arrInt + " = fptosi double " + arrReg + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
         arrPtr = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + arrPtr + " = inttoptr i64 " + arrInt + " to ptr\n")
+        outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
         idxInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + idxInt + " = fptosi double " + idxReg + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${idxInt} = fptosi double ${idxReg} to i64\n`)
         elemIdx = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + elemIdx + " = add i64 " + idxInt + ", 1\n")
+        outBuf.code = outBuf.code.cat (`  ${elemIdx} = add i64 ${idxInt}, 1\n`)
         gepReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + arrPtr + ", i64 " + elemIdx + "\n")
+        outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${elemIdx}\n`)
         loadInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gepReg + "\n")
+        outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
         loadDbl = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + loadDbl + " = bitcast i64 " + loadInt + " to double\n")
+        outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
         -> loadDbl
+    } els if expr.kind == "EnumBareRef" {
+        if (strEq expr.name, "Pending") == 1 { -> "0.0" }
+        if (strEq expr.name, "Active") == 1 { -> "1.0" }
+        if (strEq expr.name, "Archived") == 1 { -> "2.0" }
+        disc = lookupEnumDisc cg, expr.name
+        if disc >= 0 {
+            -> enumDiscLit disc
+        }
+        -> "0.0"
     } els if expr.kind == "UnaryExpr" {
+        if expr.op == "typ" {
+            typeName = classifyTyp cg, expr.right
+            sName = addStrConstant cg, typeName
+            intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${sName} to i64\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        }
+        if expr.op == "sym" {
+            if expr.right.kind == "StringExpr" {
+                id = internSymId cg, expr.right.val
+                -> symDiscLit id
+            }
+            keyReg = codegenExpr cg, expr.right, outBuf
+            -> keyReg
+        }
         rReg = codegenExpr cg, expr.right, outBuf
         if expr.op == "!" || expr.op == "not" {
-            cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp oeq double " + rReg + ", 0.0\n")
+            cmpReg = emitTruthyI1 cg, rReg, outBuf
+            notReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${notReg} = xor i1 ${cmpReg}, true\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = uitofp i1 " + cmpReg + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${notReg} to double\n`)
             -> resReg
         } els if expr.op == "-" {
             resReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + resReg + " = fneg double " + rReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${resReg} = fneg double ${rReg}\n`)
             -> resReg
         }
         -> rReg
@@ -1073,43 +1598,51 @@ codegenExpr cg, expr, outBuf {
 codegenStmt cg, stmt, outBuf {
     if stmt.kind == "VarDecl" {
         valReg = codegenExpr cg, stmt.value, outBuf
-        sym = findCgSymbol cg, stmt.name
-        if sym.name != "" {
-            outBuf.code = outBuf.code.concat ("  store double " + valReg + ", ptr " + sym.reg + "\n")
+        if stmt.value.kind == "BigIntExpr" {
+            markBigIntVar cg, stmt.name
+        }
+        if stmt.value.kind == "CallExpr" {
+            if stmt.value.callee == "BigInt" {
+                markBigIntVar cg, stmt.name
+            }
+        }
+        cgSym = findCgSymbol cg, stmt.name
+        if cgSym.name != "" {
+            outBuf.code = outBuf.code.cat (`  store double ${valReg}, ptr ${cgSym.reg}\n`)
         } els {
             ptrReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + ptrReg + " = alloca double\n")
-            outBuf.code = outBuf.code.concat ("  store double " + valReg + ", ptr " + ptrReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = alloca double\n`)
+            outBuf.code = outBuf.code.cat (`  store double ${valReg}, ptr ${ptrReg}\n`)
             addCgSymbol cg, stmt.name, ptrReg
         }
     } els if stmt.kind == "DestructureStmt" {
         srcReg = codegenExpr cg, stmt.source, outBuf
         srcInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + srcInt + " = fptosi double " + srcReg + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${srcInt} = fptosi double ${srcReg} to i64\n`)
         srcPtr = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + srcPtr + " = inttoptr i64 " + srcInt + " to ptr\n")
+        outBuf.code = outBuf.code.cat (`  ${srcPtr} = inttoptr i64 ${srcInt} to ptr\n`)
         let di = 0
         wh di < stmt.bindNames.ln {
             dName = stmt.bindNames[di]
             gepReg = newReg cg
             if stmt.destructKind == "object" {
                 fOffset = findFieldOffset cg, dName
-                outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + srcPtr + ", i64 " + fOffset + "\n")
+                outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${srcPtr}, i64 ${fOffset}\n`)
             } els {
                 elemOffset = di + 1
-                outBuf.code = outBuf.code.concat ("  " + gepReg + " = getelementptr inbounds i64, ptr " + srcPtr + ", i64 " + elemOffset + "\n")
+                outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${srcPtr}, i64 ${elemOffset}\n`)
             }
             loadInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + loadInt + " = load i64, ptr " + gepReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
             loadDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + loadDbl + " = bitcast i64 " + loadInt + " to double\n")
-            sym = findCgSymbol cg, dName
-            if sym.name != "" {
-                outBuf.code = outBuf.code.concat ("  store double " + loadDbl + ", ptr " + sym.reg + "\n")
+            outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
+            cgSym = findCgSymbol cg, dName
+            if cgSym.name != "" {
+                outBuf.code = outBuf.code.cat (`  store double ${loadDbl}, ptr ${cgSym.reg}\n`)
             } els {
                 ptrReg = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + ptrReg + " = alloca double\n")
-                outBuf.code = outBuf.code.concat ("  store double " + loadDbl + ", ptr " + ptrReg + "\n")
+                outBuf.code = outBuf.code.cat (`  ${ptrReg} = alloca double\n`)
+                outBuf.code = outBuf.code.cat (`  store double ${loadDbl}, ptr ${ptrReg}\n`)
                 addCgSymbol cg, dName, ptrReg
             }
             di = di + 1
@@ -1121,18 +1654,18 @@ codegenStmt cg, stmt, outBuf {
             els if stmt.level == "inf" { pfx = "[INF] " }
             els if stmt.level == "err" { pfx = "[ERR] " }
             pfxName = addStrConstant cg, pfx
-            outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr " + pfxName + ")\n")
+            outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr ${pfxName})\n`)
         }
         if stmt.value.kind == "StringExpr" {
             sName = addStrConstant cg, stmt.value.val
-            outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sName + ")\n")
+            outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sName})\n`)
         } els if stmt.value.kind == "BinaryExpr" {
             if stmt.value.op == "+" {
                 sPtr = getStrPtrVal cg, stmt.value, outBuf
-                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sPtr + ")\n")
+                outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sPtr})\n`)
             } els {
                 valReg = codegenExpr cg, stmt.value, outBuf
-                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
+                outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${valReg})\n`)
             }
         } els if stmt.value.kind == "PropertyAccess" {
             prop = stmt.value.property
@@ -1149,43 +1682,42 @@ codegenStmt cg, stmt, outBuf {
             }
             if isStrProp == 1 {
                 sPtr = getStrPtrVal cg, stmt.value, outBuf
-                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr " + sPtr + ")\n")
+                outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sPtr})\n`)
             } els {
                 valReg = codegenExpr cg, stmt.value, outBuf
-                outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
+                outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${valReg})\n`)
             }
         } els {
             valReg = codegenExpr cg, stmt.value, outBuf
-            outBuf.code = outBuf.code.concat ("  call i32 (ptr, ...) @printf(ptr @fmt_num, double " + valReg + ")\n")
+            outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${valReg})\n`)
         }
     } els if stmt.kind == "ReturnStmt" {
         if cg.isMain == 1 {
-            outBuf.code = outBuf.code.concat ("  ret i32 0\n")
+            outBuf.code = outBuf.code.cat ("  ret i32 0\n")
         } els {
             valReg = codegenExpr cg, stmt.value, outBuf
-            outBuf.code = outBuf.code.concat ("  ret double " + valReg + "\n")
+            outBuf.code = outBuf.code.cat (`  ret double ${valReg}\n`)
         }
     } els if stmt.kind == "IfStmt" {
         condReg = codegenExpr cg, stmt.condition, outBuf
-        cmpReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp one double " + condReg + ", 0.0\n")
+        cmpReg = emitTruthyI1 cg, condReg, outBuf
 
         thenLbl = newLbl cg, "if_then"
         elseLbl = newLbl cg, "if_else"
         mergeLbl = newLbl cg, "if_merge"
 
-        outBuf.code = outBuf.code.concat ("  br i1 " + cmpReg + ", label %" + thenLbl + ", label %" + elseLbl + "\n\n")
-        outBuf.code = outBuf.code.concat (thenLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`  br i1 ${cmpReg}, label %${thenLbl}, label %${elseLbl}\n\n`)
+        outBuf.code = outBuf.code.cat (`${thenLbl}:\n`)
         codegenStmt cg, stmt.thenBranch, outBuf
-        outBuf.code = outBuf.code.concat ("  br label %" + mergeLbl + "\n\n")
+        outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (elseLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${elseLbl}:\n`)
         if stmt.elseBranch.kind != "NilExpr" && stmt.elseBranch.kind != "" {
             codegenStmt cg, stmt.elseBranch, outBuf
         }
-        outBuf.code = outBuf.code.concat ("  br label %" + mergeLbl + "\n\n")
+        outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (mergeLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
     } els if stmt.kind == "WhileStmt" {
         condLbl = newLbl cg, "wh_cond"
         bodyLbl = newLbl cg, "wh_body"
@@ -1194,18 +1726,17 @@ codegenStmt cg, stmt, outBuf {
         cg.breakLabels.psh endLbl
         cg.continueLabels.psh condLbl
 
-        outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
-        outBuf.code = outBuf.code.concat (condLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`  br label %${condLbl}\n\n`)
+        outBuf.code = outBuf.code.cat (`${condLbl}:\n`)
         condReg = codegenExpr cg, stmt.condition, outBuf
-        cmpReg = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp one double " + condReg + ", 0.0\n")
-        outBuf.code = outBuf.code.concat ("  br i1 " + cmpReg + ", label %" + bodyLbl + ", label %" + endLbl + "\n\n")
+        cmpReg = emitTruthyI1 cg, condReg, outBuf
+        outBuf.code = outBuf.code.cat (`  br i1 ${cmpReg}, label %${bodyLbl}, label %${endLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (bodyLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${bodyLbl}:\n`)
         codegenStmt cg, stmt.body, outBuf
-        outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
+        outBuf.code = outBuf.code.cat (`  br label %${condLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (endLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${endLbl}:\n`)
 
         cg.breakLabels.pp
         cg.continueLabels.pp
@@ -1222,99 +1753,100 @@ codegenStmt cg, stmt, outBuf {
         cg.breakLabels.psh endLbl
         cg.continueLabels.psh stepLbl
 
-        outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
-        outBuf.code = outBuf.code.concat (condLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`  br label %${condLbl}\n\n`)
+        outBuf.code = outBuf.code.cat (`${condLbl}:\n`)
         if stmt.condition.kind != "" && stmt.condition.kind != "NilExpr" {
             condReg = codegenExpr cg, stmt.condition, outBuf
-            cmpReg = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + cmpReg + " = fcmp one double " + condReg + ", 0.0\n")
-            outBuf.code = outBuf.code.concat ("  br i1 " + cmpReg + ", label %" + bodyLbl + ", label %" + endLbl + "\n\n")
+            cmpReg = emitTruthyI1 cg, condReg, outBuf
+            outBuf.code = outBuf.code.cat (`  br i1 ${cmpReg}, label %${bodyLbl}, label %${endLbl}\n\n`)
         } els {
-            outBuf.code = outBuf.code.concat ("  br label %" + bodyLbl + "\n\n")
+            outBuf.code = outBuf.code.cat (`  br label %${bodyLbl}\n\n`)
         }
 
-        outBuf.code = outBuf.code.concat (bodyLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${bodyLbl}:\n`)
         codegenStmt cg, stmt.body, outBuf
-        outBuf.code = outBuf.code.concat ("  br label %" + stepLbl + "\n\n")
+        outBuf.code = outBuf.code.cat (`  br label %${stepLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (stepLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${stepLbl}:\n`)
         if stmt.increment.kind != "" && stmt.increment.kind != "NilExpr" {
             codegenStmt cg, stmt.increment, outBuf
         }
-        outBuf.code = outBuf.code.concat ("  br label %" + condLbl + "\n\n")
+        outBuf.code = outBuf.code.cat (`  br label %${condLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (endLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${endLbl}:\n`)
 
         cg.breakLabels.pp
         cg.continueLabels.pp
     } els if stmt.kind == "BreakStmt" {
         if cg.breakLabels.ln > 0 {
             endLabel = cg.breakLabels[cg.breakLabels.ln - 1]
-            outBuf.code = outBuf.code.concat ("  br label %" + endLabel + "\n")
+            outBuf.code = outBuf.code.cat (`  br label %${endLabel}\n`)
             dummyLbl = newLbl cg, "brk_after"
-            outBuf.code = outBuf.code.concat ("\n" + dummyLbl + ":\n")
+            outBuf.code = outBuf.code.cat (`\n${dummyLbl}:\n`)
         }
     } els if stmt.kind == "ContinueStmt" {
         if cg.continueLabels.ln > 0 {
             contLabel = cg.continueLabels[cg.continueLabels.ln - 1]
-            outBuf.code = outBuf.code.concat ("  br label %" + contLabel + "\n")
+            outBuf.code = outBuf.code.cat (`  br label %${contLabel}\n`)
             dummyLbl = newLbl cg, "cont_after"
-            outBuf.code = outBuf.code.concat ("\n" + dummyLbl + ":\n")
+            outBuf.code = outBuf.code.cat (`\n${dummyLbl}:\n`)
         }
     } els if stmt.kind == "MatchStmt" {
         tReg = codegenExpr cg, stmt.target, outBuf
         tInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + tInt + " = fptosi double " + tReg + " to i64\n")
+        outBuf.code = outBuf.code.cat (`  ${tInt} = fptosi double ${tReg} to i64\n`)
         tPtr = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + tPtr + " = inttoptr i64 " + tInt + " to ptr\n")
+        outBuf.code = outBuf.code.cat (`  ${tPtr} = inttoptr i64 ${tInt} to ptr\n`)
         tagInt = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + tagInt + " = load i64, ptr " + tPtr + "\n")
+        outBuf.code = outBuf.code.cat (`  ${tagInt} = load i64, ptr ${tPtr}\n`)
         isOk = newReg cg
-        outBuf.code = outBuf.code.concat ("  " + isOk + " = icmp eq i64 " + tagInt + ", 1\n")
+        outBuf.code = outBuf.code.cat (`  ${isOk} = icmp eq i64 ${tagInt}, 1\n`)
 
         okLbl = newLbl cg, "match_ok"
         errLbl = newLbl cg, "match_err"
         mergeLbl = newLbl cg, "match_merge"
 
-        outBuf.code = outBuf.code.concat ("  br i1 " + isOk + ", label %" + okLbl + ", label %" + errLbl + "\n\n")
+        outBuf.code = outBuf.code.cat (`  br i1 ${isOk}, label %${okLbl}, label %${errLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (okLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${okLbl}:\n`)
         if stmt.okBody.kind != "" {
             valGep = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valGep + " = getelementptr inbounds i64, ptr " + tPtr + ", i64 1\n")
+            outBuf.code = outBuf.code.cat (`  ${valGep} = getelementptr inbounds i64, ptr ${tPtr}, i64 1\n`)
             valInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valInt + " = load i64, ptr " + valGep + "\n")
+            outBuf.code = outBuf.code.cat (`  ${valInt} = load i64, ptr ${valGep}\n`)
             valDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valDbl + " = bitcast i64 " + valInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${valDbl} = bitcast i64 ${valInt} to double\n`)
             if stmt.okVar != "" {
                 okPtr = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + okPtr + " = alloca double\n")
-                outBuf.code = outBuf.code.concat ("  store double " + valDbl + ", ptr " + okPtr + "\n")
+                outBuf.code = outBuf.code.cat (`  ${okPtr} = alloca double\n`)
+                outBuf.code = outBuf.code.cat (`  store double ${valDbl}, ptr ${okPtr}\n`)
                 addCgSymbol cg, stmt.okVar, okPtr
             }
             codegenStmt cg, stmt.okBody, outBuf
         }
-        outBuf.code = outBuf.code.concat ("  br label %" + mergeLbl + "\n\n")
+        outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (errLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${errLbl}:\n`)
         if stmt.errBody.kind != "" {
             valGep = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valGep + " = getelementptr inbounds i64, ptr " + tPtr + ", i64 1\n")
+            outBuf.code = outBuf.code.cat (`  ${valGep} = getelementptr inbounds i64, ptr ${tPtr}, i64 1\n`)
             valInt = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valInt + " = load i64, ptr " + valGep + "\n")
+            outBuf.code = outBuf.code.cat (`  ${valInt} = load i64, ptr ${valGep}\n`)
             valDbl = newReg cg
-            outBuf.code = outBuf.code.concat ("  " + valDbl + " = bitcast i64 " + valInt + " to double\n")
+            outBuf.code = outBuf.code.cat (`  ${valDbl} = bitcast i64 ${valInt} to double\n`)
             if stmt.errVar != "" {
                 errPtr = newReg cg
-                outBuf.code = outBuf.code.concat ("  " + errPtr + " = alloca double\n")
-                outBuf.code = outBuf.code.concat ("  store double " + valDbl + ", ptr " + errPtr + "\n")
+                outBuf.code = outBuf.code.cat (`  ${errPtr} = alloca double\n`)
+                outBuf.code = outBuf.code.cat (`  store double ${valDbl}, ptr ${errPtr}\n`)
                 addCgSymbol cg, stmt.errVar, errPtr
             }
             codegenStmt cg, stmt.errBody, outBuf
         }
-        outBuf.code = outBuf.code.concat ("  br label %" + mergeLbl + "\n\n")
+        outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
 
-        outBuf.code = outBuf.code.concat (mergeLbl + ":\n")
+        outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
+    } els if stmt.kind == "EnumDecl" {
+        registerEnum cg, stmt
     } els if stmt.kind == "BlockStmt" {
         let i = 0
         wh i < stmt.statements.ln {
@@ -1343,92 +1875,102 @@ codegenFunctionDecl cg, funcStmt {
     let paramsStr = ""
     let i = 0
     wh i < funcStmt.params.ln {
-        if i > 0 { paramsStr = paramsStr.concat ", " }
-        paramsStr = paramsStr.concat ("double %arg_" + funcStmt.params[i])
+        if i > 0 { paramsStr = paramsStr.cat ", " }
+        paramsStr = paramsStr.cat (`double %arg_${funcStmt.params[i]}`)
         i = i + 1
     }
 
-    let fnBuf = { code: ("define double @" + fnName + "(" + paramsStr + ") {\nentry:\n") }
+    let fnBuf = { code: (`define double @${fnName}(${paramsStr}) {\nentry:\n`) }
 
     let j = 0
     wh j < funcStmt.params.ln {
         pName = funcStmt.params[j]
         if pName != "" {
             ptrReg = newReg cg
-            fnBuf.code = fnBuf.code.concat ("  " + ptrReg + " = alloca double\n")
-            fnBuf.code = fnBuf.code.concat ("  store double %arg_" + pName + ", ptr " + ptrReg + "\n")
+            fnBuf.code = fnBuf.code.cat (`  ${ptrReg} = alloca double\n`)
+            fnBuf.code = fnBuf.code.cat (`  store double %arg_${pName}, ptr ${ptrReg}\n`)
             addCgSymbol cg, pName, ptrReg
         }
         j = j + 1
     }
 
     codegenStmt cg, funcStmt.body, fnBuf
-    fnBuf.code = fnBuf.code.concat ("  ret double 0.0\n}\n\n")
-    cg.funcs = cg.funcs.concat fnBuf.code
+    fnBuf.code = fnBuf.code.cat ("  ret double 0.0\n}\n\n")
+    cg.funcs = cg.funcs.cat fnBuf.code
 }
 
 generateLLVMFull program {
     cg = createCodegen
+    let ei = 0
+    wh ei < program.statements.ln {
+        estmt = program.statements[ei]
+        if (strEq estmt.kind, "EnumDecl") == 1 {
+            registerEnum cg, estmt
+        }
+        ei = ei + 1
+    }
 
-    let header = "; ModuleID = 'zuv_self_host'\n"
-    header = header.concat "source_filename = \"main.zv\"\n\n"
-    header = header.concat "declare i32 @printf(ptr nocapture readonly, ...)\n"
-    header = header.concat "declare ptr @fopen(ptr, ptr)\n"
-    header = header.concat "declare i32 @fclose(ptr)\n"
-    header = header.concat "declare i64 @fread(ptr, i64, i64, ptr)\n"
-    header = header.concat "declare i64 @fwrite(ptr, i64, i64, ptr)\n"
-    header = header.concat "declare i32 @fputs(ptr, ptr)\n"
-    header = header.concat "declare i64 @strlen(ptr)\n"
-    header = header.concat "declare i64 @clock()\n"
-    header = header.concat "declare void @Sleep(i32)\n"
-    header = header.concat "declare ptr @strstr(ptr, ptr)\n"
-    header = header.concat "declare ptr @CreateThread(ptr, i64, ptr, ptr, i32, ptr)\n"
-    header = header.concat "declare i32 @WaitForSingleObject(ptr, i32)\n"
-    header = header.concat "declare i32 @CloseHandle(ptr)\n"
-    header = header.concat "declare ptr @malloc(i64)\n"
-    header = header.concat "declare void @free(ptr)\n"
-    header = header.concat "declare ptr @memcpy(ptr, ptr, i64)\n"
-    header = header.concat "declare i32 @strcmp(ptr, ptr)\n"
-    header = header.concat "declare i32 @fseek(ptr, i64, i32)\n"
-    header = header.concat "declare i64 @ftell(ptr)\n"
-    header = header.concat "declare void @rewind(ptr)\n"
-    header = header.concat "declare ptr @FindFirstFileA(ptr, ptr)\n"
-    header = header.concat "declare i32 @FindNextFileA(ptr, ptr)\n"
-    header = header.concat "declare i32 @FindClose(ptr)\n"
-    header = header.concat "declare i32 @snprintf(ptr, i64, ptr, ...)\n\n"
+    let header = `; ModuleID = 'zuv_self_host'\n`
+    header = header.cat `source_filename = "main.zv"\n\n`
+    header = header.cat "declare i32 @printf(ptr nocapture readonly, ...)\n"
+    header = header.cat "declare ptr @fopen(ptr, ptr)\n"
+    header = header.cat "declare i32 @fclose(ptr)\n"
+    header = header.cat "declare i64 @fread(ptr, i64, i64, ptr)\n"
+    header = header.cat "declare i64 @fwrite(ptr, i64, i64, ptr)\n"
+    header = header.cat "declare i32 @fputs(ptr, ptr)\n"
+    header = header.cat "declare i64 @strlen(ptr)\n"
+    header = header.cat "declare i64 @clock()\n"
+    header = header.cat "declare void @Sleep(i32)\n"
+    header = header.cat "declare ptr @strstr(ptr, ptr)\n"
+    header = header.cat "declare ptr @CreateThread(ptr, i64, ptr, ptr, i32, ptr)\n"
+    header = header.cat "declare i32 @WaitForSingleObject(ptr, i32)\n"
+    header = header.cat "declare i32 @CloseHandle(ptr)\n"
+    header = header.cat "declare ptr @malloc(i64)\n"
+    header = header.cat "declare void @free(ptr)\n"
+    header = header.cat "declare ptr @memcpy(ptr, ptr, i64)\n"
+    header = header.cat "declare i32 @strcmp(ptr, ptr)\n"
+    header = header.cat "declare double @llvm.pow.f64(double, double)\n"
+    header = header.cat "declare i32 @fseek(ptr, i64, i32)\n"
+    header = header.cat "declare i64 @ftell(ptr)\n"
+    header = header.cat "declare void @rewind(ptr)\n"
+    header = header.cat "declare ptr @FindFirstFileA(ptr, ptr)\n"
+    header = header.cat "declare i32 @FindNextFileA(ptr, ptr)\n"
+    header = header.cat "declare i32 @FindClose(ptr)\n"
+    header = header.cat "declare i32 @snprintf(ptr, i64, ptr, ...)\n\n"
 
-    header = header.concat "declare void @LLVMInitializeX86TargetInfo()\n"
-    header = header.concat "declare void @LLVMInitializeX86Target()\n"
-    header = header.concat "declare void @LLVMInitializeX86TargetMC()\n"
-    header = header.concat "declare void @LLVMInitializeX86AsmPrinter()\n"
-    header = header.concat "declare void @LLVMInitializeX86AsmParser()\n"
-    header = header.concat "declare ptr @LLVMGetGlobalContext()\n"
-    header = header.concat "declare ptr @LLVMCreateMemoryBufferWithMemoryRange(ptr, i64, ptr, i32)\n"
-    header = header.concat "declare i32 @LLVMParseIRInContext(ptr, ptr, ptr, ptr)\n"
-    header = header.concat "declare i32 @LLVMGetTargetFromTriple(ptr, ptr, ptr)\n"
-    header = header.concat "declare ptr @LLVMCreateTargetMachine(ptr, ptr, ptr, ptr, i32, i32, i32)\n"
-    header = header.concat "declare i32 @LLVMTargetMachineEmitToFile(ptr, ptr, ptr, i32, ptr)\n"
-    header = header.concat "declare void @LLVMDisposeTargetMachine(ptr)\n"
-    header = header.concat "declare void @LLVMDisposeModule(ptr)\n\n"
+    header = header.cat "declare void @LLVMInitializeX86TargetInfo()\n"
+    header = header.cat "declare void @LLVMInitializeX86Target()\n"
+    header = header.cat "declare void @LLVMInitializeX86TargetMC()\n"
+    header = header.cat "declare void @LLVMInitializeX86AsmPrinter()\n"
+    header = header.cat "declare void @LLVMInitializeX86AsmParser()\n"
+    header = header.cat "declare ptr @LLVMGetGlobalContext()\n"
+    header = header.cat "declare ptr @LLVMCreateMemoryBufferWithMemoryRange(ptr, i64, ptr, i32)\n"
+    header = header.cat "declare i32 @LLVMParseIRInContext(ptr, ptr, ptr, ptr)\n"
+    header = header.cat "declare i32 @LLVMGetTargetFromTriple(ptr, ptr, ptr)\n"
+    header = header.cat "declare ptr @LLVMCreateTargetMachine(ptr, ptr, ptr, ptr, i32, i32, i32)\n"
+    header = header.cat "declare i32 @LLVMTargetMachineEmitToFile(ptr, ptr, ptr, i32, ptr)\n"
+    header = header.cat "declare void @LLVMDisposeTargetMachine(ptr)\n"
+    header = header.cat "declare void @LLVMDisposeModule(ptr)\n\n"
 
-    header = header.concat "@mode_r = private unnamed_addr constant [3 x i8] c\"rb\\00\"\n"
-    header = header.concat "@mode_w = private unnamed_addr constant [3 x i8] c\"wb\\00\"\n"
-    header = header.concat "@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n"
-    header = header.concat "@fmt_prefix = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n"
-    header = header.concat "@fmt_num = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\"\n"
-    header = header.concat "@fmt_g = private unnamed_addr constant [3 x i8] c\"%g\\00\"\n"
-    header = header.concat "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"\n"
-    header = header.concat "@fmt_pattern = private unnamed_addr constant [5 x i8] c\"%s/*\\00\"\n"
-    header = header.concat "@fmt_filepath = private unnamed_addr constant [6 x i8] c\"%s/%s\\00\"\n"
-    header = header.concat "@dot_str = private unnamed_addr constant [2 x i8] c\".\\00\"\n"
-    header = header.concat "@dotdot_str = private unnamed_addr constant [3 x i8] c\"..\\00\"\n\n"
+    header = header.cat `@mode_r = private unnamed_addr constant [3 x i8] c"rb\\00"\n`
+    header = header.cat `@mode_w = private unnamed_addr constant [3 x i8] c"wb\\00"\n`
+    header = header.cat `@fmt_str = private unnamed_addr constant [4 x i8] c"%s\\0A\\00"\n`
+    header = header.cat `@fmt_prefix = private unnamed_addr constant [3 x i8] c"%s\\00"\n`
+    header = header.cat `@fmt_num = private unnamed_addr constant [4 x i8] c"%g\\0A\\00"\n`
+    header = header.cat `@fmt_g = private unnamed_addr constant [3 x i8] c"%g\\00"\n`
+    header = header.cat `@fmt_bigint = private unnamed_addr constant [5 x i8] c"%lld\\00"\n`
+    header = header.cat `@empty_str = private unnamed_addr constant [1 x i8] c"\\00"\n`
+    header = header.cat `@fmt_pattern = private unnamed_addr constant [5 x i8] c"%s/*\\00"\n`
+    header = header.cat `@fmt_filepath = private unnamed_addr constant [6 x i8] c"%s/%s\\00"\n`
+    header = header.cat `@dot_str = private unnamed_addr constant [2 x i8] c".\\00"\n`
+    header = header.cat `@dotdot_str = private unnamed_addr constant [3 x i8] c"..\\00"\n\n`
 
-    header = header.concat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds i64, ptr %arr, i64 %nextCount\n  store i64 %strInt, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
+    header = header.cat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds i64, ptr %arr, i64 %nextCount\n  store i64 %strInt, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
 
     let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" }
 
     // Built-in project-wide `glb` — properties registered as LLVM globals `@glb_<prop>`
-    header = header.concat "@glb = global i64 0\n"
+    header = header.cat "@glb = global i64 0\n"
     addCgSymbol cg, "glb", "@glb"
 
     // Pass 1: Declare top-level variables as global variables
@@ -1438,16 +1980,16 @@ generateLLVMFull program {
         if stmt.kind == "VarDecl" {
             gSym = findCgSymbol cg, stmt.name
             if gSym.name == "" {
-                gReg = "@" + stmt.name
-                header = header.concat (gReg + " = global double 0.0\n")
+                gReg = `@${stmt.name}`
+                header = header.cat (`${gReg} = global double 0.0\n`)
                 addCgSymbol cg, stmt.name, gReg
             }
         } els if stmt.kind == "ForStmt" {
             if stmt.init.kind == "VarDecl" {
                 gSym = findCgSymbol cg, stmt.init.name
                 if gSym.name == "" {
-                    gReg = "@" + stmt.init.name
-                    header = header.concat (gReg + " = global double 0.0\n")
+                    gReg = `@${stmt.init.name}`
+                    header = header.cat (`${gReg} = global double 0.0\n`)
                     addCgSymbol cg, stmt.init.name, gReg
                 }
             }
@@ -1478,7 +2020,7 @@ generateLLVMFull program {
                     pt = "i64"
                 }
                 if pi > 0 {
-                    extParams = extParams + ", "
+                    extParams = `${extParams}, `
                 }
                 extParams = extParams + pt
                 pi = pi + 1
@@ -1496,9 +2038,9 @@ generateLLVMFull program {
             } els if stmt.typeName == "num" || stmt.typeName == "i32" {
                 retType = "i32"
             }
-            declSig = "@" + stmt.name + "("
+            declSig = `@${stmt.name}(`
             if (header.cnt declSig) == 0 {
-                header = header.concat ("declare " + retType + " @" + stmt.name + "(" + extParams + ")\n")
+                header = header.cat (`declare ${retType} @${stmt.name}(${extParams})\n`)
             }
             addCgExtern cg, stmt
         } els {
@@ -1509,33 +2051,33 @@ generateLLVMFull program {
     }
 
     if (cg.funcs.cnt "@main_user(") > 0 {
-        mainBuf.code = mainBuf.code.concat "  %arg1_alloc = alloca double\n  %arg2_alloc = alloca double\n  %arg3_alloc = alloca double\n  %arg4_alloc = alloca double\n"
-        mainBuf.code = mainBuf.code.concat "  store double 0.0, ptr %arg1_alloc\n  store double 0.0, ptr %arg2_alloc\n  store double 0.0, ptr %arg3_alloc\n  store double 0.0, ptr %arg4_alloc\n"
-        mainBuf.code = mainBuf.code.concat "  %hasArg1 = icmp sgt i32 %argc, 1\n  br i1 %hasArg1, label %get_arg1, label %no_arg1\n\nget_arg1:\n  %p1 = getelementptr inbounds ptr, ptr %argv, i64 1\n  %v1 = load ptr, ptr %p1, align 8\n  %l1 = call i64 @strlen(ptr %v1)\n  %l1p = add i64 %l1, 1\n  %h1 = call ptr @malloc(i64 %l1p)\n  %c1 = call ptr @memcpy(ptr %h1, ptr %v1, i64 %l1p)\n  %v1Int = ptrtoint ptr %h1 to i64\n  %v1Dbl = sitofp i64 %v1Int to double\n  store double %v1Dbl, ptr %arg1_alloc\n  br label %next_arg1\n\nno_arg1:\n  %e1 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e1\n  %e1Int = ptrtoint ptr %e1 to i64\n  %e1Dbl = sitofp i64 %e1Int to double\n  store double %e1Dbl, ptr %arg1_alloc\n  br label %next_arg1\n\nnext_arg1:\n"
-        mainBuf.code = mainBuf.code.concat "  %hasArg2 = icmp sgt i32 %argc, 2\n  br i1 %hasArg2, label %get_arg2, label %no_arg2\n\nget_arg2:\n  %p2 = getelementptr inbounds ptr, ptr %argv, i64 2\n  %v2 = load ptr, ptr %p2, align 8\n  %l2 = call i64 @strlen(ptr %v2)\n  %l2p = add i64 %l2, 1\n  %h2 = call ptr @malloc(i64 %l2p)\n  %c2 = call ptr @memcpy(ptr %h2, ptr %v2, i64 %l2p)\n  %v2Int = ptrtoint ptr %h2 to i64\n  %v2Dbl = sitofp i64 %v2Int to double\n  store double %v2Dbl, ptr %arg2_alloc\n  br label %next_arg2\n\nno_arg2:\n  %e2 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e2\n  %e2Int = ptrtoint ptr %e2 to i64\n  %e2Dbl = sitofp i64 %e2Int to double\n  store double %e2Dbl, ptr %arg2_alloc\n  br label %next_arg2\n\nnext_arg2:\n"
-        mainBuf.code = mainBuf.code.concat "  %hasArg3 = icmp sgt i32 %argc, 3\n  br i1 %hasArg3, label %get_arg3, label %no_arg3\n\nget_arg3:\n  %p3 = getelementptr inbounds ptr, ptr %argv, i64 3\n  %v3 = load ptr, ptr %p3, align 8\n  %l3 = call i64 @strlen(ptr %v3)\n  %l3p = add i64 %l3, 1\n  %h3 = call ptr @malloc(i64 %l3p)\n  %c3 = call ptr @memcpy(ptr %h3, ptr %v3, i64 %l3p)\n  %v3Int = ptrtoint ptr %h3 to i64\n  %v3Dbl = sitofp i64 %v3Int to double\n  store double %v3Dbl, ptr %arg3_alloc\n  br label %next_arg3\n\nno_arg3:\n  %e3 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e3\n  %e3Int = ptrtoint ptr %e3 to i64\n  %e3Dbl = sitofp i64 %e3Int to double\n  store double %e3Dbl, ptr %arg3_alloc\n  br label %next_arg3\n\nnext_arg3:\n"
-        mainBuf.code = mainBuf.code.concat "  %hasArg4 = icmp sgt i32 %argc, 4\n  br i1 %hasArg4, label %get_arg4, label %no_arg4\n\nget_arg4:\n  %p4 = getelementptr inbounds ptr, ptr %argv, i64 4\n  %v4 = load ptr, ptr %p4, align 8\n  %l4 = call i64 @strlen(ptr %v4)\n  %l4p = add i64 %l4, 1\n  %h4 = call ptr @malloc(i64 %l4p)\n  %c4 = call ptr @memcpy(ptr %h4, ptr %v4, i64 %l4p)\n  %v4Int = ptrtoint ptr %h4 to i64\n  %v4Dbl = sitofp i64 %v4Int to double\n  store double %v4Dbl, ptr %arg4_alloc\n  br label %next_arg4\n\nno_arg4:\n  %e4 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e4\n  %e4Int = ptrtoint ptr %e4 to i64\n  %e4Dbl = sitofp i64 %e4Int to double\n  store double %e4Dbl, ptr %arg4_alloc\n  br label %next_arg4\n\nnext_arg4:\n"
-        mainBuf.code = mainBuf.code.concat "  %a1 = load double, ptr %arg1_alloc\n  %a2 = load double, ptr %arg2_alloc\n  %a3 = load double, ptr %arg3_alloc\n  %a4 = load double, ptr %arg4_alloc\n"
-        mainBuf.code = mainBuf.code.concat "  %call_res = call double @main_user(double %a1, double %a2, double %a3, double %a4)\n"
+        mainBuf.code = mainBuf.code.cat "  %arg1_alloc = alloca double\n  %arg2_alloc = alloca double\n  %arg3_alloc = alloca double\n  %arg4_alloc = alloca double\n"
+        mainBuf.code = mainBuf.code.cat "  store double 0.0, ptr %arg1_alloc\n  store double 0.0, ptr %arg2_alloc\n  store double 0.0, ptr %arg3_alloc\n  store double 0.0, ptr %arg4_alloc\n"
+        mainBuf.code = mainBuf.code.cat "  %hasArg1 = icmp sgt i32 %argc, 1\n  br i1 %hasArg1, label %get_arg1, label %no_arg1\n\nget_arg1:\n  %p1 = getelementptr inbounds ptr, ptr %argv, i64 1\n  %v1 = load ptr, ptr %p1, align 8\n  %l1 = call i64 @strlen(ptr %v1)\n  %l1p = add i64 %l1, 1\n  %h1 = call ptr @malloc(i64 %l1p)\n  %c1 = call ptr @memcpy(ptr %h1, ptr %v1, i64 %l1p)\n  %v1Int = ptrtoint ptr %h1 to i64\n  %v1Dbl = sitofp i64 %v1Int to double\n  store double %v1Dbl, ptr %arg1_alloc\n  br label %next_arg1\n\nno_arg1:\n  %e1 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e1\n  %e1Int = ptrtoint ptr %e1 to i64\n  %e1Dbl = sitofp i64 %e1Int to double\n  store double %e1Dbl, ptr %arg1_alloc\n  br label %next_arg1\n\nnext_arg1:\n"
+        mainBuf.code = mainBuf.code.cat "  %hasArg2 = icmp sgt i32 %argc, 2\n  br i1 %hasArg2, label %get_arg2, label %no_arg2\n\nget_arg2:\n  %p2 = getelementptr inbounds ptr, ptr %argv, i64 2\n  %v2 = load ptr, ptr %p2, align 8\n  %l2 = call i64 @strlen(ptr %v2)\n  %l2p = add i64 %l2, 1\n  %h2 = call ptr @malloc(i64 %l2p)\n  %c2 = call ptr @memcpy(ptr %h2, ptr %v2, i64 %l2p)\n  %v2Int = ptrtoint ptr %h2 to i64\n  %v2Dbl = sitofp i64 %v2Int to double\n  store double %v2Dbl, ptr %arg2_alloc\n  br label %next_arg2\n\nno_arg2:\n  %e2 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e2\n  %e2Int = ptrtoint ptr %e2 to i64\n  %e2Dbl = sitofp i64 %e2Int to double\n  store double %e2Dbl, ptr %arg2_alloc\n  br label %next_arg2\n\nnext_arg2:\n"
+        mainBuf.code = mainBuf.code.cat "  %hasArg3 = icmp sgt i32 %argc, 3\n  br i1 %hasArg3, label %get_arg3, label %no_arg3\n\nget_arg3:\n  %p3 = getelementptr inbounds ptr, ptr %argv, i64 3\n  %v3 = load ptr, ptr %p3, align 8\n  %l3 = call i64 @strlen(ptr %v3)\n  %l3p = add i64 %l3, 1\n  %h3 = call ptr @malloc(i64 %l3p)\n  %c3 = call ptr @memcpy(ptr %h3, ptr %v3, i64 %l3p)\n  %v3Int = ptrtoint ptr %h3 to i64\n  %v3Dbl = sitofp i64 %v3Int to double\n  store double %v3Dbl, ptr %arg3_alloc\n  br label %next_arg3\n\nno_arg3:\n  %e3 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e3\n  %e3Int = ptrtoint ptr %e3 to i64\n  %e3Dbl = sitofp i64 %e3Int to double\n  store double %e3Dbl, ptr %arg3_alloc\n  br label %next_arg3\n\nnext_arg3:\n"
+        mainBuf.code = mainBuf.code.cat "  %hasArg4 = icmp sgt i32 %argc, 4\n  br i1 %hasArg4, label %get_arg4, label %no_arg4\n\nget_arg4:\n  %p4 = getelementptr inbounds ptr, ptr %argv, i64 4\n  %v4 = load ptr, ptr %p4, align 8\n  %l4 = call i64 @strlen(ptr %v4)\n  %l4p = add i64 %l4, 1\n  %h4 = call ptr @malloc(i64 %l4p)\n  %c4 = call ptr @memcpy(ptr %h4, ptr %v4, i64 %l4p)\n  %v4Int = ptrtoint ptr %h4 to i64\n  %v4Dbl = sitofp i64 %v4Int to double\n  store double %v4Dbl, ptr %arg4_alloc\n  br label %next_arg4\n\nno_arg4:\n  %e4 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e4\n  %e4Int = ptrtoint ptr %e4 to i64\n  %e4Dbl = sitofp i64 %e4Int to double\n  store double %e4Dbl, ptr %arg4_alloc\n  br label %next_arg4\n\nnext_arg4:\n"
+        mainBuf.code = mainBuf.code.cat "  %a1 = load double, ptr %arg1_alloc\n  %a2 = load double, ptr %arg2_alloc\n  %a3 = load double, ptr %arg3_alloc\n  %a4 = load double, ptr %arg4_alloc\n"
+        mainBuf.code = mainBuf.code.cat "  %call_res = call double @main_user(double %a1, double %a2, double %a3, double %a4)\n"
     }
 
-    mainBuf.code = mainBuf.code.concat ("  ret i32 0\n}\n")
+    mainBuf.code = mainBuf.code.cat ("  ret i32 0\n}\n")
 
     // Merge constant declarations
     let constsStr = ""
     let ci = 0
     wh ci < cg.strConstants.ln {
-        constsStr = constsStr.concat cg.strConstants[ci]
+        constsStr = constsStr.cat cg.strConstants[ci]
         ci = ci + 1
     }
 
     let glbDeclsStr = ""
     let gdi = 0
     wh gdi < cg.glbDeclList.ln {
-        glbDeclsStr = glbDeclsStr.concat cg.glbDeclList[gdi]
+        glbDeclsStr = glbDeclsStr.cat cg.glbDeclList[gdi]
         gdi = gdi + 1
     }
 
-    fullIR = header + glbDeclsStr + constsStr + "\n" + cg.funcs + "\n" + mainBuf.code
+    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}`
     -> fullIR
 }
