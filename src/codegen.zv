@@ -364,8 +364,10 @@ strictEqTypTag cg, expr {
             -> "bool"
         }
         if expr.op == "+" {
-            if (isStrPlusOperand cg, expr.left) == 1 { -> "str" }
-            if (isStrPlusOperand cg, expr.right) == 1 { -> "str" }
+            binL = expr.left
+            binR = expr.right
+            if (isStrPlusOperand cg, binL) == 1 { -> "str" }
+            if (isStrPlusOperand cg, binR) == 1 { -> "str" }
             -> "num"
         }
         if expr.op == "-" || expr.op == "*" || expr.op == "/" || expr.op == "%" || expr.op == "**" || expr.op == "&" || expr.op == "|" || expr.op == "^" || expr.op == "<<" || expr.op == ">>" || expr.op == ">>>" {
@@ -387,9 +389,24 @@ strictEqTypTag cg, expr {
         }
         -> ""
     }
+    if expr.kind == "TernaryExpr" {
+        // Temps required: avoid `(f cg, expr).thenExpr` juxta/dot misparse
+        thenE = expr.thenExpr
+        elseE = expr.elseExpr
+        tl = strictEqTypTag cg, thenE
+        tr = strictEqTypTag cg, elseE
+        if tl != "" {
+            if (strEq tl, tr) == 1 {
+                -> tl
+            }
+        }
+        -> ""
+    }
     if expr.kind == "VariableExpr" {
-        if (isStrVar cg, expr.name) == 1 { -> "str" }
-        if (isBigIntVar cg, expr.name) == 1 { -> "bigint" }
+        // Temps required: `isStrVar cg, expr.name` → `(isStrVar cg, expr).name`
+        vName = expr.name
+        if (isStrVar cg, vName) == 1 { -> "str" }
+        if (isBigIntVar cg, vName) == 1 { -> "bigint" }
         -> ""
     }
     -> ""
@@ -1046,10 +1063,13 @@ codegenExpr cg, expr, outBuf {
 
         // Strict == / != across known typ tags only
         if expr.op == "==" || expr.op == "!=" {
-            eqTypL = strictEqTypTag cg, expr.left
-            eqTypR = strictEqTypTag cg, expr.right
-            if eqTypL != "" {
-                if eqTypR != "" {
+            leftE = expr.left
+            rightE = expr.right
+            eqTypL = strictEqTypTag cg, leftE
+            eqTypR = strictEqTypTag cg, rightE
+            // Use strEq (not !=) so empty checks don't depend on string != codegen
+            if (strEq eqTypL, "") == 0 {
+                if (strEq eqTypR, "") == 0 {
                     if (strEq eqTypL, eqTypR) == 0 {
                         if expr.op == "==" {
                             -> "0.0"
@@ -1885,6 +1905,27 @@ codegenExpr cg, expr, outBuf {
             -> asDbl
         }
         -> valReg
+    } els if expr.kind == "TernaryExpr" {
+        slot = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${slot} = alloca double\n`)
+        condReg = codegenExpr cg, expr.condition, outBuf
+        cmpReg = emitTruthyI1 cg, condReg, outBuf
+        thenLbl = newLbl cg, "tern_then"
+        elseLbl = newLbl cg, "tern_else"
+        mergeLbl = newLbl cg, "tern_merge"
+        outBuf.code = outBuf.code.cat (`  br i1 ${cmpReg}, label %${thenLbl}, label %${elseLbl}\n\n`)
+        outBuf.code = outBuf.code.cat (`${thenLbl}:\n`)
+        thenReg = codegenExpr cg, expr.thenExpr, outBuf
+        outBuf.code = outBuf.code.cat (`  store double ${thenReg}, ptr ${slot}\n`)
+        outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+        outBuf.code = outBuf.code.cat (`${elseLbl}:\n`)
+        elseReg = codegenExpr cg, expr.elseExpr, outBuf
+        outBuf.code = outBuf.code.cat (`  store double ${elseReg}, ptr ${slot}\n`)
+        outBuf.code = outBuf.code.cat (`  br label %${mergeLbl}\n\n`)
+        outBuf.code = outBuf.code.cat (`${mergeLbl}:\n`)
+        resReg = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${resReg} = load double, ptr ${slot}\n`)
+        -> resReg
     } els if expr.kind == "UnaryExpr" {
         if expr.op == "typ" {
             typeName = classifyTyp cg, expr.right

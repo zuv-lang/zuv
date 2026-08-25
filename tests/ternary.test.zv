@@ -1,0 +1,60 @@
+// Ternary operator: cond ? thenVal : elseVal
+
+let a = true ? 10 : 20
+if a == 10 {
+    prnt "true ternary ok"
+}
+
+let b = false ? 10 : 20
+if b == 20 {
+    prnt "false ternary ok"
+}
+
+let ay = yes ? 10 : 20
+if ay == 10 {
+    prnt "yes ternary ok"
+}
+
+let bn = no ? 10 : 20
+if bn == 20 {
+    prnt "no ternary ok"
+}
+
+let c = (1 == 1) ? 3 : 4
+if c == 3 {
+    prnt "cmp ternary ok"
+}
+
+let d = (1 == 2) ? 3 : 4
+if d == 4 {
+    prnt "cmp false ternary ok"
+}
+
+// Right-associative nesting: a ? b : c ? d : e
+let e = no ? 1 : yes ? 2 : 3
+if e == 2 {
+    prnt "nested else ternary ok"
+}
+
+let f = yes ? no ? 1 : 2 : 3
+if f == 2 {
+    prnt "nested then ternary ok"
+}
+
+// Precedence: || binds tighter than ?:
+let g = no || yes ? 5 : 6
+if g == 5 {
+    prnt "or then ternary ok"
+}
+
+let h = yes ? 7 : 8 + 1
+if h == 7 {
+    prnt "then short-circuit ok"
+}
+
+let i = no ? 7 : 8 + 1
+if i == 9 {
+    prnt "else arith ok"
+}
+
+prnt "ternary complete"
