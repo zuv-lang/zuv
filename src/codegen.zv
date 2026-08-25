@@ -523,6 +523,28 @@ classifyTyp cg, expr {
         }
         -> "num"
     }
+    if expr.kind == "CastExpr" {
+        castTypStr = expr.targetType
+        if castTypStr == "str" {
+            -> "str"
+        }
+        if castTypStr == "bool" {
+            -> "bool"
+        }
+        if castTypStr == "ptr" {
+            -> "str"
+        }
+        if castTypStr == "*byte" {
+            -> "str"
+        }
+        if castTypStr == "*num" {
+            -> "str"
+        }
+        if castTypStr == "*any" {
+            -> "str"
+        }
+        -> "num"
+    }
     if expr.kind == "CallExpr" {
         if expr.callee == "BigInt" {
             -> "bigint"
@@ -762,6 +784,89 @@ codegenExpr cg, expr, outBuf {
         if expr.op == "/" {
             resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = fdiv double ${leftReg}, ${rightReg}\n`)
+            -> resReg
+        }
+
+        // `as` cast may arrive as BinaryExpr if infix path used
+        if expr.op == "as" {
+            mut t = ""
+            if expr.right.kind == "VariableExpr" {
+                t = expr.right.name
+            }
+            if expr.right.kind == "UnaryExpr" {
+                if expr.right.op == "*" {
+                    if expr.right.right.kind == "VariableExpr" {
+                        t = "*" + expr.right.right.name
+                    }
+                }
+            }
+            if t == "int" || t == "i32" || t == "i64" {
+                asInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${asInt} = fptosi double ${leftReg} to i64\n`)
+                asDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${asInt} to double\n`)
+                -> asDbl
+            }
+            if t == "num" || t == "double" {
+                -> leftReg
+            }
+        if t == "bool" {
+            bBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bBits} = bitcast double ${leftReg} to i64\n`)
+            bIsNil = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bIsNil} = icmp eq i64 ${bBits}, 0\n`)
+            bIsUnd = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bIsUnd} = icmp eq i64 ${bBits}, 1\n`)
+            bFalsy = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bFalsy} = or i1 ${bIsNil}, ${bIsUnd}\n`)
+            boolI1 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${boolI1} = xor i1 ${bFalsy}, true\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = uitofp i1 ${boolI1} to double\n`)
+            -> asDbl
+        }
+            if t == "*byte" || t == "*num" || t == "*any" || t == "ptr" {
+                bits = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${leftReg} to i64\n`)
+                asDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
+                -> asDbl
+            }
+            if t == "str" {
+                buf = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${buf} = call ptr @malloc(i64 64)\n`)
+                snp = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${snp} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 64, ptr @fmt_g, double ${leftReg})\n`)
+                asInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${asInt} = ptrtoint ptr ${buf} to i64\n`)
+                asDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${asInt} to double\n`)
+                -> asDbl
+            }
+            -> leftReg
+        }
+
+        if expr.op == "&" || expr.op == "|" || expr.op == "^" || expr.op == "<<" || expr.op == ">>" || expr.op == ">>>" {
+            li = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${li} = fptosi double ${leftReg} to i64\n`)
+            ri = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ri} = fptosi double ${rightReg} to i64\n`)
+            bit = newReg cg
+            if expr.op == "&" {
+                outBuf.code = outBuf.code.cat (`  ${bit} = and i64 ${li}, ${ri}\n`)
+            } els if expr.op == "|" {
+                outBuf.code = outBuf.code.cat (`  ${bit} = or i64 ${li}, ${ri}\n`)
+            } els if expr.op == "^" {
+                outBuf.code = outBuf.code.cat (`  ${bit} = xor i64 ${li}, ${ri}\n`)
+            } els if expr.op == "<<" {
+                outBuf.code = outBuf.code.cat (`  ${bit} = shl i64 ${li}, ${ri}\n`)
+            } els if expr.op == ">>" {
+                outBuf.code = outBuf.code.cat (`  ${bit} = ashr i64 ${li}, ${ri}\n`)
+            } els {
+                outBuf.code = outBuf.code.cat (`  ${bit} = lshr i64 ${li}, ${ri}\n`)
+            }
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = sitofp i64 ${bit} to double\n`)
             -> resReg
         }
 
@@ -1558,6 +1663,93 @@ codegenExpr cg, expr, outBuf {
             -> enumDiscLit disc
         }
         -> "0.0"
+    } els if expr.kind == "CastExpr" {
+        valReg = codegenExpr cg, expr.value, outBuf
+        // Use name with "str" so bootstrap treats comparisons as strcmp
+        castTargetStr = expr.targetType
+        if castTargetStr == "int" {
+            asInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asInt} = fptosi double ${valReg} to i64\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${asInt} to double\n`)
+            -> asDbl
+        }
+        if castTargetStr == "i32" {
+            asInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asInt} = fptosi double ${valReg} to i64\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${asInt} to double\n`)
+            -> asDbl
+        }
+        if castTargetStr == "i64" {
+            asInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asInt} = fptosi double ${valReg} to i64\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${asInt} to double\n`)
+            -> asDbl
+        }
+        if castTargetStr == "num" {
+            -> valReg
+        }
+        if castTargetStr == "double" {
+            -> valReg
+        }
+        if castTargetStr == "bool" {
+            // Inline truthiness (avoid emitTruthyI1 return-reg issues in this path)
+            bBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bBits} = bitcast double ${valReg} to i64\n`)
+            bIsNil = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bIsNil} = icmp eq i64 ${bBits}, 0\n`)
+            bIsUnd = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bIsUnd} = icmp eq i64 ${bBits}, 1\n`)
+            bFalsy = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bFalsy} = or i1 ${bIsNil}, ${bIsUnd}\n`)
+            boolI1 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${boolI1} = xor i1 ${bFalsy}, true\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = uitofp i1 ${boolI1} to double\n`)
+            -> asDbl
+        }
+        if castTargetStr == "*byte" {
+            bits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
+            -> asDbl
+        }
+        if castTargetStr == "*num" {
+            bits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
+            -> asDbl
+        }
+        if castTargetStr == "*any" {
+            bits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
+            -> asDbl
+        }
+        if castTargetStr == "ptr" {
+            bits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
+            -> asDbl
+        }
+        if castTargetStr == "str" {
+            buf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${buf} = call ptr @malloc(i64 64)\n`)
+            snp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${snp} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 64, ptr @fmt_g, double ${valReg})\n`)
+            asInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asInt} = ptrtoint ptr ${buf} to i64\n`)
+            asDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${asInt} to double\n`)
+            -> asDbl
+        }
+        -> valReg
     } els if expr.kind == "UnaryExpr" {
         if expr.op == "typ" {
             typeName = classifyTyp cg, expr.right
@@ -1597,6 +1789,16 @@ codegenExpr cg, expr, outBuf {
                 -> oldReg
             }
             -> newVal
+        }
+        if expr.op == "~" {
+            rReg = codegenExpr cg, expr.right, outBuf
+            asInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${asInt} = fptosi double ${rReg} to i64\n`)
+            bit = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bit} = xor i64 ${asInt}, -1\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = sitofp i64 ${bit} to double\n`)
+            -> resReg
         }
         rReg = codegenExpr cg, expr.right, outBuf
         if expr.op == "!" || expr.op == "not" {

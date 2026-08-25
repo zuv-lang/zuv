@@ -15,29 +15,49 @@ getPrecLogicalOr {
 getPrecLogicalAnd {
     -> 3
 }
-getPrecEquals {
+getPrecBitOr {
     -> 4
 }
-getPrecLessGreater {
+getPrecBitXor {
     -> 5
 }
-getPrecSum {
+getPrecBitAnd {
     -> 6
 }
-getPrecProduct {
+getPrecEquals {
     -> 7
 }
-getPrecPow {
+getPrecLessGreater {
     -> 8
 }
-getPrecPrefix {
+getPrecShift {
     -> 9
 }
-getPrecCall {
+getPrecSum {
     -> 10
+}
+getPrecProduct {
+    -> 11
+}
+getPrecPow {
+    -> 12
+}
+getPrecAs {
+    -> 13
+}
+getPrecPrefix {
+    -> 14
+}
+getPrecCall {
+    -> 15
 }
 
 getTokenPrecedence tok {
+    // Compare to string literal "as" (not a temp var) so C++ bootstrap
+    // emits strcmp — var==var string compares can fall back to fcmp.
+    if tok.val == "as" {
+        -> 13
+    }
     if tok.kind == "SYM" {
         if tok.val == "=" {
             -> 1
@@ -48,26 +68,38 @@ getTokenPrecedence tok {
         if tok.val == "&&" {
             -> 3
         }
-        if tok.val == "==" || tok.val == "!=" {
+        if tok.val == "|" {
             -> 4
         }
-        if tok.val == "<" || tok.val == "<=" || tok.val == ">" || tok.val == ">=" {
+        if tok.val == "^" {
             -> 5
         }
-        if tok.val == "+" || tok.val == "-" {
+        if tok.val == "&" {
             -> 6
         }
-        if tok.val == "*" || tok.val == "/" || tok.val == "%" {
+        if tok.val == "==" || tok.val == "!=" {
             -> 7
         }
-        if tok.val == "**" {
+        if tok.val == "<" || tok.val == "<=" || tok.val == ">" || tok.val == ">=" {
             -> 8
         }
-        if tok.val == "++" || tok.val == "--" {
+        if tok.val == "<<" || tok.val == ">>" || tok.val == ">>>" {
+            -> 9
+        }
+        if tok.val == "+" || tok.val == "-" {
             -> 10
         }
+        if tok.val == "*" || tok.val == "/" || tok.val == "%" {
+            -> 11
+        }
+        if tok.val == "**" {
+            -> 12
+        }
+        if tok.val == "++" || tok.val == "--" {
+            -> 15
+        }
         if tok.val == "." || tok.val == "(" || tok.val == "[" {
-            -> 10
+            -> 15
         }
     } els if tok.kind == "KEYWORD" {
         if tok.val == "or" {
@@ -174,6 +206,11 @@ createUnaryNode op, right {
 
 createPostfixUnaryNode op, left {
     res = { kind: "UnaryExpr", op: op, right: left, prefix: 0 }
+    -> res
+}
+
+createCastNode value, targetType {
+    res = { kind: "CastExpr", value: value, targetType: targetType }
     -> res
 }
 
@@ -662,13 +699,13 @@ parseExpression p, precedence {
         advanceParser p
         left = parseExpression p, 0
         expectPeekToken p, "SYM", ")"
-    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "++" || t.val == "--")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
+    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
             advanceParser p // skip 'mut'
         }
         advanceParser p
-        right = parseExpression p, 9
+        right = parseExpression p, 14
         if op == "awt" || op == "await" {
             let emptyArgs = []
             if right.kind == "VariableExpr" {
@@ -690,6 +727,29 @@ parseExpression p, precedence {
         if peekT.kind == "EOF" {
             keepClimbing = 0
         } els {
+            // Explicit cast: `expr as Type` (literal "as" required for strcmp)
+            mut isAsPeek = 0
+            if peekT.val == "as" {
+                if peekT.kind == "IDENT" || peekT.kind == "KEYWORD" {
+                    isAsPeek = 1
+                }
+            }
+            if isAsPeek == 1 {
+                if precedence >= 13 {
+                    keepClimbing = 0
+                } els {
+                    advanceParser p // consume 'as'
+                    advanceParser p // move to type
+                    mut targetType = ""
+                    if (curTok p).val == "*" {
+                        advanceParser p
+                        targetType = "*" + (curTok p).val
+                    } els {
+                        targetType = (curTok p).val
+                    }
+                    left = createCastNode left, targetType
+                }
+            } els {
             peekPrec = getTokenPrecedence peekT
             if precedence >= peekPrec || peekPrec == 0 {
                 keepClimbing = 0
@@ -768,16 +828,29 @@ parseExpression p, precedence {
                     advanceParser p
                     curT = curTok p
                     op = curT.val
-                    prec = getTokenPrecedence curT
-                    advanceParser p
-                    // ** is right-associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
-                    mut rhsPrec = prec
-                    if op == "**" {
-                        rhsPrec = prec - 1
+                    if op == "as" {
+                        advanceParser p // move to type
+                        mut targetType = ""
+                        if (curTok p).val == "*" {
+                            advanceParser p
+                            targetType = "*" + (curTok p).val
+                        } els {
+                            targetType = (curTok p).val
+                        }
+                        left = createCastNode left, targetType
+                    } els {
+                        prec = getTokenPrecedence curT
+                        advanceParser p
+                        // ** is right-associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
+                        mut rhsPrec = prec
+                        if op == "**" {
+                            rhsPrec = prec - 1
+                        }
+                        right = parseExpression p, rhsPrec
+                        left = createBinaryNode op, left, right
                     }
-                    right = parseExpression p, rhsPrec
-                    left = createBinaryNode op, left, right
                 }
+            }
             }
         }
     }

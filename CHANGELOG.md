@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ⚡ Operators
 - **Increment & Decrement (`++` / `--`)**: Prefix and postfix on variables (`++x`, `x++`, `--x`, `x--`). New test: `incr_decr.test.zv`.
+- **Bitwise (`&`, `|`, `^`, `~`, `<<`, `>>`, `>>>`)**: Integer bitwise ops via `fptosi`/`sitofp`; prefix `&` remains borrow. New test: `bitwise.test.zv`.
+- **Explicit Cast (`as`)**: `expr as int|num|bool|str|*byte|ptr` via `fptosi`/`sitofp`/`bitcast`. New test: `as_cast.test.zv`.
 
 ---
 
