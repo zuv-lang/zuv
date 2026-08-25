@@ -15,7 +15,8 @@ createCodegen {
         "regCount", "labelCount", "strCount", "strConstants", "fieldNames",
         "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
         "destructKind", "bindNames", "source",
-        "enums", "enumKeys", "enumVals"
+        "enums", "enumKeys", "enumVals",
+        "symKeys", "symIds"
     ]
     let brkStack = []
     let contStack = []
@@ -24,6 +25,8 @@ createCodegen {
     let enumsList = []
     let enumKeys = []
     let enumVals = []
+    let symKeys = []
+    let symIds = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -40,7 +43,9 @@ createCodegen {
         glbDeclList: glbDeclList,
         enums: enumsList,
         enumKeys: enumKeys,
-        enumVals: enumVals
+        enumVals: enumVals,
+        symKeys: symKeys,
+        symIds: symIds
     }
     -> res
 }
@@ -168,6 +173,39 @@ emitTruthyI1 cg, condReg, outBuf {
     isTruthy = newReg cg
     outBuf.code = outBuf.code.cat (`  ${isTruthy} = xor i1 ${isFalsy}, true\n`)
     -> isTruthy
+}
+
+internSymId cg, key {
+    let i = 0
+    wh i < cg.symKeys.ln {
+        if (strEq cg.symKeys[i], key) == 1 {
+            -> cg.symIds[i]
+        }
+        i = i + 1
+    }
+    let id = cg.symKeys.ln + 2
+    cg.symKeys.psh key
+    cg.symIds.psh id
+    -> id
+}
+
+symDiscLit id {
+    if id == 2 { -> "bitcast (i64 2 to double)" }
+    if id == 3 { -> "bitcast (i64 3 to double)" }
+    if id == 4 { -> "bitcast (i64 4 to double)" }
+    if id == 5 { -> "bitcast (i64 5 to double)" }
+    if id == 6 { -> "bitcast (i64 6 to double)" }
+    if id == 7 { -> "bitcast (i64 7 to double)" }
+    if id == 8 { -> "bitcast (i64 8 to double)" }
+    if id == 9 { -> "bitcast (i64 9 to double)" }
+    if id == 10 { -> "bitcast (i64 10 to double)" }
+    if id == 11 { -> "bitcast (i64 11 to double)" }
+    if id == 12 { -> "bitcast (i64 12 to double)" }
+    if id == 13 { -> "bitcast (i64 13 to double)" }
+    if id == 14 { -> "bitcast (i64 14 to double)" }
+    if id == 15 { -> "bitcast (i64 15 to double)" }
+    if id == 16 { -> "bitcast (i64 16 to double)" }
+    -> "bitcast (i64 2 to double)"
 }
 
 findFieldOffset cg, fieldName {
@@ -357,6 +395,9 @@ classifyTyp cg, expr {
     if expr.kind == "TypExpr" || (expr.kind == "UnaryExpr" && expr.op == "typ") {
         -> "str"
     }
+    if expr.kind == "UnaryExpr" && expr.op == "sym" {
+        -> "sym"
+    }
     if expr.kind == "UnaryExpr" {
         if expr.op == "!" || expr.op == "not" {
             -> "bool"
@@ -470,10 +511,10 @@ codegenExpr cg, expr, outBuf {
             }
             -> cReg
         }
-        sym = findCgSymbol cg, expr.name
-        if sym.name != "" {
+        cgSym = findCgSymbol cg, expr.name
+        if cgSym.name != "" {
             valReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${valReg} = load double, ptr ${sym.reg}\n`)
+            outBuf.code = outBuf.code.cat (`  ${valReg} = load double, ptr ${cgSym.reg}\n`)
             -> valReg
         }
         -> "0.0"
@@ -481,9 +522,9 @@ codegenExpr cg, expr, outBuf {
         if expr.op == "=" {
             rightReg = codegenExpr cg, expr.right, outBuf
             if expr.left.kind == "VariableExpr" {
-                sym = findCgSymbol cg, expr.left.name
-                if sym.name != "" {
-                    outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${sym.reg}\n`)
+                cgSym = findCgSymbol cg, expr.left.name
+                if cgSym.name != "" {
+                    outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${cgSym.reg}\n`)
                 }
             } els if expr.left.kind == "PropertyAccess" {
                 // Project-wide `glb.prop` → LLVM store to module global @glb_<prop>
@@ -1299,6 +1340,14 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
             -> dblReg
         }
+        if expr.op == "sym" {
+            if expr.right.kind == "StringExpr" {
+                id = internSymId cg, expr.right.val
+                -> symDiscLit id
+            }
+            keyReg = codegenExpr cg, expr.right, outBuf
+            -> keyReg
+        }
         rReg = codegenExpr cg, expr.right, outBuf
         if expr.op == "!" || expr.op == "not" {
             cmpReg = emitTruthyI1 cg, rReg, outBuf
@@ -1321,9 +1370,9 @@ codegenExpr cg, expr, outBuf {
 codegenStmt cg, stmt, outBuf {
     if stmt.kind == "VarDecl" {
         valReg = codegenExpr cg, stmt.value, outBuf
-        sym = findCgSymbol cg, stmt.name
-        if sym.name != "" {
-            outBuf.code = outBuf.code.cat (`  store double ${valReg}, ptr ${sym.reg}\n`)
+        cgSym = findCgSymbol cg, stmt.name
+        if cgSym.name != "" {
+            outBuf.code = outBuf.code.cat (`  store double ${valReg}, ptr ${cgSym.reg}\n`)
         } els {
             ptrReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${ptrReg} = alloca double\n`)
@@ -1351,9 +1400,9 @@ codegenStmt cg, stmt, outBuf {
             outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
             loadDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
-            sym = findCgSymbol cg, dName
-            if sym.name != "" {
-                outBuf.code = outBuf.code.cat (`  store double ${loadDbl}, ptr ${sym.reg}\n`)
+            cgSym = findCgSymbol cg, dName
+            if cgSym.name != "" {
+                outBuf.code = outBuf.code.cat (`  store double ${loadDbl}, ptr ${cgSym.reg}\n`)
             } els {
                 ptrReg = newReg cg
                 outBuf.code = outBuf.code.cat (`  ${ptrReg} = alloca double\n`)

@@ -29,3 +29,74 @@ fr i = 0; i < 5; i = i + 1 {
     lg "for loop index:"
     lg i
 }
+
+// ── if / els if / els chain ──────────────────────────────────────────────────
+let grade = 85
+if (grade >= 90) {
+    prnt "grade A BAD"
+} els if (grade >= 80) {
+    prnt "els-if mid ok"
+} els if (grade >= 70) {
+    prnt "grade C BAD"
+} els {
+    prnt "grade F BAD"
+}
+
+let low = 55
+if (low >= 90) {
+    prnt "low A BAD"
+} els if (low >= 80) {
+    prnt "low B BAD"
+} els if (low >= 70) {
+    prnt "low C BAD"
+} els {
+    prnt "els-if fallthrough ok"
+}
+
+let top = 95
+if (top >= 90) {
+    prnt "els-if first ok"
+} els if (top >= 80) {
+    prnt "els-if first BAD"
+} els {
+    prnt "els-if first els BAD"
+}
+
+// ── nested if / els ──────────────────────────────────────────────────────────
+let n = 2
+if (n > 0) {
+    if (n == 2) {
+        prnt "nested then ok"
+    } els {
+        prnt "nested then inner els BAD"
+    }
+} els {
+    prnt "nested then outer els BAD"
+}
+
+let m = 0
+if (m > 0) {
+    prnt "nested els outer then BAD"
+} els {
+    if (m == 0) {
+        prnt "nested els ok"
+    } els {
+        prnt "nested els inner els BAD"
+    }
+}
+
+let a = 1
+let b = 2
+if (a == 1) {
+    if (b == 1) {
+        prnt "nested deep BAD"
+    } els if (b == 2) {
+        prnt "nested els-if ok"
+    } els {
+        prnt "nested deep els BAD"
+    }
+} els {
+    prnt "nested deep outer BAD"
+}
+
+prnt "control_flow test complete"

@@ -258,9 +258,9 @@ checkStatement checker, stmt {
     } els if stmt.kind == "ImportStmt" {
         let si = 0
         wh si < stmt.symbols.ln {
-            sym = stmt.symbols[si]
-            if sym != "" {
-                declareVar checker, sym, 0
+            impName = stmt.symbols[si]
+            if impName != "" {
+                declareVar checker, impName, 0
             }
             si = si + 1
         }

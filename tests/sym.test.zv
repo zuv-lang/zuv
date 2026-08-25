@@ -1,0 +1,30 @@
+let a = sym "key"
+let b = sym "key"
+let c = sym "other"
+
+if (a == b) {
+    prnt "same key equal ok"
+}
+
+if (a != c) {
+    prnt "diff key unequal ok"
+}
+
+if (a != "key") {
+    prnt "sym != string ok"
+}
+
+if (typ (sym "key")) == "sym" {
+    prnt "typ sym ok"
+}
+
+if (a) {
+    prnt "sym truthy ok"
+}
+
+let d = sym "key"
+if (d == a) {
+    prnt "third same key ok"
+}
+
+prnt "sym test complete"
