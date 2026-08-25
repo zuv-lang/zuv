@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 📦 Variables & Scope
 - **`let` Keyword**: Added `let` keyword for mutable variable declarations, replacing/aliasing `mut`.
 - **Duplicate Redeclaration Error**: Detects duplicate declarations in the same block scope while preserving child block shadowing (`{ let x = 2 }`).
+- **Destructuring & Multi-Variable Assignments**: Added object (`{ name, age } = user`), array (`[x, y] = coords`), and multi-variable (`q, r = expr`) destructuring, plus multi-value returns (`-> a, b`), in both the C++ bootstrap and pure Zuv self-hosting compiler.
 - **Codebase Migration**: Migrated internal self-hosting compiler sources to use `let`.
-- **New Tests**: Added `let_variables.test.zv` and `scope_redecl.test.zv`.
+- **New Tests**: Added `let_variables.test.zv`, `scope_redecl.test.zv`, and `destructuring.test.zv`.
 
 ### 💬 Comments
 - **Multi-line Comments**: Added support for block comments (`/* ... */`) with newline tracking.

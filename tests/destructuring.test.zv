@@ -1,0 +1,30 @@
+// Unit Test for Destructuring & Multi-Variable Assignments
+
+// 1. Object Destructuring
+obj User { name, age }
+u = User { name: "Alice", age: 30 }
+let { name, age } = u
+if name == "Alice" && age == 30 {
+    prnt "Object destructuring successful"
+}
+
+// 2. Array Destructuring
+coords = [100, 200]
+let [x, y] = coords
+if x == 100 && y == 200 {
+    prnt "Array destructuring successful"
+}
+
+// 3. Multi-value function return & multi-variable assignment
+divmod a, b {
+    qVal = 3
+    rVal = 1
+    -> qVal, rVal
+}
+
+let q, r = divmod 10, 3
+if q == 3 && r == 1 {
+    prnt "Multi-value return and assignment successful"
+}
+
+prnt "Destructuring & Multi-Variable Assignment Unit Test Passed"

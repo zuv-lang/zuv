@@ -223,9 +223,275 @@ createBlockNode statements {
     -> res
 }
 
+createStmtSequenceNode statements {
+    res = { kind: "StmtSequence", statements: statements }
+    -> res
+}
+
 createExpressionStmtNode expr {
     res = { kind: "ExpressionStmt", expr: expr }
     -> res
+}
+
+createDestructureNode destructKind, bindNames, src, isMut {
+    res = { kind: "DestructureStmt", destructKind: destructKind, bindNames: bindNames, source: src, isMut: isMut }
+    -> res
+}
+
+peekAheadToken p, offset {
+    if offset == 0 {
+        -> p.curTok
+    }
+    if offset == 1 {
+        -> p.peekTok
+    }
+    idx = p.pos + (offset - 2)
+    if idx >= 0 && idx < p.totalLen {
+        -> p.tokens[idx]
+    }
+    -> createToken "EOF", "", 0, 0
+}
+
+isObjectDestructureAssign p {
+    mut t = peekAheadToken p, 1
+    if t.kind != "IDENT" {
+        -> 0
+    }
+    mut off = 2
+    wh 1 == 1 {
+        t = peekAheadToken p, off
+        if t.val == "," {
+            off = off + 1
+            t = peekAheadToken p, off
+            if t.kind != "IDENT" {
+                -> 0
+            }
+            off = off + 1
+        } els if t.val == "}" {
+            off = off + 1
+            t = peekAheadToken p, off
+            if t.val == "=" {
+                -> 1
+            }
+            -> 0
+        } els {
+            -> 0
+        }
+    }
+    -> 0
+}
+
+isArrayDestructureAssign p {
+    mut t = peekAheadToken p, 1
+    if t.kind != "IDENT" {
+        -> 0
+    }
+    mut off = 2
+    wh 1 == 1 {
+        t = peekAheadToken p, off
+        if t.val == "," {
+            off = off + 1
+            t = peekAheadToken p, off
+            if t.kind != "IDENT" {
+                -> 0
+            }
+            off = off + 1
+        } els if t.val == "]" {
+            off = off + 1
+            t = peekAheadToken p, off
+            if t.val == "=" {
+                -> 1
+            }
+            -> 0
+        } els {
+            -> 0
+        }
+    }
+    -> 0
+}
+
+isMultiVarAssign p {
+    mut t = peekAheadToken p, 1
+    if t.val != "," {
+        -> 0
+    }
+    mut off = 2
+    t = peekAheadToken p, off
+    if t.kind != "IDENT" {
+        -> 0
+    }
+    off = off + 1
+    wh (peekAheadToken p, off).val == "," {
+        off = off + 1
+        t = peekAheadToken p, off
+        if t.kind != "IDENT" {
+            -> 0
+        }
+        off = off + 1
+    }
+    if (peekAheadToken p, off).val == "=" {
+        -> 1
+    }
+    -> 0
+}
+
+parseArrayDestructure p, isMut {
+    advanceParser p
+    mut n0 = ""
+    mut n1 = ""
+    mut n2 = ""
+    mut n3 = ""
+    mut count = 0
+    wh (curTok p).val != "]" && (curTok p).kind != "EOF" {
+        if (curTok p).kind == "IDENT" {
+            if count == 0 { n0 = (curTok p).val }
+            els if count == 1 { n1 = (curTok p).val }
+            els if count == 2 { n2 = (curTok p).val }
+            els if count == 3 { n3 = (curTok p).val }
+            count = count + 1
+        }
+        if (peekTok p).val == "," {
+            advanceParser p
+        }
+        advanceParser p
+    }
+    if (curTok p).val == "]" {
+        advanceParser p
+    }
+    if (curTok p).val == "=" {
+        advanceParser p
+    }
+    src = parseExpression p, 0
+    tempName = "__darr"
+    let stmts = []
+    stmts.psh (createVarDeclNode tempName, src, 1)
+    tempVar = createVariableNode tempName
+    if count > 0 {
+        idx0 = createNumberNode "0"
+        stmts.psh (createVarDeclNode n0, (createIndexNode tempVar, idx0), isMut)
+    }
+    if count > 1 {
+        idx1 = createNumberNode "1"
+        stmts.psh (createVarDeclNode n1, (createIndexNode tempVar, idx1), isMut)
+    }
+    if count > 2 {
+        idx2 = createNumberNode "2"
+        stmts.psh (createVarDeclNode n2, (createIndexNode tempVar, idx2), isMut)
+    }
+    if count > 3 {
+        idx3 = createNumberNode "3"
+        stmts.psh (createVarDeclNode n3, (createIndexNode tempVar, idx3), isMut)
+    }
+    -> createStmtSequenceNode stmts
+}
+
+parseObjectDestructure p, isMut {
+    advanceParser p
+    mut n0 = ""
+    mut n1 = ""
+    mut n2 = ""
+    mut n3 = ""
+    mut count = 0
+    wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+        if (curTok p).kind == "IDENT" {
+            if count == 0 { n0 = (curTok p).val }
+            els if count == 1 { n1 = (curTok p).val }
+            els if count == 2 { n2 = (curTok p).val }
+            els if count == 3 { n3 = (curTok p).val }
+            count = count + 1
+        }
+        if (peekTok p).val == "," {
+            advanceParser p
+        }
+        advanceParser p
+    }
+    if (curTok p).val == "}" {
+        advanceParser p
+    }
+    if (curTok p).val == "=" {
+        advanceParser p
+    }
+    src = parseExpression p, 0
+    tempName = "__dobj"
+    let stmts = []
+    stmts.psh (createVarDeclNode tempName, src, 1)
+    tempVar = createVariableNode tempName
+    if count > 0 {
+        stmts.psh (createVarDeclNode n0, (createPropertyAccessNode tempVar, n0), isMut)
+    }
+    if count > 1 {
+        stmts.psh (createVarDeclNode n1, (createPropertyAccessNode tempVar, n1), isMut)
+    }
+    if count > 2 {
+        stmts.psh (createVarDeclNode n2, (createPropertyAccessNode tempVar, n2), isMut)
+    }
+    if count > 3 {
+        stmts.psh (createVarDeclNode n3, (createPropertyAccessNode tempVar, n3), isMut)
+    }
+    -> createStmtSequenceNode stmts
+}
+
+parseMultiVarAssign p, isMut {
+    mut n0 = (curTok p).val
+    mut n1 = ""
+    mut n2 = ""
+    mut n3 = ""
+    mut count = 1
+    wh (peekTok p).val == "," {
+        advanceParser p
+        advanceParser p
+        if (curTok p).kind == "IDENT" {
+            if count == 1 { n1 = (curTok p).val }
+            els if count == 2 { n2 = (curTok p).val }
+            els if count == 3 { n3 = (curTok p).val }
+            count = count + 1
+        }
+    }
+    if (peekTok p).val == "=" {
+        advanceParser p
+    }
+    advanceParser p
+    src = parseExpression p, 0
+    tempName = "__dmul"
+    let stmts = []
+    stmts.psh (createVarDeclNode tempName, src, 1)
+    tempVar = createVariableNode tempName
+    if count > 0 {
+        idx0 = createNumberNode "0"
+        stmts.psh (createVarDeclNode n0, (createIndexNode tempVar, idx0), isMut)
+    }
+    if count > 1 {
+        idx1 = createNumberNode "1"
+        stmts.psh (createVarDeclNode n1, (createIndexNode tempVar, idx1), isMut)
+    }
+    if count > 2 {
+        idx2 = createNumberNode "2"
+        stmts.psh (createVarDeclNode n2, (createIndexNode tempVar, idx2), isMut)
+    }
+    if count > 3 {
+        idx3 = createNumberNode "3"
+        stmts.psh (createVarDeclNode n3, (createIndexNode tempVar, idx3), isMut)
+    }
+    -> createStmtSequenceNode stmts
+}
+
+parseMultiValueReturn p {
+    advanceParser p
+    if (curTok p).val == "}" || (curTok p).kind == "EOF" || (curTok p).val == ";" {
+        -> createReturnNode createNilNode
+    }
+    first = parseExpression p, 0
+    if (peekTok p).val == "," {
+        let elements = [first]
+        wh (peekTok p).val == "," {
+            advanceParser p
+            advanceParser p
+            nextVal = parseExpression p, 0
+            elements.psh nextVal
+        }
+        -> createReturnNode (createArrayNode elements)
+    }
+    -> createReturnNode first
 }
 
 // ── Expression Parser ────────────────────────────────────────────────────────
@@ -551,13 +817,9 @@ parseStatement p {
         expr = parseExpression p, 0
         -> createPrintNode logLevel, expr
     } els if t.kind == "KEYWORD" && t.val == "ret" {
-        advanceParser p
-        expr = parseExpression p, 0
-        -> createReturnNode expr
+        -> parseMultiValueReturn p
     } els if t.kind == "ARROW" || (t.kind == "SYM" && t.val == "->") {
-        advanceParser p
-        expr = parseExpression p, 0
-        -> createReturnNode expr
+        -> parseMultiValueReturn p
     } els if t.kind == "KEYWORD" && (t.val == "wrk" || t.val == "worker" || t.val == "asc" || t.val == "async") {
         advanceParser p
         fnName = (curTok p).val
@@ -609,13 +871,21 @@ parseStatement p {
         -> res
     } els if t.kind == "KEYWORD" && (t.val == "mut" || t.val == "let") {
         advanceParser p
-        vName = (curTok p).val
-        if (peekTok p).val == "=" {
-            advanceParser p // consume '='
+        if (curTok p).val == "{" {
+            -> parseObjectDestructure p, 1
+        } els if (curTok p).val == "[" {
+            -> parseArrayDestructure p, 1
+        } els if (curTok p).kind == "IDENT" && (isMultiVarAssign p) == 1 {
+            -> parseMultiVarAssign p, 1
+        } els {
+            vName = (curTok p).val
+            if (peekTok p).val == "=" {
+                advanceParser p
+            }
+            advanceParser p
+            valExpr = parseExpression p, 0
+            -> createVarDeclNode vName, valExpr, 1
         }
-        advanceParser p // move to expression
-        valExpr = parseExpression p, 0
-        -> createVarDeclNode vName, valExpr, 1
     } els if t.kind == "KEYWORD" && t.val == "main" {
         let paramName = ""
         if (peekTok p).kind == "IDENT" {
@@ -687,9 +957,15 @@ parseStatement p {
         -> { kind: "BreakStmt" }
     } els if t.kind == "KEYWORD" && (t.val == "cont" || t.val == "continue") {
         -> { kind: "ContinueStmt" }
+    } els if t.kind == "SYM" && t.val == "{" && (isObjectDestructureAssign p) == 1 {
+        -> parseObjectDestructure p, 0
+    } els if t.kind == "SYM" && t.val == "[" && (isArrayDestructureAssign p) == 1 {
+        -> parseArrayDestructure p, 0
     } els if t.kind == "IDENT" {
         identName = t.val
-        if (peekTok p).val == "=" {
+        if (isMultiVarAssign p) == 1 {
+            -> parseMultiVarAssign p, 0
+        } els if (peekTok p).val == "=" {
             advanceParser p // consume '='
             if (peekTok p).kind == "EOF" {
                 p.errors.psh "Syntax Error: Expected expression after '='"

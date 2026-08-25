@@ -171,6 +171,23 @@ checkStatement checker, stmt {
         }
         checkExpr checker, stmt.value
         declareVar checker, stmt.name, stmt.isMut
+    } els if stmt.kind == "DestructureStmt" {
+        checkExpr checker, stmt.source
+        let di = 0
+        wh di < stmt.bindNames.ln {
+            dName = stmt.bindNames[di]
+            if dName != "" {
+                declareVar checker, dName, stmt.isMut
+            }
+            di = di + 1
+        }
+    } els if stmt.kind == "StmtSequence" {
+        let si = 0
+        wh si < stmt.statements.ln {
+            s = stmt.statements[si]
+            checkStatement checker, s
+            si = si + 1
+        }
     } els if stmt.kind == "FunctionDecl" {
         declareVar checker, stmt.name, 0
         pushCheckerScope checker
