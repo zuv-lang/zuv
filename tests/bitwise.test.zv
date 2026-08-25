@@ -1,0 +1,56 @@
+// Bitwise operators: & | ^ ~ << >> >>>
+
+flags = 0b1010 | 0b0101
+if flags == 15 {
+    prnt "bitwise or ok"
+}
+
+mask = 0xFF & flags
+if mask == 15 {
+    prnt "bitwise and ok"
+}
+
+xored = 0b1100 ^ 0b1010
+if xored == 6 {
+    prnt "bitwise xor ok"
+}
+
+shifted = 1 << 4
+if shifted == 16 {
+    prnt "shl ok"
+}
+
+if 32 >> 2 == 8 {
+    prnt "shr ok"
+}
+
+if 32 >>> 2 == 8 {
+    prnt "ushr ok"
+}
+
+if ~0 == 0 - 1 {
+    prnt "not zero ok"
+}
+
+if ~0xFF == 0 - 256 {
+    prnt "not 0xFF ok"
+}
+
+a = 0b1010
+b = 0b0101
+if (a | b) == 15 {
+    prnt "var bitwise or ok"
+}
+if (a & b) == 0 {
+    prnt "var bitwise and ok"
+}
+
+if (1 + 2) << 3 == 24 {
+    prnt "shift prec over add ok"
+}
+
+if (0b1111 & 0b1100) | 0b0001 == 13 {
+    prnt "and before or ok"
+}
+
+prnt "bitwise test complete"

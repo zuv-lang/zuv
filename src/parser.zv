@@ -9,69 +9,116 @@ getPrecLowest {
 getPrecAssign {
     -> 1
 }
-getPrecLogicalOr {
+getPrecTernary {
     -> 2
 }
-getPrecLogicalAnd {
+getPrecNullish {
     -> 3
 }
-getPrecEquals {
+getPrecLogicalOr {
     -> 4
 }
-getPrecLessGreater {
+getPrecLogicalAnd {
     -> 5
 }
-getPrecSum {
+getPrecBitOr {
     -> 6
 }
-getPrecProduct {
+getPrecBitXor {
     -> 7
 }
-getPrecPow {
+getPrecBitAnd {
     -> 8
 }
-getPrecPrefix {
+getPrecEquals {
     -> 9
 }
-getPrecCall {
+getPrecLessGreater {
     -> 10
+}
+getPrecShift {
+    -> 11
+}
+getPrecSum {
+    -> 12
+}
+getPrecProduct {
+    -> 13
+}
+getPrecPow {
+    -> 14
+}
+getPrecAs {
+    -> 15
+}
+getPrecPrefix {
+    -> 16
+}
+getPrecCall {
+    -> 17
 }
 
 getTokenPrecedence tok {
+    // Compare to string literal "as" (not a temp var) so C++ bootstrap
+    // emits strcmp — var==var string compares can fall back to fcmp.
+    if tok.val == "as" {
+        -> 15
+    }
     if tok.kind == "SYM" {
         if tok.val == "=" {
             -> 1
         }
-        if tok.val == "||" {
+        if tok.val == "?" {
             -> 2
         }
-        if tok.val == "&&" {
+        if tok.val == "??" {
             -> 3
         }
-        if tok.val == "==" || tok.val == "!=" {
+        if tok.val == "||" {
             -> 4
         }
-        if tok.val == "<" || tok.val == "<=" || tok.val == ">" || tok.val == ">=" {
+        if tok.val == "&&" {
             -> 5
         }
-        if tok.val == "+" || tok.val == "-" {
+        if tok.val == "|" {
             -> 6
         }
-        if tok.val == "*" || tok.val == "/" || tok.val == "%" {
+        if tok.val == "^" {
             -> 7
         }
-        if tok.val == "**" {
+        if tok.val == "&" {
             -> 8
         }
-        if tok.val == "." || tok.val == "(" || tok.val == "[" {
+        if tok.val == "==" || tok.val == "!=" {
+            -> 9
+        }
+        if tok.val == "<" || tok.val == "<=" || tok.val == ">" || tok.val == ">=" {
             -> 10
+        }
+        if tok.val == "<<" || tok.val == ">>" || tok.val == ">>>" {
+            -> 11
+        }
+        if tok.val == "+" || tok.val == "-" {
+            -> 12
+        }
+        if tok.val == "*" || tok.val == "/" || tok.val == "%" {
+            -> 13
+        }
+        if tok.val == "**" {
+            -> 14
+        }
+        if tok.val == "++" || tok.val == "--" {
+            -> 17
+        }
+        if tok.val == "." || tok.val == "?." || tok.val == "(" || tok.val == "[" {
+            -> 17
         }
     } els if tok.kind == "KEYWORD" {
         if tok.val == "or" {
-            -> 2
+            -> 4
         }
         if tok.val == "and" {
-            -> 3
+            -> 5
         }
     }
     -> 0
@@ -165,7 +212,22 @@ createBinaryNode op, left, right {
 }
 
 createUnaryNode op, right {
-    res = { kind: "UnaryExpr", op: op, right: right }
+    res = { kind: "UnaryExpr", op: op, right: right, prefix: 1 }
+    -> res
+}
+
+createPostfixUnaryNode op, left {
+    res = { kind: "UnaryExpr", op: op, right: left, prefix: 0 }
+    -> res
+}
+
+createCastNode value, targetType {
+    res = { kind: "CastExpr", value: value, targetType: targetType }
+    -> res
+}
+
+createTernaryNode condition, thenExpr, elseExpr {
+    res = { kind: "TernaryExpr", condition: condition, thenExpr: thenExpr, elseExpr: elseExpr }
     -> res
 }
 
@@ -179,13 +241,28 @@ createArrayNode elements {
     -> res
 }
 
+createSpreadNode expr {
+    res = { kind: "SpreadExpr", expr: expr }
+    -> res
+}
+
 createIndexNode array, index {
-    res = { kind: "IndexExpr", array: array, index: index }
+    res = { kind: "IndexExpr", array: array, index: index, optional: 0 }
+    -> res
+}
+
+createOptIndexNode array, index {
+    res = { kind: "IndexExpr", array: array, index: index, optional: 1 }
     -> res
 }
 
 createPropertyAccessNode targetObj, prop {
-    res = { kind: "PropertyAccess", object: targetObj, property: prop }
+    res = { kind: "PropertyAccess", object: targetObj, property: prop, optional: 0 }
+    -> res
+}
+
+createOptPropertyAccessNode targetObj, prop {
+    res = { kind: "PropertyAccess", object: targetObj, property: prop, optional: 1 }
     -> res
 }
 
@@ -224,8 +301,8 @@ createForNode initS, cond, incS, body {
     -> res
 }
 
-createFuncNode name, params, body, isAsync {
-    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync }
+createFuncNode name, params, body, isAsync, hasRest {
+    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest }
     -> res
 }
 
@@ -247,6 +324,19 @@ createStmtSequenceNode statements {
 createExpressionStmtNode expr {
     res = { kind: "ExpressionStmt", expr: expr }
     -> res
+}
+
+compoundBaseOp op {
+    if op == "+=" { -> "+" }
+    if op == "-=" { -> "-" }
+    if op == "*=" { -> "*" }
+    if op == "/=" { -> "/" }
+    if op == "%=" { -> "%" }
+    if op == "**=" { -> "**" }
+    if op == "&=" { -> "&" }
+    if op == "|=" { -> "|" }
+    if op == "^=" { -> "^" }
+    -> ""
 }
 
 createDestructureNode destructKind, bindNames, src, isMut {
@@ -540,16 +630,31 @@ parseExpression p, precedence {
             left = createNilNode
         }
     } els if t.val == "[" {
+        // Array Literal (supports ...spread)
         let elements = []
         if (peekTok p).val != "]" {
             advanceParser p
-            firstElem = parseExpression p, 0
-            elements.psh firstElem
+            if (curTok p).val == "..." {
+                advanceParser p
+                firstInner = parseExpression p, 0
+                sp0 = createSpreadNode firstInner
+                elements.psh sp0
+            } els {
+                firstElem = parseExpression p, 0
+                elements.psh firstElem
+            }
             wh (peekTok p).val == "," {
                 advanceParser p // consume ','
                 advanceParser p // move to next elem
-                nextElem = parseExpression p, 0
-                elements.psh nextElem
+                if (curTok p).val == "..." {
+                    advanceParser p
+                    nextInner = parseExpression p, 0
+                    spN = createSpreadNode nextInner
+                    elements.psh spN
+                } els {
+                    nextElem = parseExpression p, 0
+                    elements.psh nextElem
+                }
             }
         }
         expectPeekToken p, "SYM", "]"
@@ -565,17 +670,24 @@ parseExpression p, precedence {
             let fields = []
             wh (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
                 advanceParser p
-                fName = (curTok p).val
-                if (peekTok p).val == ":" {
-                    advanceParser p // consume ':'
+                if (curTok p).val == "..." {
                     advanceParser p
                     fVal = parseExpression p, 0
-                    fField = { name: fName, value: fVal }
+                    fField = { name: "", value: fVal, isSpread: 1 }
                     fields.psh fField
                 } els {
-                    fVar = createVariableNode fName
-                    fField = { name: fName, value: fVar }
-                    fields.psh fField
+                    fName = (curTok p).val
+                    if (peekTok p).val == ":" {
+                        advanceParser p // consume ':'
+                        advanceParser p
+                        fVal = parseExpression p, 0
+                        fField = { name: fName, value: fVal, isSpread: 0 }
+                        fields.psh fField
+                    } els {
+                        fVar = createVariableNode fName
+                        fField = { name: fName, value: fVar, isSpread: 0 }
+                        fields.psh fField
+                    }
                 }
                 if (peekTok p).val == "," {
                     advanceParser p // consume ','
@@ -616,17 +728,24 @@ parseExpression p, precedence {
         let fields = []
         wh (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
             advanceParser p
-            fName = (curTok p).val
-            if (peekTok p).val == ":" {
-                advanceParser p // consume ':'
+            if (curTok p).val == "..." {
                 advanceParser p
                 fVal = parseExpression p, 0
-                fField = { name: fName, value: fVal }
+                fField = { name: "", value: fVal, isSpread: 1 }
                 fields.psh fField
             } els {
-                fVar = createVariableNode fName
-                fField = { name: fName, value: fVar }
-                fields.psh fField
+                fName = (curTok p).val
+                if (peekTok p).val == ":" {
+                    advanceParser p // consume ':'
+                    advanceParser p
+                    fVal = parseExpression p, 0
+                    fField = { name: fName, value: fVal, isSpread: 0 }
+                    fields.psh fField
+                } els {
+                    fVar = createVariableNode fName
+                    fField = { name: fName, value: fVar, isSpread: 0 }
+                    fields.psh fField
+                }
             }
             if (peekTok p).val == "," {
                 advanceParser p // consume ','
@@ -635,17 +754,29 @@ parseExpression p, precedence {
         expectPeekToken p, "SYM", "}"
         left = createStructLitNode "", fields
     } els if t.kind == "SYM" && t.val == "[" {
-        // Array Literal
+        // Array Literal (supports ...spread)
         let elements = []
         if (peekTok p).val != "]" {
             advanceParser p
-            firstElem = parseExpression p, 0
-            elements.psh firstElem
+            if (curTok p).val == "..." {
+                advanceParser p
+                firstInner = parseExpression p, 0
+                elements.psh (createSpreadNode firstInner)
+            } els {
+                firstElem = parseExpression p, 0
+                elements.psh firstElem
+            }
             wh (peekTok p).val == "," {
                 advanceParser p // consume ','
                 advanceParser p
-                nextElem = parseExpression p, 0
-                elements.psh nextElem
+                if (curTok p).val == "..." {
+                    advanceParser p
+                    nextInner = parseExpression p, 0
+                    elements.psh (createSpreadNode nextInner)
+                } els {
+                    nextElem = parseExpression p, 0
+                    elements.psh nextElem
+                }
             }
         }
         expectPeekToken p, "SYM", "]"
@@ -654,13 +785,13 @@ parseExpression p, precedence {
         advanceParser p
         left = parseExpression p, 0
         expectPeekToken p, "SYM", ")"
-    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
+    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
             advanceParser p // skip 'mut'
         }
         advanceParser p
-        right = parseExpression p, 9
+        right = parseExpression p, 16
         if op == "awt" || op == "await" {
             let emptyArgs = []
             if right.kind == "VariableExpr" {
@@ -682,6 +813,45 @@ parseExpression p, precedence {
         if peekT.kind == "EOF" {
             keepClimbing = 0
         } els {
+            // Explicit cast: `expr as Type` (literal "as" required for strcmp)
+            mut isAsPeek = 0
+            if peekT.val == "as" {
+                if peekT.kind == "IDENT" || peekT.kind == "KEYWORD" {
+                    isAsPeek = 1
+                }
+            }
+            if isAsPeek == 1 {
+                if precedence >= 15 {
+                    keepClimbing = 0
+                } els {
+                    advanceParser p // consume 'as'
+                    advanceParser p // move to type
+                    mut targetType = ""
+                    if (curTok p).val == "*" {
+                        advanceParser p
+                        targetType = "*" + (curTok p).val
+                    } els {
+                        targetType = (curTok p).val
+                    }
+                    left = createCastNode left, targetType
+                }
+            } els if peekT.val == "?" {
+                if precedence >= 2 {
+                    keepClimbing = 0
+                } els {
+                    advanceParser p // consume '?'
+                    advanceParser p // move to then-expr
+                    thenE = parseExpression p, 0
+                    if (expectPeekToken p, "SYM", ":") == 0 {
+                        keepClimbing = 0
+                    } els {
+                        advanceParser p // move to else-expr
+                        // Right-associative: a ? b : c ? d : e => a ? b : (c ? d : e)
+                        elseE = parseExpression p, 1
+                        left = createTernaryNode left, thenE, elseE
+                    }
+                }
+            } els {
             peekPrec = getTokenPrecedence peekT
             if precedence >= peekPrec || peekPrec == 0 {
                 keepClimbing = 0
@@ -706,6 +876,21 @@ parseExpression p, precedence {
                         left = createCallNode propName, args
                     } els {
                         left = createPropertyAccessNode left, propName
+                    }
+                } els if peekT.val == "?." {
+                    advanceParser p // consume '?.'
+                    if (peekTok p).val == "[" {
+                        advanceParser p // consume '['
+                        advanceParser p
+                        idx = parseExpression p, 0
+                        if (peekTok p).val == "]" {
+                            advanceParser p // consume ']'
+                        }
+                        left = createOptIndexNode left, idx
+                    } els {
+                        advanceParser p // property name
+                        propName = (curTok p).val
+                        left = createOptPropertyAccessNode left, propName
                     }
                 } els if peekT.val == "[" {
                     // Do not treat '[' on a following line as indexing — that starts
@@ -752,20 +937,40 @@ parseExpression p, precedence {
                     } els {
                         left = createCallNode "", args
                     }
+                } els if peekT.val == "++" || peekT.val == "--" {
+                    advanceParser p
+                    op = (curTok p).val
+                    left = createPostfixUnaryNode op, left
                 } els {
                     advanceParser p
                     curT = curTok p
                     op = curT.val
-                    prec = getTokenPrecedence curT
-                    advanceParser p
-                    // ** is right-associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
-                    mut rhsPrec = prec
-                    if op == "**" {
-                        rhsPrec = prec - 1
+                    if op == "as" {
+                        advanceParser p // move to type
+                        mut targetType = ""
+                        if (curTok p).val == "*" {
+                            advanceParser p
+                            targetType = "*" + (curTok p).val
+                        } els {
+                            targetType = (curTok p).val
+                        }
+                        left = createCastNode left, targetType
+                    } els {
+                        prec = getTokenPrecedence curT
+                        advanceParser p
+                        // ** is right-associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
+                        mut rhsPrec = prec
+                        if op == "**" {
+                            rhsPrec = prec - 1
+                        }
+                        if op == "??" {
+                            rhsPrec = prec - 1
+                        }
+                        right = parseExpression p, rhsPrec
+                        left = createBinaryNode op, left, right
                     }
-                    right = parseExpression p, rhsPrec
-                    left = createBinaryNode op, left, right
                 }
+            }
             }
         }
     }
@@ -868,7 +1073,7 @@ parseStatement p {
         fnName = (curTok p).val
         body = parseBlock p
         let emptyParams = []
-        -> createFuncNode fnName, emptyParams, body, 0
+        -> createFuncNode fnName, emptyParams, body, 0, 0
     } els if t.kind == "KEYWORD" && t.val == "mch" {
         advanceParser p
         // Match target must NOT use parseExpression — `ident {` is struct-literal
@@ -1017,7 +1222,7 @@ parseStatement p {
         }
         body = parseBlock p
         let mainParams = [paramName]
-        -> createFuncNode "main", mainParams, body, 0
+        -> createFuncNode "main", mainParams, body, 0, 0
     } els if t.kind == "KEYWORD" && t.val == "obj" {
         advanceParser p
         structName = (curTok p).val
@@ -1126,6 +1331,22 @@ parseStatement p {
             advanceParser p
             valExpr = parseExpression p, 0
             -> createVarDeclNode identName, valExpr, 0
+        } els if (peekTok p).val == "+=" || (peekTok p).val == "-=" || (peekTok p).val == "*=" || (peekTok p).val == "/=" || (peekTok p).val == "%=" || (peekTok p).val == "**=" || (peekTok p).val == "&=" || (peekTok p).val == "|=" || (peekTok p).val == "^=" {
+            // x += rhs → x = x + rhs
+            compOp = (peekTok p).val
+            baseOp = compoundBaseOp compOp
+            advanceParser p // consume compound
+            if (peekTok p).kind == "EOF" {
+                p.errors.psh `Syntax Error: Expected expression after compound assign`
+                -> { kind: "" }
+            }
+            advanceParser p
+            valExpr = parseExpression p, 0
+            loadVar = createVariableNode identName
+            binExpr = createBinaryNode baseOp, loadVar, valExpr
+            storeVar = createVariableNode identName
+            assignExpr = createBinaryNode "=", storeVar, binExpr
+            -> createExpressionStmtNode assignExpr
         } els if (peekTok p).val == ":" {
             advanceParser p // consume ':'
             advanceParser p // consume type
@@ -1147,6 +1368,19 @@ parseStatement p {
                 propAccess = createPropertyAccessNode targetVar, propName
                 binNode = createBinaryNode "=", propAccess, valExpr
                 -> createExpressionStmtNode binNode
+            } els if (peekTok p).val == "+=" || (peekTok p).val == "-=" || (peekTok p).val == "*=" || (peekTok p).val == "/=" || (peekTok p).val == "%=" || (peekTok p).val == "**=" || (peekTok p).val == "&=" || (peekTok p).val == "|=" || (peekTok p).val == "^=" {
+                compOp = (peekTok p).val
+                baseOp = compoundBaseOp compOp
+                advanceParser p
+                advanceParser p
+                valExpr = parseExpression p, 0
+                loadObj = createVariableNode identName
+                loadProp = createPropertyAccessNode loadObj, propName
+                binExpr = createBinaryNode baseOp, loadProp, valExpr
+                storeObj = createVariableNode identName
+                storeProp = createPropertyAccessNode storeObj, propName
+                assignExpr = createBinaryNode "=", storeProp, binExpr
+                -> createExpressionStmtNode assignExpr
             } els if propName == "pp" || propName == "pop" {
                 let args = [targetVar]
                 callNode = createCallNode propName, args
@@ -1171,57 +1405,89 @@ parseStatement p {
             if (peekTok p).val == "{" {
                 body = parseBlock p
                 let emptyParams = []
-                -> createFuncNode identName, emptyParams, body, 0
-            } els if (peekTok p).kind == "IDENT" {
+                -> createFuncNode identName, emptyParams, body, 0, 0
+            } els if (peekTok p).kind == "IDENT" || (peekTok p).val == "..." {
                 advanceParser p
-                pValFirst = (curTok p).val
-                if (peekTok p).val == ":" {
-                    advanceParser p // consume ':'
-                    advanceParser p // consume type
-                }
-                let params = [pValFirst]
-                wh (peekTok p).val == "," {
-                    advanceParser p // consume ','
+                mut hasRest = 0
+                let params = []
+                if (curTok p).val == "..." {
                     advanceParser p
-                    pVal = (curTok p).val
+                    pRest = (curTok p).val
+                    params.psh pRest
+                    hasRest = 1
+                } els {
+                    pValFirst = (curTok p).val
                     if (peekTok p).val == ":" {
                         advanceParser p // consume ':'
                         advanceParser p // consume type
                     }
-                    params.psh pVal
+                    params.psh pValFirst
+                    wh (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                        advanceParser p
+                        if (curTok p).val == "..." {
+                            advanceParser p
+                            pRest2 = (curTok p).val
+                            params.psh pRest2
+                            hasRest = 1
+                        } els {
+                            pVal = (curTok p).val
+                            if (peekTok p).val == ":" {
+                                advanceParser p // consume ':'
+                                advanceParser p // consume type
+                            }
+                            params.psh pVal
+                        }
+                    }
                 }
                 if (peekTok p).val == "{" {
                     body = parseBlock p
-                    -> createFuncNode identName, params, body, 0
+                    -> createFuncNode identName, params, body, 0, hasRest
                 }
             }
         } els if (peekTok p).val == "{" {
             // Function declaration without params: fnName { ... }
             body = parseBlock p
             let emptyParams = []
-            -> createFuncNode identName, emptyParams, body, 0
-        } els if (peekTok p).line == t.line && (peekTok p).kind == "IDENT" {
+            -> createFuncNode identName, emptyParams, body, 0, 0
+        } els if (peekTok p).line == t.line && ((peekTok p).kind == "IDENT" || (peekTok p).val == "...") {
             // Function declaration with params or identifier call statement
             advanceParser p
-            pValFirst = (curTok p).val
-            if (peekTok p).val == ":" {
-                advanceParser p // consume ':'
-                advanceParser p // consume type
-            }
-            let params = [pValFirst]
-            wh (peekTok p).line == t.line && (peekTok p).val == "," {
-                advanceParser p // consume ','
+            mut hasRest = 0
+            let params = []
+            if (curTok p).val == "..." {
                 advanceParser p
-                pVal = (curTok p).val
+                pRest = (curTok p).val
+                params.psh pRest
+                hasRest = 1
+            } els {
+                pValFirst = (curTok p).val
                 if (peekTok p).val == ":" {
                     advanceParser p // consume ':'
                     advanceParser p // consume type
                 }
-                params.psh pVal
+                params.psh pValFirst
+                wh (peekTok p).line == t.line && (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                    advanceParser p
+                    if (curTok p).val == "..." {
+                        advanceParser p
+                        pRest2 = (curTok p).val
+                        params.psh pRest2
+                        hasRest = 1
+                    } els {
+                        pVal = (curTok p).val
+                        if (peekTok p).val == ":" {
+                            advanceParser p // consume ':'
+                            advanceParser p // consume type
+                        }
+                        params.psh pVal
+                    }
+                }
             }
             if (peekTok p).val == "{" {
                 body = parseBlock p
-                -> createFuncNode identName, params, body, 0
+                -> createFuncNode identName, params, body, 0, hasRest
             } els {
                 // Parenthesis-free call statement with identifiers
                 let args = []

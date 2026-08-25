@@ -1,0 +1,37 @@
+// Implicit string + number coercion
+
+if ("Hello " + 5) == "Hello 5" {
+    prnt "str + num ok"
+}
+
+if (5 + " cats") == "5 cats" {
+    prnt "num + str ok"
+}
+
+n = 42
+if ("n=" + n) == "n=42" {
+    prnt "str + var ok"
+}
+
+if ("a" + 1 + "b" + 2) == "a1b2" {
+    prnt "chained concat ok"
+}
+
+if ("x" + (1 + 2)) == "x3" {
+    prnt "str + (num add) ok"
+}
+
+if ((1 + 2) + "x") == "3x" {
+    prnt "(num add) + str ok"
+}
+
+s = "hi"
+if (s + 9) == "hi9" {
+    prnt "str var + num ok"
+}
+
+if typ ("a" + 1) == "str" {
+    prnt "typ str+num ok"
+}
+
+prnt "str+num coercion complete"

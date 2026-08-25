@@ -1,0 +1,43 @@
+// Explicit type casting with `as`
+
+if 3.7 as int == 3 {
+    prnt "as int truncate ok"
+}
+
+if (3 as num) == 3 {
+    prnt "as num ok"
+}
+
+if (0 as bool) == no {
+    prnt "0 as bool ok"
+}
+
+if (5 as bool) {
+    prnt "5 as bool ok"
+}
+
+if typ (42 as str) == "str" {
+    prnt "as str typ ok"
+}
+
+p = 0 as *byte
+q = p as num
+if q == q {
+    prnt "as *byte roundtrip ok"
+}
+
+if 9.9 as int as num == 9 {
+    prnt "chained as ok"
+}
+
+if (1.5 + 2.5) as int == 4 {
+    prnt "as after add ok"
+}
+
+f = 3.7
+ti = f as int
+if ti == 3 {
+    prnt "var as int ok"
+}
+
+prnt "as cast test complete"

@@ -129,6 +129,16 @@ checkExpr checker, expr {
             } els {
                 checkExpr checker, expr.right
             }
+        } els if expr.op == "++" || expr.op == "--" {
+            if expr.right.kind == "VariableExpr" {
+                vName = expr.right.name
+                v = findVarState checker, vName
+                if v.name != "" && v.isMut == 0 {
+                    errImmut = `Cannot mutate immutable variable: '${vName}'`
+                    checker.errors.psh errImmut
+                }
+            }
+            checkExpr checker, expr.right
         } els {
             checkExpr checker, expr.right
         }

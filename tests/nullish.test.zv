@@ -1,0 +1,46 @@
+// Nullish coalescing: left ?? right
+// Uses right only when left is nil or und (bit pattern 0 / 1)
+
+let a = nil ?? 42
+if a == 42 {
+    prnt "nil coalesce ok"
+}
+
+let b = und ?? 7
+if b == 7 {
+    prnt "und coalesce ok"
+}
+
+let c = 5 ?? 9
+if c == 5 {
+    prnt "value keep ok"
+}
+
+let d = "hi" ?? "bye"
+if d == "hi" {
+    prnt "str keep ok"
+}
+
+let e = nil ?? "anon"
+if e == "anon" {
+    prnt "str fallback ok"
+}
+
+// Right-associative: a ?? b ?? c
+let f = nil ?? nil ?? 3
+if f == 3 {
+    prnt "chain coalesce ok"
+}
+
+let g = nil ?? 1 ?? 2
+if g == 1 {
+    prnt "chain first ok"
+}
+
+// Mixed with known non-nullish
+let name = nil ?? "Anonymous"
+if name == "Anonymous" {
+    prnt "name fallback ok"
+}
+
+prnt "nullish complete"

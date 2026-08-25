@@ -1,0 +1,40 @@
+// Optional chaining: ?. and ?.[ ]
+
+user = { profile: { id: 7 } }
+n = user?.profile?.id
+if n == 7 {
+    prnt "nested prop ok"
+}
+
+missing = nil
+n2 = missing?.profile?.id
+if n2 == nil {
+    prnt "nil prop ok"
+}
+
+u2 = und
+n3 = u2?.x
+if n3 == nil {
+    prnt "und prop ok"
+}
+
+list = [10, 20, 30]
+first = list?.[0]
+if first == 10 {
+    prnt "opt index ok"
+}
+
+empty = nil
+noItem = empty?.[0]
+if noItem == nil {
+    prnt "nil index ok"
+}
+
+// Non-null object still works with ?.
+point = { x: 5 }
+v = point?.x
+if v == 5 {
+    prnt "present prop ok"
+}
+
+prnt "optional chain complete"

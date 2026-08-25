@@ -96,7 +96,7 @@ isLexerKeyword word {
        word == "cont" || word == "dn" || word == "mch" || word == "ok" ||
        word == "err" || word == "if" || word == "and" || word == "or" ||
        word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" ||
-       word == "typ" || word == "sym" || word == "enum" ||
+       word == "typ" || word == "sym" || word == "enum" || word == "as" ||
        word == "obj" || word == "num" || word == "bool" || word == "str" ||
        word == "extern" || word == "ffi" || word == "main" {
         -> 1
@@ -344,9 +344,32 @@ nextLexerToken lexer {
             readLexerChar lexer
             readLexerChar lexer
             -> createToken "ARROW", "->", startLine, startCol
+        } els if (peekLexerChar lexer) == "-" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "--", startLine, startCol
+        } els if (peekLexerChar lexer) == "=" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "-=", startLine, startCol
         } els {
             readLexerChar lexer
             -> createToken "SYM", "-", startLine, startCol
+        }
+    }
+
+    if lexer.ch == "+" {
+        if (peekLexerChar lexer) == "+" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "++", startLine, startCol
+        } els if (peekLexerChar lexer) == "=" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "+=", startLine, startCol
+        } els {
+            readLexerChar lexer
+            -> createToken "SYM", "+", startLine, startCol
         }
     }
 
@@ -366,6 +389,10 @@ nextLexerToken lexer {
             readLexerChar lexer
             readLexerChar lexer
             -> createToken "SYM", "<=", startLine, startCol
+        } els if (peekLexerChar lexer) == "<" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "<<", startLine, startCol
         } els {
             readLexerChar lexer
             -> createToken "SYM", "<", startLine, startCol
@@ -373,7 +400,17 @@ nextLexerToken lexer {
     }
 
     if lexer.ch == ">" {
-        if (peekLexerChar lexer) == "=" {
+        if (peekLexerChar lexer) == ">" {
+            readLexerChar lexer
+            if (peekLexerChar lexer) == ">" {
+                readLexerChar lexer
+                readLexerChar lexer
+                -> createToken "SYM", ">>>", startLine, startCol
+            } els {
+                readLexerChar lexer
+                -> createToken "SYM", ">>", startLine, startCol
+            }
+        } els if (peekLexerChar lexer) == "=" {
             readLexerChar lexer
             readLexerChar lexer
             -> createToken "SYM", ">=", startLine, startCol
@@ -388,6 +425,10 @@ nextLexerToken lexer {
             readLexerChar lexer
             readLexerChar lexer
             -> createToken "SYM", "&&", startLine, startCol
+        } els if (peekLexerChar lexer) == "=" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "&=", startLine, startCol
         } els {
             readLexerChar lexer
             -> createToken "SYM", "&", startLine, startCol
@@ -399,6 +440,10 @@ nextLexerToken lexer {
             readLexerChar lexer
             readLexerChar lexer
             -> createToken "SYM", "||", startLine, startCol
+        } els if (peekLexerChar lexer) == "=" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "|=", startLine, startCol
         } els {
             readLexerChar lexer
             -> createToken "SYM", "|", startLine, startCol
@@ -408,20 +453,89 @@ nextLexerToken lexer {
     if lexer.ch == "*" {
         if (peekLexerChar lexer) == "*" {
             readLexerChar lexer
+            if (peekLexerChar lexer) == "=" {
+                readLexerChar lexer
+                readLexerChar lexer
+                -> createToken "SYM", "**=", startLine, startCol
+            } els {
+                readLexerChar lexer
+                -> createToken "SYM", "**", startLine, startCol
+            }
+        } els if (peekLexerChar lexer) == "=" {
             readLexerChar lexer
-            -> createToken "SYM", "**", startLine, startCol
+            readLexerChar lexer
+            -> createToken "SYM", "*=", startLine, startCol
+        } els {
+            readLexerChar lexer
+            -> createToken "SYM", "*", startLine, startCol
         }
-        readLexerChar lexer
-        -> createToken "SYM", "*", startLine, startCol
     }
 
-    if lexer.ch == "+" || lexer.ch == "/" || lexer.ch == "%" ||
-       lexer.ch == "(" || lexer.ch == ")" || lexer.ch == "{" || lexer.ch == "}" ||
-       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "." || lexer.ch == "," ||
-       lexer.ch == ":" || lexer.ch == ";" || lexer.ch == "?" {
+    if lexer.ch == "/" {
+        if (peekLexerChar lexer) == "=" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "/=", startLine, startCol
+        } els {
+            readLexerChar lexer
+            -> createToken "SYM", "/", startLine, startCol
+        }
+    }
+
+    if lexer.ch == "%" {
+        if (peekLexerChar lexer) == "=" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "%=", startLine, startCol
+        } els {
+            readLexerChar lexer
+            -> createToken "SYM", "%", startLine, startCol
+        }
+    }
+
+    if lexer.ch == "^" {
+        if (peekLexerChar lexer) == "=" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "^=", startLine, startCol
+        } els {
+            readLexerChar lexer
+            -> createToken "SYM", "^", startLine, startCol
+        }
+    }
+
+    if lexer.ch == "?" {
+        readLexerChar lexer
+        if lexer.ch == "?" {
+            readLexerChar lexer
+            -> createToken "SYM", "??", startLine, startCol
+        }
+        if lexer.ch == "." {
+            readLexerChar lexer
+            -> createToken "SYM", "?.", startLine, startCol
+        }
+        -> createToken "SYM", "?", startLine, startCol
+    }
+
+    if lexer.ch == "~" || lexer.ch == "(" || lexer.ch == ")" || lexer.ch == "{" || lexer.ch == "}" ||
+       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "," ||
+       lexer.ch == ":" || lexer.ch == ";" {
         c = lexer.ch
         readLexerChar lexer
         -> createToken "SYM", c, startLine, startCol
+    }
+
+    if lexer.ch == "." {
+        readLexerChar lexer
+        if lexer.ch == "." {
+            readLexerChar lexer
+            if lexer.ch == "." {
+                readLexerChar lexer
+                -> createToken "SYM", "...", startLine, startCol
+            }
+            -> createToken "ILLEGAL", "..", startLine, startCol
+        }
+        -> createToken "SYM", ".", startLine, startCol
     }
 
     if lexer.ch == `"` || lexer.ch == `'` || lexer.ch == "`" {
