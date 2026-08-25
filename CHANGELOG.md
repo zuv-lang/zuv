@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Compound Assignment (`+=` … `^=`)**: Desugars to `x = x op rhs` (incl. `**=`, `str +=`). Also fixed `%` → LLVM `frem`. New test: `compound_assign.test.zv`.
 - **Strict `==` / `!=`**: Different known concrete types never coerce (`"5"==5`, `nil==0` false). Single-digit `0`/`1` are bool-compatible (`yes==1`, `true==1`). New test: `strict_eq.test.zv`.
 - **Ternary (`? :`)**: `cond ? then : else` with right-associative nesting and branch short-circuit via alloca merge. New test: `ternary.test.zv`.
+- **Nullish Coalescing (`??`)**: `left ?? right` uses right only when left is `nil`/`und`; right-associative, short-circuiting. New test: `nullish.test.zv`.
 
 ---
 
