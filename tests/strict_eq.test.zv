@@ -1,0 +1,100 @@
+// Strict equality: == / != never coerce across concrete types,
+// except bool <-> single-digit 0 / 1
+
+if "5" == 5 {
+    prnt "str==num fail"
+} els {
+    prnt "str==num ok"
+}
+
+if 5 == "5" {
+    prnt "num==str fail"
+} els {
+    prnt "num==str ok"
+}
+
+if "5" == "5" {
+    prnt "str==str ok"
+}
+
+if 5 == 5 {
+    prnt "num==num ok"
+}
+
+if yes == 1 {
+    prnt "yes==1 ok"
+}
+
+if no == 0 {
+    prnt "no==0 ok"
+}
+
+if true == 1 {
+    prnt "true==1 ok"
+}
+
+if false == 0 {
+    prnt "false==0 ok"
+}
+
+if 1 == yes {
+    prnt "1==yes ok"
+}
+
+if 0 == no {
+    prnt "0==no ok"
+}
+
+if nil == 0 {
+    prnt "nil==0 fail"
+} els {
+    prnt "nil==0 ok"
+}
+
+if no == nil {
+    prnt "no==nil fail"
+} els {
+    prnt "no==nil ok"
+}
+
+if nil == und {
+    prnt "nil==und fail"
+} els {
+    prnt "nil==und ok"
+}
+
+if yes == yes {
+    prnt "yes==yes ok"
+}
+
+if true == yes {
+    prnt "true==yes ok"
+}
+
+if false == no {
+    prnt "false==no ok"
+}
+
+if nil == nil {
+    prnt "nil==nil ok"
+}
+
+if (1 == 1) == 1 {
+    prnt "boolexpr==1 ok"
+}
+
+if (1 == 1) == yes {
+    prnt "boolexpr==yes ok"
+}
+
+if "hello" != 5 {
+    prnt "str!=num ok"
+}
+
+if 2 == yes {
+    prnt "2==yes fail"
+} els {
+    prnt "2==yes ok"
+}
+
+prnt "strict eq complete"

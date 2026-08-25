@@ -338,6 +338,63 @@ findCgExtern cg, name {
     -> emptyExt
 }
 
+// Known equality type tag for strict == / != (empty = unknown)
+strictEqTypTag cg, expr {
+    if expr.kind == "StringExpr" { -> "str" }
+    if expr.kind == "NumberExpr" {
+        // Single-digit 0 / 1 are bool-compatible for == / !=
+        if expr.val == "0" {
+            -> "bool"
+        }
+        if expr.val == "1" {
+            -> "bool"
+        }
+        -> "num"
+    }
+    if expr.kind == "BoolExpr" { -> "bool" }
+    if expr.kind == "BigIntExpr" { -> "bigint" }
+    if expr.kind == "ArrayExpr" { -> "arr" }
+    if expr.kind == "StructLiteral" { -> "obj" }
+    if expr.kind == "NilExpr" {
+        if expr.val == "und" { -> "und" }
+        -> "nil"
+    }
+    if expr.kind == "BinaryExpr" {
+        if expr.op == "==" || expr.op == "!=" || expr.op == "<" || expr.op == ">" || expr.op == "<=" || expr.op == ">=" || expr.op == "and" || expr.op == "or" || expr.op == "&&" || expr.op == "||" {
+            -> "bool"
+        }
+        if expr.op == "+" {
+            if (isStrPlusOperand cg, expr.left) == 1 { -> "str" }
+            if (isStrPlusOperand cg, expr.right) == 1 { -> "str" }
+            -> "num"
+        }
+        if expr.op == "-" || expr.op == "*" || expr.op == "/" || expr.op == "%" || expr.op == "**" || expr.op == "&" || expr.op == "|" || expr.op == "^" || expr.op == "<<" || expr.op == ">>" || expr.op == ">>>" {
+            -> "num"
+        }
+        -> ""
+    }
+    if expr.kind == "UnaryExpr" {
+        if expr.op == "!" || expr.op == "not" { -> "bool" }
+        if expr.op == "typ" { -> "str" }
+        if expr.op == "-" { -> "num" }
+        -> ""
+    }
+    if expr.kind == "CastExpr" {
+        if expr.targetType == "str" { -> "str" }
+        if expr.targetType == "bool" { -> "bool" }
+        if expr.targetType == "int" || expr.targetType == "i32" || expr.targetType == "i64" || expr.targetType == "num" || expr.targetType == "double" {
+            -> "num"
+        }
+        -> ""
+    }
+    if expr.kind == "VariableExpr" {
+        if (isStrVar cg, expr.name) == 1 { -> "str" }
+        if (isBigIntVar cg, expr.name) == 1 { -> "bigint" }
+        -> ""
+    }
+    -> ""
+}
+
 getStrPtrVal cg, expr, outBuf {
     if expr.kind == "StringExpr" {
         sName = addStrConstant cg, expr.val
@@ -985,6 +1042,22 @@ codegenExpr cg, expr, outBuf {
         }
         if isNumSide == 1 {
             isStrCmp = 0
+        }
+
+        // Strict == / != across known typ tags only
+        if expr.op == "==" || expr.op == "!=" {
+            eqTypL = strictEqTypTag cg, expr.left
+            eqTypR = strictEqTypTag cg, expr.right
+            if eqTypL != "" {
+                if eqTypR != "" {
+                    if (strEq eqTypL, eqTypR) == 0 {
+                        if expr.op == "==" {
+                            -> "0.0"
+                        }
+                        -> "1.0"
+                    }
+                }
+            }
         }
 
         if expr.op == "==" {

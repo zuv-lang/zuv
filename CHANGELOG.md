@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Explicit Cast (`as`)**: `expr as int|num|bool|str|*byte|ptr` via `fptosi`/`sitofp`/`bitcast`. New test: `as_cast.test.zv`.
 - **Implicit String + Number (`+`)**: `"Hello " + 5` / `5 + "x"` coerce the number via `snprintf`; chained concat and string vars tracked. New test: `str_num_plus.test.zv`.
 - **Compound Assignment (`+=` … `^=`)**: Desugars to `x = x op rhs` (incl. `**=`, `str +=`). Also fixed `%` → LLVM `frem`. New test: `compound_assign.test.zv`.
+- **Strict `==` / `!=`**: Different known concrete types never coerce (`"5"==5`, `nil==0` false). Single-digit `0`/`1` are bool-compatible (`yes==1`, `true==1`). New test: `strict_eq.test.zv`.
 
 ---
 
