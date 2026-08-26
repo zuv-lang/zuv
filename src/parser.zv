@@ -1900,7 +1900,7 @@ parseStatement p {
         } els if (peekTok p).val == "=" {
             advanceParser p // consume '='
             if (peekTok p).kind == "EOF" {
-                p.errors.psh `Syntax Error: Expected expression after '='`
+                p.errors.psh `error[E0101]: Expected expression after '='`
                 -> { kind: "" }
             }
             advanceParser p
@@ -1912,7 +1912,7 @@ parseStatement p {
             baseOp = compoundBaseOp compOp
             advanceParser p // consume compound
             if (peekTok p).kind == "EOF" {
-                p.errors.psh `Syntax Error: Expected expression after compound assign`
+                p.errors.psh `error[E0101]: Expected expression after compound assign`
                 -> { kind: "" }
             }
             advanceParser p
