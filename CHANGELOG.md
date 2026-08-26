@@ -5,6 +5,30 @@ All notable changes to the **Zuv** programming language and self-hosting compile
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+---
+
+## [0.8.0] - 2026-08-26
+
+### 🏛️ Objects, Structs & Methods
+- **Unified `obj` with Instance & Static Methods**:
+  - Declarations inside `obj Name { ... }` supporting instance methods (`area: => { ... }`), constructors (`create: w, h => { ... }`), shorthand method imports (`otherMethod`), and renamed method aliases (`otherBMethod: otherMethod`).
+  - Extension method syntax (`Type.extensionMethod params { ... }`) and runtime static method aliasing (`Type.method = func`).
+  - Unified static and instance method access and chaining using both `.` and `::` operators (`User::get({ name: "Alice" }).lean`, `User.get(...)::lean`, `User::create "Eve", 20`).
+  - Dynamic method dispatch in pure Zuv and C++ bootstrap code generators with automatic `self` parameter passing and mangling (`@Type_method`).
+  - New tests: `new_keyword.test.zv` and `obj_methods.test.zv`.
+
+### 🛡️ Exceptions
+- **Structured Exception Handling (`try` / `cth` / `fin` / `thr`)**: Catch/finally landing pads with guaranteed `fin` on normal exit, early return/break/continue, and after catch. Uncaught `thr` prints and exits. Threading import renamed to `imp thrd`. New test: `try_cth_fin.test.zv`.
+
+### 🔀 Control Flow
+- **General Value Pattern Matching (`mch` / `sw`)**: Literal arms (number/string/bool), `_` default, and expression arm bodies. `sw` is the switch alias for `mch`. Result `ok`/`err` and enum arms unchanged. Self-host desugars value/`_` arms to `if`/`els` chains. New test: `mch_value.test.zv`.
+- **Iteration Loops (`fr … of`)**: `fr item of arr` and `fr item, idx of arr` with `brk`/`cont`. New test: `fr_of.test.zv`.
+- **Iteration Loops (`fr … in`)**: `fr key in obj` / `fr key, val in obj` (object keys via `__keys`/`__vals` sidecars) and `fr i in arr` / `fr idx, el in arr` (array indices). Self-host desugars with a runtime `__keys != nil` check. New test: `fr_in.test.zv`.
+
+---
+
 ## [0.7.0] - 2026-08-25
 
 ### ⚡ Operators

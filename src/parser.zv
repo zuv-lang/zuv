@@ -2,6 +2,17 @@
 imp str, arr
 imp createToken frm tokens
 
+isUpperChar c {
+    if c == "A" || c == "B" || c == "C" || c == "D" || c == "E" || c == "F" ||
+       c == "G" || c == "H" || c == "I" || c == "J" || c == "K" || c == "L" ||
+       c == "M" || c == "N" || c == "O" || c == "P" || c == "Q" || c == "R" ||
+       c == "S" || c == "T" || c == "U" || c == "V" || c == "W" || c == "X" ||
+       c == "Y" || c == "Z" {
+        -> 1
+    }
+    -> 0
+}
+
 // ── Precedence Constants ─────────────────────────────────────────────────────
 getPrecLowest {
     -> 0
@@ -110,7 +121,7 @@ getTokenPrecedence tok {
         if tok.val == "++" || tok.val == "--" {
             -> 17
         }
-        if tok.val == "." || tok.val == "?." || tok.val == "(" || tok.val == "[" {
+        if tok.val == "." || tok.val == "?." || tok.val == "::" || tok.val == "(" || tok.val == "[" {
             -> 17
         }
     } els if tok.kind == "KEYWORD" {
@@ -293,6 +304,16 @@ createIfNode cond, thenB, elseB {
 
 createWhileNode cond, body {
     res = { kind: "WhileStmt", condition: cond, body: body }
+    -> res
+}
+
+createTryNode tryBody, catchName, catchBody, finallyBody {
+    res = { kind: "TryStmt", tryBody: tryBody, catchName: catchName, catchBody: catchBody, finallyBody: finallyBody }
+    -> res
+}
+
+createThrowNode val {
+    res = { kind: "ThrowStmt", value: val }
     -> res
 }
 
@@ -659,12 +680,116 @@ parseExpression p, precedence {
         }
         expectPeekToken p, "SYM", "]"
         left = createArrayNode elements
+    } els if t.kind == "KEYWORD" && t.val == "new" {
+        advanceParser p // consume 'new'
+        typeName = (curTok p).val
+        if (peekTok p).val == "{" {
+            advanceParser p // consume '{'
+            let fields = []
+            wh (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
+                advanceParser p
+                if (curTok p).val == "..." {
+                    advanceParser p
+                    fVal = parseExpression p, 0
+                    fField = { name: "", value: fVal, isSpread: 1 }
+                    fields.psh fField
+                } els {
+                    fName = (curTok p).val
+                    if (peekTok p).val == ":" {
+                        advanceParser p // consume ':'
+                        advanceParser p
+                        fVal = parseExpression p, 0
+                        fField = { name: fName, value: fVal, isSpread: 0 }
+                        fields.psh fField
+                    } els {
+                        fVar = createVariableNode fName
+                        fField = { name: fName, value: fVar, isSpread: 0 }
+                        fields.psh fField
+                    }
+                }
+                if (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                }
+            }
+            expectPeekToken p, "SYM", "}"
+            let emptyArgs = []
+            left = { kind: "NewExpr", typeName: typeName, fields: fields, args: emptyArgs, isStructLiteral: 1 }
+        } els if (peekTok p).val == "(" {
+            advanceParser p // consume '('
+            let args = []
+            if (peekTok p).val != ")" {
+                advanceParser p
+                firstArg = parseExpression p, 0
+                args.psh firstArg
+                wh (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                    advanceParser p
+                    nextArg = parseExpression p, 0
+                    args.psh nextArg
+                }
+            }
+            expectPeekToken p, "SYM", ")"
+            let emptyFields = []
+            left = { kind: "NewExpr", typeName: typeName, fields: emptyFields, args: args, isStructLiteral: 0 }
+        } els if (peekTok p).line == t.line && ((peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" || (peekTok p).val == "{") {
+            let args = []
+            advanceParser p
+            firstArg = parseExpression p, 0
+            args.psh firstArg
+            wh (peekTok p).val == "," {
+                advanceParser p // consume ','
+                advanceParser p
+                nextArg = parseExpression p, 0
+                args.psh nextArg
+            }
+            let emptyFields = []
+            left = { kind: "NewExpr", typeName: typeName, fields: emptyFields, args: args, isStructLiteral: 0 }
+        } els {
+            let emptyArgs = []
+            let emptyFields = []
+            left = { kind: "NewExpr", typeName: typeName, fields: emptyFields, args: emptyArgs, isStructLiteral: 0 }
+        }
     } els if t.kind == "IDENT" || (t.kind == "KEYWORD" && (t.val == "ok" || t.val == "err")) {
         varName = t.val
         peekT = peekTok p
-        // Typed struct literal `Name { ... }` — disabled in if/wh/fr conditions so
-        // `if a == b {` treats `{` as the block, matching the C++ bootstrap parser.
-        if peekT.val == "{" && p.allowIdentStruct == 1 {
+        if peekT.val == "::" && (peekTok p).line == t.line {
+            advanceParser p // consume '::'
+            advanceParser p // method name
+            methodName = (curTok p).val
+            mangled = `${varName}_${methodName}`
+            if (peekTok p).val == "(" {
+                advanceParser p // consume '('
+                let args = []
+                if (peekTok p).val != ")" {
+                    advanceParser p
+                    firstArg = parseExpression p, 0
+                    args.psh firstArg
+                    wh (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                        advanceParser p
+                        nextArg = parseExpression p, 0
+                        args.psh nextArg
+                    }
+                }
+                expectPeekToken p, "SYM", ")"
+                left = createCallNode mangled, args
+            } els if (peekTok p).line == t.line && ((peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" || (peekTok p).val == "{") {
+                let args = []
+                advanceParser p
+                firstArg = parseExpression p, 0
+                args.psh firstArg
+                wh (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                    advanceParser p
+                    nextArg = parseExpression p, 0
+                    args.psh nextArg
+                }
+                left = createCallNode mangled, args
+            } els {
+                let emptyArgs = []
+                left = createCallNode mangled, emptyArgs
+            }
+        } els if peekT.val == "{" && p.allowIdentStruct == 1 {
             // Struct or anonymous object literal
             advanceParser p // consume '{'
             let fields = []
@@ -856,17 +981,97 @@ parseExpression p, precedence {
             if precedence >= peekPrec || peekPrec == 0 {
                 keepClimbing = 0
             } els {
-                if peekT.val == "." {
-                    advanceParser p // consume '.'
+                if peekT.val == "." || peekT.val == "::" {
+                    peekOp = peekT.val
+                    advanceParser p // consume '.' or '::'
                     advanceParser p // consume property name
-                    propName = (curTok p).val
+                    mut propName = (curTok p).val
                     if propName == "pp" || propName == "pop" {
                         let args = [left]
                         left = createCallNode propName, args
-                    } els if (peekTok p).line == (curTok p).line && ((peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "IDENT") {
+                    } els if (peekTok p).val == "(" {
+                        advanceParser p // consume '('
+                        let args = []
+                        if left.kind == "VariableExpr" {
+                            varNameStr = left.name
+                            let isUpperV = 0
+                            if varNameStr.ln > 0 {
+                                c0Str = varNameStr.chr 0
+                                if c0Str == "A" || c0Str == "B" || c0Str == "C" || c0Str == "D" || c0Str == "E" || c0Str == "F" ||
+                                   c0Str == "G" || c0Str == "H" || c0Str == "I" || c0Str == "J" || c0Str == "K" || c0Str == "L" ||
+                                   c0Str == "M" || c0Str == "N" || c0Str == "O" || c0Str == "P" || c0Str == "Q" || c0Str == "R" ||
+                                   c0Str == "S" || c0Str == "T" || c0Str == "U" || c0Str == "V" || c0Str == "W" || c0Str == "X" ||
+                                   c0Str == "Y" || c0Str == "Z" {
+                                    isUpperV = 1
+                                }
+                            }
+                            if isUpperV == 1 {
+                                propName = `${varNameStr}_${propName}`
+                            } els {
+                                args.psh left
+                            }
+                        } els {
+                            args.psh left
+                        }
+                        if (peekTok p).val != ")" {
+                            advanceParser p
+                            firstArg = parseExpression p, 0
+                            args.psh firstArg
+                            wh (peekTok p).val == "," {
+                                advanceParser p // consume ','
+                                advanceParser p
+                                nextArg = parseExpression p, 0
+                                args.psh nextArg
+                            }
+                        }
+                        expectPeekToken p, "SYM", ")"
+                        left = createCallNode propName, args
+                    } els if peekOp == "::" {
+                        let args = []
+                        if left.kind == "VariableExpr" {
+                            vName = left.name
+                            let isUpperV2 = 0
+                            if vName.ln > 0 {
+                                c02 = vName.cc 0
+                                if c02 >= 65 && c02 <= 90 {
+                                    isUpperV2 = 1
+                                }
+                            }
+                            if isUpperV2 == 1 {
+                                propName = `${vName}_${propName}`
+                            } els {
+                                args.psh left
+                            }
+                        } els {
+                            args.psh left
+                        }
+                        left = createCallNode propName, args
+                    } els if (peekTok p).line == (curTok p).line && ((peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT") {
+                        let args = []
+                        if left.kind == "VariableExpr" {
+                            varNameStr = left.name
+                            let isUpperV = 0
+                            if varNameStr.ln > 0 {
+                                c0Str = varNameStr.chr 0
+                                if c0Str == "A" || c0Str == "B" || c0Str == "C" || c0Str == "D" || c0Str == "E" || c0Str == "F" ||
+                                   c0Str == "G" || c0Str == "H" || c0Str == "I" || c0Str == "J" || c0Str == "K" || c0Str == "L" ||
+                                   c0Str == "M" || c0Str == "N" || c0Str == "O" || c0Str == "P" || c0Str == "Q" || c0Str == "R" ||
+                                   c0Str == "S" || c0Str == "T" || c0Str == "U" || c0Str == "V" || c0Str == "W" || c0Str == "X" ||
+                                   c0Str == "Y" || c0Str == "Z" {
+                                    isUpperV = 1
+                                }
+                            }
+                            if isUpperV == 1 {
+                                propName = `${varNameStr}_${propName}`
+                            } els {
+                                args.psh left
+                            }
+                        } els {
+                            args.psh left
+                        }
                         advanceParser p
                         firstArg = parseExpression p, 0
-                        let args = [left, firstArg]
+                        args.psh firstArg
                         wh (peekTok p).val == "," {
                             advanceParser p // consume ','
                             advanceParser p
@@ -1074,7 +1279,7 @@ parseStatement p {
         body = parseBlock p
         let emptyParams = []
         -> createFuncNode fnName, emptyParams, body, 0, 0
-    } els if t.kind == "KEYWORD" && t.val == "mch" {
+    } els if t.kind == "KEYWORD" && (t.val == "mch" || t.val == "sw") {
         advanceParser p
         // Match target must NOT use parseExpression — `ident {` is struct-literal
         // sugar there and would swallow the entire mch body.
@@ -1100,9 +1305,12 @@ parseStatement p {
         let errBody = { kind: "" }
         let enumConds = []
         let enumBodies = []
-        let isEnumMatch = 0
+        let isValueMatch = 0
+        let hasWild = 0
+        let wildBody = createNilNode
         wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
             armKind = (curTok p).val
+            armTokKind = (curTok p).kind
             if armKind == "ok" {
                 if (peekTok p).val == "(" {
                     advanceParser p // consume '('
@@ -1128,38 +1336,72 @@ parseStatement p {
                     advanceParser p // move past '}' to next arm or outer '}'
                 }
             } els {
-                // Enum arm: Status.Active or bare Active — desugar to if/els chain
-                isEnumMatch = 1
-                let pattern = armKind
-                if (peekTok p).val == "." {
+                // Value / enum / wildcard arm — desugar to if/els chain
+                isValueMatch = 1
+                let isWild = 0
+                let cmpRight = createNilNode
+                if armKind == "_" {
+                    isWild = 1
+                    hasWild = 1
+                } els if armTokKind == "NUMBER" || armTokKind == "NUM" {
+                    cmpRight = createNumberNode armKind
+                } els if armTokKind == "STRING" || armTokKind == "STR" {
+                    cmpRight = createStringNode armKind
+                } els if armTokKind == "BOOL" {
+                    cmpRight = createBoolNode armKind
+                } els if (peekTok p).val == "." {
                     advanceParser p // consume '.'
                     advanceParser p // move to variant
-                    pattern = armKind
-                    // Build "Enum.Variant" via two-part name stored in src-style: use name field for enum, val for variant later
-                    // For now keep pattern as variant only and qualify via PropertyAccess below
                     let vName = (curTok p).val
                     enumObj = createVariableNode armKind
                     cmpRight = createPropertyAccessNode enumObj, vName
-                    expectPeekToken p, "SYM", "=>"
-                    armBody = parseBlock p
-                    if (curTok p).val == "}" {
-                        advanceParser p
-                    }
-                    let tgt = targetExpr
-                    if targetExpr.kind == "VariableExpr" {
-                        tgt = createVariableNode targetExpr.name
-                    }
-                    cond = createBinaryNode "==", tgt, cmpRight
-                    enumConds.psh cond
-                    enumBodies.psh armBody
                 } els {
-                    // Bare variant: Pending
-                    cmpRight = { kind: "EnumBareRef", name: pattern }
-                    expectPeekToken p, "SYM", "=>"
+                    // Bare enum variant: Pending
+                    cmpRight = { kind: "EnumBareRef", name: armKind }
+                }
+                expectPeekToken p, "SYM", "=>"
+                let armBody = { kind: "" }
+                if (peekTok p).val == "{" {
                     armBody = parseBlock p
                     if (curTok p).val == "}" {
                         advanceParser p
                     }
+                } els if (peekTok p).kind == "KEYWORD" && ((peekTok p).val == "prnt" || (peekTok p).val == "lg" || (peekTok p).val == "wrn" || (peekTok p).val == "inf") {
+                    // Statement body: `2 => prnt "expr Two"`
+                    advanceParser p // move to prnt/lg/...
+                    logLevel = (curTok p).val
+                    advanceParser p
+                    printExpr = parseExpression p, 0
+                    armStmts = []
+                    armStmts.psh (createPrintNode logLevel, printExpr)
+                    armBody = createBlockNode armStmts
+                    if (peekTok p).val == "," {
+                        advanceParser p
+                    }
+                    if (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
+                        advanceParser p
+                    } els if (peekTok p).val == "}" {
+                        advanceParser p
+                    }
+                } els {
+                    // Expression body (e.g. `3 => otherFunc "Three"`)
+                    advanceParser p
+                    armExpr = parseExpression p, 0
+                    armStmts = []
+                    armStmts.psh (createExpressionStmtNode armExpr)
+                    armBody = createBlockNode armStmts
+                    if (peekTok p).val == "," {
+                        advanceParser p
+                    }
+                    if (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
+                        advanceParser p
+                    } els if (peekTok p).val == "}" {
+                        advanceParser p
+                    }
+                }
+                if isWild == 1 {
+                    wildBody = armBody
+                } els {
                     let tgt = targetExpr
                     if targetExpr.kind == "VariableExpr" {
                         tgt = createVariableNode targetExpr.name
@@ -1170,30 +1412,21 @@ parseStatement p {
                 }
             }
         }
-        if isEnumMatch == 1 {
-            let elseNil = createNilNode
-            if enumConds.ln == 0 {
-                -> elseNil
-            }
+        if isValueMatch == 1 {
             let n = enumConds.ln
-            let chain0 = createIfNode enumConds[n - 1], enumBodies[n - 1], elseNil
-            if n == 1 {
-                -> chain0
+            mut chain = createNilNode
+            if hasWild == 1 {
+                chain = wildBody
             }
-            let chain1 = createIfNode enumConds[n - 2], enumBodies[n - 2], chain0
-            if n == 2 {
-                -> chain1
+            if n == 0 {
+                -> chain
             }
-            let chain2 = createIfNode enumConds[n - 3], enumBodies[n - 3], chain1
-            if n == 3 {
-                -> chain2
+            mut idx = n - 1
+            wh idx >= 0 {
+                chain = createIfNode enumConds[idx], enumBodies[idx], chain
+                idx = idx - 1
             }
-            let chain3 = createIfNode enumConds[n - 4], enumBodies[n - 4], chain2
-            if n == 4 {
-                -> chain3
-            }
-            let chain4 = createIfNode enumConds[n - 5], enumBodies[n - 5], chain3
-            -> chain4
+            -> chain
         }
         res = { kind: "MatchStmt", target: targetExpr, okVar: okVar, okBody: okBody, errVar: errVar, errBody: errBody }
         -> res
@@ -1229,19 +1462,64 @@ parseStatement p {
         expectPeekToken p, "SYM", "{"
         advanceParser p
         let structFields = []
+        let methods = []
         wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
             if (curTok p).kind == "IDENT" {
-                fName = (curTok p).val
-                structFields.psh fName
+                member = (curTok p).val
                 if (peekTok p).val == ":" {
-                    advanceParser p // consume ':'
-                    advanceParser p // consume type
+                    advanceParser p // at ':'
+                    if (peekTok p).val == "=>" {
+                        advanceParser p // at '=>'
+                        mBody = parseBlock p
+                        mMangled = `${structName}_${member}`
+                        let mParams = ["self"]
+                        mFn = createFuncNode mMangled, mParams, mBody, 0, 0
+                        methods.psh mFn
+                    } els {
+                        advanceParser p // token after ':'
+                        firstLit = (curTok p).val
+                        mut sawFatArrow = 0
+                        let paramList = []
+                        if (curTok p).kind == "IDENT" {
+                            paramList.psh firstLit
+                            wh (peekTok p).val == "," {
+                                advanceParser p // consume ','
+                                advanceParser p // next param
+                                if (curTok p).kind == "IDENT" {
+                                    secondLit = (curTok p).val
+                                    paramList.psh secondLit
+                                }
+                            }
+                            if (peekTok p).val == "=>" {
+                                sawFatArrow = 1
+                                advanceParser p // at '=>'
+                                mBody = parseBlock p
+                                mMangled = `${structName}_${member}`
+                                mFn = createFuncNode mMangled, paramList, mBody, 0, 0
+                                methods.psh mFn
+                            }
+                        }
+                        if sawFatArrow == 0 {
+                            structFields.psh member
+                        }
+                    }
+                } els {
+                    structFields.psh member
+                }
+                if (peekTok p).val == "," {
+                    advanceParser p // consume ','
                 }
             }
             advanceParser p
         }
-        structDeclNode = { kind: "StructDecl", name: structName, fields: structFields }
-        -> structDeclNode
+        let objStmts = []
+        objStmts.psh { kind: "StructDecl", name: structName, fields: structFields }
+        let mi = 0
+        wh mi < methods.ln {
+            objStmts.psh methods[mi]
+            mi = mi + 1
+        }
+        -> createStmtSequenceNode objStmts
     } els if t.kind == "KEYWORD" && t.val == "enum" {
         advanceParser p
         enumName = (curTok p).val
@@ -1289,8 +1567,229 @@ parseStatement p {
         p.allowIdentStruct = 1
         body = parseBlock p
         -> createWhileNode condExpr, body
+    } els if t.kind == "KEYWORD" && t.val == "try" {
+        advanceParser p
+        tryBody = parseBlock p
+        let catchName = ""
+        let catchBody = { kind: "" }
+        let finallyBody = { kind: "" }
+        if (peekTok p).kind == "KEYWORD" && (peekTok p).val == "cth" {
+            advanceParser p // at 'cth'
+            advanceParser p // binding name
+            catchName = (curTok p).val
+            catchBody = parseBlock p
+        }
+        if (peekTok p).kind == "KEYWORD" && (peekTok p).val == "fin" {
+            advanceParser p // at 'fin'
+            finallyBody = parseBlock p
+        }
+        -> createTryNode tryBody, catchName, catchBody, finallyBody
+    } els if t.kind == "KEYWORD" && t.val == "thr" {
+        advanceParser p
+        thrVal = parseExpression p, 0
+        -> createThrowNode thrVal
     } els if t.kind == "KEYWORD" && (t.val == "fr" || t.val == "for") {
-        advanceParser p // move to init
+        advanceParser p // move past 'fr'
+        // fr item of coll | fr item, idx of coll | fr key in obj
+        ct = curTok p
+        pk = peekTok p
+        if (ct.kind == "IDENT" || ct.kind == "KEYWORD") && (pk.val == "of" || pk.val == "in" || pk.val == ",") {
+            let itemName = ct.val
+            let secondName = ""
+            let isIn = 0
+            if pk.val == "," {
+                advanceParser p // cur was item → now at ','
+                advanceParser p // move to second ident
+                secondName = (curTok p).val
+                if (peekTok p).val == "in" {
+                    isIn = 1
+                    expectPeekToken p, "KEYWORD", "in"
+                } els {
+                    expectPeekToken p, "KEYWORD", "of"
+                }
+            } els if pk.val == "in" {
+                isIn = 1
+                expectPeekToken p, "KEYWORD", "in"
+            } els {
+                expectPeekToken p, "KEYWORD", "of"
+            }
+            advanceParser p // move to collection expr
+            p.allowIdentStruct = 0
+            collExpr = parseExpression p, 0
+            p.allowIdentStruct = 1
+            armBody = parseBlock p
+            p.desCount = p.desCount + 1
+            let n = p.desCount
+            if isIn == 1 {
+                // fr key[, val] in coll — objects yield keys; arrays yield indices
+                collTemp = `__fin_c${n}`
+                keysTemp = `__fin_ks${n}`
+                valsTemp = `__fin_v${n}`
+                idxTemp = `__fin_i${n}`
+                strTmp = `__fin_s${n}`
+                zero0 = createNumberNode "0"
+                zero1 = createNumberNode "0"
+                outerStmts = []
+                outerStmts.psh (createVarDeclNode collTemp, collExpr, 1)
+                collVarK = createVariableNode collTemp
+                keysAccess = createPropertyAccessNode collVarK, "__keys"
+                outerStmts.psh (createVarDeclNode keysTemp, keysAccess, 1)
+                outerStmts.psh (createVarDeclNode idxTemp, zero0, 1)
+                outerStmts.psh (createVarDeclNode itemName, zero1, 1)
+                if secondName != "" {
+                    zero2 = createNumberNode "0"
+                    outerStmts.psh (createVarDeclNode secondName, zero2, 1)
+                }
+
+                // Object branch: iterate __keys / __vals
+                objStmts = []
+                if secondName != "" {
+                    collVarV = createVariableNode collTemp
+                    valsAccess = createPropertyAccessNode collVarV, "__vals"
+                    objStmts.psh (createVarDeclNode valsTemp, valsAccess, 1)
+                }
+                // String temp so array-branch item isn't marked str when both arms are codegen'd
+                zeroS = createNumberNode "0"
+                objStmts.psh (createVarDeclNode strTmp, zeroS, 1)
+                keysVarCond = createVariableNode keysTemp
+                lenKeys = createPropertyAccessNode keysVarCond, "ln"
+                idxVarCond = createVariableNode idxTemp
+                objCond = createBinaryNode "<", idxVarCond, lenKeys
+
+                objBody = []
+                idxLoad = createVariableNode idxTemp
+                keysVarIdx = createVariableNode keysTemp
+                keyElem = createIndexNode keysVarIdx, idxLoad
+                strVar = createVariableNode strTmp
+                objBody.psh (createExpressionStmtNode (createBinaryNode "=", strVar, keyElem))
+                itemVar = createVariableNode itemName
+                strVar2 = createVariableNode strTmp
+                objBody.psh (createExpressionStmtNode (createBinaryNode "=", itemVar, strVar2))
+                if secondName != "" {
+                    valsVarIdx = createVariableNode valsTemp
+                    idxLoad2 = createVariableNode idxTemp
+                    valElem = createIndexNode valsVarIdx, idxLoad2
+                    secVar = createVariableNode secondName
+                    objBody.psh (createExpressionStmtNode (createBinaryNode "=", secVar, valElem))
+                }
+                if armBody.kind == "BlockStmt" {
+                    let bi = 0
+                    wh bi < armBody.statements.ln {
+                        objBody.psh armBody.statements[bi]
+                        bi = bi + 1
+                    }
+                } els if armBody.kind != "" {
+                    objBody.psh armBody
+                }
+                loadI = createVariableNode idxTemp
+                one = createNumberNode "1"
+                addExpr = createBinaryNode "+", loadI, one
+                storeI = createVariableNode idxTemp
+                stepStmt = createExpressionStmtNode (createBinaryNode "=", storeI, addExpr)
+                emptyInit = { kind: "" }
+                objFor = createForNode emptyInit, objCond, stepStmt, (createBlockNode objBody)
+                objStmts.psh objFor
+                thenBranch = createBlockNode objStmts
+
+                // Array branch: first binding = index, optional second = element
+                arrBody = []
+                idxAsItem = createVariableNode idxTemp
+                itemVarA = createVariableNode itemName
+                arrBody.psh (createExpressionStmtNode (createBinaryNode "=", itemVarA, idxAsItem))
+                if secondName != "" {
+                    collVarIdx = createVariableNode collTemp
+                    idxLoad3 = createVariableNode idxTemp
+                    arrElem = createIndexNode collVarIdx, idxLoad3
+                    secVarA = createVariableNode secondName
+                    arrBody.psh (createExpressionStmtNode (createBinaryNode "=", secVarA, arrElem))
+                }
+                if armBody.kind == "BlockStmt" {
+                    let bi2 = 0
+                    wh bi2 < armBody.statements.ln {
+                        arrBody.psh armBody.statements[bi2]
+                        bi2 = bi2 + 1
+                    }
+                } els if armBody.kind != "" {
+                    arrBody.psh armBody
+                }
+                collVarLen = createVariableNode collTemp
+                lenArr = createPropertyAccessNode collVarLen, "ln"
+                idxVarCond2 = createVariableNode idxTemp
+                arrCond = createBinaryNode "<", idxVarCond2, lenArr
+                loadIA = createVariableNode idxTemp
+                oneA = createNumberNode "1"
+                addExprA = createBinaryNode "+", loadIA, oneA
+                storeIA = createVariableNode idxTemp
+                stepStmtA = createExpressionStmtNode (createBinaryNode "=", storeIA, addExprA)
+                emptyInitA = { kind: "" }
+                arrFor = createForNode emptyInitA, arrCond, stepStmtA, (createBlockNode arrBody)
+                elseStmts = []
+                elseStmts.psh arrFor
+                elseBranch = createBlockNode elseStmts
+
+                keysVarIf = createVariableNode keysTemp
+                nilNode = createNilNode
+                ifCond = createBinaryNode "!=", keysVarIf, nilNode
+                outerStmts.psh (createIfNode ifCond, thenBranch, elseBranch)
+                -> createBlockNode outerStmts
+            }
+            // Desugar fr … of: decls + for so cont hits index++
+            collTemp = `__fov_c${n}`
+            idxTemp = `__fov_i${n}`
+            zero0 = createNumberNode "0"
+            zero1 = createNumberNode "0"
+            outerStmts = []
+            outerStmts.psh (createVarDeclNode collTemp, collExpr, 1)
+            outerStmts.psh (createVarDeclNode idxTemp, zero0, 1)
+            outerStmts.psh (createVarDeclNode itemName, zero1, 1)
+            if secondName != "" {
+                zero2 = createNumberNode "0"
+                outerStmts.psh (createVarDeclNode secondName, zero2, 1)
+            }
+
+            collVar = createVariableNode collTemp
+            lenAccess = createPropertyAccessNode collVar, "ln"
+            idxVarCond = createVariableNode idxTemp
+            cond = createBinaryNode "<", idxVarCond, lenAccess
+
+            bodyStmts = []
+            idxLoad = createVariableNode idxTemp
+            collVarIdx = createVariableNode collTemp
+            elem = createIndexNode collVarIdx, idxLoad
+            itemVar = createVariableNode itemName
+            itemStore = createBinaryNode "=", itemVar, elem
+            bodyStmts.psh (createExpressionStmtNode itemStore)
+            if secondName != "" {
+                secVar = createVariableNode secondName
+                idxVar2 = createVariableNode idxTemp
+                idxAssign = createBinaryNode "=", secVar, idxVar2
+                bodyStmts.psh (createExpressionStmtNode idxAssign)
+            }
+            if armBody.kind == "BlockStmt" {
+                let bi = 0
+                wh bi < armBody.statements.ln {
+                    bodyStmts.psh armBody.statements[bi]
+                    bi = bi + 1
+                }
+            } els if armBody.kind != "" {
+                bodyStmts.psh armBody
+            }
+            loopBody = createBlockNode bodyStmts
+
+            loadI = createVariableNode idxTemp
+            one = createNumberNode "1"
+            addExpr = createBinaryNode "+", loadI, one
+            storeI = createVariableNode idxTemp
+            stepAssign = createBinaryNode "=", storeI, addExpr
+            stepStmt = createExpressionStmtNode stepAssign
+
+            emptyInit = { kind: "" }
+            forNode = createForNode emptyInit, cond, stepStmt, loopBody
+            outerStmts.psh forNode
+            // Block scope so repeated `fr item of ...` bindings don't redeclare
+            -> createBlockNode outerStmts
+        }
+        // C-style: fr init; cond; step
         initStmt = parseStatement p
         if (curTok p).val == ";" {
             advanceParser p
@@ -1385,15 +1884,43 @@ parseStatement p {
                 let args = [targetVar]
                 callNode = createCallNode propName, args
                 -> createExpressionStmtNode callNode
-            } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
-                advanceParser p
-                argExpr = parseExpression p, 0
-                let args = [targetVar, argExpr]
-                callNode = createCallNode propName, args
-                -> createExpressionStmtNode callNode
             } els {
-                propAccess = createPropertyAccessNode targetVar, propName
-                -> createExpressionStmtNode propAccess
+                let isTypeExt = 0
+                if identName.ln > 0 {
+                    c0E = identName.chr 0
+                    if c0E == "A" || c0E == "B" || c0E == "C" || c0E == "D" || c0E == "E" || c0E == "F" ||
+                       c0E == "G" || c0E == "H" || c0E == "I" || c0E == "J" || c0E == "K" || c0E == "L" ||
+                       c0E == "M" || c0E == "N" || c0E == "O" || c0E == "P" || c0E == "Q" || c0E == "R" ||
+                       c0E == "S" || c0E == "T" || c0E == "U" || c0E == "V" || c0E == "W" || c0E == "X" ||
+                       c0E == "Y" || c0E == "Z" {
+                        isTypeExt = 1
+                    }
+                }
+                if isTypeExt == 1 && ((peekTok p).val == "{" || (peekTok p).kind == "IDENT") {
+                    let mParams = ["self"]
+                    wh (peekTok p).val != "{" && (peekTok p).kind != "EOF" {
+                        advanceParser p
+                        if (curTok p).kind == "IDENT" {
+                            pVal = (curTok p).val
+                            mParams.psh pVal
+                        }
+                        if (peekTok p).val == "," {
+                            advanceParser p // consume ','
+                        }
+                    }
+                    body = parseBlock p
+                    mangled = `${identName}_${propName}`
+                    -> createFuncNode mangled, mParams, body, 0, 0
+                } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
+                    advanceParser p
+                    argExpr = parseExpression p, 0
+                    let args = [targetVar, argExpr]
+                    callNode = createCallNode propName, args
+                    -> createExpressionStmtNode callNode
+                } els {
+                    propAccess = createPropertyAccessNode targetVar, propName
+                    -> createExpressionStmtNode propAccess
+                }
             }
         } els if (peekTok p).val == "[" {
             // Generic function declaration: fnName[T] ...

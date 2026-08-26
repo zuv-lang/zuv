@@ -174,6 +174,30 @@ checkExpr checker, expr {
         checkExpr checker, expr.index
     } els if expr.kind == "PropertyAccess" {
         checkExpr checker, expr.object
+    } els if expr.kind == "StructLiteral" {
+        let i = 0
+        wh i < expr.fields.ln {
+            f = expr.fields[i]
+            if f.value.kind != "" {
+                checkExpr checker, f.value
+            }
+            i = i + 1
+        }
+    } els if expr.kind == "NewExpr" {
+        let i = 0
+        wh i < expr.fields.ln {
+            f = expr.fields[i]
+            if f.value.kind != "" {
+                checkExpr checker, f.value
+            }
+            i = i + 1
+        }
+        let j = 0
+        wh j < expr.args.ln {
+            a = expr.args[j]
+            checkExpr checker, a
+            j = j + 1
+        }
     }
 }
 
@@ -248,6 +272,17 @@ checkStatement checker, stmt {
         pushCheckerScope checker
         if stmt.init.kind == "VarDecl" {
             declareVar checker, stmt.init.name, 1
+        } els if stmt.init.kind == "StmtSequence" {
+            let si = 0
+            wh si < stmt.init.statements.ln {
+                s = stmt.init.statements[si]
+                if s.kind == "VarDecl" {
+                    declareVar checker, s.name, 1
+                } els if s.kind != "" {
+                    checkStatement checker, s
+                }
+                si = si + 1
+            }
         } els if stmt.init.kind != "" {
             checkStatement checker, stmt.init
         }
@@ -300,9 +335,45 @@ checkStatement checker, stmt {
             checkStatement checker, stmt.errBody
         }
         popCheckerScope checker
+    } els if stmt.kind == "TryStmt" {
+        if stmt.tryBody.kind != "" {
+            checkStatement checker, stmt.tryBody
+        }
+        if stmt.catchBody.kind != "" {
+            pushCheckerScope checker
+            if stmt.catchName != "" {
+                declareVar checker, stmt.catchName, 0
+            }
+            checkStatement checker, stmt.catchBody
+            popCheckerScope checker
+        }
+        if stmt.finallyBody.kind != "" {
+            checkStatement checker, stmt.finallyBody
+        }
+    } els if stmt.kind == "ThrowStmt" {
+        checkExpr checker, stmt.value
     } els if stmt.kind == "ExternDecl" {
         if stmt.name != "" {
             declareVar checker, stmt.name, 0
+        }
+    } els if stmt.kind == "ObjDecl" {
+        declareVar checker, stmt.name, 0
+        let mi = 0
+        wh mi < stmt.methods.ln {
+            m = stmt.methods[mi]
+            pushCheckerScope checker
+            declareVar checker, "self", 0
+            let pi = 0
+            wh pi < m.params.ln {
+                p = m.params[pi]
+                declareVar checker, p.name, 0
+                pi = pi + 1
+            }
+            if m.body.kind != "" {
+                checkStatement checker, m.body
+            }
+            popCheckerScope checker
+            mi = mi + 1
         }
     } els {
         checkExpr checker, stmt

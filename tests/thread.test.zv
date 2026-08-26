@@ -1,7 +1,7 @@
 // Dedicated Unit Test for Native Multithreading (spn / jn / wrk)
-// Requires imp thr, time
+// Requires imp thrd, time
 
-imp thr
+imp thrd
 imp time
 
 wrk workerTask {

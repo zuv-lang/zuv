@@ -92,13 +92,14 @@ isLexerLetter ch {
 isLexerKeyword word {
     if word == "imp" || word == "frm" || word == "wrk" || word == "prnt" ||
        word == "lg" || word == "wrn" || word == "inf" || word == "nan" || word == "Infinity" || word == "ret" ||
-       word == "els" || word == "wh" || word == "fr" || word == "brk" ||
-       word == "cont" || word == "dn" || word == "mch" || word == "ok" ||
+       word == "els" || word == "wh" || word == "fr" || word == "of" || word == "in" || word == "brk" ||
+       word == "cont" || word == "dn" || word == "mch" || word == "sw" || word == "ok" ||
        word == "err" || word == "if" || word == "and" || word == "or" ||
        word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" ||
        word == "typ" || word == "sym" || word == "enum" || word == "as" ||
        word == "obj" || word == "num" || word == "bool" || word == "str" ||
-       word == "extern" || word == "ffi" || word == "main" {
+       word == "extern" || word == "ffi" || word == "main" ||
+       word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" {
         -> 1
     }
     -> 0
@@ -517,9 +518,18 @@ nextLexerToken lexer {
         -> createToken "SYM", "?", startLine, startCol
     }
 
+    if lexer.ch == ":" {
+        if (peekLexerChar lexer) == ":" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "::", startLine, startCol
+        }
+        readLexerChar lexer
+        -> createToken "SYM", ":", startLine, startCol
+    }
+
     if lexer.ch == "~" || lexer.ch == "(" || lexer.ch == ")" || lexer.ch == "{" || lexer.ch == "}" ||
-       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "," ||
-       lexer.ch == ":" || lexer.ch == ";" {
+       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "," || lexer.ch == ";" {
         c = lexer.ch
         readLexerChar lexer
         -> createToken "SYM", c, startLine, startCol

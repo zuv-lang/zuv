@@ -76,7 +76,9 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
 
 linkDirectObjectFile objPath, outExePath {
     let lldBin = "lld-link"
-    if fE "lld-link.exe" {
+    if fE "D:/LLVM/bin/lld-link.exe" {
+        lldBin = "D:/LLVM/bin/lld-link.exe"
+    } els if fE "lld-link.exe" {
         lldBin = "lld-link.exe"
     } els if fE "bin/lld-link.exe" {
         lldBin = "bin/lld-link.exe"
@@ -122,7 +124,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                 if impPath == "" && s.paths.ln > 0 {
                     impPath = s.paths[0]
                 }
-                if impPath != "" && impPath != "str" && impPath != "arr" && impPath != "fs" && impPath != "time" && impPath != "thread" && impPath != "thr" && impPath != "os" {
+                if impPath != "" && impPath != "str" && impPath != "arr" && impPath != "fs" && impPath != "time" && impPath != "thread" && impPath != "thrd" && impPath != "os" {
                     let fullImpPath = `${impPath}.zv`
                     if (fE fullImpPath) == 0 {
                         fullImpPath = `tests/${impPath}.zv`
@@ -209,6 +211,15 @@ handleCheck targetFile {
         lex = createLexer code
         toks = tokenizeFull lex
         prog = parseProgramFull toks
+        if prog.errors.ln > 0 {
+            prnt (` FAIL ${targetFile} (Parser Errors)`)
+            let pe = 0
+            wh pe < prog.errors.ln {
+                prnt (`   - ${prog.errors[pe]}`)
+                pe = pe + 1
+            }
+            -> 0
+        }
         okSafety = checkProgram prog
         if okSafety == 1 {
             prnt (` PASS ${targetFile}`)
@@ -248,23 +259,18 @@ handleCheckAll {
     prnt " ZUV CHECKALL v0.5.0 (Native Self-Hosting Static & Type Checker)"
     prnt ""
 
-    let tests = sF "tests", ".test.zv"
+    let tests = sF "tests", ".zv"
 
     let passCount = 0
     let failCount = 0
     let ti = 0
     wh ti < tests.ln {
         tFile = tests[ti]
-        if (tFile.cnt "error") > 0 {
-            prnt (` PASS ${tFile} (Expected error caught)`)
+        r = handleCheck tFile
+        if r == 1 {
             passCount = passCount + 1
         } els {
-            r = handleCheck tFile
-            if r == 1 {
-                passCount = passCount + 1
-            } els {
-                failCount = failCount + 1
-            }
+            failCount = failCount + 1
         }
         ti = ti + 1
     }
@@ -288,6 +294,7 @@ handleTest {
     prnt ""
 
     let tests = sF "tests", ".test.zv"
+    prnt (`Total test files discovered: ${tests.ln}`)
 
     let passCount = 0
     let failCount = 0
@@ -295,40 +302,24 @@ handleTest {
     overallStart = nw
     wh ti < tests.ln {
         tFile = tests[ti]
-        let isExpectedError = 0
-        if (tFile.cnt "error") > 0 {
-            isExpectedError = 1
-        }
-
         tStart = nw
-        tempExe = "test_run_temp.exe"
+        tempExe = `test_run_temp_${ti}.exe`
         buildOk = handleBuild tFile, 0, 0, tempExe
 
-        if isExpectedError == 1 {
+        if buildOk == 0 {
             tElapsed = nw - tStart
-            if buildOk == 0 {
-                prnt (` PASS ${tFile} (${tElapsed}ms) [Expected Error]`)
+            prnt (` FAIL ${tFile} (${tElapsed}ms) [Compilation Failed]`)
+            failCount = failCount + 1
+        } els {
+            runCmd = `.\\${tempExe} > nul 2>&1`
+            runRes = sh runCmd
+            tElapsed = nw - tStart
+            if runRes == 0 {
+                prnt (` PASS ${tFile} (${tElapsed}ms)`)
                 passCount = passCount + 1
             } els {
-                prnt (` FAIL ${tFile} (${tElapsed}ms) [Expected error but compiled]`)
+                prnt (` FAIL ${tFile} (${tElapsed}ms) [Execution failed code ${runRes}]`)
                 failCount = failCount + 1
-            }
-        } els {
-            if buildOk == 0 {
-                tElapsed = nw - tStart
-                prnt (` FAIL ${tFile} (${tElapsed}ms) [Compilation Failed]`)
-                failCount = failCount + 1
-            } els {
-                runCmd = `.\\${tempExe} > nul 2>&1`
-                runRes = sh runCmd
-                tElapsed = nw - tStart
-                if runRes == 0 {
-                    prnt (` PASS ${tFile} (${tElapsed}ms)`)
-                    passCount = passCount + 1
-                } els {
-                    prnt (` FAIL ${tFile} (${tElapsed}ms) [Execution failed code ${runRes}]`)
-                    failCount = failCount + 1
-                }
             }
         }
 

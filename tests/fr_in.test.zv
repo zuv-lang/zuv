@@ -1,0 +1,29 @@
+let rec = { a: 1, b: 2 }
+
+fr x in rec {
+    prnt x
+}
+
+prnt "---"
+
+fr key, val in rec {
+    prnt key
+    prnt val
+}
+
+prnt "---"
+
+let nums = [10, 20, 30]
+
+fr i in nums {
+    prnt i
+}
+
+prnt "---"
+
+fr idx, el in nums {
+    prnt idx
+    prnt el
+}
+
+prnt "fr in test complete"

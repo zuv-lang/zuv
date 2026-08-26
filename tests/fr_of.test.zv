@@ -1,0 +1,26 @@
+let nums = [10, 20, 30]
+
+fr item of nums {
+    prnt item
+}
+
+prnt "---"
+
+fr item, idx of nums {
+    prnt idx
+    prnt item
+}
+
+prnt "---"
+
+fr x of nums {
+    if x == 20 {
+        cont
+    }
+    if x == 30 {
+        brk
+    }
+    prnt x
+}
+
+prnt "fr of test complete"

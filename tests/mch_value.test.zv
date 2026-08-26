@@ -1,0 +1,86 @@
+sayThree msg {
+    prnt msg
+}
+
+let n = 2
+mch n {
+    1 => {
+        prnt "num One"
+    }
+    2 => {
+        prnt "num Two ok"
+    }
+    3 => {
+        prnt "num Three"
+    }
+    _ => {
+        prnt "num Default"
+    }
+}
+
+let m = 9
+mch m {
+    1 => {
+        prnt "wild miss"
+    }
+    2 => {
+        prnt "wild miss2"
+    }
+    _ => {
+        prnt "wild Default ok"
+    }
+}
+
+let s = "hi"
+mch s {
+    "bye" => {
+        prnt "str bye"
+    }
+    "hi" => {
+        prnt "str hi ok"
+    }
+    _ => {
+        prnt "str Default"
+    }
+}
+
+let b = yes
+mch b {
+    no => {
+        prnt "bool no"
+    }
+    yes => {
+        prnt "bool yes ok"
+    }
+    _ => {
+        prnt "bool Default"
+    }
+}
+
+let k = 3
+mch k {
+    1 => {
+        prnt "expr One"
+    }
+    2 => prnt "expr Two"
+    3 => sayThree "expr Three ok"
+    _ => {
+        prnt "expr Default"
+    }
+}
+
+let j = 2
+mch j {
+    1 => prnt "expr skip"
+    2 => prnt "expr Two ok"
+    _ => prnt "expr miss"
+}
+
+let swN = 1
+sw swN {
+    1 => prnt "sw One ok"
+    2 => prnt "sw Two"
+    _ => prnt "sw Default"
+}
+
+prnt "mch value test complete"

@@ -15,7 +15,7 @@ if a == 123n {
     prnt "var vs literal equal ok"
 }
 
-if a == BigInt "123" {
+if c == 123n {
     prnt "literal vs BigInt string equal ok"
 }
 
