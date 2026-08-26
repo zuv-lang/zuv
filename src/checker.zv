@@ -69,7 +69,7 @@ declareVar checker, name, isMut {
     existingInCurrent = findVarInCurrentScope checker, name
     if isMut == 1 {
         if existingInCurrent.name != "" {
-            errRedecl = `Variable '${name}' is already declared in this scope`
+            errRedecl = `error[E0201]: Variable '${name}' is already declared in this scope`
             checker.errors.psh errRedecl
         } els {
             curIdx = checker.scopes.ln - 1
@@ -95,7 +95,7 @@ checkExpr checker, expr {
     if expr.kind == "VariableExpr" {
         v = findVarState checker, expr.name
         if v.name != "" && v.isMoved == 1 {
-            errVal = `Use of moved value: '${expr.name}'`
+            errVal = `error[E0202]: Use of moved value: '${expr.name}'`
             checker.errors.psh errVal
         }
     } els if expr.kind == "UnaryExpr" {
@@ -105,22 +105,22 @@ checkExpr checker, expr {
                 v = findVarState checker, vName
                 if v.name != "" {
                     if v.isMoved == 1 {
-                        errMoved = `Cannot borrow moved value: '${vName}'`
+                        errMoved = `error[E0202]: Cannot borrow moved value: '${vName}'`
                         checker.errors.psh errMoved
                     }
                     if expr.op == "&mut" {
                         if v.isMut == 0 {
-                            errImmut = `Cannot borrow immutable variable '${vName}' as mutable (&mut)`
+                            errImmut = `error[E0203]: Cannot borrow immutable variable '${vName}' as mutable (&mut)`
                             checker.errors.psh errImmut
                         }
                         if v.immBorrows > 0 || v.mutBorrows > 0 {
-                            errActive = `Cannot borrow '${vName}' as mutable (&mut) because it is already borrowed`
+                            errActive = `error[E0204]: Cannot borrow '${vName}' as mutable (&mut) because it is already borrowed`
                             checker.errors.psh errActive
                         }
                         v.mutBorrows = v.mutBorrows + 1
                     } els {
                         if v.mutBorrows > 0 {
-                            errMut = `Cannot borrow '${vName}' as immutable (&) because it is borrowed as mutable (&mut)`
+                            errMut = `error[E0204]: Cannot borrow '${vName}' as immutable (&) because it is borrowed as mutable (&mut)`
                             checker.errors.psh errMut
                         }
                         v.immBorrows = v.immBorrows + 1
@@ -134,7 +134,7 @@ checkExpr checker, expr {
                 vName = expr.right.name
                 v = findVarState checker, vName
                 if v.name != "" && v.isMut == 0 {
-                    errImmut = `Cannot mutate immutable variable: '${vName}'`
+                    errImmut = `error[E0203]: Cannot mutate immutable variable: '${vName}'`
                     checker.errors.psh errImmut
                 }
             }
@@ -144,7 +144,7 @@ checkExpr checker, expr {
         }
     } els if expr.kind == "DerefExpr" {
         if checker.inUnsafe == 0 {
-            checker.errors.psh "Dereference of raw pointer requires unsafe block"
+            checker.errors.psh "error[E0205]: Dereference of raw pointer requires unsafe block"
         }
         checkExpr checker, expr.operand
     } els if expr.kind == "BinaryExpr" {
@@ -153,7 +153,7 @@ checkExpr checker, expr {
                 vName = expr.left.name
                 v = findVarState checker, vName
                 if v.name != "" && v.isMut == 0 {
-                    errMutate = `Cannot mutate immutable variable: '${vName}'`
+                    errMutate = `error[E0203]: Cannot mutate immutable variable: '${vName}'`
                     checker.errors.psh errMutate
                 }
             }

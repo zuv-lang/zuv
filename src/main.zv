@@ -3,6 +3,7 @@ imp str, arr, fs, time
 imp handleBuild, handleCheck, handleCheckAll, handleTest, handleRun, handleFmt frm cli
 imp createLexer, tokenizeFull frm lexer
 imp parseProgramFull frm parser
+imp createDiagnostic, formatDiagnostic frm diagnostics
 
 main cmd, fileArg, arg3, arg4 {
     let targetFile = fileArg

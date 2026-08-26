@@ -1,0 +1,61 @@
+// Diagnostics module for Zuv Self-Hosting Compiler (src/diagnostics.zv)
+imp str, arr, fs
+
+createDiagnostic code, message, filePath, line, col, len, label, help {
+    d = {
+        code: code,
+        message: message,
+        filePath: filePath,
+        line: line,
+        col: col,
+        len: len,
+        label: label,
+        help: help
+    }
+    -> d
+}
+
+formatDiagnostic diag, sourceText {
+    mut res = ""
+    res = res.cat (`error[${diag.code}]: ${diag.message}\n`)
+    mut fPath = diag.filePath
+    if fPath == "" { fPath = "<input>" }
+    if diag.line > 0 {
+        res = res.cat (`  --> ${fPath}:${diag.line}:${diag.col}\n`)
+        mut srcLine = ""
+        if sourceText != "" && diag.line > 0 {
+            lines = sourceText.splt "\n"
+            lineIdx = diag.line - 1
+            if lineIdx >= 0 && lineIdx < lines.ln {
+                srcLine = lines[lineIdx]
+            }
+        }
+        res = res.cat "   |\n"
+        res = res.cat (` ${diag.line} | ${srcLine}\n`)
+        mut caretPad = ""
+        mut cIdx = 1
+        wh cIdx < diag.col {
+            caretPad = caretPad.cat " "
+            cIdx = cIdx + 1
+        }
+        mut carets = ""
+        mut k = 0
+        mut spanLen = diag.len
+        if spanLen <= 0 { spanLen = 1 }
+        wh k < spanLen {
+            carets = carets.cat "^"
+            k = k + 1
+        }
+        res = res.cat (`   | ${caretPad}${carets}`)
+        if diag.label != "" {
+            res = res.cat (` ${diag.label}`)
+        }
+        res = res.cat "\n   |\n"
+        if diag.help != "" {
+            res = res.cat (`   = help: ${diag.help}\n`)
+        }
+    } els {
+        res = res.cat (`  --> ${fPath}\n`)
+    }
+    -> res
+}

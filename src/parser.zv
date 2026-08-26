@@ -177,7 +177,7 @@ expectPeekToken p, expectedKind, expectedVal {
             -> 1
         }
     }
-    p.errors.psh (`Syntax Error: Expected ${expectedVal} at line ${peekT.line}`)
+    p.errors.psh (`error[E0102]: Expected '${expectedVal}' at line ${peekT.line}`)
     -> 0
 }
 

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🎨 Rich Compiler Diagnostics Engine
+- **Rich Diagnostics & Error Codes**: Rust/Clang-grade error formatting with exact line snippets, column caret indicators (`^^^^^`), error codes (`E0001` - `E9999`), labels, and `= help:` hints across parser and safety checker. New test: `diagnostics.test.zv`.
+
 ### 🛡️ Unsafe Blocks & Raw Pointer Dereferencing
 - **`unsafe` & Pointer Operations**: `unsafe { ... }` blocks, raw pointer types (`*byte`, `*num`, `*any`, `ptr`), dereferencing read (`v = *ptr`) and write (`*ptr = val`), address-of (`&val`), pointer arithmetic, and builtin `malloc`/`free`. New test: `unsafe_pointers.test.zv`.
 
