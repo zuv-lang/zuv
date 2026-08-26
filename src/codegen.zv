@@ -3270,7 +3270,12 @@ codegenFunctionDecl cg, funcStmt {
         i = i + 1
     }
 
-    let fnBuf = { code: (`define double @${fnName}(${paramsStr}) {\nentry:\n`) }
+    mut exportAttr = ""
+    if funcStmt.isExported == 1 || funcStmt.isExternC == 1 {
+        exportAttr = "dllexport "
+    }
+
+    let fnBuf = { code: (`define ${exportAttr}double @${fnName}(${paramsStr}) {\nentry:\n`) }
 
     let j = 0
     wh j < funcStmt.params.ln {

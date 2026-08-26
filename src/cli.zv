@@ -74,7 +74,17 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     -> 0
 }
 
-linkDirectObjectFile objPath, outExePath {
+strEndsWith text, suffix {
+    let tLen = text.ln
+    let sLen = suffix.ln
+    if sLen > tLen { -> 0 }
+    let startIdx = tLen - sLen
+    let sub = text.slc startIdx, tLen
+    if (strEq sub, suffix) == 1 { -> 1 }
+    -> 0
+}
+
+linkDirectObjectFile objPath, outExePath, isCdylib, customLibs {
     let lldBin = "lld-link"
     if fE "D:/LLVM/bin/lld-link.exe" {
         lldBin = "D:/LLVM/bin/lld-link.exe"
@@ -83,12 +93,23 @@ linkDirectObjectFile objPath, outExePath {
     } els if fE "bin/lld-link.exe" {
         lldBin = "bin/lld-link.exe"
     }
-    cmd = `${lldBin} "${objPath}" -out:"${outExePath}" -stack:33554432 -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo`
+
+    mut isDll = isCdylib
+    if (strEndsWith outExePath, ".dll") == 1 || (strEndsWith outExePath, ".DLL") == 1 {
+        isDll = 1
+    }
+
+    mut dllFlags = "-stack:33554432"
+    if isDll == 1 {
+        dllFlags = "-dll -noentry -defaultlib:ucrt -defaultlib:vcruntime"
+    }
+
+    cmd = `${lldBin} "${objPath}" -out:"${outExePath}" ${dllFlags} -defaultlib:libcmt ${customLibs} -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo`
     res = system cmd
     -> res
 }
 
-handleBuild targetFile, isRelease, emitLlvm, outExe {
+handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
     if fE targetFile {
         code = rF targetFile
         prnt "==========================================="
@@ -179,12 +200,39 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                     prnt "[zuv build] Direct in-process LLVM object code generation failed."
                     -> 0
                 }
-                linkRes = linkDirectObjectFile objPath, targetExe
+
+                mut customLibs = ""
+                let li = 0
+                wh li < prog.statements.ln {
+                    s = prog.statements[li]
+                    if s.kind == "ExternDecl" {
+                        if s.libName != "" && (strEq s.libName, "c") == 0 && (strEq s.libName, "libc") == 0 {
+                            mut cleanLib = s.libName
+                            if (strEndsWith cleanLib, ".dll") == 1 || (strEndsWith cleanLib, ".DLL") == 1 {
+                                cleanLib = cleanLib.slc 0, (cleanLib.ln - 4)
+                            }
+                            if (strEndsWith cleanLib, ".lib") == 1 || (strEndsWith cleanLib, ".LIB") == 1 {
+                                customLibs = `${customLibs} "${cleanLib}"`
+                            } els {
+                                customLibs = `${customLibs} -defaultlib:${cleanLib}`
+                            }
+                        }
+                    }
+                    li = li + 1
+                }
+
+                linkRes = linkDirectObjectFile objPath, targetExe, isCdylib, customLibs
                 if fE objPath {
                     rmF objPath
                 }
                 if linkRes == 0 {
-                    if isRelease == 1 {
+                    mut isDllTarget = isCdylib
+                    if (strEndsWith targetExe, ".dll") == 1 || (strEndsWith targetExe, ".DLL") == 1 {
+                        isDllTarget = 1
+                    }
+                    if isDllTarget == 1 {
+                        prnt (`[zuv build] Successfully generated shared C library ${targetExe}`)
+                    } els if isRelease == 1 {
                         prnt (`[zuv build] Successfully generated ${targetExe} (-O3 Native In-Process)`)
                     } els {
                         prnt (`[zuv build] Successfully generated ${targetExe} (Debug In-Process)`)
@@ -316,7 +364,7 @@ handleTest {
         tFile = tests[ti]
         tStart = nw
         tempExe = `test_run_temp_${ti}.exe`
-        buildOk = handleBuild tFile, 0, 0, tempExe
+        buildOk = handleBuild tFile, 0, 0, tempExe, 0
 
         if buildOk == 0 {
             tElapsed = nw - tStart
@@ -357,9 +405,9 @@ handleTest {
 }
 
 runCompiler targetFile {
-    handleBuild targetFile, 0, 0, "output.exe"
+    handleBuild targetFile, 0, 0, "output.exe", 0
 }
 
 runCompilerOpt targetFile, isRelease, emitLlvm, outExe {
-    handleBuild targetFile, isRelease, emitLlvm, outExe
+    handleBuild targetFile, isRelease, emitLlvm, outExe, 0
 }

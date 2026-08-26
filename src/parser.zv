@@ -1903,6 +1903,85 @@ parseStatement p {
         -> { kind: "BreakStmt" }
     } els if t.kind == "KEYWORD" && (t.val == "cont" || t.val == "continue") {
         -> { kind: "ContinueStmt" }
+    } els if t.kind == "KEYWORD" && t.val == "pub" {
+        advanceParser p // consume 'pub'
+        mut isExternC = 0
+        if (curTok p).kind == "KEYWORD" && (curTok p).val == "extern" {
+            advanceParser p // consume 'extern'
+            if (curTok p).kind == "STRING" && ((curTok p).val == "C" || (curTok p).val == "c") {
+                isExternC = 1
+                advanceParser p // consume 'C'
+            }
+        }
+        if (curTok p).kind == "IDENT" {
+            fnName = (curTok p).val
+            advanceParser p
+            mut hasRest = 0
+            let params = []
+            if (curTok p).val == "(" {
+                advanceParser p // consume '('
+                if (curTok p).val != ")" {
+                    pValFirst = (curTok p).val
+                    if (peekTok p).val == ":" {
+                        advanceParser p // consume ':'
+                        advanceParser p // consume type
+                    }
+                    params.psh pValFirst
+                    wh (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                        advanceParser p
+                        pVal = (curTok p).val
+                        if (peekTok p).val == ":" {
+                            advanceParser p // consume ':'
+                            advanceParser p // consume type
+                        }
+                        params.psh pVal
+                    }
+                }
+                if (peekTok p).val == ")" {
+                    advanceParser p
+                }
+            } els if (curTok p).kind == "IDENT" || (curTok p).val == "..." {
+                if (curTok p).val == "..." {
+                    advanceParser p
+                    pRest = (curTok p).val
+                    params.psh pRest
+                    hasRest = 1
+                } els {
+                    pValFirst = (curTok p).val
+                    if (peekTok p).val == ":" {
+                        advanceParser p // consume ':'
+                        advanceParser p // consume type
+                    }
+                    params.psh pValFirst
+                    wh (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                        advanceParser p
+                        if (curTok p).val == "..." {
+                            advanceParser p
+                            pRest2 = (curTok p).val
+                            params.psh pRest2
+                            hasRest = 1
+                        } els {
+                            pVal = (curTok p).val
+                            if (peekTok p).val == ":" {
+                                advanceParser p // consume ':'
+                                advanceParser p // consume type
+                            }
+                            params.psh pVal
+                        }
+                    }
+                }
+            }
+            if (peekTok p).val == "->" {
+                advanceParser p // consume '->'
+                advanceParser p // consume return type
+            }
+            body = parseBlock p
+            fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC }
+            -> fnNode
+        }
+        -> { kind: "" }
     } els if t.kind == "SYM" && t.val == "{" && (isObjectDestructureAssign p) == 1 {
         -> parseObjectDestructure p, 0
     } els if t.kind == "SYM" && t.val == "[" && (isArrayDestructureAssign p) == 1 {

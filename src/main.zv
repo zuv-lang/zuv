@@ -5,7 +5,7 @@ imp createLexer, tokenizeFull frm lexer
 imp parseProgramFull frm parser
 imp createDiagnostic, formatDiagnostic frm diagnostics
 
-main cmd, fileArg, arg3, arg4 {
+main cmd, fileArg, arg3, arg4, arg5, arg6 {
     let targetFile = fileArg
     if targetFile == "" {
         if fE "src/main.zv" {
@@ -17,19 +17,31 @@ main cmd, fileArg, arg3, arg4 {
 
     let isRelease = 0
     let emitLlvm = 0
-    let outExe = "output.exe"
+    mut isCdylib = 0
+    mut outExe = "output.exe"
 
-    if arg3 == "-o" && arg4 != "" {
-        outExe = arg4
+    let args = [arg3, arg4, arg5, arg6]
+    let ai = 0
+    wh ai < args.ln {
+        a = args[ai]
+        if a == "--release" || a == "-r" {
+            isRelease = 1
+        }
+        if a == "--cdylib" || a == "--lib" || a == "-l" {
+            isCdylib = 1
+        }
+        if a == "--emit-llvm" || a == "-S" {
+            emitLlvm = 1
+        }
+        if a == "-o" && ai + 1 < args.ln {
+            ai = ai + 1
+            outExe = args[ai]
+        }
+        ai = ai + 1
     }
-    if arg3 == "--release" || arg3 == "-r" {
-        isRelease = 1
-    }
-    if arg3 == "--emit-llvm" || arg3 == "-S" {
-        emitLlvm = 1
-    }
-    if arg4 == "--release" || arg4 == "-r" {
-        isRelease = 1
+
+    if isCdylib == 1 && outExe == "output.exe" {
+        outExe = "output.dll"
     }
 
     if cmd == "checkall" || cmd == "check-all" {
@@ -41,7 +53,7 @@ main cmd, fileArg, arg3, arg4 {
             handleCheck targetFile
         } els {
             if cmd == "build" {
-                handleBuild targetFile, isRelease, emitLlvm, outExe
+                handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib
             } els {
                 if cmd == "run" {
                     handleRun targetFile

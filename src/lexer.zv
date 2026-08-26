@@ -108,7 +108,7 @@ isLexerKeyword word {
        word == "obj" || word == "num" || word == "bool" || word == "str" {
         -> 1
     }
-    if word == "extern" || word == "ffi" || word == "main" ||
+    if word == "extern" || word == "ffi" || word == "main" || word == "pub" ||
        word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" || word == "unsafe" {
         -> 1
     }

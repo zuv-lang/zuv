@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔌 JS Interop & Shared C Dynamic Library Output (`--cdylib` / `--lib`)
+- **`pub extern "C"` Export & Shared Libraries**: Added native C-exportable shared dynamic library compilation (`.dll` on Windows, `.so` on Linux, `.dylib` on macOS) using `pub extern "C"` function definitions with unmangled C ABI linkage and `dllexport` LLVM code generation.
+- **Compiler CLI & LLD `/DLL` Linking**: Added `--cdylib`, `--lib`, and `-l` flags to `zuv build` to invoke `lld-link.exe` in DLL mode (`-dll -noentry -implib:"<name>.lib"`).
+- **New Tests**: `cdylib_export.test.zv` and `call_cdylib.test.zv` (tested with Python `ctypes` and Zuv FFI).
+
+### 📚 Developer Documentation Suite (`docs/`)
+- **`docs/LANGUAGE_GUIDE.md`**: Complete language specification covering parenthesis-free syntax, types, arithmetic/bitwise/modern operators, borrowing/ownership, pattern matching, destructuring, structs/methods, exceptions, and standard library reference.
+- **`docs/CLI_REFERENCE.md`**: CLI manual detailing commands (`init`, `check`, `checkall`, `build`, `run`, `test`, `fmt`, `lsp`) and build flags (`--release`, `--cdylib`, `--emit-llvm`, `-o`).
+- **`docs/SHARED_LIBRARIES.md`**: Dedicated architectural guide on compiling `.dll` / `.so` / `.dylib` shared libraries and consuming them from Node.js/Bun (`bun:ffi`), Python (`ctypes`), C/C++, and Zuv.
+
 ### 🎨 Rich Compiler Diagnostics Engine
 - **Rich Diagnostics & Error Codes**: Rust/Clang-grade error formatting with exact line snippets, column caret indicators (`^^^^^`), error codes (`E0001` - `E9999`), labels, and `= help:` hints across parser and safety checker. New test: `diagnostics.test.zv`.
 
