@@ -104,7 +104,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
 
         lex = createLexer code
         toks = tokenizeFull lex
-        let prog = parseProgramFull toks
+        let prog = parseProgramFull toks, targetFile, code
         if prog.errors.ln > 0 {
             let pe = 0
             wh pe < prog.errors.ln {
@@ -133,7 +133,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                         impCode = rF fullImpPath
                         impLex = createLexer impCode
                         impToks = tokenizeFull impLex
-                        impProg = parseProgramFull impToks
+                        impProg = parseProgramFull impToks, fullImpPath, impCode
                         let ij = 0
                         wh ij < impProg.statements.ln {
                             importedStmts.psh impProg.statements[ij]
@@ -159,7 +159,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
             prog.statements = combinedStmts
         }
 
-        okSafety = checkProgram prog
+        okSafety = checkProgram prog, targetFile, code
         if okSafety == 1 {
             ir = generateLLVMFull prog
 
@@ -196,6 +196,11 @@ handleBuild targetFile, isRelease, emitLlvm, outExe {
                 }
             }
         } els {
+            let se = 0
+            wh se < prog.errors.ln {
+                prnt prog.errors[se]
+                se = se + 1
+            }
             prnt "[zuv build] Safety or borrow checker validation failed."
             -> 0
         }
@@ -210,22 +215,29 @@ handleCheck targetFile {
         code = rF targetFile
         lex = createLexer code
         toks = tokenizeFull lex
-        prog = parseProgramFull toks
+        prog = parseProgramFull toks, targetFile, code
         if prog.errors.ln > 0 {
             prnt (` FAIL ${targetFile} (Parser Errors)`)
             let pe = 0
             wh pe < prog.errors.ln {
-                prnt (`   - ${prog.errors[pe]}`)
+                errMsg = prog.errors[pe]
+                prnt errMsg
                 pe = pe + 1
             }
             -> 0
         }
-        okSafety = checkProgram prog
+        okSafety = checkProgram prog, targetFile, code
         if okSafety == 1 {
             prnt (` PASS ${targetFile}`)
             -> 1
         } els {
             prnt (` FAIL ${targetFile} (Semantic / Safety Check Failed)`)
+            let se = 0
+            wh se < prog.errors.ln {
+                errMsg2 = prog.errors[se]
+                prnt errMsg2
+                se = se + 1
+            }
             -> 0
         }
     } els {

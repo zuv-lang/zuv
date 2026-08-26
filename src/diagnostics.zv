@@ -1,61 +1,98 @@
 // Diagnostics module for Zuv Self-Hosting Compiler (src/diagnostics.zv)
 imp str, arr, fs
 
-createDiagnostic code, message, filePath, line, col, len, label, help {
+getLineFromSource sourceText, targetLine {
+    if targetLine <= 0 { -> "" }
+    mut curLine = 1
+    mut startIdx = 0
+    let l = sourceText.ln
+    mut i = 0
+    wh i < l {
+        c = sourceText.chr i
+        if c == "\n" {
+            if curLine == targetLine {
+                mut endIdx = i
+                if endIdx > startIdx {
+                    prevIdx = endIdx - 1
+                    prevC = sourceText.chr prevIdx
+                    if prevC == "\r" {
+                        endIdx = prevIdx
+                    }
+                }
+                -> sourceText.slc startIdx, endIdx
+            }
+            curLine = curLine + 1
+            startIdx = i + 1
+        }
+        i = i + 1
+    }
+    if curLine == targetLine && startIdx < l {
+        mut endIdx2 = l
+        if endIdx2 > startIdx {
+            prevIdx2 = endIdx2 - 1
+            prevC2 = sourceText.chr prevIdx2
+            if prevC2 == "\r" {
+                endIdx2 = prevIdx2
+            }
+        }
+        -> sourceText.slc startIdx, endIdx2
+    }
+    -> ""
+}
+
+createDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr {
     d = {
-        code: code,
-        message: message,
-        filePath: filePath,
-        line: line,
-        col: col,
-        len: len,
-        label: label,
-        help: help
+        code: codeStr,
+        message: msgStr,
+        filePath: pathStr,
+        line: lineNum,
+        col: colNum,
+        len: lenNum,
+        label: labelStr,
+        help: helpStr
     }
     -> d
 }
 
-formatDiagnostic diag, sourceText {
-    mut res = ""
-    res = res.cat (`error[${diag.code}]: ${diag.message}\n`)
-    mut fPath = diag.filePath
+formatDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr, sourceText {
+    mut fPath = pathStr
     if fPath == "" { fPath = "<input>" }
-    if diag.line > 0 {
-        res = res.cat (`  --> ${fPath}:${diag.line}:${diag.col}\n`)
-        mut srcLine = ""
-        if sourceText != "" && diag.line > 0 {
-            lines = sourceText.splt "\n"
-            lineIdx = diag.line - 1
-            if lineIdx >= 0 && lineIdx < lines.ln {
-                srcLine = lines[lineIdx]
-            }
+    mut res = "error[" + codeStr + "]: " + msgStr + "\n"
+    if lineNum > 0 {
+        lineStr = lineNum as str
+        colStr = colNum as str
+        res = res + "  --> " + fPath + ":" + lineStr + ":" + colStr + "\n"
+        mut srcLine = getLineFromSource sourceText, lineNum
+        mut lineNumStr = lineNum as str
+        if lineNumStr.ln < 2 {
+            lineNumStr = " " + lineNumStr
         }
-        res = res.cat "   |\n"
-        res = res.cat (` ${diag.line} | ${srcLine}\n`)
+        res = res + "   |\n"
+        res = res + lineNumStr + " | " + srcLine + "\n"
         mut caretPad = ""
         mut cIdx = 1
-        wh cIdx < diag.col {
-            caretPad = caretPad.cat " "
+        wh cIdx < colNum {
+            caretPad = caretPad + " "
             cIdx = cIdx + 1
         }
         mut carets = ""
         mut k = 0
-        mut spanLen = diag.len
+        mut spanLen = lenNum
         if spanLen <= 0 { spanLen = 1 }
         wh k < spanLen {
-            carets = carets.cat "^"
+            carets = carets + "^"
             k = k + 1
         }
-        res = res.cat (`   | ${caretPad}${carets}`)
-        if diag.label != "" {
-            res = res.cat (` ${diag.label}`)
+        res = res + "   | " + caretPad + carets
+        if labelStr != "" {
+            res = res + " " + labelStr
         }
-        res = res.cat "\n   |\n"
-        if diag.help != "" {
-            res = res.cat (`   = help: ${diag.help}\n`)
+        res = res + "\n   |\n"
+        if helpStr != "" {
+            res = res + "   = help: " + helpStr + "\n"
         }
     } els {
-        res = res.cat (`  --> ${fPath}\n`)
+        res = res + "  --> " + fPath + "\n"
     }
     -> res
 }

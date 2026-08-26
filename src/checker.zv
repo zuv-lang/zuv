@@ -1,5 +1,6 @@
 // Full Static Semantic & Borrow Checker for Zuv Self-Hosting Compiler (src/checker.zv)
-imp str, arr
+imp str, arr, diagnostics
+imp createDiagnostic, formatDiagnostic frm diagnostics
 
 createScope {
     let vars = []
@@ -15,7 +16,7 @@ createChecker {
     // Built-in project-wide global object (immutable binding; properties are writable)
     glbVar = { name: "glb", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
     globalScope.vars.psh glbVar
-    res = { scopes: scopes, errors: errors, inUnsafe: 0 }
+    res = { scopes: scopes, errors: errors, inUnsafe: 0, filePath: "", sourceText: "" }
     -> res
 }
 
@@ -65,11 +66,15 @@ findVarInCurrentScope checker, name {
     -> emptyVar
 }
 
-declareVar checker, name, isMut {
+declareVar checker, name, isMut, line, col {
     existingInCurrent = findVarInCurrentScope checker, name
     if isMut == 1 {
         if existingInCurrent.name != "" {
-            errRedecl = `error[E0201]: Variable '${name}' is already declared in this scope`
+            mut dLine = line
+            mut dCol = col
+            if dLine == und || dLine == nil || dLine <= 0 { dLine = 1 }
+            if dCol == und || dCol == nil || dCol <= 0 { dCol = 1 }
+            errRedecl = formatDiagnostic "E0201", `Variable '${name}' is already declared in this scope`, checker.filePath, dLine, dCol, name.ln, "duplicate declaration", "remove the duplicate 'let' / 'mut' or rename the variable", checker.sourceText
             checker.errors.psh errRedecl
         } els {
             curIdx = checker.scopes.ln - 1
@@ -217,7 +222,7 @@ checkStatement checker, stmt {
             }
         }
         checkExpr checker, stmt.value
-        declareVar checker, stmt.name, stmt.isMut
+        declareVar checker, stmt.name, stmt.isMut, stmt.line, stmt.col
     } els if stmt.kind == "DestructureStmt" {
         checkExpr checker, stmt.source
         let di = 0
@@ -399,8 +404,14 @@ checkStatement checker, stmt {
     }
 }
 
-checkProgram program {
+checkProgram program, filePath, sourceText {
     checker = createChecker
+    mut fPath = filePath
+    if fPath == und || fPath == nil { fPath = "" }
+    mut src = sourceText
+    if src == und || src == nil { src = "" }
+    checker.filePath = fPath
+    checker.sourceText = src
     let i = 0
     wh i < program.statements.ln {
         stmt = program.statements[i]
@@ -411,7 +422,7 @@ checkProgram program {
     if checker.errors.ln > 0 {
         let ei = 0
         wh ei < checker.errors.ln {
-            err checker.errors[ei]
+            program.errors.psh checker.errors[ei]
             ei = ei + 1
         }
         -> 0

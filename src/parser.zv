@@ -1,6 +1,7 @@
 // AST Nodes & Full Recursive Descent Parser for Zuv Self-Hosting Compiler (src/parser.zv)
-imp str, arr
+imp str, arr, diagnostics
 imp createToken frm tokens
+imp createDiagnostic, formatDiagnostic frm diagnostics
 
 isUpperChar c {
     if c == "A" || c == "B" || c == "C" || c == "D" || c == "E" || c == "F" ||
@@ -136,11 +137,15 @@ getTokenPrecedence tok {
 }
 
 // ── Parser State ─────────────────────────────────────────────────────────────
-createParser tokens {
+createParser tokens, filePath, sourceText {
     l = tokens.ln
     emptyTok = createToken "EOF", "", 0, 0
     let emptyErrors = []
-    let p = { tokens: tokens, pos: 0, totalLen: l, curTok: emptyTok, peekTok: emptyTok, errors: emptyErrors, desCount: 0, allowIdentStruct: 1 }
+    mut fPath = filePath
+    if fPath == und || fPath == nil { fPath = "" }
+    mut src = sourceText
+    if src == und || src == nil { src = "" }
+    let p = { tokens: tokens, pos: 0, totalLen: l, curTok: emptyTok, peekTok: emptyTok, errors: emptyErrors, desCount: 0, allowIdentStruct: 1, filePath: fPath, sourceText: src }
     advanceParser p
     advanceParser p
     -> p
@@ -177,7 +182,10 @@ expectPeekToken p, expectedKind, expectedVal {
             -> 1
         }
     }
-    p.errors.psh (`error[E0102]: Expected '${expectedVal}' at line ${peekT.line}`)
+    mut expMsg = expectedVal
+    if expMsg == "" { expMsg = expectedKind }
+    errPeek = formatDiagnostic "E0102", `Expected '${expMsg}', got '${peekT.val}' instead`, p.filePath, peekT.line, peekT.col, peekT.val.ln, `expected ${expMsg}`, `add '${expMsg}' here`, p.sourceText
+    p.errors.psh errPeek
     -> 0
 }
 
@@ -292,8 +300,12 @@ createStructLitNode name, fields {
     -> res
 }
 
-createVarDeclNode name, val, isMut {
-    res = { kind: "VarDecl", name: name, value: val, isMut: isMut }
+createVarDeclNode name, val, isMut, line, col {
+    mut l = line
+    mut c = col
+    if l == und || l == nil { l = 0 }
+    if c == und || c == nil { c = 0 }
+    res = { kind: "VarDecl", name: name, value: val, isMut: isMut, line: l, col: c }
     -> res
 }
 
@@ -1512,12 +1524,14 @@ parseStatement p {
             -> parseMultiVarAssign p, 1
         } els {
             vName = (curTok p).val
+            vLine = (curTok p).line
+            vCol = (curTok p).col
             if (peekTok p).val == "=" {
                 advanceParser p
             }
             advanceParser p
             valExpr = parseExpression p, 0
-            -> createVarDeclNode vName, valExpr, 1
+            -> createVarDeclNode vName, valExpr, 1, vLine, vCol
         }
     } els if t.kind == "KEYWORD" && t.val == "main" {
         let paramName = ""
@@ -1898,21 +1912,27 @@ parseStatement p {
         if (isMultiVarAssign p) == 1 {
             -> parseMultiVarAssign p, 0
         } els if (peekTok p).val == "=" {
+            iLine = t.line
+            iCol = t.col
             advanceParser p // consume '='
             if (peekTok p).kind == "EOF" {
-                p.errors.psh `error[E0101]: Expected expression after '='`
+                peekT = peekTok p
+                errEof = formatDiagnostic "E0101", "Expected valid expression, got EOF", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
+                p.errors.psh errEof
                 -> { kind: "" }
             }
             advanceParser p
             valExpr = parseExpression p, 0
-            -> createVarDeclNode identName, valExpr, 0
+            -> createVarDeclNode identName, valExpr, 0, iLine, iCol
         } els if (peekTok p).val == "+=" || (peekTok p).val == "-=" || (peekTok p).val == "*=" || (peekTok p).val == "/=" || (peekTok p).val == "%=" || (peekTok p).val == "**=" || (peekTok p).val == "&=" || (peekTok p).val == "|=" || (peekTok p).val == "^=" {
             // x += rhs → x = x + rhs
             compOp = (peekTok p).val
             baseOp = compoundBaseOp compOp
             advanceParser p // consume compound
             if (peekTok p).kind == "EOF" {
-                p.errors.psh `error[E0101]: Expected expression after compound assign`
+                peekT = peekTok p
+                errComp = formatDiagnostic "E0101", "Expected valid expression after compound assign", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
+                p.errors.psh errComp
                 -> { kind: "" }
             }
             advanceParser p
@@ -2132,8 +2152,8 @@ parseStatement p {
     }
 }
 
-parseProgramFull tokens {
-    p = createParser tokens
+parseProgramFull tokens, filePath, sourceText {
+    p = createParser tokens, filePath, sourceText
     let statements = []
 
     wh (curTok p).kind != "EOF" {
