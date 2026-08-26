@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🛡️ Unsafe Blocks & Raw Pointer Dereferencing
+- **`unsafe` & Pointer Operations**: `unsafe { ... }` blocks, raw pointer types (`*byte`, `*num`, `*any`, `ptr`), dereferencing read (`v = *ptr`) and write (`*ptr = val`), address-of (`&val`), pointer arithmetic, and builtin `malloc`/`free`. New test: `unsafe_pointers.test.zv`.
+
 ### 📐 Hardware Math Intrinsics & Constants
 - **Math Intrinsics (`mth` / `Math`)**: Added direct LLVM intrinsics and C math bindings (`abs`, `ceil`, `floor`, `round`, `trunc`, `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `pow`, `max`, `min`, `log`, `exp`, `rand`).
 - **Constants**: Supported `PI`, `E`, `LN2`, `LN10`, `LOG2E`, `LOG10E`, `SQRT2`, `SQRT1_2` via `mth.CONST`, `Math.CONST`, or direct names.

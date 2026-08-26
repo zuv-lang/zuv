@@ -914,7 +914,15 @@ codegenExpr cg, expr, outBuf {
         }
         if expr.op == "=" {
             rightReg = codegenExpr cg, expr.right, outBuf
-            if expr.left.kind == "VariableExpr" {
+            if expr.left.kind == "DerefExpr" {
+                ptrVal = codegenExpr cg, expr.left.operand, outBuf
+                ptrInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ptrInt} = fptosi double ${ptrVal} to i64\n`)
+                rawPtr = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${ptrInt} to ptr\n`)
+                outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${rawPtr}\n`)
+                -> rightReg
+            } els if expr.left.kind == "VariableExpr" {
                 cgSym = findCgSymbol cg, expr.left.name
                 if cgSym.name != "" {
                     outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${cgSym.reg}\n`)
@@ -1820,6 +1828,25 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${msInt} = fptosi double ${msReg} to i32\n`)
             outBuf.code = outBuf.code.cat (`  call void @Sleep(i32 ${msInt})\n`)
             -> "0.0"
+        } els if expr.callee == "malloc" && expr.args.ln == 1 {
+            szReg = codegenExpr cg, expr.args[0], outBuf
+            szInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szInt} = fptosi double ${szReg} to i64\n`)
+            bufPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufPtr} = call ptr @malloc(i64 ${szInt})\n`)
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufPtr} to i64\n`)
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+            -> bufDbl
+        } els if expr.callee == "free" && expr.args.ln == 1 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            rawPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${pInt} to ptr\n`)
+            outBuf.code = outBuf.code.cat (`  call void @free(ptr ${rawPtr})\n`)
+            -> "0.0"
         }
 
         if expr.callee == "zuv_ptr_deref" && expr.args.ln == 1 {
@@ -2588,33 +2615,8 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${asDbl} = uitofp i1 ${boolI1} to double\n`)
             -> asDbl
         }
-        if castTargetStr == "*byte" {
-            bits = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
-            asDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
-            -> asDbl
-        }
-        if castTargetStr == "*num" {
-            bits = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
-            asDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
-            -> asDbl
-        }
-        if castTargetStr == "*any" {
-            bits = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
-            asDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
-            -> asDbl
-        }
-        if castTargetStr == "ptr" {
-            bits = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
-            asDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
-            -> asDbl
+        if castTargetStr == "*byte" || castTargetStr == "*num" || castTargetStr == "*any" || castTargetStr == "ptr" {
+            -> valReg
         }
         if castTargetStr == "str" {
             buf = newReg cg
@@ -2699,6 +2701,19 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${resReg} = sitofp i64 ${bit} to double\n`)
             -> resReg
         }
+        if expr.op == "&" {
+            if expr.right.kind == "VariableExpr" {
+                cgSym = findCgSymbol cg, expr.right.name
+                if cgSym.name != "" {
+                    intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${cgSym.reg} to i64\n`)
+                    dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+            }
+            -> codegenExpr cg, expr.right, outBuf
+        }
         rReg = codegenExpr cg, expr.right, outBuf
         if expr.op == "!" || expr.op == "not" {
             cmpReg = emitTruthyI1 cg, rReg, outBuf
@@ -2713,6 +2728,15 @@ codegenExpr cg, expr, outBuf {
             -> resReg
         }
         -> rReg
+    } els if expr.kind == "DerefExpr" {
+        ptrVal = codegenExpr cg, expr.operand, outBuf
+        ptrInt = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${ptrInt} = fptosi double ${ptrVal} to i64\n`)
+        rawPtr = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${ptrInt} to ptr\n`)
+        loadVal = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${loadVal} = load double, ptr ${rawPtr}\n`)
+        -> loadVal
     }
 
     -> "0.0"
@@ -3203,6 +3227,8 @@ codegenStmt cg, stmt, outBuf {
         }
     } els if stmt.kind == "EnumDecl" {
         registerEnum cg, stmt
+    } els if stmt.kind == "UnsafeBlock" {
+        codegenStmt cg, stmt.body, outBuf
     } els if stmt.kind == "BlockStmt" {
         let i = 0
         wh i < stmt.statements.ln {

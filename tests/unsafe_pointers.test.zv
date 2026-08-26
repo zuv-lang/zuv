@@ -1,0 +1,46 @@
+// Test for Task 13: Unsafe Blocks & Raw Pointer Dereferencing (unsafe, *ptr)
+
+unsafe {
+    let ptr = malloc 64 as *byte
+    *ptr = 42
+    let val = *ptr
+    prnt val
+    if val == 42 {
+        prnt "Dereferenced malloc pointer matches 42"
+    }
+    free ptr
+}
+
+// Pointer arithmetic and offset dereferencing
+unsafe {
+    let buffer = malloc 128 as *num
+    *buffer = 10
+    let second = buffer + 8
+    *second = 20
+    let third = buffer + 16
+    *third = 30
+
+    let v1 = *buffer
+    let v2 = *second
+    let v3 = *third
+    prnt v1
+    prnt v2
+    prnt v3
+
+    if v1 == 10 and v2 == 20 and v3 == 30 {
+        prnt "Pointer offset arithmetic passed"
+    }
+
+    free buffer
+}
+
+// Address-of variable
+unsafe {
+    let x = 1234
+    let xPtr = &x
+    let xVal = *xPtr
+    prnt xVal
+    if xVal == 1234 {
+        prnt "Address-of stack variable passed"
+    }
+}

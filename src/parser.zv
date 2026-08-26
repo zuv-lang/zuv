@@ -232,6 +232,16 @@ createPostfixUnaryNode op, left {
     -> res
 }
 
+createDerefNode operand {
+    res = { kind: "DerefExpr", operand: operand }
+    -> res
+}
+
+createUnsafeNode body {
+    res = { kind: "UnsafeBlock", body: body }
+    -> res
+}
+
 createCastNode value, targetType {
     res = { kind: "CastExpr", value: value, targetType: targetType }
     -> res
@@ -939,7 +949,7 @@ parseExpression p, precedence {
         advanceParser p
         left = parseExpression p, 0
         expectPeekToken p, "SYM", ")"
-    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
+    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--" || t.val == "*")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
             advanceParser p // skip 'mut'
@@ -953,6 +963,8 @@ parseExpression p, precedence {
             } els {
                 left = right
             }
+        } els if op == "*" {
+            left = createDerefNode right
         } els {
             left = createUnaryNode op, right
         }
@@ -962,6 +974,7 @@ parseExpression p, precedence {
 
     // Infix & Postfix Parsing (Precedence Climbing)
     let keepClimbing = 1
+    mut curT = curTok p
     wh keepClimbing == 1 {
         peekT = peekTok p
         if peekT.kind == "EOF" {
@@ -1007,7 +1020,10 @@ parseExpression p, precedence {
                 }
             } els {
             peekPrec = getTokenPrecedence peekT
+            curT = curTok p
             if precedence >= peekPrec || peekPrec == 0 {
+                keepClimbing = 0
+            } els if curT.line != peekT.line && (peekT.val == "*" || peekT.val == "[" || peekT.val == "{" || peekT.val == "++" || peekT.val == "--") {
                 keepClimbing = 0
             } els {
                 if peekT.val == "." || peekT.val == "::" {
@@ -1644,6 +1660,10 @@ parseStatement p {
         advanceParser p
         thrVal = parseExpression p, 0
         -> createThrowNode thrVal
+    } els if t.kind == "KEYWORD" && t.val == "unsafe" {
+        advanceParser p
+        unsafeBody = parseBlock p
+        -> createUnsafeNode unsafeBody
     } els if t.kind == "KEYWORD" && (t.val == "fr" || t.val == "for") {
         advanceParser p // move past 'fr'
         // fr item of coll | fr item, idx of coll | fr key in obj

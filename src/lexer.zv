@@ -77,8 +77,10 @@ isLexerLetter ch {
        ch == "k" || ch == "l" || ch == "m" || ch == "n" || ch == "o" ||
        ch == "p" || ch == "q" || ch == "r" || ch == "s" || ch == "t" ||
        ch == "u" || ch == "v" || ch == "w" || ch == "x" || ch == "y" ||
-       ch == "z" || ch == "_" ||
-       ch == "A" || ch == "B" || ch == "C" || ch == "D" || ch == "E" ||
+       ch == "z" || ch == "_" {
+        -> 1
+    }
+    if ch == "A" || ch == "B" || ch == "C" || ch == "D" || ch == "E" ||
        ch == "F" || ch == "G" || ch == "H" || ch == "I" || ch == "J" ||
        ch == "K" || ch == "L" || ch == "M" || ch == "N" || ch == "O" ||
        ch == "P" || ch == "Q" || ch == "R" || ch == "S" || ch == "T" ||
@@ -91,15 +93,23 @@ isLexerLetter ch {
 
 isLexerKeyword word {
     if word == "imp" || word == "frm" || word == "wrk" || word == "prnt" ||
-       word == "lg" || word == "wrn" || word == "inf" || word == "nan" || word == "Infinity" || word == "ret" ||
-       word == "els" || word == "wh" || word == "fr" || word == "of" || word == "in" || word == "brk" ||
-       word == "cont" || word == "dn" || word == "mch" || word == "sw" || word == "ok" ||
-       word == "err" || word == "if" || word == "and" || word == "or" ||
-       word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" ||
-       word == "typ" || word == "sym" || word == "enum" || word == "as" ||
-       word == "obj" || word == "num" || word == "bool" || word == "str" ||
-       word == "extern" || word == "ffi" || word == "main" ||
-       word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" {
+       word == "lg" || word == "wrn" || word == "inf" || word == "nan" || word == "Infinity" || word == "ret" {
+        -> 1
+    }
+    if word == "els" || word == "wh" || word == "fr" || word == "of" || word == "in" || word == "brk" ||
+       word == "cont" || word == "dn" || word == "mch" || word == "sw" || word == "ok" {
+        -> 1
+    }
+    if word == "err" || word == "if" || word == "and" || word == "or" ||
+       word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" {
+        -> 1
+    }
+    if word == "typ" || word == "sym" || word == "enum" || word == "as" ||
+       word == "obj" || word == "num" || word == "bool" || word == "str" {
+        -> 1
+    }
+    if word == "extern" || word == "ffi" || word == "main" ||
+       word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" || word == "unsafe" {
         -> 1
     }
     -> 0

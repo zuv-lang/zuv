@@ -15,7 +15,7 @@ createChecker {
     // Built-in project-wide global object (immutable binding; properties are writable)
     glbVar = { name: "glb", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
     globalScope.vars.psh glbVar
-    res = { scopes: scopes, errors: errors }
+    res = { scopes: scopes, errors: errors, inUnsafe: 0 }
     -> res
 }
 
@@ -142,6 +142,11 @@ checkExpr checker, expr {
         } els {
             checkExpr checker, expr.right
         }
+    } els if expr.kind == "DerefExpr" {
+        if checker.inUnsafe == 0 {
+            checker.errors.psh "Dereference of raw pointer requires unsafe block"
+        }
+        checkExpr checker, expr.operand
     } els if expr.kind == "BinaryExpr" {
         if expr.op == "=" {
             if expr.left.kind == "VariableExpr" {
@@ -250,6 +255,20 @@ checkStatement checker, stmt {
             }
         }
         popCheckerScope checker
+    } els if stmt.kind == "UnsafeBlock" {
+        prev = checker.inUnsafe
+        checker.inUnsafe = 1
+        if stmt.body.kind == "BlockStmt" {
+            pushCheckerScope checker
+            let i = 0
+            wh i < stmt.body.statements.ln {
+                s = stmt.body.statements[i]
+                checkStatement checker, s
+                i = i + 1
+            }
+            popCheckerScope checker
+        }
+        checker.inUnsafe = prev
     } els if stmt.kind == "BlockStmt" {
         pushCheckerScope checker
         let i = 0
