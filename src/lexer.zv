@@ -99,7 +99,7 @@ isLexerKeyword word {
        word == "typ" || word == "sym" || word == "enum" || word == "as" ||
        word == "obj" || word == "num" || word == "bool" || word == "str" ||
        word == "extern" || word == "ffi" || word == "main" ||
-       word == "try" || word == "cth" || word == "fin" || word == "thr" {
+       word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" {
         -> 1
     }
     -> 0
@@ -518,9 +518,18 @@ nextLexerToken lexer {
         -> createToken "SYM", "?", startLine, startCol
     }
 
+    if lexer.ch == ":" {
+        if (peekLexerChar lexer) == ":" {
+            readLexerChar lexer
+            readLexerChar lexer
+            -> createToken "SYM", "::", startLine, startCol
+        }
+        readLexerChar lexer
+        -> createToken "SYM", ":", startLine, startCol
+    }
+
     if lexer.ch == "~" || lexer.ch == "(" || lexer.ch == ")" || lexer.ch == "{" || lexer.ch == "}" ||
-       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "," ||
-       lexer.ch == ":" || lexer.ch == ";" {
+       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "," || lexer.ch == ";" {
         c = lexer.ch
         readLexerChar lexer
         -> createToken "SYM", c, startLine, startCol

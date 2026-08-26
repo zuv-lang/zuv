@@ -1,0 +1,76 @@
+obj User {
+    name: str,
+    age: num,
+
+    getUserLabel: => {
+        -> self.name
+    },
+
+    create: n, a => {
+        -> User{ name: n, age: a }
+    },
+
+    get: query => {
+        -> User{ name: query.name, age: 30 }
+    },
+
+    lean: => {
+        prnt "Executing lean query"
+        -> self
+    },
+
+    save: => {
+        prnt "Saved user"
+        -> self
+    }
+}
+
+u1 = new User{ name: "Alice", age: 28 }
+prnt u1.name
+prnt u1.age
+
+u2 = new User("Bob", 35)
+prnt u2.name
+prnt u2.age
+
+u3 = new User "Charlie", 42
+prnt u3.name
+prnt u3.age
+
+label = u2.getUserLabel
+prnt label
+
+u4 = new User("Dana", 21).save
+prnt u4.name
+
+u5 = new User({ name: "Alice", age: 28 }).save
+prnt u5.name
+prnt u5.age
+
+obj Schema {
+    title: str,
+    content: str,
+
+    create: t, c => {
+        -> Schema{ title: t, content: c }
+    },
+
+    summary: => {
+        -> self.title
+    }
+}
+
+post = new Schema("First Post", "Hello World")
+prnt post.summary
+
+// 7. Chaining static calls with instance methods via :: and .
+q1 = User::get({ name: "Alice" }).lean
+prnt q1.name
+
+q2 = User.get({ name: "Alice" }).lean
+prnt q2.name
+
+q3 = User::get({ name: "Alice" })::lean
+prnt q3.name
+
+

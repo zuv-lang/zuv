@@ -1,0 +1,16 @@
+obj User {
+    name: str,
+    age: num,
+
+    create: n, a => {
+        -> User{ name: n, age: a }
+    },
+
+    fullLabel: => {
+        -> self.name
+    }
+}
+
+u = User::create "Ada", 30
+prnt u.fullLabel
+prnt u.age

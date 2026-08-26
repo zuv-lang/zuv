@@ -76,7 +76,9 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
 
 linkDirectObjectFile objPath, outExePath {
     let lldBin = "lld-link"
-    if fE "lld-link.exe" {
+    if fE "D:/LLVM/bin/lld-link.exe" {
+        lldBin = "D:/LLVM/bin/lld-link.exe"
+    } els if fE "lld-link.exe" {
         lldBin = "lld-link.exe"
     } els if fE "bin/lld-link.exe" {
         lldBin = "bin/lld-link.exe"
@@ -209,6 +211,15 @@ handleCheck targetFile {
         lex = createLexer code
         toks = tokenizeFull lex
         prog = parseProgramFull toks
+        if prog.errors.ln > 0 {
+            prnt (` FAIL ${targetFile} (Parser Errors)`)
+            let pe = 0
+            wh pe < prog.errors.ln {
+                prnt (`   - ${prog.errors[pe]}`)
+                pe = pe + 1
+            }
+            -> 0
+        }
         okSafety = checkProgram prog
         if okSafety == 1 {
             prnt (` PASS ${targetFile}`)
@@ -248,7 +259,7 @@ handleCheckAll {
     prnt " ZUV CHECKALL v0.5.0 (Native Self-Hosting Static & Type Checker)"
     prnt ""
 
-    let tests = sF "tests", ".test.zv"
+    let tests = sF "tests", ".zv"
 
     let passCount = 0
     let failCount = 0
@@ -288,6 +299,7 @@ handleTest {
     prnt ""
 
     let tests = sF "tests", ".test.zv"
+    prnt (`Total test files discovered: ${tests.ln}`)
 
     let passCount = 0
     let failCount = 0
@@ -296,12 +308,12 @@ handleTest {
     wh ti < tests.ln {
         tFile = tests[ti]
         let isExpectedError = 0
-        if (tFile.cnt "error") > 0 {
+        if (tFile.cnt "error") > 0 || (tFile.cnt "redecl_error") > 0 || (tFile.cnt "semantic_errors") > 0 {
             isExpectedError = 1
         }
 
         tStart = nw
-        tempExe = "test_run_temp.exe"
+        tempExe = `test_run_temp_${ti}.exe`
         buildOk = handleBuild tFile, 0, 0, tempExe
 
         if isExpectedError == 1 {

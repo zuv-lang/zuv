@@ -1,0 +1,96 @@
+imp arr
+
+greet name {
+    -> "hi " + name
+}
+
+obj User {
+    name: str,
+    age: num,
+
+    fullLabel: => {
+        -> self.name
+    },
+
+    create: n, a => {
+        -> User{ name: n, age: a }
+    },
+
+    add: store, n, a => {
+        u = User{ name: n, age: a }
+        store.psh u
+        -> store
+    },
+
+    get: store, i => {
+        -> store[i]
+    },
+
+    update: store, i, n, a => {
+        mut out = []
+        mut j = 0
+        wh j < store.ln {
+            if j == i {
+                out.psh User{ name: n, age: a }
+            } els {
+                out.psh store[j]
+            }
+            j = j + 1
+        }
+        -> out
+    },
+
+    delete: store, i => {
+        mut out = []
+        mut j = 0
+        wh j < store.ln {
+            if j != i {
+                out.psh store[j]
+            }
+            j = j + 1
+        }
+        -> out
+    },
+
+    greet,
+    hello: greet
+}
+
+User.bumpAge a {
+    self.age = self.age + a
+    -> self
+}
+
+sayBye {
+    -> "bye"
+}
+User.sayBye = sayBye
+
+mut users = []
+users = User::add users, "Ada", 30
+users = User::add users, "Bob", 25
+prnt users.ln
+
+u = User::get users, 0
+lbl = u.fullLabel
+prnt lbl
+
+users = User::update users, 0, "AdaL", 36
+u2 = User::get users, 0
+lbl2 = u2.fullLabel
+prnt lbl2
+
+users = User::delete users, 1
+prnt users.ln
+
+u3 = User::create "Eve", 20
+prnt u3.age
+msg = u3.greet "Eve"
+prnt msg
+msg2 = u3.hello "Eve"
+prnt msg2
+
+mut u4 = User::create "Zoe", 10
+u4 = u4.bumpAge 5
+prnt u4.age
+prnt u4.sayBye

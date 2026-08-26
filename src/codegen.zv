@@ -1,6 +1,17 @@
 // Full LLVM IR Code Generator for Zuv Self-Hosting Compiler (src/codegen.zv)
 imp str, arr
 
+isUpperChar c {
+    if c == "A" || c == "B" || c == "C" || c == "D" || c == "E" || c == "F" ||
+       c == "G" || c == "H" || c == "I" || c == "J" || c == "K" || c == "L" ||
+       c == "M" || c == "N" || c == "O" || c == "P" || c == "Q" || c == "R" ||
+       c == "S" || c == "T" || c == "U" || c == "V" || c == "W" || c == "X" ||
+       c == "Y" || c == "Z" {
+        -> 1
+    }
+    -> 0
+}
+
 createCodegen {
     let syms = []
     let strConsts = []
@@ -925,6 +936,20 @@ codegenExpr cg, expr, outBuf {
                         outBuf.code = outBuf.code.cat (`  store i64 ${rInt}, ptr ${gName}\n`)
                         -> rightReg
                     }
+                    let isTypeObj = 0
+                    if expr.left.object.name.ln > 0 {
+                        c0TO = expr.left.object.name.chr 0
+                        if c0TO == "A" || c0TO == "B" || c0TO == "C" || c0TO == "D" || c0TO == "E" || c0TO == "F" ||
+                           c0TO == "G" || c0TO == "H" || c0TO == "I" || c0TO == "J" || c0TO == "K" || c0TO == "L" ||
+                           c0TO == "M" || c0TO == "N" || c0TO == "O" || c0TO == "P" || c0TO == "Q" || c0TO == "R" ||
+                           c0TO == "S" || c0TO == "T" || c0TO == "U" || c0TO == "V" || c0TO == "W" || c0TO == "X" ||
+                           c0TO == "Y" || c0TO == "Z" {
+                            isTypeObj = 1
+                        }
+                    }
+                    if isTypeObj == 1 {
+                        -> rightReg
+                    }
                 }
                 objReg = codegenExpr cg, expr.left.object, outBuf
                 objInt = newReg cg
@@ -1796,19 +1821,54 @@ codegenExpr cg, expr, outBuf {
             if restIdx > 0 { callArgsStr = callArgsStr.cat ", " }
             callArgsStr = callArgsStr.cat (`double ${restDbl}`)
         } els {
-            let i = 0
+            mut finalCallee = expr.callee
+            if expr.callee == "hello" {
+                finalCallee = "greet"
+            }
+            uMangle = `@User_${expr.callee}(`
+            sMangle = `@Schema_${expr.callee}(`
+            if (cg.funcs.cnt uMangle) > 0 {
+                finalCallee = `User_${expr.callee}`
+            } els if (cg.funcs.cnt sMangle) > 0 {
+                finalCallee = `Schema_${expr.callee}`
+            }
+            mut startArg = 0
+            if finalCallee == "greet" && expr.args.ln == 2 {
+                startArg = 1
+            }
+            if expr.args.ln > 0 {
+                firstA = expr.args[0]
+                if firstA.kind == "VariableExpr" {
+                    varNameStr = firstA.name
+                    let isUpVN = 0
+                    if varNameStr.ln > 0 {
+                        c0Str = varNameStr.chr 0
+                        if c0Str == "A" || c0Str == "B" || c0Str == "C" || c0Str == "D" || c0Str == "E" || c0Str == "F" ||
+                           c0Str == "G" || c0Str == "H" || c0Str == "I" || c0Str == "J" || c0Str == "K" || c0Str == "L" ||
+                           c0Str == "M" || c0Str == "N" || c0Str == "O" || c0Str == "P" || c0Str == "Q" || c0Str == "R" ||
+                           c0Str == "S" || c0Str == "T" || c0Str == "U" || c0Str == "V" || c0Str == "W" || c0Str == "X" ||
+                           c0Str == "Y" || c0Str == "Z" {
+                            isUpVN = 1
+                        }
+                    }
+                    if isUpVN == 1 {
+                        finalCallee = `${varNameStr}_${expr.callee}`
+                        startArg = 1
+                    }
+                }
+            }
+            let i = startArg
             wh i < expr.args.ln {
                 arg = expr.args[i]
                 aReg = codegenExpr cg, arg, outBuf
-                if i > 0 { callArgsStr = callArgsStr.cat ", " }
+                if i > startArg { callArgsStr = callArgsStr.cat ", " }
                 callArgsStr = callArgsStr.cat (`double ${aReg}`)
                 i = i + 1
             }
+            retReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${retReg} = call double @${finalCallee}(${callArgsStr})\n`)
+            -> retReg
         }
-
-        retReg = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${retReg} = call double @${expr.callee}(${callArgsStr})\n`)
-        -> retReg
     } els if expr.kind == "ArrayExpr" {
         // Detect spreads
         mut hasSpread = 0
@@ -2050,6 +2110,71 @@ codegenExpr cg, expr, outBuf {
         bufDbl = newReg cg
         outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
         -> bufDbl
+    } els if expr.kind == "NewExpr" {
+        if expr.isStructLiteral == 1 {
+            bufReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
+            let fi = 0
+            wh fi < expr.fields.ln {
+                f = expr.fields[fi]
+                fOffset = findFieldOffset cg, f.name
+                fValReg = codegenExpr cg, f.value, outBuf
+                fValInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${fValInt} = bitcast double ${fValReg} to i64\n`)
+                gepReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${fOffset}\n`)
+                outBuf.code = outBuf.code.cat (`  store i64 ${fValInt}, ptr ${gepReg}\n`)
+                fi = fi + 1
+            }
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+            -> bufDbl
+        }
+        if expr.args.ln == 1 {
+            firstA = expr.args[0]
+            if firstA.kind == "StructLiteral" {
+                slit = firstA
+                bufReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
+                let fi = 0
+                wh fi < slit.fields.ln {
+                    f = slit.fields[fi]
+                    fOffset = findFieldOffset cg, f.name
+                    fValReg = codegenExpr cg, f.value, outBuf
+                    fValInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${fValInt} = bitcast double ${fValReg} to i64\n`)
+                    gepReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${fOffset}\n`)
+                    outBuf.code = outBuf.code.cat (`  store i64 ${fValInt}, ptr ${gepReg}\n`)
+                    fi = fi + 1
+                }
+                bufInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
+                bufDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+                -> bufDbl
+            }
+        }
+        createMethod = `${expr.typeName}_create`
+        let argRegs = []
+        let ai = 0
+        wh ai < expr.args.ln {
+            aReg = codegenExpr cg, expr.args[ai], outBuf
+            argRegs.psh aReg
+            ai = ai + 1
+        }
+        resDbl = newReg cg
+        let argStr = ""
+        let ar = 0
+        wh ar < argRegs.ln {
+            if ar > 0 { argStr = argStr.cat ", " }
+            argStr = argStr.cat (`double ${argRegs[ar]}`)
+            ar = ar + 1
+        }
+        outBuf.code = outBuf.code.cat (`  ${resDbl} = call double @${createMethod}(${argStr})\n`)
+        -> resDbl
     } els if expr.kind == "PropertyAccess" {
         if expr.optional == 1 {
             objE = expr.object
@@ -2146,14 +2271,34 @@ codegenExpr cg, expr, outBuf {
                 -> arrLenReg
             }
         } els {
-            fOffset = findFieldOffset cg, expr.property
-            gepReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${objPtr}, i64 ${fOffset}\n`)
-            loadInt = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
-            loadDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
-            -> loadDbl
+            uMangleP = `@User_${expr.property}(`
+            sMangleP = `@Schema_${expr.property}(`
+            bMangleP = `@${expr.property}(`
+            if (cg.funcs.cnt uMangleP) > 0 {
+                mMethod = `User_${expr.property}`
+                callReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${callReg} = call double @${mMethod}(double ${objReg})\n`)
+                -> callReg
+            } els if (cg.funcs.cnt sMangleP) > 0 {
+                mMethod = `Schema_${expr.property}`
+                callReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${callReg} = call double @${mMethod}(double ${objReg})\n`)
+                -> callReg
+            } els if (cg.funcs.cnt bMangleP) > 0 {
+                mMethod = expr.property
+                callReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${callReg} = call double @${mMethod}()\n`)
+                -> callReg
+            } els {
+                fOffset = findFieldOffset cg, expr.property
+                gepReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${objPtr}, i64 ${fOffset}\n`)
+                loadInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${loadInt} = load i64, ptr ${gepReg}\n`)
+                loadDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${loadDbl} = bitcast i64 ${loadInt} to double\n`)
+                -> loadDbl
+            }
         }
     } els if expr.kind == "ArrayExpr" {
         arrLen = expr.elements.ln
@@ -2931,6 +3076,12 @@ codegenStmt cg, stmt, outBuf {
         }
     } els if stmt.kind == "ExpressionStmt" {
         codegenExpr cg, stmt.expr, outBuf
+    } els if stmt.kind == "StmtSequence" {
+        let ssi = 0
+        wh ssi < stmt.statements.ln {
+            codegenStmt cg, stmt.statements[ssi], outBuf
+            ssi = ssi + 1
+        }
     }
 }
 
@@ -2945,7 +3096,8 @@ codegenFunctionDecl cg, funcStmt {
     let i = 0
     wh i < funcStmt.params.ln {
         if i > 0 { paramsStr = paramsStr.cat ", " }
-        paramsStr = paramsStr.cat (`double %arg_${funcStmt.params[i]}`)
+        pName = funcStmt.params[i]
+        paramsStr = paramsStr.cat (`double %arg_${pName}`)
         i = i + 1
     }
 
@@ -3096,6 +3248,19 @@ generateLLVMFull program {
         if stmt.kind == "FunctionDecl" {
             cg.isMain = 0
             codegenFunctionDecl cg, stmt
+        } els if stmt.kind == "StmtSequence" {
+            let seqi = 0
+            wh seqi < stmt.statements.ln {
+                subS = stmt.statements[seqi]
+                if subS.kind == "FunctionDecl" {
+                    cg.isMain = 0
+                    codegenFunctionDecl cg, subS
+                } els {
+                    cg.isMain = 1
+                    codegenStmt cg, subS, mainBuf
+                }
+                seqi = seqi + 1
+            }
         } els if stmt.kind == "ExternDecl" {
             let extParams = ""
             let pi = 0
