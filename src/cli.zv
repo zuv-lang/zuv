@@ -266,16 +266,11 @@ handleCheckAll {
     let ti = 0
     wh ti < tests.ln {
         tFile = tests[ti]
-        if (tFile.cnt "error") > 0 {
-            prnt (` PASS ${tFile} (Expected error caught)`)
+        r = handleCheck tFile
+        if r == 1 {
             passCount = passCount + 1
         } els {
-            r = handleCheck tFile
-            if r == 1 {
-                passCount = passCount + 1
-            } els {
-                failCount = failCount + 1
-            }
+            failCount = failCount + 1
         }
         ti = ti + 1
     }
@@ -307,40 +302,24 @@ handleTest {
     overallStart = nw
     wh ti < tests.ln {
         tFile = tests[ti]
-        let isExpectedError = 0
-        if (tFile.cnt "error") > 0 || (tFile.cnt "redecl_error") > 0 || (tFile.cnt "semantic_errors") > 0 {
-            isExpectedError = 1
-        }
-
         tStart = nw
         tempExe = `test_run_temp_${ti}.exe`
         buildOk = handleBuild tFile, 0, 0, tempExe
 
-        if isExpectedError == 1 {
+        if buildOk == 0 {
             tElapsed = nw - tStart
-            if buildOk == 0 {
-                prnt (` PASS ${tFile} (${tElapsed}ms) [Expected Error]`)
+            prnt (` FAIL ${tFile} (${tElapsed}ms) [Compilation Failed]`)
+            failCount = failCount + 1
+        } els {
+            runCmd = `.\\${tempExe} > nul 2>&1`
+            runRes = sh runCmd
+            tElapsed = nw - tStart
+            if runRes == 0 {
+                prnt (` PASS ${tFile} (${tElapsed}ms)`)
                 passCount = passCount + 1
             } els {
-                prnt (` FAIL ${tFile} (${tElapsed}ms) [Expected error but compiled]`)
+                prnt (` FAIL ${tFile} (${tElapsed}ms) [Execution failed code ${runRes}]`)
                 failCount = failCount + 1
-            }
-        } els {
-            if buildOk == 0 {
-                tElapsed = nw - tStart
-                prnt (` FAIL ${tFile} (${tElapsed}ms) [Compilation Failed]`)
-                failCount = failCount + 1
-            } els {
-                runCmd = `.\\${tempExe} > nul 2>&1`
-                runRes = sh runCmd
-                tElapsed = nw - tStart
-                if runRes == 0 {
-                    prnt (` PASS ${tFile} (${tElapsed}ms)`)
-                    passCount = passCount + 1
-                } els {
-                    prnt (` FAIL ${tFile} (${tElapsed}ms) [Execution failed code ${runRes}]`)
-                    failCount = failCount + 1
-                }
             }
         }
 
