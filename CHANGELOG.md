@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 📐 Hardware Math Intrinsics & Constants
+- **Math Intrinsics (`mth` / `Math`)**: Added direct LLVM intrinsics and C math bindings (`abs`, `ceil`, `floor`, `round`, `trunc`, `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `pow`, `max`, `min`, `log`, `exp`, `rand`).
+- **Constants**: Supported `PI`, `E`, `LN2`, `LN10`, `LOG2E`, `LOG10E`, `SQRT2`, `SQRT1_2` via `mth.CONST`, `Math.CONST`, or direct names.
+- **New Test**: Added `math_intrinsics.test.zv`.
+
 ---
 
 ## [0.8.0] - 2026-08-26
