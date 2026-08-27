@@ -1,0 +1,98 @@
+// Diagnostics module for Zuv Self-Hosting Compiler (src/diagnostics.zv)
+imp str, arr, fs
+
+getLineFromSource sourceText, targetLine {
+    if targetLine <= 0 { -> "" }
+    mut curLine = 1
+    mut startIdx = 0
+    let l = sourceText.ln
+    mut i = 0
+    wh i < l {
+        c = sourceText.chr i
+        if c == "\n" {
+            if curLine == targetLine {
+                mut endIdx = i
+                if endIdx > startIdx {
+                    prevIdx = endIdx - 1
+                    prevC = sourceText.chr prevIdx
+                    if prevC == "\r" {
+                        endIdx = prevIdx
+                    }
+                }
+                -> sourceText.slc startIdx, endIdx
+            }
+            curLine = curLine + 1
+            startIdx = i + 1
+        }
+        i = i + 1
+    }
+    if curLine == targetLine && startIdx < l {
+        mut endIdx2 = l
+        if endIdx2 > startIdx {
+            prevIdx2 = endIdx2 - 1
+            prevC2 = sourceText.chr prevIdx2
+            if prevC2 == "\r" {
+                endIdx2 = prevIdx2
+            }
+        }
+        -> sourceText.slc startIdx, endIdx2
+    }
+    -> ""
+}
+
+createDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr {
+    d = {
+        code: codeStr,
+        message: msgStr,
+        filePath: pathStr,
+        line: lineNum,
+        col: colNum,
+        len: lenNum,
+        label: labelStr,
+        help: helpStr
+    }
+    -> d
+}
+
+formatDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr, sourceText {
+    mut fPath = pathStr
+    if fPath == "" { fPath = "<input>" }
+    mut res = "error[" + codeStr + "]: " + msgStr + "\n"
+    if lineNum > 0 {
+        lineStr = lineNum as str
+        colStr = colNum as str
+        res = res + "  --> " + fPath + ":" + lineStr + ":" + colStr + "\n"
+        mut srcLine = getLineFromSource sourceText, lineNum
+        mut lineNumStr = lineNum as str
+        if lineNumStr.ln < 2 {
+            lineNumStr = " " + lineNumStr
+        }
+        res = res + "   |\n"
+        res = res + lineNumStr + " | " + srcLine + "\n"
+        mut caretPad = ""
+        mut cIdx = 1
+        wh cIdx < colNum {
+            caretPad = caretPad + " "
+            cIdx = cIdx + 1
+        }
+        mut carets = ""
+        mut k = 0
+        mut spanLen = lenNum
+        if spanLen <= 0 { spanLen = 1 }
+        wh k < spanLen {
+            carets = carets + "^"
+            k = k + 1
+        }
+        res = res + "   | " + caretPad + carets
+        if labelStr != "" {
+            res = res + " " + labelStr
+        }
+        res = res + "\n   |\n"
+        if helpStr != "" {
+            res = res + "   = help: " + helpStr + "\n"
+        }
+    } els {
+        res = res + "  --> " + fPath + "\n"
+    }
+    -> res
+}

@@ -868,6 +868,17 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${valReg} = load double, ptr ${cgSym.reg}\n`)
             -> valReg
         }
+        if expr.name == "PI" { -> "3.141592653589793" }
+        if expr.name == "E" { -> "2.718281828459045" }
+        if expr.name == "rand" {
+            rI = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${rI} = call i32 @rand()\n`)
+            rD = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${rD} = sitofp i32 ${rI} to double\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = fdiv double ${rD}, 32767.0\n`)
+            -> resReg
+        }
         -> "0.0"
     } els if expr.kind == "BinaryExpr" {
         // Nullish coalescing: left ?? right — use right only if left is nil/und
@@ -903,7 +914,15 @@ codegenExpr cg, expr, outBuf {
         }
         if expr.op == "=" {
             rightReg = codegenExpr cg, expr.right, outBuf
-            if expr.left.kind == "VariableExpr" {
+            if expr.left.kind == "DerefExpr" {
+                ptrVal = codegenExpr cg, expr.left.operand, outBuf
+                ptrInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ptrInt} = fptosi double ${ptrVal} to i64\n`)
+                rawPtr = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${ptrInt} to ptr\n`)
+                outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${rawPtr}\n`)
+                -> rightReg
+            } els if expr.left.kind == "VariableExpr" {
                 cgSym = findCgSymbol cg, expr.left.name
                 if cgSym.name != "" {
                     outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${cgSym.reg}\n`)
@@ -1444,6 +1463,119 @@ codegenExpr cg, expr, outBuf {
             arrDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${arrDbl} = sitofp i64 ${arrInt} to double\n`)
             -> arrDbl
+        }
+        let isMathCall = 0
+        let mathLLVM = ""
+        let mathArgCount = 1
+        cName = expr.callee
+        if cName == "abs" || cName == "mth.abs" || cName == "Math.abs" || cName == "mth_abs" || cName == "Math_abs" {
+            isMathCall = 1
+            mathLLVM = "@llvm.fabs.f64"
+            mathArgCount = 1
+        } els if cName == "ceil" || cName == "mth.ceil" || cName == "Math.ceil" || cName == "mth_ceil" || cName == "Math_ceil" {
+            isMathCall = 1
+            mathLLVM = "@llvm.ceil.f64"
+            mathArgCount = 1
+        } els if cName == "floor" || cName == "mth.floor" || cName == "Math.floor" || cName == "mth_floor" || cName == "Math_floor" {
+            isMathCall = 1
+            mathLLVM = "@llvm.floor.f64"
+            mathArgCount = 1
+        } els if cName == "round" || cName == "mth.round" || cName == "Math.round" || cName == "mth_round" || cName == "Math_round" {
+            isMathCall = 1
+            mathLLVM = "@llvm.round.f64"
+            mathArgCount = 1
+        } els if cName == "trunc" || cName == "mth.trunc" || cName == "Math.trunc" || cName == "mth_trunc" || cName == "Math_trunc" {
+            isMathCall = 1
+            mathLLVM = "@llvm.trunc.f64"
+            mathArgCount = 1
+        } els if cName == "sqrt" || cName == "mth.sqrt" || cName == "Math.sqrt" || cName == "mth_sqrt" || cName == "Math_sqrt" {
+            isMathCall = 1
+            mathLLVM = "@llvm.sqrt.f64"
+            mathArgCount = 1
+        } els if cName == "sin" || cName == "mth.sin" || cName == "Math.sin" || cName == "mth_sin" || cName == "Math_sin" {
+            isMathCall = 1
+            mathLLVM = "@llvm.sin.f64"
+            mathArgCount = 1
+        } els if cName == "cos" || cName == "mth.cos" || cName == "Math.cos" || cName == "mth_cos" || cName == "Math_cos" {
+            isMathCall = 1
+            mathLLVM = "@llvm.cos.f64"
+            mathArgCount = 1
+        } els if cName == "log" || cName == "mth.log" || cName == "Math.log" || cName == "mth_log" || cName == "Math_log" {
+            isMathCall = 1
+            mathLLVM = "@llvm.log.f64"
+            mathArgCount = 1
+        } els if cName == "exp" || cName == "mth.exp" || cName == "Math.exp" || cName == "mth_exp" || cName == "Math_exp" {
+            isMathCall = 1
+            mathLLVM = "@llvm.exp.f64"
+            mathArgCount = 1
+        } els if cName == "tan" || cName == "mth.tan" || cName == "Math.tan" || cName == "mth_tan" || cName == "Math_tan" {
+            isMathCall = 1
+            mathLLVM = "@tan"
+            mathArgCount = 1
+        } els if cName == "asin" || cName == "mth.asin" || cName == "Math.asin" || cName == "mth_asin" || cName == "Math_asin" {
+            isMathCall = 1
+            mathLLVM = "@asin"
+            mathArgCount = 1
+        } els if cName == "acos" || cName == "mth.acos" || cName == "Math.acos" || cName == "mth_acos" || cName == "Math_acos" {
+            isMathCall = 1
+            mathLLVM = "@acos"
+            mathArgCount = 1
+        } els if cName == "atan" || cName == "mth.atan" || cName == "Math.atan" || cName == "mth_atan" || cName == "Math_atan" {
+            isMathCall = 1
+            mathLLVM = "@atan"
+            mathArgCount = 1
+        } els if cName == "max" || cName == "mth.max" || cName == "Math.max" || cName == "mth_max" || cName == "Math_max" {
+            isMathCall = 1
+            mathLLVM = "@llvm.maxnum.f64"
+            mathArgCount = 2
+        } els if cName == "min" || cName == "mth.min" || cName == "Math.min" || cName == "mth_min" || cName == "Math_min" {
+            isMathCall = 1
+            mathLLVM = "@llvm.minnum.f64"
+            mathArgCount = 2
+        } els if cName == "pow" || cName == "mth.pow" || cName == "Math.pow" || cName == "mth_pow" || cName == "Math_pow" {
+            isMathCall = 1
+            mathLLVM = "@llvm.pow.f64"
+            mathArgCount = 2
+        } els if cName == "atan2" || cName == "mth.atan2" || cName == "Math.atan2" || cName == "mth_atan2" || cName == "Math_atan2" {
+            isMathCall = 1
+            mathLLVM = "@atan2"
+            mathArgCount = 2
+        } els if cName == "rand" || cName == "mth.rand" || cName == "Math.rand" || cName == "mth_rand" || cName == "Math_rand" {
+            isMathCall = 1
+            mathLLVM = "@rand"
+            mathArgCount = 0
+        }
+
+        if isMathCall == 1 {
+            mut mStart = 0
+            if expr.args.ln == mathArgCount + 1 {
+                a0 = expr.args[0]
+                if a0.kind == "VariableExpr" {
+                    if a0.name == "mth" || a0.name == "Math" {
+                        mStart = 1
+                    }
+                }
+            }
+            if mathArgCount == 1 {
+                a1 = codegenExpr cg, expr.args[mStart], outBuf
+                resReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${resReg} = call double ${mathLLVM}(double ${a1})\n`)
+                -> resReg
+            } els if mathArgCount == 2 {
+                a1 = codegenExpr cg, expr.args[mStart], outBuf
+                a2 = codegenExpr cg, expr.args[mStart + 1], outBuf
+                resReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${resReg} = call double ${mathLLVM}(double ${a1}, double ${a2})\n`)
+                -> resReg
+            } els if mathArgCount == 0 {
+                rI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${rI} = call i32 @rand()\n`)
+                rD = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${rD} = sitofp i32 ${rI} to double\n`)
+                resReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${resReg} = fdiv double ${rD}, 32767.0\n`)
+                -> resReg
+            }
         } els if expr.callee == "psh" && expr.args.ln == 2 {
             arrReg = codegenExpr cg, expr.args[0], outBuf
             valReg = codegenExpr cg, expr.args[1], outBuf
@@ -1695,6 +1827,25 @@ codegenExpr cg, expr, outBuf {
             msInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${msInt} = fptosi double ${msReg} to i32\n`)
             outBuf.code = outBuf.code.cat (`  call void @Sleep(i32 ${msInt})\n`)
+            -> "0.0"
+        } els if expr.callee == "malloc" && expr.args.ln == 1 {
+            szReg = codegenExpr cg, expr.args[0], outBuf
+            szInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szInt} = fptosi double ${szReg} to i64\n`)
+            bufPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufPtr} = call ptr @malloc(i64 ${szInt})\n`)
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufPtr} to i64\n`)
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+            -> bufDbl
+        } els if expr.callee == "free" && expr.args.ln == 1 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            rawPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${pInt} to ptr\n`)
+            outBuf.code = outBuf.code.cat (`  call void @free(ptr ${rawPtr})\n`)
             -> "0.0"
         }
 
@@ -2217,6 +2368,25 @@ codegenExpr cg, expr, outBuf {
         }
         // Enum variant: Status.Active → discriminant double
         if expr.object.kind == "VariableExpr" {
+            if expr.object.name == "mth" || expr.object.name == "Math" {
+                if expr.property == "PI" { -> "3.141592653589793" }
+                if expr.property == "E" { -> "2.718281828459045" }
+                if expr.property == "LN2" { -> "0.6931471805599453" }
+                if expr.property == "LN10" { -> "2.302585092994046" }
+                if expr.property == "LOG2E" { -> "1.4426950408889634" }
+                if expr.property == "LOG10E" { -> "0.4342944819032518" }
+                if expr.property == "SQRT2" { -> "1.4142135623730951" }
+                if expr.property == "SQRT1_2" { -> "0.7071067811865476" }
+                if expr.property == "rand" {
+                    rI = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${rI} = call i32 @rand()\n`)
+                    rD = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${rD} = sitofp i32 ${rI} to double\n`)
+                    resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = fdiv double ${rD}, 32767.0\n`)
+                    -> resReg
+                }
+            }
             // Build "Enum.Variant" without template interpolation
             dot = "."
             q1 = expr.object.name.cat dot
@@ -2445,33 +2615,8 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${asDbl} = uitofp i1 ${boolI1} to double\n`)
             -> asDbl
         }
-        if castTargetStr == "*byte" {
-            bits = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
-            asDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
-            -> asDbl
-        }
-        if castTargetStr == "*num" {
-            bits = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
-            asDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
-            -> asDbl
-        }
-        if castTargetStr == "*any" {
-            bits = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
-            asDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
-            -> asDbl
-        }
-        if castTargetStr == "ptr" {
-            bits = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bits} = bitcast double ${valReg} to i64\n`)
-            asDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${asDbl} = sitofp i64 ${bits} to double\n`)
-            -> asDbl
+        if castTargetStr == "*byte" || castTargetStr == "*num" || castTargetStr == "*any" || castTargetStr == "ptr" {
+            -> valReg
         }
         if castTargetStr == "str" {
             buf = newReg cg
@@ -2556,6 +2701,19 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${resReg} = sitofp i64 ${bit} to double\n`)
             -> resReg
         }
+        if expr.op == "&" {
+            if expr.right.kind == "VariableExpr" {
+                cgSym = findCgSymbol cg, expr.right.name
+                if cgSym.name != "" {
+                    intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${cgSym.reg} to i64\n`)
+                    dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+            }
+            -> codegenExpr cg, expr.right, outBuf
+        }
         rReg = codegenExpr cg, expr.right, outBuf
         if expr.op == "!" || expr.op == "not" {
             cmpReg = emitTruthyI1 cg, rReg, outBuf
@@ -2570,6 +2728,15 @@ codegenExpr cg, expr, outBuf {
             -> resReg
         }
         -> rReg
+    } els if expr.kind == "DerefExpr" {
+        ptrVal = codegenExpr cg, expr.operand, outBuf
+        ptrInt = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${ptrInt} = fptosi double ${ptrVal} to i64\n`)
+        rawPtr = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${ptrInt} to ptr\n`)
+        loadVal = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${loadVal} = load double, ptr ${rawPtr}\n`)
+        -> loadVal
     }
 
     -> "0.0"
@@ -3060,6 +3227,8 @@ codegenStmt cg, stmt, outBuf {
         }
     } els if stmt.kind == "EnumDecl" {
         registerEnum cg, stmt
+    } els if stmt.kind == "UnsafeBlock" {
+        codegenStmt cg, stmt.body, outBuf
     } els if stmt.kind == "BlockStmt" {
         let i = 0
         wh i < stmt.statements.ln {
@@ -3101,7 +3270,12 @@ codegenFunctionDecl cg, funcStmt {
         i = i + 1
     }
 
-    let fnBuf = { code: (`define double @${fnName}(${paramsStr}) {\nentry:\n`) }
+    mut exportAttr = ""
+    if funcStmt.isExported == 1 || funcStmt.isExternC == 1 {
+        exportAttr = "dllexport "
+    }
+
+    let fnBuf = { code: (`define ${exportAttr}double @${fnName}(${paramsStr}) {\nentry:\n`) }
 
     let j = 0
     wh j < funcStmt.params.ln {
@@ -3152,6 +3326,24 @@ generateLLVMFull program {
     header = header.cat "declare ptr @memset(ptr, i32, i64)\n"
     header = header.cat "declare i32 @strcmp(ptr, ptr)\n"
     header = header.cat "declare double @llvm.pow.f64(double, double)\n"
+    header = header.cat "declare double @llvm.fabs.f64(double)\n"
+    header = header.cat "declare double @llvm.ceil.f64(double)\n"
+    header = header.cat "declare double @llvm.floor.f64(double)\n"
+    header = header.cat "declare double @llvm.round.f64(double)\n"
+    header = header.cat "declare double @llvm.trunc.f64(double)\n"
+    header = header.cat "declare double @llvm.maxnum.f64(double, double)\n"
+    header = header.cat "declare double @llvm.minnum.f64(double, double)\n"
+    header = header.cat "declare double @llvm.sqrt.f64(double)\n"
+    header = header.cat "declare double @llvm.sin.f64(double)\n"
+    header = header.cat "declare double @llvm.cos.f64(double)\n"
+    header = header.cat "declare double @llvm.log.f64(double)\n"
+    header = header.cat "declare double @llvm.exp.f64(double)\n"
+    header = header.cat "declare double @tan(double)\n"
+    header = header.cat "declare double @asin(double)\n"
+    header = header.cat "declare double @acos(double)\n"
+    header = header.cat "declare double @atan(double)\n"
+    header = header.cat "declare double @atan2(double, double)\n"
+    header = header.cat "declare i32 @rand()\n"
     header = header.cat "declare i32 @fseek(ptr, i64, i32)\n"
     header = header.cat "declare i64 @ftell(ptr)\n"
     header = header.cat "declare void @rewind(ptr)\n"

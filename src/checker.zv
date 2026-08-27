@@ -1,5 +1,6 @@
 // Full Static Semantic & Borrow Checker for Zuv Self-Hosting Compiler (src/checker.zv)
-imp str, arr
+imp str, arr, diagnostics
+imp createDiagnostic, formatDiagnostic frm diagnostics
 
 createScope {
     let vars = []
@@ -15,7 +16,7 @@ createChecker {
     // Built-in project-wide global object (immutable binding; properties are writable)
     glbVar = { name: "glb", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
     globalScope.vars.psh glbVar
-    res = { scopes: scopes, errors: errors }
+    res = { scopes: scopes, errors: errors, inUnsafe: 0, filePath: "", sourceText: "" }
     -> res
 }
 
@@ -65,11 +66,15 @@ findVarInCurrentScope checker, name {
     -> emptyVar
 }
 
-declareVar checker, name, isMut {
+declareVar checker, name, isMut, line, col {
     existingInCurrent = findVarInCurrentScope checker, name
     if isMut == 1 {
         if existingInCurrent.name != "" {
-            errRedecl = `Variable '${name}' is already declared in this scope`
+            mut dLine = line
+            mut dCol = col
+            if dLine == und || dLine == nil || dLine <= 0 { dLine = 1 }
+            if dCol == und || dCol == nil || dCol <= 0 { dCol = 1 }
+            errRedecl = formatDiagnostic "E0201", `Variable '${name}' is already declared in this scope`, checker.filePath, dLine, dCol, name.ln, "duplicate declaration", "remove the duplicate 'let' / 'mut' or rename the variable", checker.sourceText
             checker.errors.psh errRedecl
         } els {
             curIdx = checker.scopes.ln - 1
@@ -95,7 +100,7 @@ checkExpr checker, expr {
     if expr.kind == "VariableExpr" {
         v = findVarState checker, expr.name
         if v.name != "" && v.isMoved == 1 {
-            errVal = `Use of moved value: '${expr.name}'`
+            errVal = `error[E0202]: Use of moved value: '${expr.name}'`
             checker.errors.psh errVal
         }
     } els if expr.kind == "UnaryExpr" {
@@ -105,22 +110,22 @@ checkExpr checker, expr {
                 v = findVarState checker, vName
                 if v.name != "" {
                     if v.isMoved == 1 {
-                        errMoved = `Cannot borrow moved value: '${vName}'`
+                        errMoved = `error[E0202]: Cannot borrow moved value: '${vName}'`
                         checker.errors.psh errMoved
                     }
                     if expr.op == "&mut" {
                         if v.isMut == 0 {
-                            errImmut = `Cannot borrow immutable variable '${vName}' as mutable (&mut)`
+                            errImmut = `error[E0203]: Cannot borrow immutable variable '${vName}' as mutable (&mut)`
                             checker.errors.psh errImmut
                         }
                         if v.immBorrows > 0 || v.mutBorrows > 0 {
-                            errActive = `Cannot borrow '${vName}' as mutable (&mut) because it is already borrowed`
+                            errActive = `error[E0204]: Cannot borrow '${vName}' as mutable (&mut) because it is already borrowed`
                             checker.errors.psh errActive
                         }
                         v.mutBorrows = v.mutBorrows + 1
                     } els {
                         if v.mutBorrows > 0 {
-                            errMut = `Cannot borrow '${vName}' as immutable (&) because it is borrowed as mutable (&mut)`
+                            errMut = `error[E0204]: Cannot borrow '${vName}' as immutable (&) because it is borrowed as mutable (&mut)`
                             checker.errors.psh errMut
                         }
                         v.immBorrows = v.immBorrows + 1
@@ -134,7 +139,7 @@ checkExpr checker, expr {
                 vName = expr.right.name
                 v = findVarState checker, vName
                 if v.name != "" && v.isMut == 0 {
-                    errImmut = `Cannot mutate immutable variable: '${vName}'`
+                    errImmut = `error[E0203]: Cannot mutate immutable variable: '${vName}'`
                     checker.errors.psh errImmut
                 }
             }
@@ -142,13 +147,18 @@ checkExpr checker, expr {
         } els {
             checkExpr checker, expr.right
         }
+    } els if expr.kind == "DerefExpr" {
+        if checker.inUnsafe == 0 {
+            checker.errors.psh "error[E0205]: Dereference of raw pointer requires unsafe block"
+        }
+        checkExpr checker, expr.operand
     } els if expr.kind == "BinaryExpr" {
         if expr.op == "=" {
             if expr.left.kind == "VariableExpr" {
                 vName = expr.left.name
                 v = findVarState checker, vName
                 if v.name != "" && v.isMut == 0 {
-                    errMutate = `Cannot mutate immutable variable: '${vName}'`
+                    errMutate = `error[E0203]: Cannot mutate immutable variable: '${vName}'`
                     checker.errors.psh errMutate
                 }
             }
@@ -212,7 +222,7 @@ checkStatement checker, stmt {
             }
         }
         checkExpr checker, stmt.value
-        declareVar checker, stmt.name, stmt.isMut
+        declareVar checker, stmt.name, stmt.isMut, stmt.line, stmt.col
     } els if stmt.kind == "DestructureStmt" {
         checkExpr checker, stmt.source
         let di = 0
@@ -250,6 +260,20 @@ checkStatement checker, stmt {
             }
         }
         popCheckerScope checker
+    } els if stmt.kind == "UnsafeBlock" {
+        prev = checker.inUnsafe
+        checker.inUnsafe = 1
+        if stmt.body.kind == "BlockStmt" {
+            pushCheckerScope checker
+            let i = 0
+            wh i < stmt.body.statements.ln {
+                s = stmt.body.statements[i]
+                checkStatement checker, s
+                i = i + 1
+            }
+            popCheckerScope checker
+        }
+        checker.inUnsafe = prev
     } els if stmt.kind == "BlockStmt" {
         pushCheckerScope checker
         let i = 0
@@ -380,8 +404,14 @@ checkStatement checker, stmt {
     }
 }
 
-checkProgram program {
+checkProgram program, filePath, sourceText {
     checker = createChecker
+    mut fPath = filePath
+    if fPath == und || fPath == nil { fPath = "" }
+    mut src = sourceText
+    if src == und || src == nil { src = "" }
+    checker.filePath = fPath
+    checker.sourceText = src
     let i = 0
     wh i < program.statements.ln {
         stmt = program.statements[i]
@@ -392,7 +422,7 @@ checkProgram program {
     if checker.errors.ln > 0 {
         let ei = 0
         wh ei < checker.errors.ln {
-            err checker.errors[ei]
+            program.errors.psh checker.errors[ei]
             ei = ei + 1
         }
         -> 0

@@ -1,0 +1,73 @@
+// Tests for Hardware Math Intrinsics & Constants (mth / Math)
+
+// 1. Basic Unary Intrinsics
+let a1 = abs -42
+prnt a1
+let a2 = mth.abs -15.5
+prnt a2
+let c1 = ceil 3.2
+prnt c1
+let f1 = floor 3.8
+prnt f1
+let r1 = round 3.6
+prnt r1
+let r2 = round 3.2
+prnt r2
+let t1 = trunc 3.9
+prnt t1
+let t2 = trunc -3.9
+prnt t2
+
+// 2. Sqrt & Pow
+let s1 = sqrt 16
+prnt s1
+let s2 = mth.sqrt 25
+prnt s2
+let p1 = pow 2, 3
+prnt p1
+let p2 = mth.pow 3, 2
+prnt p2
+
+// 3. Min & Max
+let mx1 = max 10, 20
+prnt mx1
+let mx2 = mth.max 5, 3
+prnt mx2
+let mn1 = min 10, 20
+prnt mn1
+let mn2 = mth.min 5, 3
+prnt mn2
+
+// 4. Trigonometry
+let sn1 = sin 0
+prnt sn1
+let cs1 = cos 0
+prnt cs1
+let tn1 = tan 0
+prnt tn1
+let asn1 = asin 0
+prnt asn1
+let acs1 = acos 1
+prnt acs1
+let atn1 = atan 0
+prnt atn1
+let atn2 = atan2 0, 1
+prnt atn2
+
+// 5. Log & Exp
+let l1 = log 1
+prnt l1
+let e1 = exp 0
+prnt e1
+
+// 6. Constants
+prnt (mth.PI > 3.14 and mth.PI < 3.15)
+prnt (Math.PI > 3.14 and Math.PI < 3.15)
+prnt (PI > 3.14 and PI < 3.15)
+prnt (mth.E > 2.71 and mth.E < 2.72)
+prnt (E > 2.71 and E < 2.72)
+prnt (mth.SQRT2 > 1.41 and mth.SQRT2 < 1.42)
+
+// 7. Random
+let rnd = mth.rand
+prnt (rnd >= 0 and rnd < 1)
