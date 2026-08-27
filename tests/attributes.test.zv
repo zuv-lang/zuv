@@ -1,0 +1,41 @@
+// Test attributes and annotations: @test, @inline, [inline(always)], @noinline, @export
+
+@inline
+fastAdd a, b {
+    -> a + b
+}
+
+[inline(always)]
+doubleVal x {
+    -> x * 2
+}
+
+@noinline
+heavyCalc a, b {
+    -> a * b + 10
+}
+
+@test
+testAttributeExecution {
+    r1 = fastAdd 10, 20
+    if r1 != 30 {
+        prnt "FAILED: fastAdd"
+        exit 1
+    }
+
+    r2 = doubleVal 15
+    if r2 != 30 {
+        prnt "FAILED: doubleVal"
+        exit 1
+    }
+
+    r3 = heavyCalc 5, 6
+    if r3 != 40 {
+        prnt "FAILED: heavyCalc"
+        exit 1
+    }
+
+    prnt "PASS: Attributes and annotations work correctly"
+}
+
+testAttributeExecution

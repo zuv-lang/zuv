@@ -451,3 +451,45 @@ main {
 | `std/fs` | `rF path`, `wF path, text`, `fE path`, `rmF path`, `sF dir, ext` | File I/O (read, write, exists, remove, scan) |
 | `std/time` | `nw`, `sl ms` | High-resolution timestamp (ms), thread sleep |
 | `std/thrd` | `spn func`, `jn handle` | Native Win32 / POSIX OS thread spawning & joining |
+
+---
+
+## Attributes & Annotations (`@test`, `@inline`, `[inline(always)]`, `@export`)
+
+Zuv supports both `@attribute` (decorator) and `[attribute]` syntax forms:
+
+```zuv
+// 1. Direct LLVM optimizer inlining
+@inline
+fastAdd a, b {
+    -> a + b
+}
+
+// 2. Bracket syntax with argument
+[inline(always)]
+doubleVal x {
+    -> x * 2
+}
+
+// 3. Prevent inlining on large routines
+@noinline
+heavyCalculation n {
+    // ...
+}
+
+// 4. Automated test runner tag
+@test
+testAddition {
+    if (1 + 1) == 2 {
+        prnt "Test passed"
+    }
+}
+
+// 5. Shared library dynamic symbol export
+@export
+pub extern "C" addExported a: num, b: num -> num {
+    -> a + b
+}
+```
+
+For full details and a complete catalog of inbuilt annotations, see [ATTRIBUTES_GUIDE.md](file:///D:/rujs/sub_projects/zuv/docs/ATTRIBUTES_GUIDE.md).

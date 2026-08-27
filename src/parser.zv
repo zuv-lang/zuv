@@ -1287,8 +1287,70 @@ parseBlock p {
     -> createBlockNode stmts
 }
 
+parseAttributes p {
+    let attrs = []
+    wh (curTok p).val == "@" || ((curTok p).val == "[" && (peekTok p).kind == "IDENT") {
+        if (curTok p).val == "@" {
+            advanceParser p // consume '@'
+            let attrName = (curTok p).val
+            let args = []
+            if (peekTok p).val == "(" {
+                advanceParser p // consume '('
+                wh (peekTok p).val != ")" && (peekTok p).kind != "EOF" {
+                    advanceParser p
+                    if (curTok p).kind == "IDENT" || (curTok p).kind == "STR" || (curTok p).kind == "STRING" || (curTok p).kind == "NUMBER" {
+                        args.psh (curTok p).val
+                    }
+                    if (peekTok p).val == "," {
+                        advanceParser p
+                    }
+                }
+                if (peekTok p).val == ")" {
+                    advanceParser p
+                }
+            }
+            attrs.psh { name: attrName, args: args }
+            advanceParser p
+        } els if (curTok p).val == "[" {
+            advanceParser p // consume '['
+            let attrName = (curTok p).val
+            let args = []
+            if (peekTok p).val == "(" {
+                advanceParser p // consume '('
+                wh (peekTok p).val != ")" && (peekTok p).kind != "EOF" {
+                    advanceParser p
+                    if (curTok p).kind == "IDENT" || (curTok p).kind == "STR" || (curTok p).kind == "STRING" || (curTok p).kind == "NUMBER" {
+                        args.psh (curTok p).val
+                    }
+                    if (peekTok p).val == "," {
+                        advanceParser p
+                    }
+                }
+                if (peekTok p).val == ")" {
+                    advanceParser p
+                }
+            }
+            if (peekTok p).val == "]" {
+                advanceParser p // at ']'
+            }
+            attrs.psh { name: attrName, args: args }
+            advanceParser p
+        }
+    }
+    -> attrs
+}
+
 parseStatement p {
     t = curTok p
+
+    if (curTok p).val == "@" || ((curTok p).val == "[" && (peekTok p).kind == "IDENT") {
+        let attrs = parseAttributes p
+        mut stmt = parseStatement p
+        if stmt.kind == "FunctionDecl" || stmt.kind == "VarDecl" || stmt.kind == "StructDecl" {
+            stmt.attributes = attrs
+        }
+        -> stmt
+    }
 
     if t.kind == "KEYWORD" && t.val == "imp" {
         advanceParser p
@@ -2333,7 +2395,7 @@ parseStatement p {
             -> createExpressionStmtNode callNode
         } els {
             expr = parseExpression p, 0
-            if expr.kind == "VariableExpr" && (peekTok p).line > t.line {
+            if expr.kind == "VariableExpr" && ((peekTok p).line > t.line || (peekTok p).kind == "EOF" || (peekTok p).val == ";" || (peekTok p).val == "}") {
                 // 0-argument function call statement
                 let emptyArgs = []
                 callNode = createCallNode expr.name, emptyArgs

@@ -3271,11 +3271,32 @@ codegenFunctionDecl cg, funcStmt {
     }
 
     mut exportAttr = ""
+    mut inlineAttr = ""
     if funcStmt.isExported == 1 || funcStmt.isExternC == 1 {
         exportAttr = "dllexport "
     }
+    if funcStmt.attributes.ln > 0 {
+        let ai = 0
+        wh ai < funcStmt.attributes.ln {
+            att = funcStmt.attributes[ai]
+            if att.name == "inline" {
+                if att.args.ln > 0 && (att.args[0] == "never" || att.args[0] == `"never"`) {
+                    inlineAttr = "noinline "
+                } els {
+                    inlineAttr = "alwaysinline "
+                }
+            } els if att.name == "noinline" {
+                inlineAttr = "noinline "
+            } els if att.name == "cold" {
+                inlineAttr = "cold noinline "
+            } els if att.name == "export" {
+                exportAttr = "dllexport "
+            }
+            ai = ai + 1
+        }
+    }
 
-    let fnBuf = { code: (`define ${exportAttr}double @${fnName}(${paramsStr}) {\nentry:\n`) }
+    let fnBuf = { code: (`define ${exportAttr}double @${fnName}(${paramsStr}) ${inlineAttr}{\nentry:\n`) }
 
     let j = 0
     wh j < funcStmt.params.ln {
