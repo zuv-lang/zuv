@@ -12,15 +12,15 @@ extern "LLVMCore.lib" LLVMInitializeX86AsmPrinter -> void
 extern "LLVMCore.lib" LLVMInitializeX86AsmParser -> void
 
 extern "LLVMCore.lib" LLVMGetGlobalContext -> ptr
-extern "LLVMCore.lib" LLVMCreateMemoryBufferWithMemoryRange data: ptr, len: i64, name: str, reqNull: i32 -> ptr
-extern "LLVMCore.lib" LLVMParseIRInContext ctx: ptr, memBuf: ptr, outMod: ptr, outMsg: ptr -> i32
-extern "LLVMTarget.lib" LLVMGetTargetFromTriple triple: str, target: ptr, errMsg: ptr -> i32
-extern "LLVMTarget.lib" LLVMCreateTargetMachine target: ptr, triple: str, cpu: str, feat: str, opt: i32, reloc: i32, codeModel: i32 -> ptr
-extern "LLVMTarget.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename: str, codegenType: i32, errMsg: ptr -> i32
+extern "LLVMCore.lib" LLVMCreateMemoryBufferWithMemoryRange data: ptr, len: num, name: str, reqNull: num -> ptr
+extern "LLVMCore.lib" LLVMParseIRInContext ctx: ptr, memBuf: ptr, outMod: ptr, outMsg: ptr -> num
+extern "LLVMTarget.lib" LLVMGetTargetFromTriple triple: str, target: ptr, errMsg: ptr -> num
+extern "LLVMTarget.lib" LLVMCreateTargetMachine target: ptr, triple: str, cpu: str, feat: str, opt: num, reloc: num, codeModel: num -> ptr
+extern "LLVMTarget.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename: str, codegenType: num, errMsg: ptr -> num
 extern "LLVMTarget.lib" LLVMDisposeTargetMachine tm: ptr -> void
 extern "LLVMCore.lib" LLVMDisposeModule mod: ptr -> void
 
-extern "msvcrt.dll" system cmd: str -> i32
+extern "msvcrt.dll" system cmd: str -> num
 
 emitDirectObjectFile ir, outputObjPath, isRelease {
     LLVMInitializeX86TargetInfo
@@ -101,12 +101,7 @@ linkDirectObjectFile objPath, outExePath, isCdylib, customLibs {
 
     mut dllFlags = "-stack:33554432"
     if isDll == 1 {
-        mut outLibPath = outExePath
-        if (strEndsWith outLibPath, ".dll") == 1 || (strEndsWith outLibPath, ".DLL") == 1 {
-            outLibPath = outLibPath.slc 0, (outLibPath.ln - 4)
-        }
-        outLibPath = `${outLibPath}.lib`
-        dllFlags = `-dll -noentry -implib:"${outLibPath}" -defaultlib:ucrt -defaultlib:vcruntime`
+        dllFlags = "-dll -noentry -defaultlib:ucrt -defaultlib:vcruntime"
     }
 
     cmd = `${lldBin} "${objPath}" -out:"${outExePath}" ${dllFlags} -defaultlib:libcmt ${customLibs} -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo`
@@ -211,7 +206,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
                 wh li < prog.statements.ln {
                     s = prog.statements[li]
                     if s.kind == "ExternDecl" {
-                        if s.libName != "" && (strEq s.libName, "c") == 0 && (strEq s.libName, "C") == 0 && (strEq s.libName, "libc") == 0 {
+                        if s.libName != "" && (strEq s.libName, "c") == 0 && (strEq s.libName, "libc") == 0 {
                             mut cleanLib = s.libName
                             if (strEndsWith cleanLib, ".dll") == 1 || (strEndsWith cleanLib, ".DLL") == 1 {
                                 cleanLib = cleanLib.slc 0, (cleanLib.ln - 4)

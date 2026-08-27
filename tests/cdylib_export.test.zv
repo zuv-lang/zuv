@@ -1,17 +1,13 @@
-// cdylib_export.test.zv - Testing shared dynamic library C exports
+// Shared C Dynamic Library (cdylib) Export Test (tests/cdylib_export.test.zv)
 
-// 1. Grouped / Block 'pub extern "C"' definition
-pub extern "C" {
-    add a: num, b: num -> num {
-        -> a + b
-    }
-
-    multiply a: num, b: num -> num {
-        -> a * b
-    }
+pub extern "C" add a: num, b: num -> num {
+    -> a + b
 }
 
-// 2. Individual / Single 'pub extern "C"' definition
+pub extern "C" multiply a: num, b: num -> num {
+    -> a * b
+}
+
 pub extern "C" calculateTax price: num, rate: num -> num {
     -> price * rate
 }

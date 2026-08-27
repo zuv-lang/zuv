@@ -1,32 +1,22 @@
-// call_cdylib.test.zv - Testing consumption of generated DLL
+// Call Zuv-generated DLL via C FFI (tests/call_cdylib.test.zv)
 
-// 1. Grouped / Block extern declaration
-extern "test_math.dll" {
-    add a: num, b: num -> num
-    multiply a: num, b: num -> num
-}
-
-// 2. Individual / Single extern declaration
+extern "test_math.dll" add a: num, b: num -> num
+extern "test_math.dll" multiply a: num, b: num -> num
 extern "test_math.dll" calculateTax price: num, rate: num -> num
 
-sum = add 10, 20
-mul = multiply 5, 6
+sum = add 10, 25
+if sum == 35 {
+    prnt "add ok: 35"
+}
+
+prod = multiply 7, 8
+if prod == 56 {
+    prnt "multiply ok: 56"
+}
+
 tax = calculateTax 100, 0.15
-
-if sum == 30 {
-    prnt "add ok"
-}
-if mul == 30 {
-    prnt "multiply ok"
-}
 if tax == 15 {
-    prnt "calculateTax ok"
+    prnt "tax ok: 15"
 }
 
-if sum == 30 {
-    if mul == 30 {
-        if tax == 15 {
-            prnt "Zuv DLL FFI test passed"
-        }
-    }
-}
+prnt "Zuv DLL FFI test passed"

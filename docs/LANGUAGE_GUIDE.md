@@ -326,56 +326,32 @@ try {
 
 ## C Foreign Function Interface (Inbound FFI)
 
-Zuv can directly declare and call foreign C functions from Windows DLLs, static `.lib` archives, or POSIX libc using either single-line or grouped / block syntax:
+Zuv can directly declare and call foreign C functions from Windows DLLs or POSIX libc:
 
 ```zuv
-// 1. Grouped / Block declaration (DLL or .lib)
-extern "test_math.dll" {
-    add a: num, b: num -> num
-    multiply a: num, b: num -> num
-}
-
-// 2. Grouped / Block declaration for static .lib
-extern "test_static_math.lib" {
-    static_add a: num, b: num -> num
-    static_multiply a: num, b: num -> num
-}
-
-// 3. Single-line declarations
+// Declare external Win32 API functions
 extern "user32.dll" MessageBoxA hwnd: num, text: str, caption: str, type: num -> num
 extern "kernel32.dll" GetTickCount -> num
 extern "libc" exit code: num -> void
 
 // Call foreign C functions with zero overhead
-sum = add 10, 20
 MessageBoxA 0, "Hello from native C FFI!", "Zuv Dialog", 0
 ```
-
-> See [FFI_LIBRARIES_GUIDE.md](FFI_LIBRARIES_GUIDE.md) for full details on `.dll` and `.lib` usage.
 
 ---
 
 ## Exporting C Shared Libraries (`pub extern "C"` / `--cdylib`)
 
-Zuv can compile into standard C dynamic libraries (**`.dll`** on Windows, **`.so`** on Linux, **`.dylib`** on macOS) that other languages (Node.js/Bun, Python `ctypes`, C/C++, Rust) can load. You can export functions individually or in a grouped block:
+Zuv can compile into standard C dynamic libraries (**`.dll`** on Windows, **`.so`** on Linux, **`.dylib`** on macOS) that other languages (Node.js/Bun, Python `ctypes`, C/C++, Rust) can load:
 
 ```zuv
 // math.zv
-
-// Grouped / Block export
-pub extern "C" {
-    add a: num, b: num -> num {
-        -> a + b
-    }
-
-    multiply a: num, b: num -> num {
-        -> a * b
-    }
+pub extern "C" add a: num, b: num -> num {
+    -> a + b
 }
 
-// Single-line export
-pub extern "C" calculateTax price: num, rate: num -> num {
-    -> price * rate
+pub extern "C" multiply a: num, b: num -> num {
+    -> a * b
 }
 ```
 

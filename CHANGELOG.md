@@ -13,10 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New Tests**: `cdylib_export.test.zv` and `call_cdylib.test.zv` (tested with Python `ctypes` and Zuv FFI).
 
 ### 📚 Developer Documentation Suite (`docs/`)
-- **`docs/LANGUAGE_GUIDE.md`**: Complete language specification covering parenthesis-free syntax, types, arithmetic/bitwise/modern operators, borrowing/ownership, pattern matching, destructuring, structs/methods, exceptions, FFI block syntax, and standard library reference.
+- **`docs/LANGUAGE_GUIDE.md`**: Complete language specification covering parenthesis-free syntax, types, arithmetic/bitwise/modern operators, borrowing/ownership, pattern matching, destructuring, structs/methods, exceptions, and standard library reference.
 - **`docs/CLI_REFERENCE.md`**: CLI manual detailing commands (`init`, `check`, `checkall`, `build`, `run`, `test`, `fmt`, `lsp`) and build flags (`--release`, `--cdylib`, `--emit-llvm`, `-o`).
 - **`docs/SHARED_LIBRARIES.md`**: Dedicated architectural guide on compiling `.dll` / `.so` / `.dylib` shared libraries and consuming them from Node.js/Bun (`bun:ffi`), Python (`ctypes`), C/C++, and Zuv.
-- **`docs/FFI_LIBRARIES_GUIDE.md`**: Practical developer guide detailing single-line and grouped/block FFI declarations for dynamic (`.dll`) and static (`.lib`) native libraries, type mappings, and compilation recipes.
 
 ### 🎨 Rich Compiler Diagnostics Engine
 - **Rich Diagnostics & Error Codes**: Rust/Clang-grade error formatting with exact line snippets, column caret indicators (`^^^^^`), error codes (`E0001` - `E9999`), labels, and `= help:` hints across parser and safety checker. New test: `diagnostics.test.zv`.

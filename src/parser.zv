@@ -1312,51 +1312,11 @@ parseStatement p {
             -> createImportNode items, emptySyms, ""
         }
     } els if (t.kind == "KEYWORD" || t.kind == "IDENT") && (t.val == "extern" || t.val == "ffi") {
-        mut libName = ""
+        let libName = ""
         advanceParser p
         if (curTok p).kind == "STR" || (curTok p).kind == "STRING" {
             libName = (curTok p).val
             advanceParser p
-        }
-        if (curTok p).val == "{" {
-            advanceParser p
-            let decls = []
-            wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
-                if (curTok p).kind == "IDENT" {
-                    fnName = (curTok p).val
-                    let params = []
-                    wh (peekTok p).val != "->" && (peekTok p).kind != "ARROW" && (peekTok p).val != "}" && (peekTok p).val != ";" && (peekTok p).kind != "EOF" && (peekTok p).line == (curTok p).line {
-                        advanceParser p
-                        pName = (curTok p).val
-                        mut pType = "num"
-                        if (peekTok p).val == ":" {
-                            advanceParser p
-                            advanceParser p
-                            pType = (curTok p).val
-                        }
-                        paramObj = { name: pName, typeName: pType }
-                        params.psh paramObj
-                        if (peekTok p).val == "," {
-                            advanceParser p
-                        }
-                    }
-                    mut retType = "void"
-                    if (peekTok p).val == "->" || (peekTok p).kind == "ARROW" {
-                        advanceParser p
-                        advanceParser p
-                        retType = (curTok p).val
-                    }
-                    decls.psh {
-                        kind: "ExternDecl",
-                        name: fnName,
-                        libName: libName,
-                        params: params,
-                        typeName: retType
-                    }
-                }
-                advanceParser p
-            }
-            -> createStmtSequenceNode decls
         }
         fnName = (curTok p).val
         let params = []
@@ -1953,82 +1913,6 @@ parseStatement p {
                 advanceParser p // consume 'C'
             }
         }
-        if (curTok p).val == "{" {
-            advanceParser p // into '{'
-            let pubFns = []
-            wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
-                if (curTok p).kind == "IDENT" {
-                    fnName = (curTok p).val
-                    advanceParser p
-                    mut hasRest = 0
-                    let params = []
-                    if (curTok p).val == "(" {
-                        advanceParser p
-                        if (curTok p).val != ")" {
-                            pValFirst = (curTok p).val
-                            if (peekTok p).val == ":" {
-                                advanceParser p
-                                advanceParser p
-                            }
-                            params.psh pValFirst
-                            wh (peekTok p).val == "," {
-                                advanceParser p
-                                advanceParser p
-                                pVal = (curTok p).val
-                                if (peekTok p).val == ":" {
-                                    advanceParser p
-                                    advanceParser p
-                                }
-                                params.psh pVal
-                            }
-                        }
-                        if (peekTok p).val == ")" {
-                            advanceParser p
-                        }
-                    } els if (curTok p).kind == "IDENT" || (curTok p).val == "..." {
-                        if (curTok p).val == "..." {
-                            advanceParser p
-                            pRest = (curTok p).val
-                            params.psh pRest
-                            hasRest = 1
-                        } els {
-                            pValFirst = (curTok p).val
-                            if (peekTok p).val == ":" {
-                                advanceParser p // consume ':'
-                                advanceParser p // consume type
-                            }
-                            params.psh pValFirst
-                            wh (peekTok p).val == "," {
-                                advanceParser p // consume ','
-                                advanceParser p
-                                if (curTok p).val == "..." {
-                                    advanceParser p
-                                    pRest2 = (curTok p).val
-                                    params.psh pRest2
-                                    hasRest = 1
-                                } els {
-                                    pVal = (curTok p).val
-                                    if (peekTok p).val == ":" {
-                                        advanceParser p // consume ':'
-                                        advanceParser p // consume type
-                                    }
-                                    params.psh pVal
-                                }
-                            }
-                        }
-                    }
-                    if (peekTok p).val == "->" || (peekTok p).kind == "ARROW" {
-                        advanceParser p
-                        advanceParser p
-                    }
-                    body = parseBlock p
-                    fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC }
-                    pubFns.psh fnNode
-                }
-                advanceParser p
-            }
-            -> createStmtSequenceNode pubFns
-        }
         if (curTok p).kind == "IDENT" {
             fnName = (curTok p).val
             advanceParser p
@@ -2354,13 +2238,7 @@ parseProgramFull tokens, filePath, sourceText {
     wh (curTok p).kind != "EOF" {
         stmt = parseStatement p
         if stmt.kind != "" {
-            if stmt.kind == "StmtSequence" {
-                let si = 0
-                wh si < stmt.statements.ln {
-                    statements.psh stmt.statements[si]
-                    si = si + 1
-                }
-            } els if stmt.kind == "ExpressionStmt" {
+            if stmt.kind == "ExpressionStmt" {
                 if stmt.expr.kind != "NilExpr" && stmt.expr.kind != "" {
                     statements.psh stmt
                 }
