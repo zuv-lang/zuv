@@ -1884,7 +1884,7 @@ codegenExpr cg, expr, outBuf {
                     aInt = newReg cg
                     outBuf.code = outBuf.code.cat (`  ${aInt} = fptosi double ${aReg} to i64\n`)
                     callArgsStr = callArgsStr.cat (`i64 ${aInt}`)
-                } els if expectedType == "double" {
+                } els if expectedType == "double" || expectedType == "num" {
                     aReg = codegenExpr cg, arg, outBuf
                     callArgsStr = callArgsStr.cat (`double ${aReg}`)
                 } els {
@@ -1896,16 +1896,16 @@ codegenExpr cg, expr, outBuf {
                 }
                 i = i + 1
             }
-            let retType = "i32"
+            let retType = "double"
             if extInfo.typeName == "void" {
                 retType = "void"
             } els if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
                 retType = "ptr"
-            } els if extInfo.typeName == "double" {
+            } els if extInfo.typeName == "double" || extInfo.typeName == "num" {
                 retType = "double"
             } els if extInfo.typeName == "i64" {
                 retType = "i64"
-            } els if extInfo.typeName == "num" || extInfo.typeName == "i32" {
+            } els if extInfo.typeName == "i32" {
                 retType = "i32"
             }
             if retType == "void" {
@@ -3478,11 +3478,11 @@ generateLLVMFull program {
                 retType = "void"
             } els if stmt.typeName == "ptr" || stmt.typeName == "str" {
                 retType = "ptr"
-            } els if stmt.typeName == "double" {
+            } els if stmt.typeName == "double" || stmt.typeName == "num" {
                 retType = "double"
             } els if stmt.typeName == "i64" {
                 retType = "i64"
-            } els if stmt.typeName == "num" || stmt.typeName == "i32" {
+            } els if stmt.typeName == "i32" || stmt.typeName == "int" {
                 retType = "i32"
             }
             declSig = `@${stmt.name}(`
@@ -3498,14 +3498,16 @@ generateLLVMFull program {
     }
 
     if (cg.funcs.cnt "@main_user(") > 0 {
-        mainBuf.code = mainBuf.code.cat "  %arg1_alloc = alloca double\n  %arg2_alloc = alloca double\n  %arg3_alloc = alloca double\n  %arg4_alloc = alloca double\n"
-        mainBuf.code = mainBuf.code.cat "  store double 0.0, ptr %arg1_alloc\n  store double 0.0, ptr %arg2_alloc\n  store double 0.0, ptr %arg3_alloc\n  store double 0.0, ptr %arg4_alloc\n"
+        mainBuf.code = mainBuf.code.cat "  %arg1_alloc = alloca double\n  %arg2_alloc = alloca double\n  %arg3_alloc = alloca double\n  %arg4_alloc = alloca double\n  %arg5_alloc = alloca double\n  %arg6_alloc = alloca double\n"
+        mainBuf.code = mainBuf.code.cat "  store double 0.0, ptr %arg1_alloc\n  store double 0.0, ptr %arg2_alloc\n  store double 0.0, ptr %arg3_alloc\n  store double 0.0, ptr %arg4_alloc\n  store double 0.0, ptr %arg5_alloc\n  store double 0.0, ptr %arg6_alloc\n"
         mainBuf.code = mainBuf.code.cat "  %hasArg1 = icmp sgt i32 %argc, 1\n  br i1 %hasArg1, label %get_arg1, label %no_arg1\n\nget_arg1:\n  %p1 = getelementptr inbounds ptr, ptr %argv, i64 1\n  %v1 = load ptr, ptr %p1, align 8\n  %l1 = call i64 @strlen(ptr %v1)\n  %l1p = add i64 %l1, 1\n  %h1 = call ptr @malloc(i64 %l1p)\n  %c1 = call ptr @memcpy(ptr %h1, ptr %v1, i64 %l1p)\n  %v1Int = ptrtoint ptr %h1 to i64\n  %v1Dbl = sitofp i64 %v1Int to double\n  store double %v1Dbl, ptr %arg1_alloc\n  br label %next_arg1\n\nno_arg1:\n  %e1 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e1\n  %e1Int = ptrtoint ptr %e1 to i64\n  %e1Dbl = sitofp i64 %e1Int to double\n  store double %e1Dbl, ptr %arg1_alloc\n  br label %next_arg1\n\nnext_arg1:\n"
         mainBuf.code = mainBuf.code.cat "  %hasArg2 = icmp sgt i32 %argc, 2\n  br i1 %hasArg2, label %get_arg2, label %no_arg2\n\nget_arg2:\n  %p2 = getelementptr inbounds ptr, ptr %argv, i64 2\n  %v2 = load ptr, ptr %p2, align 8\n  %l2 = call i64 @strlen(ptr %v2)\n  %l2p = add i64 %l2, 1\n  %h2 = call ptr @malloc(i64 %l2p)\n  %c2 = call ptr @memcpy(ptr %h2, ptr %v2, i64 %l2p)\n  %v2Int = ptrtoint ptr %h2 to i64\n  %v2Dbl = sitofp i64 %v2Int to double\n  store double %v2Dbl, ptr %arg2_alloc\n  br label %next_arg2\n\nno_arg2:\n  %e2 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e2\n  %e2Int = ptrtoint ptr %e2 to i64\n  %e2Dbl = sitofp i64 %e2Int to double\n  store double %e2Dbl, ptr %arg2_alloc\n  br label %next_arg2\n\nnext_arg2:\n"
         mainBuf.code = mainBuf.code.cat "  %hasArg3 = icmp sgt i32 %argc, 3\n  br i1 %hasArg3, label %get_arg3, label %no_arg3\n\nget_arg3:\n  %p3 = getelementptr inbounds ptr, ptr %argv, i64 3\n  %v3 = load ptr, ptr %p3, align 8\n  %l3 = call i64 @strlen(ptr %v3)\n  %l3p = add i64 %l3, 1\n  %h3 = call ptr @malloc(i64 %l3p)\n  %c3 = call ptr @memcpy(ptr %h3, ptr %v3, i64 %l3p)\n  %v3Int = ptrtoint ptr %h3 to i64\n  %v3Dbl = sitofp i64 %v3Int to double\n  store double %v3Dbl, ptr %arg3_alloc\n  br label %next_arg3\n\nno_arg3:\n  %e3 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e3\n  %e3Int = ptrtoint ptr %e3 to i64\n  %e3Dbl = sitofp i64 %e3Int to double\n  store double %e3Dbl, ptr %arg3_alloc\n  br label %next_arg3\n\nnext_arg3:\n"
         mainBuf.code = mainBuf.code.cat "  %hasArg4 = icmp sgt i32 %argc, 4\n  br i1 %hasArg4, label %get_arg4, label %no_arg4\n\nget_arg4:\n  %p4 = getelementptr inbounds ptr, ptr %argv, i64 4\n  %v4 = load ptr, ptr %p4, align 8\n  %l4 = call i64 @strlen(ptr %v4)\n  %l4p = add i64 %l4, 1\n  %h4 = call ptr @malloc(i64 %l4p)\n  %c4 = call ptr @memcpy(ptr %h4, ptr %v4, i64 %l4p)\n  %v4Int = ptrtoint ptr %h4 to i64\n  %v4Dbl = sitofp i64 %v4Int to double\n  store double %v4Dbl, ptr %arg4_alloc\n  br label %next_arg4\n\nno_arg4:\n  %e4 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e4\n  %e4Int = ptrtoint ptr %e4 to i64\n  %e4Dbl = sitofp i64 %e4Int to double\n  store double %e4Dbl, ptr %arg4_alloc\n  br label %next_arg4\n\nnext_arg4:\n"
-        mainBuf.code = mainBuf.code.cat "  %a1 = load double, ptr %arg1_alloc\n  %a2 = load double, ptr %arg2_alloc\n  %a3 = load double, ptr %arg3_alloc\n  %a4 = load double, ptr %arg4_alloc\n"
-        mainBuf.code = mainBuf.code.cat "  %call_res = call double @main_user(double %a1, double %a2, double %a3, double %a4)\n"
+        mainBuf.code = mainBuf.code.cat "  %hasArg5 = icmp sgt i32 %argc, 5\n  br i1 %hasArg5, label %get_arg5, label %no_arg5\n\nget_arg5:\n  %p5 = getelementptr inbounds ptr, ptr %argv, i64 5\n  %v5 = load ptr, ptr %p5, align 8\n  %l5 = call i64 @strlen(ptr %v5)\n  %l5p = add i64 %l5, 1\n  %h5 = call ptr @malloc(i64 %l5p)\n  %c5 = call ptr @memcpy(ptr %h5, ptr %v5, i64 %l5p)\n  %v5Int = ptrtoint ptr %h5 to i64\n  %v5Dbl = sitofp i64 %v5Int to double\n  store double %v5Dbl, ptr %arg5_alloc\n  br label %next_arg5\n\nno_arg5:\n  %e5 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e5\n  %e5Int = ptrtoint ptr %e5 to i64\n  %e5Dbl = sitofp i64 %e5Int to double\n  store double %e5Dbl, ptr %arg5_alloc\n  br label %next_arg5\n\nnext_arg5:\n"
+        mainBuf.code = mainBuf.code.cat "  %hasArg6 = icmp sgt i32 %argc, 6\n  br i1 %hasArg6, label %get_arg6, label %no_arg6\n\nget_arg6:\n  %p6 = getelementptr inbounds ptr, ptr %argv, i64 6\n  %v6 = load ptr, ptr %p6, align 8\n  %l6 = call i64 @strlen(ptr %v6)\n  %l6p = add i64 %l6, 1\n  %h6 = call ptr @malloc(i64 %l6p)\n  %c6 = call ptr @memcpy(ptr %h6, ptr %v6, i64 %l6p)\n  %v6Int = ptrtoint ptr %h6 to i64\n  %v6Dbl = sitofp i64 %v6Int to double\n  store double %v6Dbl, ptr %arg6_alloc\n  br label %next_arg6\n\nno_arg6:\n  %e6 = call ptr @malloc(i64 1)\n  store i8 0, ptr %e6\n  %e6Int = ptrtoint ptr %e6 to i64\n  %e6Dbl = sitofp i64 %e6Int to double\n  store double %e6Dbl, ptr %arg6_alloc\n  br label %next_arg6\n\nnext_arg6:\n"
+        mainBuf.code = mainBuf.code.cat "  %a1 = load double, ptr %arg1_alloc\n  %a2 = load double, ptr %arg2_alloc\n  %a3 = load double, ptr %arg3_alloc\n  %a4 = load double, ptr %arg4_alloc\n  %a5 = load double, ptr %arg5_alloc\n  %a6 = load double, ptr %arg6_alloc\n"
+        mainBuf.code = mainBuf.code.cat "  %call_res = call double @main_user(double %a1, double %a2, double %a3, double %a4, double %a5, double %a6)\n"
     }
 
     mainBuf.code = mainBuf.code.cat ("  ret i32 0\n}\n")

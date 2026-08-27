@@ -1,0 +1,32 @@
+// call_static_lib.test.zv - Testing extern ".lib" with single and multiple (block) syntax
+
+// 1. Grouped / Block extern ".lib" declaration
+extern "test_static_math.lib" {
+    static_add a: num, b: num -> num
+    static_multiply a: num, b: num -> num
+}
+
+// 2. Individual / Single extern ".lib" declaration
+extern "test_static_math.lib" static_calculateTax price: num, rate: num -> num
+
+sum = static_add 10, 20
+mul = static_multiply 5, 6
+tax = static_calculateTax 100, 0.15
+
+if sum == 30 {
+    prnt "static_add ok"
+}
+if mul == 30 {
+    prnt "static_multiply ok"
+}
+if tax == 15 {
+    prnt "static_calculateTax ok"
+}
+
+if sum == 30 {
+    if mul == 30 {
+        if tax == 15 {
+            prnt "Zuv Static .lib FFI test passed"
+        }
+    }
+}
