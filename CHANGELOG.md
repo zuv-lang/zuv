@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-27
+
 ### 🔌 JS Interop & Shared C Dynamic Library Output (`--cdylib` / `--lib`)
 - **`pub extern "C"` Export & Shared Libraries**: Added native C-exportable shared dynamic library compilation (`.dll` on Windows, `.so` on Linux, `.dylib` on macOS) using `pub extern "C"` function definitions with unmangled C ABI linkage and `dllexport` LLVM code generation.
 - **Compiler CLI & LLD `/DLL` Linking**: Added `--cdylib`, `--lib`, and `-l` flags to `zuv build` to invoke `lld-link.exe` in DLL mode (`-dll -noentry -implib:"<name>.lib"`).
