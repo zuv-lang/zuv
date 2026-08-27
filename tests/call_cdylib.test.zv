@@ -1,9 +1,11 @@
 // Call Zuv-generated DLL via C FFI (tests/call_cdylib.test.zv)
 
-extern "test_math.dll" add a: num, b: num -> num
-extern "test_math.dll" multiply a: num, b: num -> num
-extern "test_math.dll" calculateTax price: num, rate: num -> num
+extern "test_math.dll" {
+    add a: num, b: num -> num
+    multiply a: num, b: num -> num
+}
 
+extern "test_math.dll" calculateTax price: num, rate: num -> num
 sum = add 10, 25
 if sum == 35 {
     prnt "add ok: 35"

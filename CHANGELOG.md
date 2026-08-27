@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔗 Multi-line `extern` & Block Declarations
+- **Multi-line `extern` Block Parsing & Codegen**: Added multi-line block syntax for external C declarations and exported C functions in both compilers:
+  - `pub extern "C" { ... }` block unpacking for multiple C ABI exported functions with automatic `dllexport` attribute emission.
+  - `extern "lib" { ... }` and `extern "C" { ... }` block declarations for grouping multiple external FFI function signatures.
+  - Fixed block loop parser token consumption and decoupled function definition codegen from top-level statement codegen in the self-hosting compiler.
+  - Updated test coverage: `tests/cdylib_export.test.zv`, `tests/c_ffi_lib.test.zv`, and `tests/call_cdylib.test.zv`.
+- **Self-Hosting CLI Cleanup**: Removed manual `extern "msvcrt.dll" system` declaration in `src/cli.zv` in favor of standard builtin `sh` execution.
+
 ## [0.9.0] - 2026-08-27
 
 ### 🔌 JS Interop & Shared C Dynamic Library Output (`--cdylib` / `--lib`)

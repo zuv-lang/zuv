@@ -20,8 +20,6 @@ extern "LLVMTarget.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename:
 extern "LLVMTarget.lib" LLVMDisposeTargetMachine tm: ptr -> void
 extern "LLVMCore.lib" LLVMDisposeModule mod: ptr -> void
 
-extern "msvcrt.dll" system cmd: str -> num
-
 emitDirectObjectFile ir, outputObjPath, isRelease {
     LLVMInitializeX86TargetInfo
     LLVMInitializeX86Target
@@ -101,11 +99,17 @@ linkDirectObjectFile objPath, outExePath, isCdylib, customLibs {
 
     mut dllFlags = "-stack:33554432"
     if isDll == 1 {
-        dllFlags = "-dll -noentry -defaultlib:ucrt -defaultlib:vcruntime"
+        mut outLibPath = outExePath
+        if (strEndsWith outLibPath, ".dll") == 1 || (strEndsWith outLibPath, ".DLL") == 1 {
+            outLibPath = `${outLibPath.slc 0, (outLibPath.ln - 4)}.lib`
+        } els {
+            outLibPath = `${outLibPath}.lib`
+        }
+        dllFlags = `-dll -implib:"${outLibPath}" -noentry -defaultlib:ucrt -defaultlib:vcruntime`
     }
 
     cmd = `${lldBin} "${objPath}" -out:"${outExePath}" ${dllFlags} -defaultlib:libcmt ${customLibs} -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo`
-    res = system cmd
+    res = sh cmd
     -> res
 }
 
@@ -206,7 +210,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
                 wh li < prog.statements.ln {
                     s = prog.statements[li]
                     if s.kind == "ExternDecl" {
-                        if s.libName != "" && (strEq s.libName, "c") == 0 && (strEq s.libName, "libc") == 0 {
+                        if s.libName != "" && (strEq s.libName, "c") == 0 && (strEq s.libName, "C") == 0 && (strEq s.libName, "libc") == 0 && (strEq s.libName, "LIBC") == 0 {
                             mut cleanLib = s.libName
                             if (strEndsWith cleanLib, ".dll") == 1 || (strEndsWith cleanLib, ".DLL") == 1 {
                                 cleanLib = cleanLib.slc 0, (cleanLib.ln - 4)
@@ -216,6 +220,25 @@ handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
                             } els {
                                 customLibs = `${customLibs} -defaultlib:${cleanLib}`
                             }
+                        }
+                    } els if s.kind == "StmtSequence" {
+                        let subLi = 0
+                        wh subLi < s.statements.ln {
+                            subS = s.statements[subLi]
+                            if subS.kind == "ExternDecl" {
+                                if subS.libName != "" && (strEq subS.libName, "c") == 0 && (strEq subS.libName, "C") == 0 && (strEq subS.libName, "libc") == 0 && (strEq subS.libName, "LIBC") == 0 {
+                                    mut cleanSubLib = subS.libName
+                                    if (strEndsWith cleanSubLib, ".dll") == 1 || (strEndsWith cleanSubLib, ".DLL") == 1 {
+                                        cleanSubLib = cleanSubLib.slc 0, (cleanSubLib.ln - 4)
+                                    }
+                                    if (strEndsWith cleanSubLib, ".lib") == 1 || (strEndsWith cleanSubLib, ".LIB") == 1 {
+                                        customLibs = `${customLibs} "${cleanSubLib}"`
+                                    } els {
+                                        customLibs = `${customLibs} -defaultlib:${cleanSubLib}`
+                                    }
+                                }
+                            }
+                            subLi = subLi + 1
                         }
                     }
                     li = li + 1
