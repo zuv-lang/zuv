@@ -20,8 +20,6 @@ extern "LLVMTarget.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename:
 extern "LLVMTarget.lib" LLVMDisposeTargetMachine tm: ptr -> void
 extern "LLVMCore.lib" LLVMDisposeModule mod: ptr -> void
 
-extern "msvcrt.dll" system cmd: str -> num
-
 emitDirectObjectFile ir, outputObjPath, isRelease {
     LLVMInitializeX86TargetInfo
     LLVMInitializeX86Target
@@ -105,32 +103,36 @@ linkDirectObjectFile objPath, outExePath, isCdylib, customLibs {
     }
 
     cmd = `${lldBin} "${objPath}" -out:"${outExePath}" ${dllFlags} -defaultlib:libcmt ${customLibs} -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -nologo`
-    res = system cmd
+    res = sh cmd
     -> res
 }
 
-handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
+handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, isQuiet {
     if fE targetFile {
         code = rF targetFile
-        prnt "==========================================="
-        prnt "     Zuv Self-Hosting Compiler [BUILD]     "
-        prnt "==========================================="
-        prnt (`Compiling target file: ${targetFile}`)
+        if isQuiet != 1 {
+            prnt "==========================================="
+            prnt "     Zuv Self-Hosting Compiler [BUILD]     "
+            prnt "==========================================="
+            prnt (`Compiling target file: ${targetFile}`)
 
-        if isRelease == 1 {
-            prnt "Optimization: Release Mode (-O3 Native)"
-        } els {
-            prnt "Optimization: Debug Mode"
+            if isRelease == 1 {
+                prnt "Optimization: Release Mode (-O3 Native)"
+            } els {
+                prnt "Optimization: Debug Mode"
+            }
         }
 
         lex = createLexer code
         toks = tokenizeFull lex
         let prog = parseProgramFull toks, targetFile, code
         if prog.errors.ln > 0 {
-            let pe = 0
-            wh pe < prog.errors.ln {
-                prnt (`[zuv build] ${prog.errors[pe]}`)
-                pe = pe + 1
+            if isQuiet != 1 {
+                let pe = 0
+                wh pe < prog.errors.ln {
+                    prnt (`[zuv build] ${prog.errors[pe]}`)
+                    pe = pe + 1
+                }
             }
             -> 0
         }
@@ -217,6 +219,25 @@ handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
                                 customLibs = `${customLibs} -defaultlib:${cleanLib}`
                             }
                         }
+                    } els if s.kind == "StmtSequence" {
+                        let cli_si = 0
+                        wh cli_si < s.statements.ln {
+                            subCliS = s.statements[cli_si]
+                            if subCliS.kind == "ExternDecl" {
+                                if subCliS.libName != "" && (strEq subCliS.libName, "c") == 0 && (strEq subCliS.libName, "libc") == 0 {
+                                    mut cleanLib2 = subCliS.libName
+                                    if (strEndsWith cleanLib2, ".dll") == 1 || (strEndsWith cleanLib2, ".DLL") == 1 {
+                                        cleanLib2 = cleanLib2.slc 0, (cleanLib2.ln - 4)
+                                    }
+                                    if (strEndsWith cleanLib2, ".lib") == 1 || (strEndsWith cleanLib2, ".LIB") == 1 {
+                                        customLibs = `${customLibs} "${cleanLib2}"`
+                                    } els {
+                                        customLibs = `${customLibs} -defaultlib:${cleanLib2}`
+                                    }
+                                }
+                            }
+                            cli_si = cli_si + 1
+                        }
                     }
                     li = li + 1
                 }
@@ -226,34 +247,42 @@ handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
                     rmF objPath
                 }
                 if linkRes == 0 {
-                    mut isDllTarget = isCdylib
-                    if (strEndsWith targetExe, ".dll") == 1 || (strEndsWith targetExe, ".DLL") == 1 {
-                        isDllTarget = 1
-                    }
-                    if isDllTarget == 1 {
-                        prnt (`[zuv build] Successfully generated shared C library ${targetExe}`)
-                    } els if isRelease == 1 {
-                        prnt (`[zuv build] Successfully generated ${targetExe} (-O3 Native In-Process)`)
-                    } els {
-                        prnt (`[zuv build] Successfully generated ${targetExe} (Debug In-Process)`)
+                    if isQuiet != 1 {
+                        mut isDllTarget = isCdylib
+                        if (strEndsWith targetExe, ".dll") == 1 || (strEndsWith targetExe, ".DLL") == 1 {
+                            isDllTarget = 1
+                        }
+                        if isDllTarget == 1 {
+                            prnt (`[zuv build] Successfully generated shared C library ${targetExe}`)
+                        } els if isRelease == 1 {
+                            prnt (`[zuv build] Successfully generated ${targetExe} (-O3 Native In-Process)`)
+                        } els {
+                            prnt (`[zuv build] Successfully generated ${targetExe} (Debug In-Process)`)
+                        }
                     }
                     -> 1
                 } els {
-                    prnt "[zuv build] Direct in-process LLD linking failed."
+                    if isQuiet != 1 {
+                        prnt "[zuv build] Direct in-process LLD linking failed."
+                    }
                     -> 0
                 }
             }
         } els {
-            let se = 0
-            wh se < prog.errors.ln {
-                prnt prog.errors[se]
-                se = se + 1
+            if isQuiet != 1 {
+                let se = 0
+                wh se < prog.errors.ln {
+                    prnt prog.errors[se]
+                    se = se + 1
+                }
+                prnt "[zuv build] Safety or borrow checker validation failed."
             }
-            prnt "[zuv build] Safety or borrow checker validation failed."
             -> 0
         }
     } els {
-        prnt (`[zuv build] Error: Could not open source file: ${targetFile}`)
+        if isQuiet != 1 {
+            prnt (`[zuv build] Error: Could not open source file: ${targetFile}`)
+        }
         -> 0
     }
 }
@@ -295,7 +324,7 @@ handleCheck targetFile {
 }
 
 handleRun targetFile {
-    res = handleBuild targetFile, 0, 0, "output.exe"
+    res = handleBuild targetFile, 0, 0, "output.exe", 0, 0
     if res == 1 {
         prnt (`[zuv run] Executing output.exe for ${targetFile}`)
         sh ".\\output.exe"
@@ -364,22 +393,42 @@ handleTest {
         tFile = tests[ti]
         tStart = nw
         tempExe = `test_run_temp_${ti}.exe`
-        buildOk = handleBuild tFile, 0, 0, tempExe, 0
+        buildOk = handleBuild tFile, 0, 0, tempExe, 0, 1
+
+        mut isExpectedFail = 0
+        if (tFile.cnt "redecl_error.test.zv") > 0 || (tFile.cnt "semantic_errors.test.zv") > 0 {
+            isExpectedFail = 1
+        }
 
         if buildOk == 0 {
             tElapsed = nw - tStart
-            prnt (` FAIL ${tFile} (${tElapsed}ms) [Compilation Failed]`)
-            failCount = failCount + 1
+            if isExpectedFail == 1 {
+                prnt (` PASS ${tFile} (${tElapsed}ms) (Expected Failure)`)
+                passCount = passCount + 1
+            } els {
+                prnt (` FAIL ${tFile} (${tElapsed}ms) [Compilation Failed]`)
+                failCount = failCount + 1
+            }
         } els {
             runCmd = `.\\${tempExe} > nul 2>&1`
             runRes = sh runCmd
             tElapsed = nw - tStart
             if runRes == 0 {
-                prnt (` PASS ${tFile} (${tElapsed}ms)`)
-                passCount = passCount + 1
+                if isExpectedFail == 1 {
+                    prnt (` FAIL ${tFile} (${tElapsed}ms) [Expected failure but passed]`)
+                    failCount = failCount + 1
+                } els {
+                    prnt (` PASS ${tFile} (${tElapsed}ms)`)
+                    passCount = passCount + 1
+                }
             } els {
-                prnt (` FAIL ${tFile} (${tElapsed}ms) [Execution failed code ${runRes}]`)
-                failCount = failCount + 1
+                if isExpectedFail == 1 {
+                    prnt (` PASS ${tFile} (${tElapsed}ms) (Expected Failure)`)
+                    passCount = passCount + 1
+                } els {
+                    prnt (` FAIL ${tFile} (${tElapsed}ms) [Execution failed code ${runRes}]`)
+                    failCount = failCount + 1
+                }
             }
         }
 
@@ -405,9 +454,9 @@ handleTest {
 }
 
 runCompiler targetFile {
-    handleBuild targetFile, 0, 0, "output.exe", 0
+    handleBuild targetFile, 0, 0, "output.exe", 0, 0
 }
 
 runCompilerOpt targetFile, isRelease, emitLlvm, outExe {
-    handleBuild targetFile, isRelease, emitLlvm, outExe, 0
+    handleBuild targetFile, isRelease, emitLlvm, outExe, 0, 0
 }

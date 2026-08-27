@@ -5,7 +5,7 @@ imp createLexer, tokenizeFull frm lexer
 imp parseProgramFull frm parser
 imp createDiagnostic, formatDiagnostic frm diagnostics
 
-main cmd, fileArg, arg3, arg4, arg5, arg6 {
+main cmd, fileArg, arg3, arg4 {
     let targetFile = fileArg
     if targetFile == "" {
         if fE "src/main.zv" {
@@ -20,7 +20,7 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
     mut isCdylib = 0
     mut outExe = "output.exe"
 
-    let args = [arg3, arg4, arg5, arg6]
+    let args = [arg3, arg4]
     let ai = 0
     wh ai < args.ln {
         a = args[ai]
@@ -53,7 +53,7 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
             handleCheck targetFile
         } els {
             if cmd == "build" {
-                handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib
+                handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, 0
             } els {
                 if cmd == "run" {
                     handleRun targetFile

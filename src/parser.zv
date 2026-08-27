@@ -1288,6 +1288,41 @@ parseBlock p {
 }
 
 parseStatement p {
+    wh (curTok p).val == "@" || ((curTok p).val == "[" && (peekTok p).kind == "IDENT" && (peekTok p).val != "]" && (isMultiVarAssign p) == 0) {
+        if (curTok p).val == "@" {
+            advanceParser p // consume '@' -> at attr name
+            if (peekTok p).val == "(" {
+                advanceParser p // at '('
+                advanceParser p // into '('
+                wh (curTok p).val != ")" && (curTok p).kind != "EOF" {
+                    advanceParser p
+                }
+                if (curTok p).val == ")" {
+                    advanceParser p // consume ')' -> now at next token
+                }
+            } els {
+                advanceParser p // consume attr name -> now at next token
+            }
+        } els if (curTok p).val == "[" {
+            advanceParser p // consume '[' -> at attr name
+            if (peekTok p).val == "(" {
+                advanceParser p // at '('
+                advanceParser p // into '('
+                wh (curTok p).val != ")" && (curTok p).kind != "EOF" {
+                    advanceParser p
+                }
+                if (curTok p).val == ")" {
+                    advanceParser p // consume ')'
+                }
+            } els {
+                advanceParser p // consume attr name
+            }
+            if (curTok p).val == "]" {
+                advanceParser p // consume ']' -> now at next token
+            }
+        }
+    }
+
     t = curTok p
 
     if t.kind == "KEYWORD" && t.val == "imp" {
@@ -1312,11 +1347,53 @@ parseStatement p {
             -> createImportNode items, emptySyms, ""
         }
     } els if (t.kind == "KEYWORD" || t.kind == "IDENT") && (t.val == "extern" || t.val == "ffi") {
-        let libName = ""
+        mut libName = ""
         advanceParser p
         if (curTok p).kind == "STR" || (curTok p).kind == "STRING" {
             libName = (curTok p).val
             advanceParser p
+        }
+        if (curTok p).val == "{" {
+            advanceParser p // consume '{'
+            let extStmts = []
+            wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+                if (curTok p).kind == "IDENT" {
+                    eFnName = (curTok p).val
+                    let eParams = []
+                    let eLine = (curTok p).line
+                    wh (peekTok p).line == eLine && (peekTok p).val != "->" && (peekTok p).kind != "ARROW" && (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
+                        advanceParser p
+                        epName = (curTok p).val
+                        mut epType = "num"
+                        if (peekTok p).val == ":" {
+                            advanceParser p // consume ':'
+                            advanceParser p // type name
+                            epType = (curTok p).val
+                        }
+                        epParamObj = { name: epName, typeName: epType }
+                        eParams.psh epParamObj
+                        if (peekTok p).val == "," {
+                            advanceParser p
+                        }
+                    }
+                    mut eRetType = "void"
+                    if (peekTok p).val == "->" || (peekTok p).kind == "ARROW" {
+                        advanceParser p // consume '->'
+                        advanceParser p // ret type
+                        eRetType = (curTok p).val
+                    }
+                    extNode = {
+                        kind: "ExternDecl",
+                        name: eFnName,
+                        libName: libName,
+                        params: eParams,
+                        typeName: eRetType
+                    }
+                    extStmts.psh extNode
+                }
+                advanceParser p
+            }
+            -> createStmtSequenceNode extStmts
         }
         fnName = (curTok p).val
         let params = []
@@ -1912,6 +1989,82 @@ parseStatement p {
                 isExternC = 1
                 advanceParser p // consume 'C'
             }
+        }
+        if (curTok p).val == "{" {
+            advanceParser p // consume '{'
+            let pubStmts = []
+            wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+                if (curTok p).kind == "IDENT" {
+                    fnName = (curTok p).val
+                    advanceParser p
+                    mut hasRest = 0
+                    let params = []
+                    if (curTok p).val == "(" {
+                        advanceParser p // consume '('
+                        if (curTok p).val != ")" {
+                            pValFirst = (curTok p).val
+                            if (peekTok p).val == ":" {
+                                advanceParser p // consume ':'
+                                advanceParser p // consume type
+                            }
+                            params.psh pValFirst
+                            wh (peekTok p).val == "," {
+                                advanceParser p // consume ','
+                                advanceParser p
+                                pVal = (curTok p).val
+                                if (peekTok p).val == ":" {
+                                    advanceParser p // consume ':'
+                                    advanceParser p // consume type
+                                }
+                                params.psh pVal
+                            }
+                        }
+                        if (peekTok p).val == ")" {
+                            advanceParser p
+                        }
+                    } els if (curTok p).kind == "IDENT" || (curTok p).val == "..." {
+                        if (curTok p).val == "..." {
+                            advanceParser p
+                            pRest = (curTok p).val
+                            params.psh pRest
+                            hasRest = 1
+                        } els {
+                            pValFirst = (curTok p).val
+                            if (peekTok p).val == ":" {
+                                advanceParser p // consume ':'
+                                advanceParser p // consume type
+                            }
+                            params.psh pValFirst
+                            wh (peekTok p).val == "," {
+                                advanceParser p // consume ','
+                                advanceParser p
+                                if (curTok p).val == "..." {
+                                    advanceParser p
+                                    pRest2 = (curTok p).val
+                                    params.psh pRest2
+                                    hasRest = 1
+                                } els {
+                                    pVal = (curTok p).val
+                                    if (peekTok p).val == ":" {
+                                        advanceParser p // consume ':'
+                                        advanceParser p // consume type
+                                    }
+                                    params.psh pVal
+                                }
+                            }
+                        }
+                    }
+                    if (peekTok p).val == "->" {
+                        advanceParser p // consume '->'
+                        advanceParser p // consume return type
+                    }
+                    body = parseBlock p
+                    fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC }
+                    pubStmts.psh fnNode
+                }
+                advanceParser p
+            }
+            -> createStmtSequenceNode pubStmts
         }
         if (curTok p).kind == "IDENT" {
             fnName = (curTok p).val

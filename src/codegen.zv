@@ -559,7 +559,7 @@ getStrPtrVal cg, expr, outBuf {
             bufReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 64)\n`)
             snpReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${snpReg} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${bufReg}, i64 64, ptr @fmt_g, double ${sReg})\n`)
+            outBuf.code = outBuf.code.cat (`  ${snpReg} = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr ${bufReg}, i64 64, ptr @fmt_g, double ${sReg})\n`)
             -> bufReg
         }
     }
@@ -1125,7 +1125,7 @@ codegenExpr cg, expr, outBuf {
                 buf = newReg cg
                 outBuf.code = outBuf.code.cat (`  ${buf} = call ptr @malloc(i64 64)\n`)
                 snp = newReg cg
-                outBuf.code = outBuf.code.cat (`  ${snp} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 64, ptr @fmt_g, double ${leftReg})\n`)
+                outBuf.code = outBuf.code.cat (`  ${snp} = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr ${buf}, i64 64, ptr @fmt_g, double ${leftReg})\n`)
                 asInt = newReg cg
                 outBuf.code = outBuf.code.cat (`  ${asInt} = ptrtoint ptr ${buf} to i64\n`)
                 asDbl = newReg cg
@@ -1376,7 +1376,7 @@ codegenExpr cg, expr, outBuf {
             buf = newReg cg
             outBuf.code = outBuf.code.cat (`  ${buf} = call ptr @malloc(i64 32)\n`)
             n = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${n} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 32, ptr @fmt_bigint, i64 ${asInt})\n`)
+            outBuf.code = outBuf.code.cat (`  ${n} = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr ${buf}, i64 32, ptr @fmt_bigint, i64 ${asInt})\n`)
             outInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${outInt} = ptrtoint ptr ${buf} to i64\n`)
             outDbl = newReg cg
@@ -1884,7 +1884,7 @@ codegenExpr cg, expr, outBuf {
                     aInt = newReg cg
                     outBuf.code = outBuf.code.cat (`  ${aInt} = fptosi double ${aReg} to i64\n`)
                     callArgsStr = callArgsStr.cat (`i64 ${aInt}`)
-                } els if expectedType == "double" {
+                } els if expectedType == "double" || expectedType == "num" {
                     aReg = codegenExpr cg, arg, outBuf
                     callArgsStr = callArgsStr.cat (`double ${aReg}`)
                 } els {
@@ -1901,11 +1901,11 @@ codegenExpr cg, expr, outBuf {
                 retType = "void"
             } els if extInfo.typeName == "str" || extInfo.typeName == "ptr" {
                 retType = "ptr"
-            } els if extInfo.typeName == "double" {
+            } els if extInfo.typeName == "double" || extInfo.typeName == "num" {
                 retType = "double"
             } els if extInfo.typeName == "i64" {
                 retType = "i64"
-            } els if extInfo.typeName == "num" || extInfo.typeName == "i32" {
+            } els if extInfo.typeName == "i32" {
                 retType = "i32"
             }
             if retType == "void" {
@@ -2622,7 +2622,7 @@ codegenExpr cg, expr, outBuf {
             buf = newReg cg
             outBuf.code = outBuf.code.cat (`  ${buf} = call ptr @malloc(i64 64)\n`)
             snp = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${snp} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 64, ptr @fmt_g, double ${valReg})\n`)
+            outBuf.code = outBuf.code.cat (`  ${snp} = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr ${buf}, i64 64, ptr @fmt_g, double ${valReg})\n`)
             asInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${asInt} = ptrtoint ptr ${buf} to i64\n`)
             asDbl = newReg cg
@@ -3285,6 +3285,9 @@ codegenFunctionDecl cg, funcStmt {
             fnBuf.code = fnBuf.code.cat (`  ${ptrReg} = alloca double\n`)
             fnBuf.code = fnBuf.code.cat (`  store double %arg_${pName}, ptr ${ptrReg}\n`)
             addCgSymbol cg, pName, ptrReg
+            if fnNameRaw == "main" {
+                cg.strNames.psh pName
+            }
         }
         j = j + 1
     }
@@ -3350,7 +3353,7 @@ generateLLVMFull program {
     header = header.cat "declare ptr @FindFirstFileA(ptr, ptr)\n"
     header = header.cat "declare i32 @FindNextFileA(ptr, ptr)\n"
     header = header.cat "declare i32 @FindClose(ptr)\n"
-    header = header.cat "declare i32 @snprintf(ptr, i64, ptr, ...)\n"
+    header = header.cat "declare i32 @_snprintf(ptr, i64, ptr, ...)\n"
     header = header.cat "declare void @exit(i32)\n"
     header = header.cat "@zuv_exc_value = global i64 0\n"
     header = header.cat `@zuv_uncaught_msg = private unnamed_addr constant [24 x i8] c"uncaught exception: %s\\0A\\00"\n`
@@ -3383,7 +3386,7 @@ generateLLVMFull program {
     header = header.cat `@dot_str = private unnamed_addr constant [2 x i8] c".\\00"\n`
     header = header.cat `@dotdot_str = private unnamed_addr constant [3 x i8] c"..\\00"\n\n`
 
-    header = header.cat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds i64, ptr %arr, i64 %nextCount\n  store i64 %strInt, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
+    header = header.cat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %strDbl = bitcast i64 %strInt to double\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds double, ptr %arr, i64 %nextCount\n  store double %strDbl, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
 
     let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" }
 
@@ -3391,7 +3394,7 @@ generateLLVMFull program {
     header = header.cat "@glb = global i64 0\n"
     addCgSymbol cg, "glb", "@glb"
 
-    // Pass 1: Declare top-level variables as global variables
+    // Pass 1: Declare top-level variables as global variables & register externs
     let gi = 0
     wh gi < program.statements.ln {
         stmt = program.statements[gi]
@@ -3413,6 +3416,22 @@ generateLLVMFull program {
             }
         } els if stmt.kind == "ExternDecl" {
             addCgExtern cg, stmt
+        } els if stmt.kind == "StmtSequence" {
+            let p1si = 0
+            wh p1si < stmt.statements.ln {
+                p1s = stmt.statements[p1si]
+                if p1s.kind == "ExternDecl" {
+                    addCgExtern cg, p1s
+                } els if p1s.kind == "VarDecl" {
+                    gSym = findCgSymbol cg, p1s.name
+                    if gSym.name == "" {
+                        gReg = `@${p1s.name}`
+                        header = header.cat (`${gReg} = global double 0.0\n`)
+                        addCgSymbol cg, p1s.name, gReg
+                    }
+                }
+                p1si = p1si + 1
+            }
         }
         gi = gi + 1
     }
@@ -3428,6 +3447,17 @@ generateLLVMFull program {
                     rIdx = rst.params.ln - 1
                     cg.restIdxs.psh rIdx
                 }
+            }
+        } els if rst.kind == "StmtSequence" {
+            let rsi = 0
+            wh rsi < rst.statements.ln {
+                subR = rst.statements[rsi]
+                if subR.kind == "FunctionDecl" && subR.hasRest == 1 && subR.params.ln > 0 {
+                    cg.restNames.psh subR.name
+                    rIdx2 = subR.params.ln - 1
+                    cg.restIdxs.psh rIdx2
+                }
+                rsi = rsi + 1
             }
         }
         ri = ri + 1
@@ -3447,6 +3477,42 @@ generateLLVMFull program {
                 if subS.kind == "FunctionDecl" {
                     cg.isMain = 0
                     codegenFunctionDecl cg, subS
+                } els if subS.kind == "ExternDecl" {
+                    let extParams2 = ""
+                    let pi2 = 0
+                    wh pi2 < subS.params.ln {
+                        p2 = subS.params[pi2]
+                        let pt2 = "i32"
+                        if p2.typeName == "str" || p2.typeName == "ptr" {
+                            pt2 = "ptr"
+                        } els if p2.typeName == "double" || p2.typeName == "num" {
+                            pt2 = "double"
+                        } els if p2.typeName == "i64" {
+                            pt2 = "i64"
+                        }
+                        if pi2 > 0 {
+                            extParams2 = `${extParams2}, `
+                        }
+                        extParams2 = extParams2 + pt2
+                        pi2 = pi2 + 1
+                    }
+                    let retType2 = "i32"
+                    if subS.typeName == "void" {
+                        retType2 = "void"
+                    } els if subS.typeName == "ptr" || subS.typeName == "str" {
+                        retType2 = "ptr"
+                    } els if subS.typeName == "double" || subS.typeName == "num" {
+                        retType2 = "double"
+                    } els if subS.typeName == "i64" {
+                        retType2 = "i64"
+                    } els if subS.typeName == "i32" {
+                        retType2 = "i32"
+                    }
+                    declSig2 = `@${subS.name}(`
+                    if (header.cnt declSig2) == 0 {
+                        header = header.cat (`declare ${retType2} @${subS.name}(${extParams2})\n`)
+                    }
+                    addCgExtern cg, subS
                 } els {
                     cg.isMain = 1
                     codegenStmt cg, subS, mainBuf
@@ -3478,11 +3544,11 @@ generateLLVMFull program {
                 retType = "void"
             } els if stmt.typeName == "ptr" || stmt.typeName == "str" {
                 retType = "ptr"
-            } els if stmt.typeName == "double" {
+            } els if stmt.typeName == "double" || stmt.typeName == "num" {
                 retType = "double"
             } els if stmt.typeName == "i64" {
                 retType = "i64"
-            } els if stmt.typeName == "num" || stmt.typeName == "i32" {
+            } els if stmt.typeName == "i32" {
                 retType = "i32"
             }
             declSig = `@${stmt.name}(`

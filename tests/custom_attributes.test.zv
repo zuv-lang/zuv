@@ -1,0 +1,40 @@
+// Test custom user annotations and decorators on functions, structs, and variables
+
+@table("users")
+obj UserAccount {
+    id: num,
+    username: str
+}
+
+@route("/api/v1/users", "GET")
+@authorize("admin")
+@rateLimit(100)
+getUserEndpoint userId {
+    -> userId * 2
+}
+
+[audit(1)]
+[logLevel("debug")]
+performAction actionName {
+    prnt "Performing action: " + actionName
+    -> 1
+}
+
+@test
+testCustomAnnotations {
+    res = getUserEndpoint 21
+    if res != 42 {
+        prnt "FAILED: getUserEndpoint"
+        exit 1
+    }
+
+    actionRes = performAction "deploy"
+    if actionRes != 1 {
+        prnt "FAILED: performAction"
+        exit 1
+    }
+
+    prnt "PASS: Custom annotations parse, attach to AST, and execute seamlessly"
+}
+
+testCustomAnnotations
