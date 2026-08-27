@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 🏷️ Attributes & Annotations
-- Added support for `@name` and `[name]` annotations on functions, structs (`obj`), and variables.
-- Direct LLVM optimization & export directives: `@inline`, `@noinline`, `@cold`, `@export`, and `@test`.
-- Full support for custom user annotations (e.g. `@route(...)`, `[audit(...)]`).
-- Docs: Added `docs/ATTRIBUTES_GUIDE.md`. Tests: `attributes.test.zv`, `custom_attributes.test.zv`.
-
 ### 🔌 JS Interop & Shared C Dynamic Library Output (`--cdylib` / `--lib`)
 - **`pub extern "C"` Export & Shared Libraries**: Added native C-exportable shared dynamic library compilation (`.dll` on Windows, `.so` on Linux, `.dylib` on macOS) using `pub extern "C"` function definitions with unmangled C ABI linkage and `dllexport` LLVM code generation.
 - **Compiler CLI & LLD `/DLL` Linking**: Added `--cdylib`, `--lib`, and `-l` flags to `zuv build` to invoke `lld-link.exe` in DLL mode (`-dll -noentry -implib:"<name>.lib"`).

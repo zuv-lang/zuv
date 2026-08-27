@@ -539,7 +539,7 @@ nextLexerToken lexer {
     }
 
     if lexer.ch == "~" || lexer.ch == "(" || lexer.ch == ")" || lexer.ch == "{" || lexer.ch == "}" ||
-       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "," || lexer.ch == ";" || lexer.ch == "@" {
+       lexer.ch == "[" || lexer.ch == "]" || lexer.ch == "," || lexer.ch == ";" {
         c = lexer.ch
         readLexerChar lexer
         -> createToken "SYM", c, startLine, startCol
