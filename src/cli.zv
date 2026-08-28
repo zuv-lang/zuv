@@ -11,7 +11,8 @@ extern "LLVMCore.lib" LLVMInitializeX86TargetMC -> void
 extern "LLVMCore.lib" LLVMInitializeX86AsmPrinter -> void
 extern "LLVMCore.lib" LLVMInitializeX86AsmParser -> void
 
-extern "LLVMCore.lib" LLVMGetGlobalContext -> ptr
+extern "LLVMCore.lib" LLVMContextCreate -> ptr
+extern "LLVMCore.lib" LLVMContextDispose ctx: ptr -> void
 extern "LLVMCore.lib" LLVMCreateMemoryBufferWithMemoryRange data: ptr, len: num, name: str, reqNull: num -> ptr
 extern "LLVMCore.lib" LLVMParseIRInContext ctx: ptr, memBuf: ptr, outMod: ptr, outMsg: ptr -> num
 extern "LLVMTarget.lib" LLVMGetTargetFromTriple triple: str, target: ptr, errMsg: ptr -> num
@@ -28,7 +29,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     LLVMInitializeX86AsmParser
 
     fullIr = `target triple = "x86_64-pc-windows-msvc"\n${ir}`
-    ctx = LLVMGetGlobalContext
+    ctx = LLVMContextCreate
     memBuf = LLVMCreateMemoryBufferWithMemoryRange fullIr, fullIr.ln, "zuv_ir", 0
 
     let outModPtr = malloc 8
@@ -37,6 +38,9 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     if res != 0 {
         errMsg = zuv_ptr_deref outMsgPtr
         prnt (`[LLVM Error] IR Parse Failed: ${errMsg}`)
+        LLVMContextDispose ctx
+        free outModPtr
+        free outMsgPtr
         -> 1
     }
     mod = zuv_ptr_deref outModPtr
@@ -48,6 +52,10 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
         errMsg2 = zuv_ptr_deref outMsgPtr
         prnt (`[LLVM Error] Target lookup failed: ${errMsg2}`)
         LLVMDisposeModule mod
+        LLVMContextDispose ctx
+        free outModPtr
+        free outMsgPtr
+        free targetPtr
         -> 1
     }
     target = zuv_ptr_deref targetPtr
@@ -64,11 +72,19 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
         prnt (`[LLVM Error] Object code emission failed: ${errMsg3}`)
         LLVMDisposeTargetMachine tm
         LLVMDisposeModule mod
+        LLVMContextDispose ctx
+        free outModPtr
+        free outMsgPtr
+        free targetPtr
         -> 1
     }
 
     LLVMDisposeTargetMachine tm
     LLVMDisposeModule mod
+    LLVMContextDispose ctx
+    free outModPtr
+    free outMsgPtr
+    free targetPtr
     -> 0
 }
 

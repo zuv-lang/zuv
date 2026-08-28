@@ -1,0 +1,56 @@
+// Attributes & Metaprogramming Annotations Test (tests/attributes.test.zv)
+
+@inline
+fastAdd a, b {
+    -> a + b
+}
+
+@inline(always)
+fastMul a, b {
+    -> a * b
+}
+
+@noinline
+slowCalc x {
+    -> x * 2
+}
+
+@test
+testMath {
+    r1 = fastAdd 10, 20
+    prnt r1
+    r2 = fastMul 5, 6
+    prnt r2
+    r3 = slowCalc 21
+    prnt r3
+}
+
+@test
+@inline
+multiAttrFunc a {
+    -> a + 100
+}
+
+@derive(Debug, Clone)
+obj Point {
+    x: num,
+    y: num
+}
+
+@custom(42, "metadata")
+obj Config {
+    mode: str
+}
+
+testMath
+res = multiAttrFunc 50
+prnt res
+
+p = Point{ x: 1, y: 2 }
+prnt p.x
+prnt p.y
+
+c = Config{ mode: "production" }
+prnt c.mode
+
+prnt "attributes test complete"

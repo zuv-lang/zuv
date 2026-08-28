@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🏷️ AST Attribute Declarations & Metaprogramming Annotations
+- **AST Metadata Attributes (`@name` and `@name(...)`)**: Added support for attaching attributes to functions and `obj` declarations across both the C++ bootstrap compiler and pure Zuv self-hosting compiler:
+  - `@inline` / `@inline(always)` emitting LLVM `alwaysinline` function attributes.
+  - `@inline(never)` / `@noinline` emitting LLVM `noinline` function attributes.
+  - Metadata and metaprogramming annotations including `@test`, `@derive(...)`, `@deprecated`, and custom parameter lists (`@custom(42, "metadata")`).
+  - Added test suite: `tests/attributes.test.zv` verifying inlining, metadata attributes, derive, custom attributes, and execution.
+
 ### 🔗 Multi-line `extern` & Block Declarations
 - **Multi-line `extern` Block Parsing & Codegen**: Added multi-line block syntax for external C declarations and exported C functions in both compilers:
   - `pub extern "C" { ... }` block unpacking for multiple C ABI exported functions with automatic `dllexport` attribute emission.

@@ -345,7 +345,8 @@ createForNode initS, cond, incS, body {
 }
 
 createFuncNode name, params, body, isAsync, hasRest {
-    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest }
+    let emptyAttrs = []
+    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest, attributes: emptyAttrs }
     -> res
 }
 
@@ -1287,8 +1288,61 @@ parseBlock p {
     -> createBlockNode stmts
 }
 
+parseAttributes p {
+    let attrs = []
+    wh (curTok p).val == "@" {
+        advanceParser p // consume '@'
+        if (curTok p).kind != "IDENT" {
+            p.errors.psh "Expected attribute name after '@'"
+            brk
+        }
+        attrName = (curTok p).val
+        let attrArgs = []
+        if (peekTok p).val == "(" {
+            advanceParser p // consume '('
+            advanceParser p // into arguments or ')'
+            wh (curTok p).val != ")" && (curTok p).kind != "EOF" {
+                if (curTok p).kind == "IDENT" || (curTok p).kind == "STR" || (curTok p).kind == "STRING" || (curTok p).kind == "NUM" || (curTok p).kind == "NUMBER" {
+                    attrArgs.psh (curTok p).val
+                    if (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                    }
+                }
+                advanceParser p
+            }
+        }
+        let attrObj = { name: attrName, args: attrArgs }
+        attrs.psh attrObj
+        advanceParser p // move past attribute / ')'
+    }
+    -> attrs
+}
+
 parseStatement p {
     t = curTok p
+
+    if t.val == "@" {
+        let attrs = parseAttributes p
+        if (curTok p).kind == "EOF" {
+            -> { kind: "" }
+        }
+        stmt = parseStatement p
+        if stmt.kind == "FunctionDecl" {
+            stmt.attributes = attrs
+        } els if stmt.kind == "ObjDecl" {
+            stmt.attributes = attrs
+        } els if stmt.kind == "StmtSequence" {
+            let ssi = 0
+            wh ssi < stmt.statements.ln {
+                subS = stmt.statements[ssi]
+                if subS.kind == "FunctionDecl" || subS.kind == "ObjDecl" {
+                    subS.attributes = attrs
+                }
+                ssi = ssi + 1
+            }
+        }
+        -> stmt
+    }
 
     if t.kind == "KEYWORD" && t.val == "imp" {
         advanceParser p
@@ -2027,12 +2081,12 @@ parseStatement p {
                         advanceParser p // consume return type
                     }
                     body = parseBlock p
-                    pFnNode = { kind: "FunctionDecl", name: pFnName, params: pParams, body: body, isAsync: 0, hasRest: pHasRest, isExported: 1, isExternC: isExternC }
+                    let emptyAttrs1 = []
+                    pFnNode = { kind: "FunctionDecl", name: pFnName, params: pParams, body: body, isAsync: 0, hasRest: pHasRest, isExported: 1, isExternC: isExternC, attributes: emptyAttrs1 }
                     pubStmts.psh pFnNode
                 }
                 advanceParser p // unconditional advance (matches C++ nextToken at line 269)
             }
-            advanceParser p // consume outer '}'
             -> createStmtSequenceNode pubStmts
         }
         if (curTok p).kind == "IDENT" {
@@ -2103,7 +2157,8 @@ parseStatement p {
                 advanceParser p // consume return type
             }
             body = parseBlock p
-            fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC }
+            let emptyAttrs2 = []
+            fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC, attributes: emptyAttrs2 }
             -> fnNode
         }
         -> { kind: "" }

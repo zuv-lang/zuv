@@ -46,8 +46,10 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
 
     if cmd == "checkall" || cmd == "check-all" {
         handleCheckAll
-    } els if cmd == "test" || cmd == "" {
+    } els if cmd == "test" {
         handleTest
+    } els if cmd == "" {
+        handleCheckAll
     } els {
         if cmd == "check" {
             handleCheck targetFile
