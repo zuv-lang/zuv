@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-29
+
 ### 🌍 Cross-Compilation & Target Triples (`--target`)
 - Added `--target <alias>` flag to `zuv.exe` and `zuv_selfhost.exe` for cross-compiling to any LLVM target:
   - `windows-x64` → `x86_64-pc-windows-msvc` (default, full link)
