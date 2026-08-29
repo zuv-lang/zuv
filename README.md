@@ -179,35 +179,111 @@ zuv --help
 
 ## 🛠️ Building & Running the Self-Hosting Compiler
 
-### 1. Compile the Self-Hosting Compiler
-Compile the pure Zuv compiler sources:
+### Prerequisites
+- **Windows** with [LLVM](https://llvm.org/releases/) installed (e.g. `D:\LLVM`)
+- **lld-link.exe** — comes with LLVM, used by `zuv.exe` for native linking
+
+---
+
+### 1. Build the Self-Hosting Compiler (`zuv_selfhost.exe`)
+
 ```powershell
-zuv build src/main.zv
-```
-To install the built compiler to your default binary folder:
-```powershell
-Copy-Item output.exe "C:\Users\$env:USERNAME\zuv\bin\zuv.exe" -Force
+# From the repo root
+.\zuv.exe build sub_projects/zuv/src/main.zv -o sub_projects/zuv/zuv_selfhost.exe
 ```
 
-### 2. Run the Native AOT Test Runner
-Execute all 27 unit test suites natively using `zuv`:
+To install it as your system `zuv`:
 ```powershell
-zuv test
-```
-
-### 3. Run Static Type & Borrow Checker
-Verify syntax and borrow safety across all test suites without emitting binaries:
-```powershell
-zuv checkall
-```
-
-### 4. Build and Run a Zuv Program
-```powershell
-zuv build tests/functions.test.zv
-zuv run tests/functions.test.zv
+Copy-Item sub_projects\zuv\zuv_selfhost.exe "$HOME\zuv\bin\zuv.exe" -Force
 ```
 
 ---
+
+### 2. Run the Test Suite (All 4 Runners)
+
+```powershell
+# Bootstrap compiler — from repo root
+.\zuv.exe test        # compile & run all tests/
+.\zuv.exe checkall    # parse & type-check all tests/ (no LLVM emit)
+
+# Self-hosting compiler — from sub_projects/zuv/
+.\zuv_selfhost.exe test
+.\zuv_selfhost.exe checkall
+```
+
+Expected results:
+
+| Runner | Passing |
+|--------|---------|
+| `zuv.exe test` | ✅ |
+| `zuv.exe checkall` | ✅ |
+| `zuv_selfhost.exe test` | ✅ |
+| `zuv_selfhost.exe checkall` | ✅ |
+
+> The 2 intentional failures (`redecl_error.test.zv`, `semantic_errors.test.zv`) are negative tests — they are expected to fail.
+
+---
+
+### 3. Build & Run a Single Zuv Program
+
+```powershell
+# Build to output.exe (default)
+.\zuv.exe build tests/functions.test.zv
+
+# Build with custom output name
+.\zuv.exe build tests/functions.test.zv -o my_app.exe
+
+# Build & run in one step
+.\zuv.exe run tests/functions.test.zv
+
+# Release build (-O3)
+.\zuv.exe build tests/functions.test.zv --release -o my_app.exe
+```
+
+---
+
+### 4. Cross-Compile to Another Platform
+
+> Emits a native object file (`.o`) for the target. Cross-linking requires a target sysroot.
+
+```powershell
+# Linux x64 (ELF)
+.\zuv.exe build src/main.zv --target linux-x64 -o output_linux.o
+
+# Linux ARM64 (ELF AArch64)
+.\zuv.exe build src/main.zv --target linux-arm64 -o output_arm64.o
+
+# macOS ARM64 (Mach-O)
+.\zuv.exe build src/main.zv --target macos-arm64 -o output_macos.o
+
+# Raw LLVM triple
+.\zuv.exe build src/main.zv --target x86_64-unknown-linux-musl -o output.o
+```
+
+Also works with `zuv_selfhost.exe`:
+```powershell
+.\zuv_selfhost.exe build tests/func_simple.test.zv --target linux-x64 -o out.o
+```
+
+---
+
+### 5. Shared C Library (`.dll` / `.so`)
+
+```powershell
+.\zuv.exe build math.zv --cdylib -o math.dll
+```
+
+---
+
+### 6. Emit LLVM IR
+
+```powershell
+.\zuv.exe build src/main.zv --emit-llvm
+# Produces output.ll and output_debug.ll in the current directory
+```
+
+---
+
 
 ## 🤝 Contributing
 

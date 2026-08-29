@@ -11,6 +11,12 @@ extern "LLVMCore.lib" LLVMInitializeX86TargetMC -> void
 extern "LLVMCore.lib" LLVMInitializeX86AsmPrinter -> void
 extern "LLVMCore.lib" LLVMInitializeX86AsmParser -> void
 
+extern "LLVMCore.lib" LLVMInitializeAArch64TargetInfo -> void
+extern "LLVMCore.lib" LLVMInitializeAArch64Target -> void
+extern "LLVMCore.lib" LLVMInitializeAArch64TargetMC -> void
+extern "LLVMCore.lib" LLVMInitializeAArch64AsmPrinter -> void
+extern "LLVMCore.lib" LLVMInitializeAArch64AsmParser -> void
+
 extern "LLVMCore.lib" LLVMContextCreate -> ptr
 extern "LLVMCore.lib" LLVMContextDispose ctx: ptr -> void
 extern "LLVMCore.lib" LLVMCreateMemoryBufferWithMemoryRange data: ptr, len: num, name: str, reqNull: num -> ptr
@@ -21,14 +27,26 @@ extern "LLVMTarget.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename:
 extern "LLVMTarget.lib" LLVMDisposeTargetMachine tm: ptr -> void
 extern "LLVMCore.lib" LLVMDisposeModule mod: ptr -> void
 
-emitDirectObjectFile ir, outputObjPath, isRelease {
+emitDirectObjectFile ir, outputObjPath, isRelease, targetTriple {
     LLVMInitializeX86TargetInfo
     LLVMInitializeX86Target
     LLVMInitializeX86TargetMC
     LLVMInitializeX86AsmPrinter
     LLVMInitializeX86AsmParser
 
-    fullIr = `target triple = "x86_64-pc-windows-msvc"\n${ir}`
+    LLVMInitializeAArch64TargetInfo
+    LLVMInitializeAArch64Target
+    LLVMInitializeAArch64TargetMC
+    LLVMInitializeAArch64AsmPrinter
+    LLVMInitializeAArch64AsmParser
+
+    // Resolve the LLVM triple
+    mut resolvedTriple = "x86_64-pc-windows-msvc"
+    if targetTriple != "" {
+        resolvedTriple = targetTriple
+    }
+
+    fullIr = `target triple = "${resolvedTriple}"\n${ir}`
     ctx = LLVMContextCreate
     memBuf = LLVMCreateMemoryBufferWithMemoryRange fullIr, fullIr.ln, "zuv_ir", 0
 
@@ -45,12 +63,11 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
     }
     mod = zuv_ptr_deref outModPtr
 
-    triple = "x86_64-pc-windows-msvc"
     let targetPtr = malloc 8
-    tRes = LLVMGetTargetFromTriple triple, targetPtr, outMsgPtr
+    tRes = LLVMGetTargetFromTriple resolvedTriple, targetPtr, outMsgPtr
     if tRes != 0 {
         errMsg2 = zuv_ptr_deref outMsgPtr
-        prnt (`[LLVM Error] Target lookup failed: ${errMsg2}`)
+        prnt (`[LLVM Error] Target lookup failed for '${resolvedTriple}': ${errMsg2}`)
         LLVMDisposeModule mod
         LLVMContextDispose ctx
         free outModPtr
@@ -65,7 +82,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease {
         optLevel = 3
     }
 
-    tm = LLVMCreateTargetMachine target, triple, "generic", "", optLevel, 0, 0
+    tm = LLVMCreateTargetMachine target, resolvedTriple, "generic", "", optLevel, 0, 0
     emitRes = LLVMTargetMachineEmitToFile tm, mod, outputObjPath, 1, outMsgPtr
     if emitRes != 0 {
         errMsg3 = zuv_ptr_deref outMsgPtr
@@ -129,7 +146,7 @@ linkDirectObjectFile objPath, outExePath, isCdylib, customLibs {
     -> res
 }
 
-handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
+handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple {
     if fE targetFile {
         code = rF targetFile
         prnt "==========================================="
@@ -214,11 +231,35 @@ handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
                 prnt "[zuv build] Successfully generated output_selfhost.ll via self-hosting compiler!"
                 -> 1
             } els {
-                objPath = `${targetExe}.obj`
-                emitRes = emitDirectObjectFile ir, objPath, isRelease
+                // Determine if cross-compiling to a non-Windows target
+                // A triple is non-Windows if it ends with a known Linux/macOS/WASM suffix
+                mut isCross = 0
+                if targetTriple != "" {
+                    isLinuxGnu  = strEndsWith targetTriple, "linux-gnu"
+                    isLinuxMusl = strEndsWith targetTriple, "linux-musl"
+                    isDarwin    = strEndsWith targetTriple, "apple-darwin"
+                    isWasm      = strEndsWith targetTriple, "wasm32"
+                    if isLinuxGnu == 1 || isLinuxMusl == 1 || isDarwin == 1 || isWasm == 1 {
+                        isCross = 1
+                    }
+                }
+
+                // For cross-compile targets, emit .o directly (no Windows linker)
+                mut objOutPath = `${targetExe}.obj`
+                if isCross == 1 {
+                    objOutPath = targetExe
+                }
+
+                emitRes = emitDirectObjectFile ir, objOutPath, isRelease, targetTriple
                 if emitRes != 0 {
                     prnt "[zuv build] Direct in-process LLVM object code generation failed."
                     -> 0
+                }
+
+                if isCross == 1 {
+                    prnt (`[zuv build] Cross-compile: object file emitted: ${objOutPath}`)
+                    prnt (`[zuv build] Note: cross-linking to ${targetTriple} requires a target sysroot.`)
+                    -> 1
                 }
 
                 mut customLibs = ""
@@ -260,6 +301,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
                     li = li + 1
                 }
 
+                let objPath = objOutPath
                 linkRes = linkDirectObjectFile objPath, targetExe, isCdylib, customLibs
                 if fE objPath {
                     rmF objPath
@@ -296,6 +338,7 @@ handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib {
         -> 0
     }
 }
+
 
 handleCheck targetFile {
     if fE targetFile {
@@ -334,13 +377,14 @@ handleCheck targetFile {
 }
 
 handleRun targetFile {
-    res = handleBuild targetFile, 0, 0, "output.exe"
+    res = handleBuild targetFile, 0, 0, "output.exe", 0, ""
     if res == 1 {
         prnt (`[zuv run] Executing output.exe for ${targetFile}`)
         sh ".\\output.exe"
     }
     -> res
 }
+
 
 handleFmt targetFile {
     if fE targetFile {
@@ -403,7 +447,7 @@ handleTest {
         tFile = tests[ti]
         tStart = nw
         tempExe = `test_run_temp_${ti}.exe`
-        buildOk = handleBuild tFile, 0, 0, tempExe, 0
+        buildOk = handleBuild tFile, 0, 0, tempExe, 0, ""
 
         if buildOk == 0 {
             tElapsed = nw - tStart
@@ -444,9 +488,10 @@ handleTest {
 }
 
 runCompiler targetFile {
-    handleBuild targetFile, 0, 0, "output.exe", 0
+    handleBuild targetFile, 0, 0, "output.exe", 0, ""
 }
 
 runCompilerOpt targetFile, isRelease, emitLlvm, outExe {
-    handleBuild targetFile, isRelease, emitLlvm, outExe, 0
+    handleBuild targetFile, isRelease, emitLlvm, outExe, 0, ""
 }
+

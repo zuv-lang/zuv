@@ -7,20 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🌍 Cross-Compilation & Target Triples (`--target`)
+- Added `--target <alias>` flag to `zuv.exe` and `zuv_selfhost.exe` for cross-compiling to any LLVM target:
+  - `windows-x64` → `x86_64-pc-windows-msvc` (default, full link)
+  - `linux-x64` → `x86_64-unknown-linux-gnu` (ELF `.o`)
+  - `linux-arm64` → `aarch64-unknown-linux-gnu` (ELF AArch64 `.o`)
+  - `macos-arm64` → `arm64-apple-darwin` (Mach-O `.o`)
+  - `macos-x64` → `x86_64-apple-darwin` (Mach-O `.o`)
+  - Raw LLVM triple passthrough supported.
+- Initialized AArch64 LLVM backend alongside X86 in both compilers.
+- Dynamic `target triple` injected into IR before emission.
+- Non-Windows targets emit `.o` only (cross-link skipped with a clear message).
+- Added `tests/cross_target.test.zv` in both `tests/` dirs.
+- `--help` updated with `--target` aliases.
+
 ### 🏷️ AST Attribute Declarations & Metaprogramming Annotations
-- **AST Metadata Attributes (`@name` and `@name(...)`)**: Added support for attaching attributes to functions and `obj` declarations across both the C++ bootstrap compiler and pure Zuv self-hosting compiler:
-  - `@inline` / `@inline(always)` emitting LLVM `alwaysinline` function attributes.
-  - `@inline(never)` / `@noinline` emitting LLVM `noinline` function attributes.
-  - Metadata and metaprogramming annotations including `@test`, `@derive(...)`, `@deprecated`, and custom parameter lists (`@custom(42, "metadata")`).
-  - Added test suite: `tests/attributes.test.zv` verifying inlining, metadata attributes, derive, custom attributes, and execution.
+- Added `@name` / `@name(...)` attribute syntax on functions and `obj` declarations.
+- `@inline` / `@inline(always)` → LLVM `alwaysinline`; `@noinline` → `noinline`.
+- Supports `@test`, `@derive(...)`, `@deprecated`, and custom attribute args.
+- Added `tests/attributes.test.zv`.
 
 ### 🔗 Multi-line `extern` & Block Declarations
-- **Multi-line `extern` Block Parsing & Codegen**: Added multi-line block syntax for external C declarations and exported C functions in both compilers:
-  - `pub extern "C" { ... }` block unpacking for multiple C ABI exported functions with automatic `dllexport` attribute emission.
-  - `extern "lib" { ... }` and `extern "C" { ... }` block declarations for grouping multiple external FFI function signatures.
-  - Fixed block loop parser token consumption and decoupled function definition codegen from top-level statement codegen in the self-hosting compiler.
-  - Updated test coverage: `tests/cdylib_export.test.zv`, `tests/c_ffi_lib.test.zv`, and `tests/call_cdylib.test.zv`.
-- **Self-Hosting CLI Cleanup**: Removed manual `extern "msvcrt.dll" system` declaration in `src/cli.zv` in favor of standard builtin `sh` execution.
+- Added `extern "lib" { ... }` and `pub extern "C" { ... }` block syntax for grouping multiple FFI declarations in one block.
+- `pub extern "C" { ... }` auto-emits `dllexport` on all functions inside.
+- Removed manual `extern "msvcrt.dll" system` from `cli.zv`; uses builtin `sh` instead.
+- Updated tests: `cdylib_export.test.zv`, `c_ffi_lib.test.zv`, `call_cdylib.test.zv`.
 
 ## [0.9.0] - 2026-08-27
 
