@@ -29,7 +29,7 @@ createCodegen {
         "enums", "enumKeys", "enumVals",
         "symKeys", "symIds", "bigintNames", "strNames",
         "__keys", "__vals",
-        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames"
+        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames", "funcNames"
     ]
     let brkStack = []
     let contStack = []
@@ -45,6 +45,7 @@ createCodegen {
     let strNames = []
     let restNames = []
     let restIdxs = []
+    let funcNames = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -68,7 +69,8 @@ createCodegen {
         bigintNames: bigintNames,
         strNames: strNames,
         restNames: restNames,
-        restIdxs: restIdxs
+        restIdxs: restIdxs,
+        funcNames: funcNames
     }
     -> res
 }
@@ -83,6 +85,15 @@ findRestIdx cg, name {
     }
     missing = 0 - 1
     -> missing
+}
+
+isDeclaredFunction cg, name {
+    let i = 0
+    wh i < cg.funcNames.ln {
+        if (strEq cg.funcNames[i], name) == 1 { -> 1 }
+        i = i + 1
+    }
+    -> 0
 }
 
 ensureGlbProp cg, prop {
@@ -869,6 +880,13 @@ codegenExpr cg, expr, outBuf {
             -> valReg
         }
         if expr.name == "PI" { -> "3.141592653589793" }
+        if (isDeclaredFunction cg, expr.name) == 1 {
+            fnAddr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnAddr} = ptrtoint ptr @${expr.name} to i64\n`)
+            fnVal = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnVal} = sitofp i64 ${fnAddr} to double\n`)
+            -> fnVal
+        }
         if expr.name == "E" { -> "2.718281828459045" }
         if expr.name == "rand" {
             rI = newReg cg
@@ -1933,6 +1951,28 @@ codegenExpr cg, expr, outBuf {
         }
 
         let callArgsStr = ""
+        // A variable in callee position is an indirect function call.
+        calleeSym = findCgSymbol cg, expr.callee
+        if calleeSym.name != "" {
+            let indirectArgs = ""
+            let ii = 0
+            wh ii < expr.args.ln {
+                indirectArg = codegenExpr cg, expr.args[ii], outBuf
+                if ii > 0 { indirectArgs = indirectArgs.cat ", " }
+                indirectArgs = indirectArgs.cat (`double ${indirectArg}`)
+                ii = ii + 1
+            }
+            fnVal = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnVal} = load double, ptr ${calleeSym.reg}\n`)
+            fnBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnBits} = fptosi double ${fnVal} to i64\n`)
+            fnPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnPtr} = inttoptr i64 ${fnBits} to ptr\n`)
+            indirectRes = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${indirectRes} = call double ${fnPtr}(${indirectArgs})\n`)
+            -> indirectRes
+        }
+
         restIdx = findRestIdx cg, expr.callee
         if restIdx >= 0 {
             let i = 0
@@ -3318,6 +3358,22 @@ codegenFunctionDecl cg, funcStmt {
 
 generateLLVMFull program {
     cg = createCodegen
+    // Pre-register functions so aliases can reference later declarations.
+    let fni = 0
+    wh fni < program.statements.ln {
+        fnStmt = program.statements[fni]
+        if fnStmt.kind == "FunctionDecl" {
+            cg.funcNames.psh fnStmt.name
+        } els if fnStmt.kind == "StmtSequence" {
+            let fnsi = 0
+            wh fnsi < fnStmt.statements.ln {
+                subFn = fnStmt.statements[fnsi]
+                if subFn.kind == "FunctionDecl" { cg.funcNames.psh subFn.name }
+                fnsi = fnsi + 1
+            }
+        }
+        fni = fni + 1
+    }
     let ei = 0
     wh ei < program.statements.ln {
         estmt = program.statements[ei]

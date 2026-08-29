@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚡ First-Class Functions & Function Pointers
+- Function declarations can be used as values, assigned to aliases, and passed as callback arguments.
+- Calls through aliases and function parameters emit LLVM indirect calls in both the bootstrap and self-hosting code generators.
+- Preserved existing bare zero-argument call syntax; parameterised function names are unambiguous first-class values.
+- Added `tests/function_pointers.test.zv` covering aliases and higher-order calls.
+
 ## [0.10.0] - 2026-08-29
 
 ### 🌍 Cross-Compilation & Target Triples (`--target`)
