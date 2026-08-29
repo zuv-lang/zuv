@@ -345,7 +345,8 @@ createForNode initS, cond, incS, body {
 }
 
 createFuncNode name, params, body, isAsync, hasRest {
-    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest }
+    let emptyAttrs = []
+    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest, attributes: emptyAttrs }
     -> res
 }
 
@@ -1287,8 +1288,61 @@ parseBlock p {
     -> createBlockNode stmts
 }
 
+parseAttributes p {
+    let attrs = []
+    wh (curTok p).val == "@" {
+        advanceParser p // consume '@'
+        if (curTok p).kind != "IDENT" {
+            p.errors.psh "Expected attribute name after '@'"
+            brk
+        }
+        attrName = (curTok p).val
+        let attrArgs = []
+        if (peekTok p).val == "(" {
+            advanceParser p // consume '('
+            advanceParser p // into arguments or ')'
+            wh (curTok p).val != ")" && (curTok p).kind != "EOF" {
+                if (curTok p).kind == "IDENT" || (curTok p).kind == "STR" || (curTok p).kind == "STRING" || (curTok p).kind == "NUM" || (curTok p).kind == "NUMBER" {
+                    attrArgs.psh (curTok p).val
+                    if (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                    }
+                }
+                advanceParser p
+            }
+        }
+        let attrObj = { name: attrName, args: attrArgs }
+        attrs.psh attrObj
+        advanceParser p // move past attribute / ')'
+    }
+    -> attrs
+}
+
 parseStatement p {
     t = curTok p
+
+    if t.val == "@" {
+        let attrs = parseAttributes p
+        if (curTok p).kind == "EOF" {
+            -> { kind: "" }
+        }
+        stmt = parseStatement p
+        if stmt.kind == "FunctionDecl" {
+            stmt.attributes = attrs
+        } els if stmt.kind == "ObjDecl" {
+            stmt.attributes = attrs
+        } els if stmt.kind == "StmtSequence" {
+            let ssi = 0
+            wh ssi < stmt.statements.ln {
+                subS = stmt.statements[ssi]
+                if subS.kind == "FunctionDecl" || subS.kind == "ObjDecl" {
+                    subS.attributes = attrs
+                }
+                ssi = ssi + 1
+            }
+        }
+        -> stmt
+    }
 
     if t.kind == "KEYWORD" && t.val == "imp" {
         advanceParser p
@@ -1312,11 +1366,53 @@ parseStatement p {
             -> createImportNode items, emptySyms, ""
         }
     } els if (t.kind == "KEYWORD" || t.kind == "IDENT") && (t.val == "extern" || t.val == "ffi") {
-        let libName = ""
+        mut libName = "c"
         advanceParser p
         if (curTok p).kind == "STR" || (curTok p).kind == "STRING" {
             libName = (curTok p).val
             advanceParser p
+        }
+        if (curTok p).val == "{" {
+            advanceParser p // consume '{'
+            let extStmts = []
+            wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+                if (curTok p).kind == "IDENT" {
+                    eFnName = (curTok p).val
+                    let eParams = []
+                    let eLine = (curTok p).line
+                    wh (peekTok p).line == eLine && (peekTok p).val != "->" && (peekTok p).kind != "ARROW" && (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
+                        advanceParser p
+                        epName = (curTok p).val
+                        mut epType = "num"
+                        if (peekTok p).val == ":" {
+                            advanceParser p // consume ':'
+                            advanceParser p // type name
+                            epType = (curTok p).val
+                        }
+                        epParamObj = { name: epName, typeName: epType }
+                        eParams.psh epParamObj
+                        if (peekTok p).val == "," {
+                            advanceParser p
+                        }
+                    }
+                    mut eRetType = "void"
+                    if (peekTok p).val == "->" || (peekTok p).kind == "ARROW" {
+                        advanceParser p // consume '->'
+                        advanceParser p // ret type
+                        eRetType = (curTok p).val
+                    }
+                    extNode = {
+                        kind: "ExternDecl",
+                        name: eFnName,
+                        libName: libName,
+                        params: eParams,
+                        typeName: eRetType
+                    }
+                    extStmts.psh extNode
+                }
+                advanceParser p
+            }
+            -> createStmtSequenceNode extStmts
         }
         fnName = (curTok p).val
         let params = []
@@ -1913,6 +2009,86 @@ parseStatement p {
                 advanceParser p // consume 'C'
             }
         }
+        if (curTok p).val == "{" {
+            advanceParser p // consume '{'
+            let pubStmts = []
+            wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+                if (curTok p).kind == "IDENT" {
+                    pFnName = (curTok p).val
+                    advanceParser p
+                    mut pHasRest = 0
+                    let pParams = []
+                    if (curTok p).val == "(" {
+                        advanceParser p // consume '('
+                        if (curTok p).val != ")" {
+                            pValFirst = (curTok p).val
+                            if (peekTok p).val == ":" {
+                                advanceParser p // consume ':'
+                                advanceParser p // consume type
+                            }
+                            pParams.psh pValFirst
+                            wh (peekTok p).val == "," {
+                                advanceParser p // consume ','
+                                advanceParser p
+                                pVal = (curTok p).val
+                                if (peekTok p).val == ":" {
+                                    advanceParser p // consume ':'
+                                    advanceParser p // consume type
+                                }
+                                pParams.psh pVal
+                            }
+                        }
+                        if (peekTok p).val == ")" {
+                            advanceParser p
+                        }
+                    } els if (curTok p).val != "{" && (curTok p).val != "->" {
+                        let moreParams = 1
+                        wh moreParams == 1 {
+                            if (curTok p).val == "{" || (curTok p).val == "->" {
+                                moreParams = 0
+                            } els if (curTok p).val == "..." {
+                                advanceParser p
+                                pRest = (curTok p).val
+                                if (peekTok p).val == ":" {
+                                    advanceParser p
+                                    advanceParser p
+                                }
+                                pParams.psh pRest
+                                pHasRest = 1
+                            } els if (curTok p).kind == "IDENT" {
+                                pVal = (curTok p).val
+                                if (peekTok p).val == ":" {
+                                    advanceParser p
+                                    advanceParser p
+                                }
+                                pParams.psh pVal
+                            }
+                            if moreParams == 1 {
+                                if (peekTok p).val == "," {
+                                    advanceParser p // consume ','
+                                    advanceParser p // move to next param
+                                } els {
+                                    moreParams = 0
+                                }
+                            }
+                        }
+                    }
+                    if (peekTok p).val == "->" {
+                        advanceParser p // consume '->'
+                        advanceParser p // consume return type
+                    } els if (curTok p).val == "->" {
+                        advanceParser p // consume '->'
+                        advanceParser p // consume return type
+                    }
+                    body = parseBlock p
+                    let emptyAttrs1 = []
+                    pFnNode = { kind: "FunctionDecl", name: pFnName, params: pParams, body: body, isAsync: 0, hasRest: pHasRest, isExported: 1, isExternC: isExternC, attributes: emptyAttrs1 }
+                    pubStmts.psh pFnNode
+                }
+                advanceParser p // unconditional advance (matches C++ nextToken at line 269)
+            }
+            -> createStmtSequenceNode pubStmts
+        }
         if (curTok p).kind == "IDENT" {
             fnName = (curTok p).val
             advanceParser p
@@ -1941,34 +2117,34 @@ parseStatement p {
                 if (peekTok p).val == ")" {
                     advanceParser p
                 }
-            } els if (curTok p).kind == "IDENT" || (curTok p).val == "..." {
-                if (curTok p).val == "..." {
-                    advanceParser p
-                    pRest = (curTok p).val
-                    params.psh pRest
-                    hasRest = 1
-                } els {
-                    pValFirst = (curTok p).val
-                    if (peekTok p).val == ":" {
-                        advanceParser p // consume ':'
-                        advanceParser p // consume type
-                    }
-                    params.psh pValFirst
-                    wh (peekTok p).val == "," {
-                        advanceParser p // consume ','
+            } els if (curTok p).val != "{" && (curTok p).val != "->" {
+                let moreParams = 1
+                wh moreParams == 1 {
+                    if (curTok p).val == "{" || (curTok p).val == "->" {
+                        moreParams = 0
+                    } els if (curTok p).val == "..." {
                         advanceParser p
-                        if (curTok p).val == "..." {
+                        pRest = (curTok p).val
+                        if (peekTok p).val == ":" {
                             advanceParser p
-                            pRest2 = (curTok p).val
-                            params.psh pRest2
-                            hasRest = 1
+                            advanceParser p
+                        }
+                        params.psh pRest
+                        hasRest = 1
+                    } els if (curTok p).kind == "IDENT" {
+                        pVal = (curTok p).val
+                        if (peekTok p).val == ":" {
+                            advanceParser p
+                            advanceParser p
+                        }
+                        params.psh pVal
+                    }
+                    if moreParams == 1 {
+                        if (peekTok p).val == "," {
+                            advanceParser p // consume ','
+                            advanceParser p // move to next param
                         } els {
-                            pVal = (curTok p).val
-                            if (peekTok p).val == ":" {
-                                advanceParser p // consume ':'
-                                advanceParser p // consume type
-                            }
-                            params.psh pVal
+                            moreParams = 0
                         }
                     }
                 }
@@ -1976,9 +2152,13 @@ parseStatement p {
             if (peekTok p).val == "->" {
                 advanceParser p // consume '->'
                 advanceParser p // consume return type
+            } els if (curTok p).val == "->" {
+                advanceParser p // consume '->'
+                advanceParser p // consume return type
             }
             body = parseBlock p
-            fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC }
+            let emptyAttrs2 = []
+            fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC, attributes: emptyAttrs2 }
             -> fnNode
         }
         -> { kind: "" }
@@ -2233,20 +2413,37 @@ parseStatement p {
 
 parseProgramFull tokens, filePath, sourceText {
     p = createParser tokens, filePath, sourceText
-    let statements = []
+    let rawStatements = []
 
     wh (curTok p).kind != "EOF" {
         stmt = parseStatement p
         if stmt.kind != "" {
-            if stmt.kind == "ExpressionStmt" {
-                if stmt.expr.kind != "NilExpr" && stmt.expr.kind != "" {
-                    statements.psh stmt
-                }
-            } els {
-                statements.psh stmt
-            }
+            rawStatements.psh stmt
         }
         advanceParser p
+    }
+
+    let statements = []
+    let ri = 0
+    wh ri < rawStatements.ln {
+        s = rawStatements[ri]
+        if s.kind == "StmtSequence" {
+            let ssi = 0
+            wh ssi < s.statements.ln {
+                subStmt = s.statements[ssi]
+                if subStmt.kind != "" {
+                    statements.psh subStmt
+                }
+                ssi = ssi + 1
+            }
+        } els if s.kind == "ExpressionStmt" {
+            if s.expr.kind != "NilExpr" && s.expr.kind != "" {
+                statements.psh s
+            }
+        } els {
+            statements.psh s
+        }
+        ri = ri + 1
     }
 
     res = { statements: statements, errors: p.errors }

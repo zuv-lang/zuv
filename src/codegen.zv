@@ -3225,6 +3225,10 @@ codegenStmt cg, stmt, outBuf {
             afterThr = newLbl cg, "after_thr_exit"
             outBuf.code = outBuf.code.cat (`\n${afterThr}:\n`)
         }
+    } els if stmt.kind == "FunctionDecl" {
+        codegenFunctionDecl cg, stmt
+    } els if stmt.kind == "ExternDecl" {
+        addCgExtern cg, stmt
     } els if stmt.kind == "EnumDecl" {
         registerEnum cg, stmt
     } els if stmt.kind == "UnsafeBlock" {
@@ -3275,7 +3279,25 @@ codegenFunctionDecl cg, funcStmt {
         exportAttr = "dllexport "
     }
 
-    let fnBuf = { code: (`define ${exportAttr}double @${fnName}(${paramsStr}) {\nentry:\n`) }
+    mut inlineAttr = ""
+    if funcStmt.attributes.ln > 0 {
+        let ai = 0
+        wh ai < funcStmt.attributes.ln {
+            attr = funcStmt.attributes[ai]
+            if attr.name == "inline" {
+                if attr.args.ln == 0 || attr.args[0] == "always" {
+                    inlineAttr = "alwaysinline "
+                } els if attr.args[0] == "never" {
+                    inlineAttr = "noinline "
+                }
+            } els if attr.name == "noinline" {
+                inlineAttr = "noinline "
+            }
+            ai = ai + 1
+        }
+    }
+
+    let fnBuf = { code: (`define ${exportAttr}double @${fnName}(${paramsStr}) ${inlineAttr}{\nentry:\n`) }
 
     let j = 0
     wh j < funcStmt.params.ln {
@@ -3391,7 +3413,7 @@ generateLLVMFull program {
     header = header.cat "@glb = global i64 0\n"
     addCgSymbol cg, "glb", "@glb"
 
-    // Pass 1: Declare top-level variables as global variables
+    // Pass 1: Declare top-level variables as global variables and register externs
     let gi = 0
     wh gi < program.statements.ln {
         stmt = program.statements[gi]
@@ -3412,48 +3434,6 @@ generateLLVMFull program {
                 }
             }
         } els if stmt.kind == "ExternDecl" {
-            addCgExtern cg, stmt
-        }
-        gi = gi + 1
-    }
-
-    // Pass: register rest-param indices before generating any function bodies
-    let ri = 0
-    wh ri < program.statements.ln {
-        rst = program.statements[ri]
-        if rst.kind == "FunctionDecl" {
-            if rst.hasRest == 1 {
-                if rst.params.ln > 0 {
-                    cg.restNames.psh rst.name
-                    rIdx = rst.params.ln - 1
-                    cg.restIdxs.psh rIdx
-                }
-            }
-        }
-        ri = ri + 1
-    }
-
-    // Collect and generate function definitions & top-level statements
-    let i = 0
-    wh i < program.statements.ln {
-        stmt = program.statements[i]
-        if stmt.kind == "FunctionDecl" {
-            cg.isMain = 0
-            codegenFunctionDecl cg, stmt
-        } els if stmt.kind == "StmtSequence" {
-            let seqi = 0
-            wh seqi < stmt.statements.ln {
-                subS = stmt.statements[seqi]
-                if subS.kind == "FunctionDecl" {
-                    cg.isMain = 0
-                    codegenFunctionDecl cg, subS
-                } els {
-                    cg.isMain = 1
-                    codegenStmt cg, subS, mainBuf
-                }
-                seqi = seqi + 1
-            }
-        } els if stmt.kind == "ExternDecl" {
             let extParams = ""
             let pi = 0
             wh pi < stmt.params.ln {
@@ -3472,7 +3452,6 @@ generateLLVMFull program {
                 extParams = extParams + pt
                 pi = pi + 1
             }
-            // Default to i32 (Win32 / C int); only use void when explicitly declared
             let retType = "i32"
             if stmt.typeName == "void" {
                 retType = "void"
@@ -3490,11 +3469,121 @@ generateLLVMFull program {
                 header = header.cat (`declare ${retType} @${stmt.name}(${extParams})\n`)
             }
             addCgExtern cg, stmt
-        } els {
-            cg.isMain = 1
-            codegenStmt cg, stmt, mainBuf
+        } els if stmt.kind == "StmtSequence" {
+            let seqg = 0
+            wh seqg < stmt.statements.ln {
+                subG = stmt.statements[seqg]
+                if subG.kind == "ExternDecl" {
+                    let extParams2 = ""
+                    let pi2 = 0
+                    wh pi2 < subG.params.ln {
+                        p2 = subG.params[pi2]
+                        let pt2 = "i32"
+                        if p2.typeName == "str" || p2.typeName == "ptr" {
+                            pt2 = "ptr"
+                        } els if p2.typeName == "double" || p2.typeName == "num" {
+                            pt2 = "double"
+                        } els if p2.typeName == "i64" {
+                            pt2 = "i64"
+                        }
+                        if pi2 > 0 {
+                            extParams2 = `${extParams2}, `
+                        }
+                        extParams2 = extParams2 + pt2
+                        pi2 = pi2 + 1
+                    }
+                    let retType2 = "i32"
+                    if subG.typeName == "void" {
+                        retType2 = "void"
+                    } els if subG.typeName == "ptr" || subG.typeName == "str" {
+                        retType2 = "ptr"
+                    } els if subG.typeName == "double" {
+                        retType2 = "double"
+                    } els if subG.typeName == "i64" {
+                        retType2 = "i64"
+                    } els if subG.typeName == "num" || subG.typeName == "i32" {
+                        retType2 = "i32"
+                    }
+                    declSig2 = `@${subG.name}(`
+                    if (header.cnt declSig2) == 0 {
+                        header = header.cat (`declare ${retType2} @${subG.name}(${extParams2})\n`)
+                    }
+                    addCgExtern cg, subG
+                }
+                seqg = seqg + 1
+            }
         }
-        i = i + 1
+        gi = gi + 1
+    }
+
+    // Pass: register rest-param indices before generating any function bodies
+    let ri = 0
+    wh ri < program.statements.ln {
+        rst = program.statements[ri]
+        if rst.kind == "FunctionDecl" {
+            if rst.hasRest == 1 {
+                if rst.params.ln > 0 {
+                    cg.restNames.psh rst.name
+                    rIdx = rst.params.ln - 1
+                    cg.restIdxs.psh rIdx
+                }
+            }
+        } els if rst.kind == "StmtSequence" {
+            let seqr = 0
+            wh seqr < rst.statements.ln {
+                subR = rst.statements[seqr]
+                if subR.kind == "FunctionDecl" && subR.hasRest == 1 && subR.params.ln > 0 {
+                    cg.restNames.psh subR.name
+                    rIdx = subR.params.ln - 1
+                    cg.restIdxs.psh rIdx
+                }
+                seqr = seqr + 1
+            }
+        }
+        ri = ri + 1
+    }
+
+    // Pass 2a: Generate all function definitions
+    cg.isMain = 0
+    let fi = 0
+    wh fi < program.statements.ln {
+        stmt = program.statements[fi]
+        if stmt.kind == "FunctionDecl" {
+            codegenFunctionDecl cg, stmt
+        } els if stmt.kind == "StmtSequence" {
+            let seqi = 0
+            wh seqi < stmt.statements.ln {
+                subS = stmt.statements[seqi]
+                if subS.kind == "FunctionDecl" {
+                    codegenFunctionDecl cg, subS
+                }
+                seqi = seqi + 1
+            }
+        }
+        fi = fi + 1
+    }
+
+    // Pass 2b: Generate top-level statements into main
+    cg.isMain = 1
+    clearCgLocals cg
+    let ti = 0
+    wh ti < program.statements.ln {
+        stmt = program.statements[ti]
+        if stmt.kind != "FunctionDecl" && stmt.kind != "ExternDecl" && stmt.kind != "ImportStmt" {
+            if stmt.kind == "StmtSequence" {
+                let seqti = 0
+                wh seqti < stmt.statements.ln {
+                    subS = stmt.statements[seqti]
+                    if subS.kind != "FunctionDecl" && subS.kind != "ExternDecl" && subS.kind != "ImportStmt" {
+                        codegenStmt cg, subS, mainBuf
+                    }
+                    seqti = seqti + 1
+                }
+            } els {
+                codegenStmt cg, stmt, mainBuf
+            }
+        }
+        ti = ti + 1
     }
 
     if (cg.funcs.cnt "@main_user(") > 0 {

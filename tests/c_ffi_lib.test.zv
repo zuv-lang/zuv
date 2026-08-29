@@ -1,7 +1,9 @@
 // C Foreign Function Interface (FFI) with .lib Test Suite
 extern "msvcrt.lib" puts s: str -> num
-extern "kernel32.lib" GetCurrentProcessId -> num
-extern "kernel32.lib" Sleep ms: num -> void
+extern "kernel32.lib" {
+    GetCurrentProcessId -> num
+    Sleep ms: num -> void
+}
 extern "user32.lib" GetSystemMetrics nIndex: num -> num
 
 // Call C runtime function directly via .lib

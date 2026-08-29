@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-29
+
+### 🌍 Cross-Compilation & Target Triples (`--target`)
+- Added `--target <alias>` flag to `zuv.exe` and `zuv_selfhost.exe` for cross-compiling to any LLVM target:
+  - `windows-x64` → `x86_64-pc-windows-msvc` (default, full link)
+  - `linux-x64` → `x86_64-unknown-linux-gnu` (ELF `.o`)
+  - `linux-arm64` → `aarch64-unknown-linux-gnu` (ELF AArch64 `.o`)
+  - `macos-arm64` → `arm64-apple-darwin` (Mach-O `.o`)
+  - `macos-x64` → `x86_64-apple-darwin` (Mach-O `.o`)
+  - Raw LLVM triple passthrough supported.
+- Initialized AArch64 LLVM backend alongside X86 in both compilers.
+- Dynamic `target triple` injected into IR before emission.
+- Non-Windows targets emit `.o` only (cross-link skipped with a clear message).
+- Added `tests/cross_target.test.zv` in both `tests/` dirs.
+- `--help` updated with `--target` aliases.
+
+### 🏷️ AST Attribute Declarations & Metaprogramming Annotations
+- Added `@name` / `@name(...)` attribute syntax on functions and `obj` declarations.
+- `@inline` / `@inline(always)` → LLVM `alwaysinline`; `@noinline` → `noinline`.
+- Supports `@test`, `@derive(...)`, `@deprecated`, and custom attribute args.
+- Added `tests/attributes.test.zv`.
+
+### 🔗 Multi-line `extern` & Block Declarations
+- Added `extern "lib" { ... }` and `pub extern "C" { ... }` block syntax for grouping multiple FFI declarations in one block.
+- `pub extern "C" { ... }` auto-emits `dllexport` on all functions inside.
+- Removed manual `extern "msvcrt.dll" system` from `cli.zv`; uses builtin `sh` instead.
+- Updated tests: `cdylib_export.test.zv`, `c_ffi_lib.test.zv`, `call_cdylib.test.zv`.
+
 ## [0.9.0] - 2026-08-27
 
 ### 🔌 JS Interop & Shared C Dynamic Library Output (`--cdylib` / `--lib`)
