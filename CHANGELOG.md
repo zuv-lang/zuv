@@ -5,7 +5,15 @@ All notable changes to the **Zuv** programming language and self-hosting compile
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.11.0] - 2026-09-02
+## [Unreleased]
+
+### 🛡️ Low-Level Memory & Unsafe Buffer Primitives (`mem` / `unsafe`)
+- Added heap reallocation: `realloc(ptr, size)` and `mem.realloc(ptr, size)`.
+- Added memory buffer copy: `memcpy(dst, src, len)`, `mem.cp(dst, src, len)`, `mem.copy(dst, src, len)`.
+- Added memory byte fill: `memset(dst, val, len)` and `mem.set(dst, val, len)`.
+- Added type layout size queries: `sz <type>`, `sizeof <type>`, `sizeof User`, `sz(ptr)`.
+- Added `mem` module namespace (`mem.alloc`, `mem.free`, `mem.realloc`, `mem.cp`, `mem.set`).
+- Added comprehensive unit test in `tests/std_mem.test.zv`.
 
 ### ⏱️ High-Precision Clocks & Monotonic Timers (`time` / `zuv.time`)
 - Added current epoch millisecond timestamp: `nw()`, `time.now`, `time.nw`.
@@ -13,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added high-resolution monotonic performance counter: `mono()`, `time.mono`.
 - Added thread sleep delay: `sl(ms)`, `time.sleep(ms)`, `time.sl(ms)`.
 - Added comprehensive unit test in `tests/std_time.test.zv`.
+
+## [0.11.0] - 2026-09-02
 
 ### 🧵 Threads, Concurrency & Process Control (`thrd` / `zuv.thrd`)
 - Added process identifiers and lifecycle control: `pid()`, `ppid()`, `kill(pid, sig)`, `wait(pid)`.

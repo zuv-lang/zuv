@@ -105,7 +105,8 @@ isLexerKeyword word {
         -> 1
     }
     if word == "typ" || word == "sym" || word == "enum" || word == "as" ||
-       word == "obj" || word == "num" || word == "bool" || word == "str" {
+       word == "obj" || word == "num" || word == "bool" || word == "str" ||
+       word == "sizeof" || word == "sz" {
         -> 1
     }
     if word == "extern" || word == "ffi" || word == "main" || word == "pub" ||

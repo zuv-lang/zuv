@@ -1,4 +1,4 @@
-// Test for Task 13: Unsafe Blocks & Raw Pointer Dereferencing (unsafe, *ptr)
+// Test for Task 13 & Task 28: Unsafe Blocks & Raw Memory Primitives (unsafe, *ptr, mem)
 
 unsafe {
     let ptr = malloc 64 as *byte
@@ -43,4 +43,38 @@ unsafe {
     if xVal == 1234 {
         prnt "Address-of stack variable passed"
     }
+}
+
+// Task 28: Low-Level Memory Reallocation, Copy & Fill Primitives
+unsafe {
+    // 1. Heap Allocation & Byte Set
+    let p1 = mem.alloc 16
+    mem.set p1, 65, 10
+    prnt "Filled 10 bytes with 65 (ASCII 'A') using mem.set"
+
+    // 2. Heap Reallocation
+    let p1_expanded = mem.realloc p1, 64
+    prnt "Reallocated buffer to 64 bytes using mem.realloc"
+
+    // 3. Fast Block Copy (mem.cp)
+    let p2 = mem.alloc 64
+    mem.cp p2, p1_expanded, 10
+    prnt "Copied 10 bytes using mem.cp"
+
+    mem.free p1_expanded
+    mem.free p2
+}
+
+// Size Layout Queries (sz / sizeof)
+sz_byte = sz byte
+sz_i16 = sz i16
+sz_i32 = sz i32
+sz_i64 = sz i64
+sz_num = sz num
+sz_str = sizeof str
+sz_bool = sizeof bool
+sz_ptr = sizeof ptr
+
+if sz_byte == 1 and sz_i16 == 2 and sz_i32 == 4 and sz_i64 == 8 and sz_num == 8 {
+    prnt "Size queries (sz / sizeof) passed"
 }

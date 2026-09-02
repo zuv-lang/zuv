@@ -2545,7 +2545,7 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${msInt} = fptosi double ${msReg} to i32\n`)
             outBuf.code = outBuf.code.cat (`  call void @Sleep(i32 ${msInt})\n`)
             -> "0.0"
-        } els if expr.callee == "malloc" && expr.args.ln == 1 {
+        } els if (expr.callee == "malloc" || expr.callee == "mem.alloc" || expr.callee == "mem.malloc") && expr.args.ln == 1 {
             szReg = codegenExpr cg, expr.args[0], outBuf
             szInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${szInt} = fptosi double ${szReg} to i64\n`)
@@ -2556,7 +2556,23 @@ codegenExpr cg, expr, outBuf {
             bufDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
             -> bufDbl
-        } els if expr.callee == "free" && expr.args.ln == 1 {
+        } els if (expr.callee == "realloc" || expr.callee == "mem.realloc") && expr.args.ln == 2 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            rawPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${pInt} to ptr\n`)
+            szReg = codegenExpr cg, expr.args[1], outBuf
+            szInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szInt} = fptosi double ${szReg} to i64\n`)
+            newPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${newPtr} = call ptr @realloc(ptr ${rawPtr}, i64 ${szInt})\n`)
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${newPtr} to i64\n`)
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+            -> bufDbl
+        } els if (expr.callee == "free" || expr.callee == "mem.free") && expr.args.ln == 1 {
             pReg = codegenExpr cg, expr.args[0], outBuf
             pInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
@@ -2564,6 +2580,49 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${pInt} to ptr\n`)
             outBuf.code = outBuf.code.cat (`  call void @free(ptr ${rawPtr})\n`)
             -> "0.0"
+        } els if (expr.callee == "memcpy" || expr.callee == "mem.cp" || expr.callee == "mem.copy") && expr.args.ln == 3 {
+            dReg = codegenExpr cg, expr.args[0], outBuf
+            dInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dInt} = fptosi double ${dReg} to i64\n`)
+            dPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dPtr} = inttoptr i64 ${dInt} to ptr\n`)
+            sReg = codegenExpr cg, expr.args[1], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            sPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sPtr} = inttoptr i64 ${sInt} to ptr\n`)
+            lenReg = codegenExpr cg, expr.args[2], outBuf
+            lenInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${lenInt} = fptosi double ${lenReg} to i64\n`)
+            resPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resPtr} = call ptr @memcpy(ptr ${dPtr}, ptr ${sPtr}, i64 ${lenInt})\n`)
+            -> dReg
+        } els if (expr.callee == "memset" || expr.callee == "mem.set") && expr.args.ln == 3 {
+            dReg = codegenExpr cg, expr.args[0], outBuf
+            dInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dInt} = fptosi double ${dReg} to i64\n`)
+            dPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dPtr} = inttoptr i64 ${dInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i32\n`)
+            lenReg = codegenExpr cg, expr.args[2], outBuf
+            lenInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${lenInt} = fptosi double ${lenReg} to i64\n`)
+            resPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resPtr} = call ptr @memset(ptr ${dPtr}, i32 ${vInt}, i64 ${lenInt})\n`)
+            -> dReg
+        } els if (expr.callee == "sizeof" || expr.callee == "sz") && expr.args.ln == 1 {
+            mut tn = ""
+            if expr.args[0].kind == "VariableExpr" {
+                tn = expr.args[0].name
+            }
+            if tn == "byte" || tn == "i8" || tn == "u8" { -> "1.0" }
+            if tn == "i16" || tn == "u16" { -> "2.0" }
+            if tn == "i32" || tn == "u32" || tn == "f32" { -> "4.0" }
+            if tn == "num" || tn == "f64" || tn == "i64" || tn == "u64" || tn == "str" || tn == "bool" || tn == "ptr" { -> "8.0" }
+            if tn == "User" || tn == "Schema" || tn == "App" { -> "16.0" }
+            -> "8.0"
         }
 
         if expr.callee == "zuv_ptr_deref" && expr.args.ln == 1 {
@@ -3584,6 +3643,18 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
             -> dblReg
         }
+        if expr.op == "sizeof" || expr.op == "sz" {
+            mut tn = ""
+            if expr.right.kind == "VariableExpr" {
+                tn = expr.right.name
+            }
+            if tn == "byte" || tn == "i8" || tn == "u8" { -> "1.0" }
+            if tn == "i16" || tn == "u16" { -> "2.0" }
+            if tn == "i32" || tn == "u32" || tn == "f32" { -> "4.0" }
+            if tn == "num" || tn == "f64" || tn == "i64" || tn == "u64" || tn == "str" || tn == "bool" || tn == "ptr" { -> "8.0" }
+            if tn == "User" || tn == "Schema" || tn == "App" { -> "16.0" }
+            -> "8.0"
+        }
         if expr.op == "sym" {
             if expr.right.kind == "StringExpr" {
                 id = internSymId cg, expr.right.val
@@ -4291,6 +4362,7 @@ GenerateLLVMFull program {
     header = header.cat "declare i32 @Process32First(ptr, ptr)\n"
     header = header.cat "declare i32 @Process32Next(ptr, ptr)\n"
     header = header.cat "declare ptr @malloc(i64)\n"
+    header = header.cat "declare ptr @realloc(ptr, i64)\n"
     header = header.cat "declare void @free(ptr)\n"
     header = header.cat "declare ptr @memcpy(ptr, ptr, i64)\n"
     header = header.cat "declare ptr @memset(ptr, i32, i64)\n"

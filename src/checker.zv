@@ -167,6 +167,14 @@ checkExpr checker, expr {
         checkExpr checker, expr.left
         checkExpr checker, expr.right
     } els if expr.kind == "CallExpr" {
+        if checker.inUnsafe == 0 {
+            c = expr.callee
+            if c == "malloc" || c == "free" || c == "realloc" || c == "memcpy" || c == "memset" ||
+               c == "mem.alloc" || c == "mem.malloc" || c == "mem.free" || c == "mem.realloc" ||
+               c == "mem.cp" || c == "mem.copy" || c == "mem.set" {
+                checker.errors.psh `error[E0205]: Call to low-level memory function '${c}' requires unsafe block`
+            }
+        }
         let i = 0
         wh i < expr.args.ln {
             arg = expr.args[i]

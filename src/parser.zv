@@ -1013,7 +1013,7 @@ parseExpression p, precedence {
             left = parseExpression p, 0
             expectPeekToken p, "SYM", ")"
         }
-    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--" || t.val == "*")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
+    } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--" || t.val == "*")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym" || t.val == "sizeof" || t.val == "sz")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
             advanceParser p // skip 'mut'
@@ -1114,7 +1114,7 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" {
                                 propName = `${varNameStr}.${propName}`
                             } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
@@ -1212,7 +1212,7 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" {
                                     propName = `${varNameStr}.${propName}`
                                 } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
@@ -2318,7 +2318,7 @@ parseStatement p {
             } els if (peekTok p).val == "(" {
                 advanceParser p // consume '('
                 let args = []
-                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" {
+                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" {
                     propName = `${identName}.${propName}`
                 } els {
                     if propName == "cls" || propName == "close" { propName = "chan.cls" }
@@ -2379,12 +2379,18 @@ parseStatement p {
                     argExpr = parseExpression p, 0
                     mut callTarget = propName
                     let args = []
-                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" {
+                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" {
                         callTarget = `${identName}.${propName}`
                         args.psh argExpr
                     } els {
                         args.psh targetVar
                         args.psh argExpr
+                    }
+                    wh (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                        advanceParser p // move to next arg
+                        nextArg = parseExpression p, 0
+                        args.psh nextArg
                     }
                     callNode = createCallNode callTarget, args
                     -> createExpressionStmtNode callNode

@@ -47,62 +47,64 @@ emitDirectObjectFile ir, outputObjPath, isRelease, targetTriple {
     }
 
     fullIr = `target triple = "${resolvedTriple}"\n${ir}`
-    ctx = LLVMContextCreate
-    memBuf = LLVMCreateMemoryBufferWithMemoryRange fullIr, fullIr.ln, "zuv_ir", 0
+    unsafe {
+        ctx = LLVMContextCreate
+        memBuf = LLVMCreateMemoryBufferWithMemoryRange fullIr, fullIr.ln, "zuv_ir", 0
 
-    let outModPtr = malloc 8
-    let outMsgPtr = malloc 8
-    res = LLVMParseIRInContext ctx, memBuf, outModPtr, outMsgPtr
-    if res != 0 {
-        errMsg = zuv_ptr_deref outMsgPtr
-        prnt (`[LLVM Error] IR Parse Failed: ${errMsg}`)
-        LLVMContextDispose ctx
-        free outModPtr
-        free outMsgPtr
-        -> 1
-    }
-    mod = zuv_ptr_deref outModPtr
+        let outModPtr = malloc 8
+        let outMsgPtr = malloc 8
+        res = LLVMParseIRInContext ctx, memBuf, outModPtr, outMsgPtr
+        if res != 0 {
+            errMsg = zuv_ptr_deref outMsgPtr
+            prnt (`[LLVM Error] IR Parse Failed: ${errMsg}`)
+            LLVMContextDispose ctx
+            free outModPtr
+            free outMsgPtr
+            -> 1
+        }
+        mod = zuv_ptr_deref outModPtr
 
-    let targetPtr = malloc 8
-    tRes = LLVMGetTargetFromTriple resolvedTriple, targetPtr, outMsgPtr
-    if tRes != 0 {
-        errMsg2 = zuv_ptr_deref outMsgPtr
-        prnt (`[LLVM Error] Target lookup failed for '${resolvedTriple}': ${errMsg2}`)
-        LLVMDisposeModule mod
-        LLVMContextDispose ctx
-        free outModPtr
-        free outMsgPtr
-        free targetPtr
-        -> 1
-    }
-    target = zuv_ptr_deref targetPtr
+        let targetPtr = malloc 8
+        tRes = LLVMGetTargetFromTriple resolvedTriple, targetPtr, outMsgPtr
+        if tRes != 0 {
+            errMsg2 = zuv_ptr_deref outMsgPtr
+            prnt (`[LLVM Error] Target lookup failed for '${resolvedTriple}': ${errMsg2}`)
+            LLVMDisposeModule mod
+            LLVMContextDispose ctx
+            free outModPtr
+            free outMsgPtr
+            free targetPtr
+            -> 1
+        }
+        target = zuv_ptr_deref targetPtr
 
-    let optLevel = 0
-    if isRelease == 1 {
-        optLevel = 3
-    }
+        let optLevel = 0
+        if isRelease == 1 {
+            optLevel = 3
+        }
 
-    tm = LLVMCreateTargetMachine target, resolvedTriple, "generic", "", optLevel, 0, 0
-    emitRes = LLVMTargetMachineEmitToFile tm, mod, outputObjPath, 1, outMsgPtr
-    if emitRes != 0 {
-        errMsg3 = zuv_ptr_deref outMsgPtr
-        prnt (`[LLVM Error] Object code emission failed: ${errMsg3}`)
+        tm = LLVMCreateTargetMachine target, resolvedTriple, "generic", "", optLevel, 0, 0
+        emitRes = LLVMTargetMachineEmitToFile tm, mod, outputObjPath, 1, outMsgPtr
+        if emitRes != 0 {
+            errMsg3 = zuv_ptr_deref outMsgPtr
+            prnt (`[LLVM Error] Object code emission failed: ${errMsg3}`)
+            LLVMDisposeTargetMachine tm
+            LLVMDisposeModule mod
+            LLVMContextDispose ctx
+            free outModPtr
+            free outMsgPtr
+            free targetPtr
+            -> 1
+        }
+
         LLVMDisposeTargetMachine tm
         LLVMDisposeModule mod
         LLVMContextDispose ctx
         free outModPtr
         free outMsgPtr
         free targetPtr
-        -> 1
+        -> 0
     }
-
-    LLVMDisposeTargetMachine tm
-    LLVMDisposeModule mod
-    LLVMContextDispose ctx
-    free outModPtr
-    free outMsgPtr
-    free targetPtr
-    -> 0
 }
 
 strEndsWith text, suffix {
