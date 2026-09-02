@@ -868,14 +868,17 @@ parseExpression p, precedence {
             left = { kind: "LambdaExpr", name: "", params: lambdaParams, body: lambdaBody }
         } els if (peekTok p).val == "(" {
             advanceParser p // consume '('
-            advanceParser p
-            firstArg = parseExpression p, 0
-            let args = [firstArg]
-            wh (peekTok p).val == "," {
-                advanceParser p // consume ','
+            let args = []
+            if (peekTok p).val != ")" {
                 advanceParser p
-                nextArg = parseExpression p, 0
-                args.psh nextArg
+                firstArg = parseExpression p, 0
+                args.psh firstArg
+                wh (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                    advanceParser p
+                    nextArg = parseExpression p, 0
+                    args.psh nextArg
+                }
             }
             expectPeekToken p, "SYM", ")"
             left = createCallNode varName, args
@@ -1111,14 +1114,26 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" {
                                 propName = `${varNameStr}.${propName}`
                             } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
                             } els {
+                                if propName == "cls" || propName == "close" { propName = "chan.cls" }
+                                els if propName == "snd" || propName == "send" { propName = "chan.snd" }
+                                els if propName == "rcv" || propName == "recv" { propName = "chan.rcv" }
+                                els if propName == "lck" || propName == "lock" { propName = "mtx.lck" }
+                                els if propName == "unlck" || propName == "unlock" { propName = "mtx.unlck" }
+                                els if propName == "destroy" || propName == "free" { propName = "mtx.destroy" }
                                 args.psh left
                             }
                         } els {
+                            if propName == "cls" || propName == "close" { propName = "chan.cls" }
+                            els if propName == "snd" || propName == "send" { propName = "chan.snd" }
+                            els if propName == "rcv" || propName == "recv" { propName = "chan.rcv" }
+                            els if propName == "lck" || propName == "lock" { propName = "mtx.lck" }
+                            els if propName == "unlck" || propName == "unlock" { propName = "mtx.unlck" }
+                            els if propName == "destroy" || propName == "free" { propName = "mtx.destroy" }
                             args.psh left
                         }
                         if (peekTok p).val != ")" {
@@ -1196,7 +1211,7 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" {
                                     propName = `${varNameStr}.${propName}`
                                 } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
@@ -2277,7 +2292,7 @@ parseStatement p {
         } els if (peekTok p).val == "." {
             advanceParser p // consume '.'
             advanceParser p // consume method/prop name
-            propName = (curTok p).val
+            mut propName = (curTok p).val
             targetVar = createVariableNode identName
             if (peekTok p).val == "=" {
                 advanceParser p // consume '='
@@ -2299,6 +2314,34 @@ parseStatement p {
                 storeProp = createPropertyAccessNode storeObj, propName
                 assignExpr = createBinaryNode "=", storeProp, binExpr
                 -> createExpressionStmtNode assignExpr
+            } els if (peekTok p).val == "(" {
+                advanceParser p // consume '('
+                let args = []
+                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" {
+                    propName = `${identName}.${propName}`
+                } els {
+                    if propName == "cls" || propName == "close" { propName = "chan.cls" }
+                    els if propName == "snd" || propName == "send" { propName = "chan.snd" }
+                    els if propName == "rcv" || propName == "recv" { propName = "chan.rcv" }
+                    els if propName == "lck" || propName == "lock" { propName = "mtx.lck" }
+                    els if propName == "unlck" || propName == "unlock" { propName = "mtx.unlck" }
+                    els if propName == "destroy" || propName == "free" { propName = "mtx.destroy" }
+                    args.psh targetVar
+                }
+                if (peekTok p).val != ")" {
+                    advanceParser p
+                    firstArg = parseExpression p, 0
+                    args.psh firstArg
+                    wh (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                        advanceParser p
+                        nextArg = parseExpression p, 0
+                        args.psh nextArg
+                    }
+                }
+                expectPeekToken p, "SYM", ")"
+                callNode = createCallNode propName, args
+                -> createExpressionStmtNode callNode
             } els if propName == "pp" || propName == "pop" {
                 let args = [targetVar]
                 callNode = createCallNode propName, args

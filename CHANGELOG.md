@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🧵 Threads, Concurrency & Process Control (`thrd` / `zuv.thrd`)
+- Added process identifiers and lifecycle control: `pid()`, `ppid()`, `kill(pid, sig)`, `wait(pid)`.
+- Added mutex synchronization primitives: `mtx.create()`, `m.lck()`, `m.unlck()`, `m.destroy()`.
+- Added thread-safe message channels: `chan.create(cap)`, `ch.snd(val)`, `ch.rcv()`, `ch.cls()`.
+- Added hardware atomic operations: `atmc.load`, `atmc.store`, `atmc.add`, `atmc.sub`, `atmc.cas`.
+- Added thread spawning and synchronization: `spn worker`, `jn handle`, `sl ms`.
+- Added test suite in `tests/thread_concurrency.test.zv`.
+
 ### 🔒 Capitalization-Based Symbol Visibility & Export Control (Go-Style)
 - Added automatic capitalization-based public exports: top-level functions, arrow handlers, globals, and types starting with `A-Z` are automatically exported.
 - Added lowercase module encapsulation: declarations starting with `a-z` / `_` are strictly private to the declaring file.

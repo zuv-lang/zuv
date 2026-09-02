@@ -910,7 +910,17 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
             -> dblReg
         }
-        if expr.name == "os" {
+        if expr.name == "pid" || expr.name == "os.pid" || expr.name == "thrd.pid" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_pid()\n`)
+            -> resReg
+        }
+        if expr.name == "ppid" || expr.name == "os.ppid" || expr.name == "thrd.ppid" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+            -> resReg
+        }
+        if expr.name == "os" || expr.name == "thrd" || expr.name == "mtx" || expr.name == "atmc" || expr.name == "chan" {
             -> "0.0"
         }
         -> "0.0"
@@ -2253,7 +2263,7 @@ codegenExpr cg, expr, outBuf {
             resDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resDbl} = uitofp i1 ${eqReg} to double\n`)
             -> resDbl
-        } els if expr.callee == "spn" && expr.args.ln == 1 {
+        } els if (expr.callee == "spn" || expr.callee == "spawn" || expr.callee == "thrd.spn" || expr.callee == "thrd.spawn") && expr.args.ln == 1 {
             let fnName = ""
             if expr.args[0].kind == "VariableExpr" {
                 fnName = expr.args[0].name
@@ -2271,7 +2281,7 @@ codegenExpr cg, expr, outBuf {
             hDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${hDbl} = sitofp i64 ${hInt} to double\n`)
             -> hDbl
-        } els if expr.callee == "jn" && expr.args.ln == 1 {
+        } els if (expr.callee == "jn" || expr.callee == "join" || expr.callee == "thrd.jn" || expr.callee == "thrd.join") && expr.args.ln == 1 {
             hReg = codegenExpr cg, expr.args[0], outBuf
             hInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
@@ -2281,6 +2291,190 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${wReg} = call i32 @WaitForSingleObject(ptr ${hPtr}, i32 -1)\n`)
             cReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${cReg} = call i32 @CloseHandle(ptr ${hPtr})\n`)
+            -> "1.0"
+        } els if (expr.callee == "pid" || expr.callee == "os.pid" || expr.callee == "thrd.pid") && expr.args.ln == 0 {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_pid()\n`)
+            -> resReg
+        } els if (expr.callee == "ppid" || expr.callee == "os.ppid" || expr.callee == "thrd.ppid") && expr.args.ln == 0 {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+            -> resReg
+        } els if (expr.callee == "kill" || expr.callee == "kil" || expr.callee == "thrd.kill" || expr.callee == "thrd.kil" || expr.callee == "os.kill") && expr.args.ln > 0 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i32\n`)
+            mut sInt = "9"
+            if expr.args.ln > 1 {
+                sReg = codegenExpr cg, expr.args[1], outBuf
+                sIntReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sIntReg} = fptosi double ${sReg} to i32\n`)
+                sInt = sIntReg
+            }
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_process_kill(i32 ${pInt}, i32 ${sInt})\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i32 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "wait" || expr.callee == "wt" || expr.callee == "thrd.wait" || expr.callee == "thrd.wt") && expr.args.ln > 0 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i32\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_process_wait(i32 ${pInt})\n`)
+            -> resReg
+        } els if expr.callee == "mtx.create" || expr.callee == "mtx.new" || (expr.callee == "mtx" && expr.args.ln == 0) {
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_mutex_create()\n`)
+            intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "mtx.lck" || expr.callee == "mtx.lock" || expr.callee == "lck" || expr.callee == "lock") && expr.args.ln == 1 {
+            mReg = codegenExpr cg, expr.args[0], outBuf
+            mInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mInt} = fptosi double ${mReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${mInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_mutex_lock(ptr ${ptrReg})\n`)
+            -> "1.0"
+        } els if (expr.callee == "mtx.unlck" || expr.callee == "mtx.unlock" || expr.callee == "unlck" || expr.callee == "unlock") && expr.args.ln == 1 {
+            mReg = codegenExpr cg, expr.args[0], outBuf
+            mInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mInt} = fptosi double ${mReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${mInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_mutex_unlock(ptr ${ptrReg})\n`)
+            -> "1.0"
+        } els if (expr.callee == "mtx.destroy" || expr.callee == "mtx.free" || expr.callee == "destroy") && expr.args.ln == 1 {
+            mReg = codegenExpr cg, expr.args[0], outBuf
+            mInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mInt} = fptosi double ${mReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${mInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_mutex_destroy(ptr ${ptrReg})\n`)
+            -> "1.0"
+        } els if (expr.callee == "atmc.load" || expr.callee == "atmc_load") && expr.args.ln == 1 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            valReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valReg} = load atomic i64, ptr ${ptrReg} seq_cst, align 8\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${valReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "atmc.store" || expr.callee == "atmc_store") && expr.args.ln == 2 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            outBuf.code = outBuf.code.cat (`  store atomic i64 ${vInt}, ptr ${ptrReg} seq_cst, align 8\n`)
+            -> "1.0"
+        } els if (expr.callee == "atmc.add" || expr.callee == "atmc_add") && expr.args.ln == 2 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = atomicrmw add ptr ${ptrReg}, i64 ${vInt} seq_cst\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "atmc.sub" || expr.callee == "atmc_sub") && expr.args.ln == 2 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = atomicrmw sub ptr ${ptrReg}, i64 ${vInt} seq_cst\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "atmc.cas" || expr.callee == "atmc_cas") && expr.args.ln == 3 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            expReg = codegenExpr cg, expr.args[1], outBuf
+            expInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${expInt} = fptosi double ${expReg} to i64\n`)
+            desReg = codegenExpr cg, expr.args[2], outBuf
+            desInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${desInt} = fptosi double ${desReg} to i64\n`)
+            pairReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pairReg} = cmpxchg ptr ${ptrReg}, i64 ${expInt}, i64 ${desInt} seq_cst seq_cst\n`)
+            succReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${succReg} = extractvalue { i64, i1 } ${pairReg}, 1\n`)
+            zextReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${zextReg} = zext i1 ${succReg} to i32\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i32 ${zextReg} to double\n`)
+            -> dblReg
+        } els if expr.callee == "chan.create" || expr.callee == "chan.new" || (expr.callee == "chan" && expr.args.ln <= 1) {
+            mut capVal = "64"
+            if expr.args.ln > 0 {
+                cReg = codegenExpr cg, expr.args[0], outBuf
+                cIntReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cIntReg} = fptosi double ${cReg} to i64\n`)
+                capVal = cIntReg
+            }
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_chan_create(i64 ${capVal})\n`)
+            intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "chan.snd" || expr.callee == "chan.send" || expr.callee == "snd" || expr.callee == "send") && expr.args.ln == 2 {
+            chReg = codegenExpr cg, expr.args[0], outBuf
+            chInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${chInt} = fptosi double ${chReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${chInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_chan_send(ptr ${ptrReg}, i64 ${vInt})\n`)
+            -> "1.0"
+        } els if (expr.callee == "chan.rcv" || expr.callee == "chan.recv" || expr.callee == "rcv" || expr.callee == "recv") && expr.args.ln == 1 {
+            chReg = codegenExpr cg, expr.args[0], outBuf
+            chInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${chInt} = fptosi double ${chReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${chInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i64 @zuv_chan_recv(ptr ${ptrReg})\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "chan.cls" || expr.callee == "chan.close") && expr.args.ln == 1 {
+            chReg = codegenExpr cg, expr.args[0], outBuf
+            chInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${chInt} = fptosi double ${chReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${chInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_chan_close(ptr ${ptrReg})\n`)
             -> "1.0"
         } els if expr.callee == "nw" {
             clkReg = newReg cg
@@ -3029,6 +3223,28 @@ codegenExpr cg, expr, outBuf {
                     let dblReg = newReg cg
                     outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
                     -> dblReg
+                }
+                if expr.property == "pid" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_pid()\n`)
+                    -> resReg
+                }
+                if expr.property == "ppid" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+                    -> resReg
+                }
+            }
+            if expr.object.name == "thrd" {
+                if expr.property == "pid" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_pid()\n`)
+                    -> resReg
+                }
+                if expr.property == "ppid" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+                    -> resReg
                 }
             }
             if expr.object.name == "mth" || expr.object.name == "Math" {
@@ -4021,6 +4237,15 @@ GenerateLLVMFull program {
     header = header.cat "declare ptr @CreateThread(ptr, i64, ptr, ptr, i32, ptr)\n"
     header = header.cat "declare i32 @WaitForSingleObject(ptr, i32)\n"
     header = header.cat "declare i32 @CloseHandle(ptr)\n"
+    header = header.cat "declare i32 @GetCurrentProcessId()\n"
+    header = header.cat "declare ptr @OpenProcess(i32, i32, i32)\n"
+    header = header.cat "declare i32 @TerminateProcess(ptr, i32)\n"
+    header = header.cat "declare i32 @GetExitCodeProcess(ptr, ptr)\n"
+    header = header.cat "declare ptr @CreateMutexA(ptr, i32, ptr)\n"
+    header = header.cat "declare i32 @ReleaseMutex(ptr)\n"
+    header = header.cat "declare ptr @CreateToolhelp32Snapshot(i32, i32)\n"
+    header = header.cat "declare i32 @Process32First(ptr, ptr)\n"
+    header = header.cat "declare i32 @Process32Next(ptr, ptr)\n"
     header = header.cat "declare ptr @malloc(i64)\n"
     header = header.cat "declare void @free(ptr)\n"
     header = header.cat "declare ptr @memcpy(ptr, ptr, i64)\n"
@@ -4122,6 +4347,18 @@ GenerateLLVMFull program {
     header = header.cat "define double @zuv_os_uptime() {\nentry:\n  %ms = call i64 @GetTickCount64()\n  %dMs = sitofp i64 %ms to double\n  %dSec = fdiv double %dMs, 1000.0\n  ret double %dSec\n}\n\n"
     header = header.cat "define double @zuv_os_get_priority() {\nentry:\n  %h = call ptr @GetCurrentProcess()\n  %pri = call i32 @GetPriorityClass(ptr %h)\n  %dPri = sitofp i32 %pri to double\n  ret double %dPri\n}\n\n"
     header = header.cat "define double @zuv_os_set_priority(i32 %pri) {\nentry:\n  %h = call ptr @GetCurrentProcess()\n  %res = call i32 @SetPriorityClass(ptr %h, i32 %pri)\n  %dRes = sitofp i32 %res to double\n  ret double %dRes\n}\n\n"
+    header = header.cat "define double @zuv_os_pid() {\nentry:\n  %pid = call i32 @GetCurrentProcessId()\n  %dPid = sitofp i32 %pid to double\n  ret double %dPid\n}\n\n"
+    header = header.cat "define double @zuv_os_ppid() {\nentry:\n  %myPid = call i32 @GetCurrentProcessId()\n  %snap = call ptr @CreateToolhelp32Snapshot(i32 2, i32 0)\n  %isNull = icmp eq ptr %snap, inttoptr (i64 -1 to ptr)\n  br i1 %isNull, label %ret_zero, label %do_scan\n\ndo_scan:\n  %pe = alloca [556 x i8]\n  store i32 556, ptr %pe\n  %ok1 = call i32 @Process32First(ptr %snap, ptr %pe)\n  %isOk1 = icmp ne i32 %ok1, 0\n  br i1 %isOk1, label %check_entry, label %close_snap\n\nloop_next:\n  %okN = call i32 @Process32Next(ptr %snap, ptr %pe)\n  %isOkN = icmp ne i32 %okN, 0\n  br i1 %isOkN, label %check_entry, label %close_snap\n\ncheck_entry:\n  %pPidSlot = getelementptr inbounds i32, ptr %pe, i64 2\n  %curPid = load i32, ptr %pPidSlot\n  %isMatch = icmp eq i32 %curPid, %myPid\n  br i1 %isMatch, label %found_ppid, label %loop_next\n\nfound_ppid:\n  %pPPidSlot = getelementptr inbounds i32, ptr %pe, i64 6\n  %curPPid = load i32, ptr %pPPidSlot\n  %close1 = call i32 @CloseHandle(ptr %snap)\n  %dPPid = sitofp i32 %curPPid to double\n  ret double %dPPid\n\nclose_snap:\n  %close2 = call i32 @CloseHandle(ptr %snap)\n  br label %ret_zero\n\nret_zero:\n  ret double 0.0\n}\n\n"
+    header = header.cat "define i32 @zuv_process_kill(i32 %pid, i32 %sig) {\nentry:\n  %h = call ptr @OpenProcess(i32 1, i32 0, i32 %pid)\n  %isNull = icmp eq ptr %h, null\n  br i1 %isNull, label %ret_fail, label %do_term\n\ndo_term:\n  %res = call i32 @TerminateProcess(ptr %h, i32 %sig)\n  %c = call i32 @CloseHandle(ptr %h)\n  ret i32 %res\n\nret_fail:\n  ret i32 0\n}\n\n"
+    header = header.cat "define double @zuv_process_wait(i32 %pid) {\nentry:\n  %h = call ptr @OpenProcess(i32 1049600, i32 0, i32 %pid)\n  %isNull = icmp eq ptr %h, null\n  br i1 %isNull, label %ret_err, label %do_wait\n\ndo_wait:\n  %w = call i32 @WaitForSingleObject(ptr %h, i32 -1)\n  %codeSlot = alloca i32\n  store i32 0, ptr %codeSlot\n  %r = call i32 @GetExitCodeProcess(ptr %h, ptr %codeSlot)\n  %c = call i32 @CloseHandle(ptr %h)\n  %code = load i32, ptr %codeSlot\n  %dCode = sitofp i32 %code to double\n  ret double %dCode\n\nret_err:\n  ret double -1.0\n}\n\n"
+    header = header.cat "define ptr @zuv_mutex_create() {\nentry:\n  %m = call ptr @CreateMutexA(ptr null, i32 0, ptr null)\n  ret ptr %m\n}\n\n"
+    header = header.cat "define i32 @zuv_mutex_lock(ptr %m) {\nentry:\n  %r = call i32 @WaitForSingleObject(ptr %m, i32 -1)\n  ret i32 1\n}\n\n"
+    header = header.cat "define i32 @zuv_mutex_unlock(ptr %m) {\nentry:\n  %r = call i32 @ReleaseMutex(ptr %m)\n  ret i32 %r\n}\n\n"
+    header = header.cat "define i32 @zuv_mutex_destroy(ptr %m) {\nentry:\n  %r = call i32 @CloseHandle(ptr %m)\n  ret i32 %r\n}\n\n"
+    header = header.cat "define ptr @zuv_chan_create(i64 %cap) {\nentry:\n  %pChan = call ptr @malloc(i64 56)\n  %mtx = call ptr @zuv_mutex_create()\n  %pMtx = getelementptr inbounds i64, ptr %pChan, i64 0\n  %mtxInt = ptrtoint ptr %mtx to i64\n  store i64 %mtxInt, ptr %pMtx\n  %pCap = getelementptr inbounds i64, ptr %pChan, i64 1\n  store i64 %cap, ptr %pCap\n  %pCount = getelementptr inbounds i64, ptr %pChan, i64 2\n  store i64 0, ptr %pCount\n  %pHead = getelementptr inbounds i64, ptr %pChan, i64 3\n  store i64 0, ptr %pHead\n  %pTail = getelementptr inbounds i64, ptr %pChan, i64 4\n  store i64 0, ptr %pTail\n  %pClosed = getelementptr inbounds i64, ptr %pChan, i64 5\n  store i64 0, ptr %pClosed\n  %bytes = mul i64 %cap, 8\n  %buf = call ptr @malloc(i64 %bytes)\n  %bufInt = ptrtoint ptr %buf to i64\n  %pBuf = getelementptr inbounds i64, ptr %pChan, i64 6\n  store i64 %bufInt, ptr %pBuf\n  ret ptr %pChan\n}\n\n"
+    header = header.cat "define i32 @zuv_chan_send(ptr %pChan, i64 %val) {\nentry:\n  %pMtx = getelementptr inbounds i64, ptr %pChan, i64 0\n  %mtxInt = load i64, ptr %pMtx\n  %mtx = inttoptr i64 %mtxInt to ptr\n  br label %try_lock\n\ntry_lock:\n  %lck = call i32 @zuv_mutex_lock(ptr %mtx)\n  %pClosed = getelementptr inbounds i64, ptr %pChan, i64 5\n  %closed = load i64, ptr %pClosed\n  %isClosed = icmp ne i64 %closed, 0\n  br i1 %isClosed, label %snd_abort, label %check_cap\n\ncheck_cap:\n  %pCap = getelementptr inbounds i64, ptr %pChan, i64 1\n  %cap = load i64, ptr %pCap\n  %pCount = getelementptr inbounds i64, ptr %pChan, i64 2\n  %cnt = load i64, ptr %pCount\n  %isFull = icmp sge i64 %cnt, %cap\n  br i1 %isFull, label %snd_wait, label %do_insert\n\nsnd_wait:\n  %unlck1 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  call void @Sleep(i32 1)\n  br label %try_lock\n\ndo_insert:\n  %pTail = getelementptr inbounds i64, ptr %pChan, i64 4\n  %tail = load i64, ptr %pTail\n  %pBuf = getelementptr inbounds i64, ptr %pChan, i64 6\n  %bufInt = load i64, ptr %pBuf\n  %buf = inttoptr i64 %bufInt to ptr\n  %gepSlot = getelementptr inbounds i64, ptr %buf, i64 %tail\n  store i64 %val, ptr %gepSlot\n  %nextTail = add i64 %tail, 1\n  %nextTailMod = srem i64 %nextTail, %cap\n  store i64 %nextTailMod, ptr %pTail\n  %newCount = add i64 %cnt, 1\n  store i64 %newCount, ptr %pCount\n  %unlck2 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i32 1\n\nsnd_abort:\n  %unlck3 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i32 0\n}\n\n"
+    header = header.cat "define i64 @zuv_chan_recv(ptr %pChan) {\nentry:\n  %pMtx = getelementptr inbounds i64, ptr %pChan, i64 0\n  %mtxInt = load i64, ptr %pMtx\n  %mtx = inttoptr i64 %mtxInt to ptr\n  br label %try_recv_lock\n\ntry_recv_lock:\n  %lck = call i32 @zuv_mutex_lock(ptr %mtx)\n  %pCount = getelementptr inbounds i64, ptr %pChan, i64 2\n  %cnt = load i64, ptr %pCount\n  %hasItems = icmp sgt i64 %cnt, 0\n  br i1 %hasItems, label %do_extract, label %check_empty_closed\n\ncheck_empty_closed:\n  %pClosed = getelementptr inbounds i64, ptr %pChan, i64 5\n  %closed = load i64, ptr %pClosed\n  %isClosed = icmp ne i64 %closed, 0\n  br i1 %isClosed, label %rcv_abort, label %rcv_wait\n\nrcv_wait:\n  %unlck1 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  call void @Sleep(i32 1)\n  br label %try_recv_lock\n\ndo_extract:\n  %pCap = getelementptr inbounds i64, ptr %pChan, i64 1\n  %cap = load i64, ptr %pCap\n  %pHead = getelementptr inbounds i64, ptr %pChan, i64 3\n  %head = load i64, ptr %pHead\n  %pBuf = getelementptr inbounds i64, ptr %pChan, i64 6\n  %bufInt = load i64, ptr %pBuf\n  %buf = inttoptr i64 %bufInt to ptr\n  %gepSlot = getelementptr inbounds i64, ptr %buf, i64 %head\n  %item = load i64, ptr %gepSlot\n  %nextHead = add i64 %head, 1\n  %nextHeadMod = srem i64 %nextHead, %cap\n  store i64 %nextHeadMod, ptr %pHead\n  %newCount = sub i64 %cnt, 1\n  store i64 %newCount, ptr %pCount\n  %unlck2 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i64 %item\n\nrcv_abort:\n  %unlck3 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i64 0\n}\n\n"
+    header = header.cat "define i32 @zuv_chan_close(ptr %pChan) {\nentry:\n  %pMtx = getelementptr inbounds i64, ptr %pChan, i64 0\n  %mtxInt = load i64, ptr %pMtx\n  %mtx = inttoptr i64 %mtxInt to ptr\n  %lck = call i32 @zuv_mutex_lock(ptr %mtx)\n  %pClosed = getelementptr inbounds i64, ptr %pChan, i64 5\n  store i64 1, ptr %pClosed\n  %unlck = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i32 1\n}\n\n"
     header = header.cat "declare i32 @remove(ptr)\n"
     header = header.cat "declare i32 @system(ptr)\n"
     header = header.cat "define i32 @zuv_truncate_file(ptr %path, i64 %len) {\nentry:\n  %fd = call i32 (ptr, i32, ...) @_open(ptr %path, i32 2, i32 438)\n  %isNeg = icmp slt i32 %fd, 0\n  br i1 %isNeg, label %err, label %do_trunc\n\ndo_trunc:\n  %res = call i32 @_chsize_s(i32 %fd, i64 %len)\n  %cl = call i32 @_close(i32 %fd)\n  ret i32 %res\n\nerr:\n  ret i32 -1\n}\n\n"

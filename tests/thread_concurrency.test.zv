@@ -1,0 +1,100 @@
+// Thread, Concurrency & Process Control Test Suite
+imp thrd
+
+// 1. Process Identifiers
+let myPid = pid()
+prnt "Current PID:"
+lg myPid
+
+let myPid3 = thrd.pid()
+lg myPid3
+
+let myPPid = ppid()
+prnt "Current Parent PID:"
+lg myPPid
+
+let myPPid3 = thrd.ppid()
+lg myPPid3
+
+// 2. Mutex Synchronization
+let m = mtx.create()
+prnt "Mutex handle:"
+lg m
+
+mtx.lck(m)
+prnt "Mutex locked"
+mtx.unlck(m)
+prnt "Mutex unlocked"
+
+m.lck()
+prnt "m.lck() succeeded"
+m.unlck()
+prnt "m.unlck() succeeded"
+
+m.destroy()
+prnt "Mutex destroyed"
+
+// 3. Channels
+let ch = chan.create(8)
+prnt "Channel created"
+
+chan.snd(ch, 100)
+ch.snd(200)
+
+let r1 = chan.rcv(ch)
+prnt "Channel rcv 1:"
+lg r1
+
+let r2 = ch.rcv()
+prnt "Channel rcv 2:"
+lg r2
+
+ch.cls()
+prnt "Channel closed"
+
+// 4. Hardware Atomics
+let buf = [0, 0, 0, 0]
+atmc.store(buf, 10)
+let v0 = atmc.load(buf)
+prnt "Atomic load initial:"
+lg v0
+
+let old1 = atmc.add(buf, 5)
+prnt "Atomic add 5 (old):"
+lg old1
+let v1 = atmc.load(buf)
+prnt "Atomic load after add:"
+lg v1
+
+let old2 = atmc.sub(buf, 3)
+prnt "Atomic sub 3 (old):"
+lg old2
+let v2 = atmc.load(buf)
+prnt "Atomic load after sub:"
+lg v2
+
+let casFail = atmc.cas(buf, 999, 50)
+prnt "Atomic CAS fail (expected 0):"
+lg casFail
+
+let casSucc = atmc.cas(buf, 12, 50)
+prnt "Atomic CAS succ (expected 1):"
+lg casSucc
+let v3 = atmc.load(buf)
+prnt "Atomic load after CAS:"
+lg v3
+
+// 5. Thread Spawn & Join
+wrk workerTask {
+    prnt "Worker thread executing!"
+    -> 0
+}
+
+let hThread = spn workerTask
+prnt "Thread spawned handle:"
+lg hThread
+
+jn hThread
+prnt "Thread joined successfully!"
+
+prnt "thread_concurrency tests passed!"
