@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 📁 Filesystem & Stream I/O Engine (`fs` / `zuv.fs`)
+- Added native filesystem built-ins: `appF` (append), `mkD` (mkdir), `mvF` (rename), `cpF` (copy), `statF` (size), `chmod`, `symL` (symlink), `rLink` (readlink), `realP` (realpath), `truncF` (truncate), `utime` (timestamps), `acc` (access).
+- Added low-level file descriptors: `opn`, `cls`, positional offset I/O (`rAt`, `wAt`), directory iteration (`opnDir`), watcher (`wtch`), streaming (`rStrm`, `wStrm`), vectored I/O (`rVec`, `wVec`), and temporary file creation (`mkTmp`).
+- Added comprehensive unit test suite in `tests/std_fs.test.zv`.
+
 ### 🏹 Arrow Functions (`=>`)
 - Added expression-bodied functions (`divmod a, b => a + b`) and multi-line arrow bodies (`->` / `ret`).
 - Added parameterless arrow declarations (`getAnswer => 42`), object returns, and match expressions.
