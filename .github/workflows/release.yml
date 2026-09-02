@@ -269,6 +269,48 @@ jobs:
       TARGET_COMMIT: ${{ needs.determine-version.outputs.target_commit }}
 
     steps:
+      - name: Checkout Source (for Changelog extraction)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_COMMIT }}
+
+      - name: Extract Release Notes from CHANGELOG.md
+        id: changelog
+        shell: python
+        run: |
+          import os, re
+
+          tag = os.environ.get("RELEASE_TAG", "").lstrip("v")
+          changelog_file = "CHANGELOG.md"
+          release_notes_file = "release_notes.md"
+
+          content = ""
+          if os.path.exists(changelog_file):
+              with open(changelog_file, "r", encoding="utf-8") as f:
+                  content = f.read()
+
+          # Try matching ## [0.11.0] or ## [v0.11.0] or ## [Unreleased] or ## 0.11.0
+          patterns = [
+              rf"##\s*\[v?{re.escape(tag)}[^\]]*\][^\n]*\n([\s\S]*?)(?=\n##\s*\[|\Z)",
+              rf"##\s*\[Unreleased\][^\n]*\n([\s\S]*?)(?=\n##\s*\[|\Z)",
+              rf"##\s*v?{re.escape(tag)}[^\n]*\n([\s\S]*?)(?=\n##\s*|\Z)"
+          ]
+
+          body = ""
+          for pat in patterns:
+              m = re.search(pat, content, re.IGNORECASE)
+              if m:
+                  body = m.group(1).strip()
+                  break
+
+          if not body:
+              body = f"Release {os.environ.get('RELEASE_TAG', '')}"
+
+          with open(release_notes_file, "w", encoding="utf-8") as f:
+              f.write(body + "\n")
+
+          print(f"Extracted release notes ({len(body)} characters) to {release_notes_file}")
+
       - name: Download Release Assets
         uses: actions/download-artifact@v4
         with:
@@ -281,4 +323,5 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ env.TARGET_COMMIT }}
           files: release-assets/*
+          body_path: release_notes.md
           generate_release_notes: true
