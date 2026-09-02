@@ -284,6 +284,46 @@ Also works with `zuv_selfhost.exe`:
 
 ---
 
+## 🗺️ Project Roadmap
+
+### 🎯 Road to v1.0.0 (`v0.*.*` — Core Foundation & Self-Hosting)
+- [x] **Core Compiler & Syntax Primitives**: Parenthesis-free calls, compact keywords (`mut`, `prnt`, `->`, `wh`, `fr`), pattern matching (`mch`), and first-class functions / arrow syntax (`=>`).
+- [x] **Static Type System & Safety**: Rust-grade borrow checker (`&` / `&mut`), ownership transfer, symbols (`sym`), BigInt, and `und`.
+- [x] **Inbuilt & Host System Engines**: Native filesystem (`fs`), host OS & subprocesses (`os`), high-precision timers (`time`), and hardware math (`mth`).
+- [x] **Concurrency & Process Control**: Native OS threads (`spn`/`jn`), mutexes (`mtx`), message channels (`chan`), hardware atomics (`atmc`), and process lifecycle (`pid`/`kill`/`wait`).
+- [x] **Low-Level & Interop Primitives**: `unsafe { ... }` blocks, raw pointers (`*ptr`), C ABI exports (`pub extern "C"`), and shared libraries (`--cdylib`).
+- [ ] **Complete Grammar Mirroring in Self-Host**: Achieve 100% feature and syntax parity between bootstrap and self-hosting compiler (`sub_projects/zuv`).
+- [ ] **Remove C++ Bootstrap Dependency**: Transition to 100% standalone self-hosting, deprecating the C++ bootstrap compiler.
+- [ ] **Pure Zuv Standard Library (`std/*`)**: High-level modules written in pure Zuv (`std/arr`, `std/str`, `std/obj`, `std/json`, `std/regex`, `std/date`, `std/net`).
+- [ ] **Robust Build Engine**: Optimized release pipeline (`--release`), and cross-compilation (`--target`).
+- [ ] **Polished CLI Suite**: Refined, reliable developer CLI commands (`init`, `check`, `checkall`, `build`, `run`, `test`, `bench`, `fmt`, `dev`).
+- [ ] **Security, Safety & Testing**: Continuous memory safety validations, security fixes, rich compiler diagnostics (`E0001`–`E9999`), and extensive negative/positive test suites.
+
+---
+
+### 🌟 Post-v1.0.0 (Ecosystem, Tooling & Package Registry)
+- [ ] **Official Documentation Website**: Interactive documentation site with live playground, syntax cheatsheet, tutorials, and full standard library reference.
+- [ ] **`zuv-tools` & VS Code Extension**: Production-grade VS Code extension with Language Server Protocol (LSP), syntax highlighting, semantic diagnostics, and debugger integration.
+- [ ] **Package Manager & Central Registry**: Dedicated package manager (`zuv.mod` / `zuv.sum`), dependency resolution engine, and central registry (`zuv publish`, `zuv search`, `zuv add`).
+- [ ] **Official & Community Packages**: Standalone modular packages for common use cases (`uuid`, `crypto`, `http-server`, `dotenv`, `orm`, etc.).
+
+---
+
+### ⚡ Post-v2.0.0 (Databases, Bidirectional Transpilers & Engine Embeddability)
+- [ ] **Official Database Drivers & Connectors**: First-class native client packages for `mongodb`, `mysql`, `pg` (PostgreSQL), and embedded `sqlite`.
+- [ ] **Bidirectional TypeScript Transpiler Engine**:
+  - `zv -> ts`: High-performance transpiler emitting clean, readable, typed TypeScript/JavaScript.
+  - `ts -> zv`: Migration engine converting existing TypeScript codebases directly into idiomatic Zuv.
+- [ ] **Embeddable C++ Runtime & Game Engine Integration**: Lightweight embeddable runtime SDK for direct integration into Unreal Engine, Godot, and custom C++ host applications.
+
+---
+
+### 🤖 Post-v3.0.0 (The AI Agent Native Programming Language)
+- [ ] **AI Agent Native Programming Paradigm**: Transforming Zuv into the premier language designed specifically for autonomous AI coding agents to generate, reason over, and refactor code with minimal token footprint.
+- [ ] **Ultra-Dense Keyword Aliases & Token Compression**: Comprehensive vocabulary of ultra-compact keyword aliases to drastically cut LLM token overhead while preserving clarity.
+- [ ] **Agent-Optimized Grammar & Semantic Guarantees**: Deterministic grammar constructs, structured schema contracts, and high-density semantics engineered for rapid LLM generation, zero hallucinations, and instantaneous static verification.
+
+---
 
 ## 🤝 Contributing
 
