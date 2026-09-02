@@ -1121,7 +1121,9 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if isUpperV == 1 {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" {
+                                propName = `${varNameStr}.${propName}`
+                            } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
                             } els {
                                 args.psh left
@@ -1171,7 +1173,8 @@ parseExpression p, precedence {
                            propName == "cnt" || propName == "contains" || propName == "sub" || propName == "substr" ||
                            propName == "slc" || propName == "slice" || propName == "chr" || propName == "charAt" ||
                            propName == "cat" || propName == "concat" || propName == "eq" || propName == "streq" ||
-                           propName == "push" || propName == "psh" || propName == "pop" || propName == "pp" {
+                           propName == "push" || propName == "psh" || propName == "pop" || propName == "pp" ||
+                           propName == "env" || propName == "getEnv" || propName == "setEnv" || propName == "chdir" || propName == "setPri" || propName == "watch" || propName == "wtch" {
                             isDotMethod = 1
                         }
                         mut shouldDotCall = 0
@@ -1203,7 +1206,9 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if isUpperV == 1 {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" {
+                                    propName = `${varNameStr}.${propName}`
+                                } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
                                 } els {
                                     args.psh left

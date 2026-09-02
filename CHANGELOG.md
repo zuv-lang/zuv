@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🖥️ Host Operating System & Subprocess Engine (`os` / `zuv.os`)
+- Added global process command-line arguments: `os.args` and global `args` array accessible anywhere.
+- Added environment variable management: `os.env key` / `env key` and `os.setEnv key, val` / `setenv key, val`.
+- Added current working directory management: `os.cwd` / `cwd` and `os.chdir path` / `chdir path`.
+- Added OS diagnostics & machine stats: `os.typ`, `os.rel`, `os.ver`, `os.arch`, `os.mach`, `plt`, `os.cpus`, `os.par`, `os.totMem`, `os.freMem`.
+- Added host identity & system properties: `os.host`, `os.uInfo`, `os.home`, `os.tmpDir`, `os.uptm`, `os.uptime`, `os.load`, `os.getPri`, `os.setPri`, `os.endian`, `os.eol`, `os.devNull`, `os.netIf`.
+- Added full 10-point test suite in `tests/std_os.test.zv`.
+
 ### 📁 Filesystem & Stream I/O Engine (`fs` / `zuv.fs`)
 - Added native filesystem built-ins: `appF` (append), `mkD` (mkdir), `mvF` (rename), `cpF` (copy), `statF` (size), `chmod`, `symL` (symlink), `rLink` (readlink), `realP` (realpath), `truncF` (truncate), `utime` (timestamps), `acc` (access).
 - Added low-level file descriptors: `opn`, `cls`, positional offset I/O (`rAt`, `wAt`), directory iteration (`opnDir`), watcher (`wtch`), streaming (`rStrm`, `wStrm`), vectored I/O (`rVec`, `wVec`), and temporary file creation (`mkTmp`).
