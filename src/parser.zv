@@ -1114,7 +1114,7 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" {
                                 propName = `${varNameStr}.${propName}`
                             } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
@@ -1179,7 +1179,8 @@ parseExpression p, precedence {
                            propName == "slc" || propName == "slice" || propName == "chr" || propName == "charAt" ||
                            propName == "cat" || propName == "concat" || propName == "eq" || propName == "streq" ||
                            propName == "push" || propName == "psh" || propName == "pop" || propName == "pp" ||
-                           propName == "env" || propName == "getEnv" || propName == "setEnv" || propName == "chdir" || propName == "setPri" || propName == "watch" || propName == "wtch" {
+                           propName == "env" || propName == "getEnv" || propName == "setEnv" || propName == "chdir" || propName == "setPri" || propName == "watch" || propName == "wtch" ||
+                           propName == "sleep" || propName == "sl" {
                             isDotMethod = 1
                         }
                         mut shouldDotCall = 0
@@ -1211,7 +1212,7 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" {
                                     propName = `${varNameStr}.${propName}`
                                 } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
@@ -2317,7 +2318,7 @@ parseStatement p {
             } els if (peekTok p).val == "(" {
                 advanceParser p // consume '('
                 let args = []
-                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" {
+                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" {
                     propName = `${identName}.${propName}`
                 } els {
                     if propName == "cls" || propName == "close" { propName = "chan.cls" }
@@ -2376,8 +2377,16 @@ parseStatement p {
                 } els if (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "BOOL" || (peekTok p).kind == "IDENT" {
                     advanceParser p
                     argExpr = parseExpression p, 0
-                    let args = [targetVar, argExpr]
-                    callNode = createCallNode propName, args
+                    mut callTarget = propName
+                    let args = []
+                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" {
+                        callTarget = `${identName}.${propName}`
+                        args.psh argExpr
+                    } els {
+                        args.psh targetVar
+                        args.psh argExpr
+                    }
+                    callNode = createCallNode callTarget, args
                     -> createExpressionStmtNode callNode
                 } els {
                     propAccess = createPropertyAccessNode targetVar, propName

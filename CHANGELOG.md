@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.11.0] - 2026-09-02
 
+### ⏱️ High-Precision Clocks & Monotonic Timers (`time` / `zuv.time`)
+- Added current epoch millisecond timestamp: `nw()`, `time.now`, `time.nw`.
+- Added POSIX epoch seconds: `unx()`, `unix()`, `time.unix`, `time.unx`.
+- Added high-resolution monotonic performance counter: `mono()`, `time.mono`.
+- Added thread sleep delay: `sl(ms)`, `time.sleep(ms)`, `time.sl(ms)`.
+- Added comprehensive unit test in `tests/std_time.test.zv`.
+
 ### 🧵 Threads, Concurrency & Process Control (`thrd` / `zuv.thrd`)
 - Added process identifiers and lifecycle control: `pid()`, `ppid()`, `kill(pid, sig)`, `wait(pid)`.
 - Added mutex synchronization primitives: `mtx.create()`, `m.lck()`, `m.unlck()`, `m.destroy()`.

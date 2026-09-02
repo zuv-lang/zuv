@@ -920,7 +920,22 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
             -> resReg
         }
-        if expr.name == "os" || expr.name == "thrd" || expr.name == "mtx" || expr.name == "atmc" || expr.name == "chan" {
+        if expr.name == "nw" || expr.name == "now" || expr.name == "time.nw" || expr.name == "time.now" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_now()\n`)
+            -> resReg
+        }
+        if expr.name == "unx" || expr.name == "unix" || expr.name == "time.unx" || expr.name == "time.unix" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_unix()\n`)
+            -> resReg
+        }
+        if expr.name == "mono" || expr.name == "time.mono" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_mono()\n`)
+            -> resReg
+        }
+        if expr.name == "time" || expr.name == "os" || expr.name == "thrd" || expr.name == "mtx" || expr.name == "atmc" || expr.name == "chan" {
             -> "0.0"
         }
         -> "0.0"
@@ -2476,12 +2491,24 @@ codegenExpr cg, expr, outBuf {
             resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_chan_close(ptr ${ptrReg})\n`)
             -> "1.0"
-        } els if expr.callee == "nw" {
-            clkReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${clkReg} = call i64 @clock()\n`)
-            resDbl = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${resDbl} = sitofp i64 ${clkReg} to double\n`)
-            -> resDbl
+        } els if expr.callee == "nw" || expr.callee == "now" || expr.callee == "time.now" || expr.callee == "time.nw" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_now()\n`)
+            -> resReg
+        } els if expr.callee == "unx" || expr.callee == "unix" || expr.callee == "time.unx" || expr.callee == "time.unix" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_unix()\n`)
+            -> resReg
+        } els if expr.callee == "mono" || expr.callee == "time.mono" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_mono()\n`)
+            -> resReg
+        } els if (expr.callee == "sl" || expr.callee == "sleep" || expr.callee == "time.sleep" || expr.callee == "time.sl") && expr.args.ln == 1 {
+            msReg = codegenExpr cg, expr.args[0], outBuf
+            msInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${msInt} = fptosi double ${msReg} to i32\n`)
+            outBuf.code = outBuf.code.cat (`  call void @Sleep(i32 ${msInt})\n`)
+            -> "0.0"
         } els if expr.callee == "ok" && expr.args.ln == 1 {
             pReg = codegenExpr cg, expr.args[0], outBuf
             bufReg = newReg cg
@@ -3244,6 +3271,23 @@ codegenExpr cg, expr, outBuf {
                 if expr.property == "ppid" {
                     let resReg = newReg cg
                     outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+                    -> resReg
+                }
+            }
+            if expr.object.name == "time" {
+                if expr.property == "now" || expr.property == "nw" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_now()\n`)
+                    -> resReg
+                }
+                if expr.property == "unix" || expr.property == "unx" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_unix()\n`)
+                    -> resReg
+                }
+                if expr.property == "mono" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_mono()\n`)
                     -> resReg
                 }
             }
@@ -4326,6 +4370,10 @@ GenerateLLVMFull program {
     header = header.cat "declare ptr @GetCurrentProcess()\n"
     header = header.cat "declare i32 @GetPriorityClass(ptr)\n"
     header = header.cat "declare i32 @SetPriorityClass(ptr, i32)\n"
+    header = header.cat "declare void @GetSystemTimeAsFileTime(ptr)\n"
+    header = header.cat "declare i64 @_time64(ptr)\n"
+    header = header.cat "declare i32 @QueryPerformanceCounter(ptr)\n"
+    header = header.cat "declare i32 @QueryPerformanceFrequency(ptr)\n"
     header = header.cat "@zuv_global_args = global i64 0\n"
     header = header.cat "@str_os_typ = private unnamed_addr constant [11 x i8] c\"Windows_NT\\00\"\n"
     header = header.cat "@str_os_rel = private unnamed_addr constant [5 x i8] c\"10.0\\00\"\n"
@@ -4351,6 +4399,9 @@ GenerateLLVMFull program {
     header = header.cat "define double @zuv_os_ppid() {\nentry:\n  %myPid = call i32 @GetCurrentProcessId()\n  %snap = call ptr @CreateToolhelp32Snapshot(i32 2, i32 0)\n  %isNull = icmp eq ptr %snap, inttoptr (i64 -1 to ptr)\n  br i1 %isNull, label %ret_zero, label %do_scan\n\ndo_scan:\n  %pe = alloca [556 x i8]\n  store i32 556, ptr %pe\n  %ok1 = call i32 @Process32First(ptr %snap, ptr %pe)\n  %isOk1 = icmp ne i32 %ok1, 0\n  br i1 %isOk1, label %check_entry, label %close_snap\n\nloop_next:\n  %okN = call i32 @Process32Next(ptr %snap, ptr %pe)\n  %isOkN = icmp ne i32 %okN, 0\n  br i1 %isOkN, label %check_entry, label %close_snap\n\ncheck_entry:\n  %pPidSlot = getelementptr inbounds i32, ptr %pe, i64 2\n  %curPid = load i32, ptr %pPidSlot\n  %isMatch = icmp eq i32 %curPid, %myPid\n  br i1 %isMatch, label %found_ppid, label %loop_next\n\nfound_ppid:\n  %pPPidSlot = getelementptr inbounds i32, ptr %pe, i64 6\n  %curPPid = load i32, ptr %pPPidSlot\n  %close1 = call i32 @CloseHandle(ptr %snap)\n  %dPPid = sitofp i32 %curPPid to double\n  ret double %dPPid\n\nclose_snap:\n  %close2 = call i32 @CloseHandle(ptr %snap)\n  br label %ret_zero\n\nret_zero:\n  ret double 0.0\n}\n\n"
     header = header.cat "define i32 @zuv_process_kill(i32 %pid, i32 %sig) {\nentry:\n  %h = call ptr @OpenProcess(i32 1, i32 0, i32 %pid)\n  %isNull = icmp eq ptr %h, null\n  br i1 %isNull, label %ret_fail, label %do_term\n\ndo_term:\n  %res = call i32 @TerminateProcess(ptr %h, i32 %sig)\n  %c = call i32 @CloseHandle(ptr %h)\n  ret i32 %res\n\nret_fail:\n  ret i32 0\n}\n\n"
     header = header.cat "define double @zuv_process_wait(i32 %pid) {\nentry:\n  %h = call ptr @OpenProcess(i32 1049600, i32 0, i32 %pid)\n  %isNull = icmp eq ptr %h, null\n  br i1 %isNull, label %ret_err, label %do_wait\n\ndo_wait:\n  %w = call i32 @WaitForSingleObject(ptr %h, i32 -1)\n  %codeSlot = alloca i32\n  store i32 0, ptr %codeSlot\n  %r = call i32 @GetExitCodeProcess(ptr %h, ptr %codeSlot)\n  %c = call i32 @CloseHandle(ptr %h)\n  %code = load i32, ptr %codeSlot\n  %dCode = sitofp i32 %code to double\n  ret double %dCode\n\nret_err:\n  ret double -1.0\n}\n\n"
+    header = header.cat "define double @zuv_time_now() {\nentry:\n  %ft = alloca i64\n  call void @GetSystemTimeAsFileTime(ptr %ft)\n  %val = load i64, ptr %ft\n  %diff = sub i64 %val, 116444736000000000\n  %ms = udiv i64 %diff, 10000\n  %dbl = uitofp i64 %ms to double\n  ret double %dbl\n}\n\n"
+    header = header.cat "define double @zuv_time_unix() {\nentry:\n  %sec = call i64 @_time64(ptr null)\n  %dbl = sitofp i64 %sec to double\n  ret double %dbl\n}\n\n"
+    header = header.cat "define double @zuv_time_mono() {\nentry:\n  %pCount = alloca i64\n  %pFreq = alloca i64\n  call i32 @QueryPerformanceCounter(ptr %pCount)\n  call i32 @QueryPerformanceFrequency(ptr %pFreq)\n  %count = load i64, ptr %pCount\n  %freq = load i64, ptr %pFreq\n  %countDbl = sitofp i64 %count to double\n  %freqDbl = sitofp i64 %freq to double\n  %sec = fdiv double %countDbl, %freqDbl\n  %ns = fmul double %sec, 1000000000.0\n  ret double %ns\n}\n\n"
     header = header.cat "define ptr @zuv_mutex_create() {\nentry:\n  %m = call ptr @CreateMutexA(ptr null, i32 0, ptr null)\n  ret ptr %m\n}\n\n"
     header = header.cat "define i32 @zuv_mutex_lock(ptr %m) {\nentry:\n  %r = call i32 @WaitForSingleObject(ptr %m, i32 -1)\n  ret i32 1\n}\n\n"
     header = header.cat "define i32 @zuv_mutex_unlock(ptr %m) {\nentry:\n  %r = call i32 @ReleaseMutex(ptr %m)\n  ret i32 %r\n}\n\n"
