@@ -1,6 +1,6 @@
 // Token definitions and classification module for Zuv Self-Hosting Compiler (src/tokens.zv)
 
-createToken kind, val, line, col {
+CreateToken kind, val, line, col {
     tok = { kind: kind, val: val, line: line, col: col }
     -> tok
 }

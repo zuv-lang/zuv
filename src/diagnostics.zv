@@ -2,6 +2,7 @@
 imp str, arr, fs
 
 getLineFromSource sourceText, targetLine {
+    if sourceText == und || sourceText == nil || sourceText == "" { -> "" }
     if targetLine <= 0 { -> "" }
     mut curLine = 1
     mut startIdx = 0
@@ -40,7 +41,7 @@ getLineFromSource sourceText, targetLine {
     -> ""
 }
 
-createDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr {
+CreateDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr {
     d = {
         code: codeStr,
         message: msgStr,
@@ -54,9 +55,9 @@ createDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, he
     -> d
 }
 
-formatDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr, sourceText {
+FormatDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr, sourceText {
     mut fPath = pathStr
-    if fPath == "" { fPath = "<input>" }
+    if fPath == "" || fPath == und || fPath == nil { fPath = "<input>" }
     mut res = "error[" + codeStr + "]: " + msgStr + "\n"
     if lineNum > 0 {
         lineStr = lineNum as str
@@ -71,7 +72,7 @@ formatDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, he
         res = res + lineNumStr + " | " + srcLine + "\n"
         mut caretPad = ""
         mut cIdx = 1
-        wh cIdx < colNum {
+        wh cIdx < colNum && cIdx < 500 {
             caretPad = caretPad + " "
             cIdx = cIdx + 1
         }
@@ -79,16 +80,17 @@ formatDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, he
         mut k = 0
         mut spanLen = lenNum
         if spanLen <= 0 { spanLen = 1 }
+        if spanLen > 500 { spanLen = 500 }
         wh k < spanLen {
             carets = carets + "^"
             k = k + 1
         }
         res = res + "   | " + caretPad + carets
-        if labelStr != "" {
+        if labelStr != "" && labelStr != und && labelStr != nil {
             res = res + " " + labelStr
         }
         res = res + "\n   |\n"
-        if helpStr != "" {
+        if helpStr != "" && helpStr != und && helpStr != nil {
             res = res + "   = help: " + helpStr + "\n"
         }
     } els {

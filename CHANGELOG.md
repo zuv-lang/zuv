@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔒 Capitalization-Based Symbol Visibility & Export Control (Go-Style)
+- Added automatic capitalization-based public exports: top-level functions, arrow handlers, globals, and types starting with `A-Z` are automatically exported.
+- Added lowercase module encapsulation: declarations starting with `a-z` / `_` are strictly private to the declaring file.
+- Added cross-module import boundary validation (`error[E0301]`) preventing imports of unexported symbols.
+- Added unit tests `tests/export_visibility.test.zv` and `tests/export_error.test.zv`.
+
 ### 🖥️ Host Operating System & Subprocess Engine (`os` / `zuv.os`)
 - Added global process command-line arguments: `os.args` and global `args` array accessible anywhere.
 - Added environment variable management: `os.env key` / `env key` and `os.setEnv key, val` / `setenv key, val`.

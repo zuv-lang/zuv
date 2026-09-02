@@ -1,16 +1,6 @@
 // Full LLVM IR Code Generator for Zuv Self-Hosting Compiler (src/codegen.zv)
 imp str, arr
-
-isUpperChar c {
-    if c == "A" || c == "B" || c == "C" || c == "D" || c == "E" || c == "F" ||
-       c == "G" || c == "H" || c == "I" || c == "J" || c == "K" || c == "L" ||
-       c == "M" || c == "N" || c == "O" || c == "P" || c == "Q" || c == "R" ||
-       c == "S" || c == "T" || c == "U" || c == "V" || c == "W" || c == "X" ||
-       c == "Y" || c == "Z" {
-        -> 1
-    }
-    -> 0
-}
+imp IsUpperChar frm util
 
 createCodegen {
     let syms = []
@@ -518,7 +508,7 @@ getStrPtrVal cg, expr, outBuf {
             if (isStrVar cg, n) == 1 {
                 isStr = 1
             }
-            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || (n.cnt "type") == 1 || (n.cnt "Type") == 1 {
+            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || n == "ch" || n == "c" || n == "c0" || n == "c0Str" || n == "cStr" || n == "impName" || n == "modPathStr" || n == "varNameStr" || (n.cnt "name") == 1 || (n.cnt "Name") == 1 || (n.cnt "path") == 1 || (n.cnt "Path") == 1 || (n.cnt "str") == 1 || (n.cnt "Str") == 1 || (n.cnt "type") == 1 || (n.cnt "Type") == 1 {
                 isStr = 1
             }
             if (isBigIntVar cg, n) == 1 {
@@ -3989,7 +3979,7 @@ codegenFunctionDecl cg, funcStmt {
     cg.funcs = cg.funcs.cat fnBuf.code
 }
 
-generateLLVMFull program {
+GenerateLLVMFull program {
     cg = createCodegen
     // Pre-register functions so aliases can reference later declarations.
     let fni = 0

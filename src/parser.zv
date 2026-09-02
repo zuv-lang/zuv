@@ -1,18 +1,8 @@
 // AST Nodes & Full Recursive Descent Parser for Zuv Self-Hosting Compiler (src/parser.zv)
 imp str, arr, diagnostics
-imp createToken frm tokens
-imp createDiagnostic, formatDiagnostic frm diagnostics
-
-isUpperChar c {
-    if c == "A" || c == "B" || c == "C" || c == "D" || c == "E" || c == "F" ||
-       c == "G" || c == "H" || c == "I" || c == "J" || c == "K" || c == "L" ||
-       c == "M" || c == "N" || c == "O" || c == "P" || c == "Q" || c == "R" ||
-       c == "S" || c == "T" || c == "U" || c == "V" || c == "W" || c == "X" ||
-       c == "Y" || c == "Z" {
-        -> 1
-    }
-    -> 0
-}
+imp CreateToken frm tokens
+imp CreateDiagnostic, FormatDiagnostic frm diagnostics
+imp IsUpperChar frm util
 
 // ── Precedence Constants ─────────────────────────────────────────────────────
 getPrecLowest {
@@ -139,7 +129,7 @@ getTokenPrecedence tok {
 // ── Parser State ─────────────────────────────────────────────────────────────
 createParser tokens, filePath, sourceText {
     l = tokens.ln
-    emptyTok = createToken "EOF", "", 0, 0
+    emptyTok = CreateToken "EOF", "", 0, 0
     let emptyErrors = []
     mut fPath = filePath
     if fPath == und || fPath == nil { fPath = "" }
@@ -165,7 +155,7 @@ advanceParser p {
         p.peekTok = p.tokens[p.pos]
         p.pos = p.pos + 1
     } els {
-        p.peekTok = createToken "EOF", "", 0, 0
+        p.peekTok = CreateToken "EOF", "", 0, 0
     }
 }
 
@@ -184,7 +174,7 @@ expectPeekToken p, expectedKind, expectedVal {
     }
     mut expMsg = expectedVal
     if expMsg == "" { expMsg = expectedKind }
-    errPeek = formatDiagnostic "E0102", `Expected '${expMsg}', got '${peekT.val}' instead`, p.filePath, peekT.line, peekT.col, peekT.val.ln, `expected ${expMsg}`, `add '${expMsg}' here`, p.sourceText
+    errPeek = FormatDiagnostic "E0102", `Expected '${expMsg}', got '${peekT.val}' instead`, p.filePath, peekT.line, peekT.col, peekT.val.ln, `expected ${expMsg}`, `add '${expMsg}' here`, p.sourceText
     p.errors.psh errPeek
     -> 0
 }
@@ -350,8 +340,8 @@ createFuncNode name, params, body, isAsync, hasRest {
     -> res
 }
 
-createImportNode paths, symbols, fromPath {
-    res = { kind: "ImportStmt", paths: paths, symbols: symbols, fromPath: fromPath }
+createImportNode paths, symbols, fromPath, lineNum, colNum {
+    res = { kind: "ImportStmt", paths: paths, symbols: symbols, fromPath: fromPath, line: lineNum, col: colNum }
     -> res
 }
 
@@ -399,7 +389,7 @@ peekAheadToken p, offset {
     if idx >= 0 && idx < p.totalLen {
         -> p.tokens[idx]
     }
-    -> createToken "EOF", "", 0, 0
+    -> CreateToken "EOF", "", 0, 0
 }
 
 isObjectDestructureAssign p {
@@ -1408,25 +1398,27 @@ parseStatement p {
     }
 
     if t.kind == "KEYWORD" && t.val == "imp" {
+        impLine = t.line
+        impCol = t.col
         advanceParser p
-        let items = [(curTok p).val]
-        wh (peekTok p).val == "," {
+        let items = [p.curTok.val]
+        wh p.peekTok.val == "," {
             advanceParser p // consume ','
             advanceParser p // move to next item
-            items.psh (curTok p).val
+            items.psh p.curTok.val
         }
-        if (peekTok p).val == "frm" {
+        if p.peekTok.val == "frm" {
             advanceParser p // consume 'frm'
             let fromPath = ""
-            wh (peekTok p).line == t.line && (peekTok p).kind != "EOF" {
+            wh p.peekTok.line == t.line && p.peekTok.kind != "EOF" {
                 advanceParser p
-                fromPath = fromPath + (curTok p).val
+                fromPath = fromPath + p.curTok.val
             }
             let emptyPaths = []
-            -> createImportNode emptyPaths, items, fromPath
+            -> createImportNode emptyPaths, items, fromPath, impLine, impCol
         } els {
             let emptySyms = []
-            -> createImportNode items, emptySyms, ""
+            -> createImportNode items, emptySyms, "", impLine, impCol
         }
     } els if (t.kind == "KEYWORD" || t.kind == "IDENT") && (t.val == "extern" || t.val == "ffi") {
         mut libName = "c"
@@ -2248,7 +2240,7 @@ parseStatement p {
             advanceParser p // consume '='
             if (peekTok p).kind == "EOF" {
                 peekT = peekTok p
-                errEof = formatDiagnostic "E0101", "Expected valid expression, got EOF", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
+                errEof = FormatDiagnostic "E0101", "Expected valid expression, got EOF", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
                 p.errors.psh errEof
                 -> { kind: "" }
             }
@@ -2262,7 +2254,7 @@ parseStatement p {
             advanceParser p // consume compound
             if (peekTok p).kind == "EOF" {
                 peekT = peekTok p
-                errComp = formatDiagnostic "E0101", "Expected valid expression after compound assign", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
+                errComp = FormatDiagnostic "E0101", "Expected valid expression after compound assign", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
                 p.errors.psh errComp
                 -> { kind: "" }
             }
@@ -2490,7 +2482,7 @@ parseStatement p {
     }
 }
 
-parseProgramFull tokens, filePath, sourceText {
+ParseProgramFull tokens, filePath, sourceText {
     p = createParser tokens, filePath, sourceText
     let rawStatements = []
 

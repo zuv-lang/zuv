@@ -1,0 +1,4 @@
+// Negative Test: importing unexported lowercase symbol from external module
+imp internalDiff frm tests/my_helper
+
+prnt (internalDiff 100, 50)

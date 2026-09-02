@@ -1,9 +1,9 @@
 // Zuv Self-Hosting Compiler Main Entry Point (src/main.zv)
 imp str, arr, fs, time
-imp handleBuild, handleCheck, handleCheckAll, handleTest, handleRun, handleFmt frm cli
-imp createLexer, tokenizeFull frm lexer
-imp parseProgramFull frm parser
-imp createDiagnostic, formatDiagnostic frm diagnostics
+imp HandleBuild, HandleCheck, HandleCheckAll, HandleTest, HandleRun, HandleFmt frm cli
+imp CreateLexer, TokenizeFull frm lexer
+imp ParseProgramFull frm parser
+imp CreateDiagnostic, FormatDiagnostic frm diagnostics
 
 main cmd, fileArg, arg3, arg4, arg5, arg6 {
     let targetFile = fileArg
@@ -67,28 +67,28 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
     }
 
     if cmd == "checkall" || cmd == "check-all" {
-        handleCheckAll
+        HandleCheckAll
     } els if cmd == "test" {
-        handleTest
+        HandleTest
     } els if cmd == "" {
-        handleCheckAll
+        HandleCheckAll
     } els {
         if cmd == "check" {
-            handleCheck targetFile
+            HandleCheck targetFile
         } els {
             if cmd == "build" {
-                handleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple
+                HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple
             } els {
                 if cmd == "run" {
-                    handleRun targetFile
+                    HandleRun targetFile
                 } els {
                     if cmd == "fmt" {
-                        handleFmt targetFile
+                        HandleFmt targetFile
                     } els {
                         if fE cmd {
-                            handleCheck cmd
+                            HandleCheck cmd
                         } els {
-                            handleCheckAll
+                            HandleCheckAll
                         }
                     }
                 }
