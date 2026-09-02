@@ -898,6 +898,54 @@ codegenExpr cg, expr, outBuf {
             -> resReg
         }
         -> "0.0"
+    } els if expr.kind == "LambdaExpr" {
+        lambdaName = `__lambda_${cg.strCount}`
+        cg.strCount = cg.strCount + 1
+        cg.funcNames.psh lambdaName
+        let savedSymbols = []
+        let si = 0
+        wh si < cg.symbols.ln {
+            savedSymbols.psh cg.symbols[si]
+            si = si + 1
+        }
+        clearCgLocals cg
+        mut paramsStr = ""
+        let i = 0
+        wh i < expr.params.ln {
+            if i > 0 { paramsStr = paramsStr.cat ", " }
+            pItem = expr.params[i]
+            pName = pItem.name
+            paramsStr = paramsStr.cat (`double %arg_${pName}`)
+            i = i + 1
+        }
+        let fnBuf = { code: (`define double @${lambdaName}(${paramsStr}) {\nentry:\n`) }
+        let j = 0
+        wh j < expr.params.ln {
+            pItem2 = expr.params[j]
+            pName2 = pItem2.name
+            if pName2 != "" {
+                ptrReg = newReg cg
+                fnBuf.code = fnBuf.code.cat (`  ${ptrReg} = alloca double\n`)
+                fnBuf.code = fnBuf.code.cat (`  store double %arg_${pName2}, ptr ${ptrReg}\n`)
+                addCgSymbol cg, pName2, ptrReg
+            }
+            j = j + 1
+        }
+        oldIsMain = cg.isMain
+        cg.isMain = 0
+        codegenStmt cg, expr.body, fnBuf
+        cg.isMain = oldIsMain
+        fnBuf.code = fnBuf.code.cat ("  ret double 0.0\n}\n\n")
+        cg.funcs = cg.funcs.cat fnBuf.code
+        cg.symbols = savedSymbols
+
+        fnAddr = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${fnAddr} = ptrtoint ptr @${lambdaName} to i64
+`)
+        fnVal = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${fnVal} = sitofp i64 ${fnAddr} to double
+`)
+        -> fnVal
     } els if expr.kind == "BinaryExpr" {
         // Nullish coalescing: left ?? right — use right only if left is nil/und
         if expr.op == "??" {

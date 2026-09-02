@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🏹 Arrow Functions (`=>`)
+- Added expression-bodied functions (`divmod a, b => a + b`) and multi-line arrow bodies (`->` / `ret`).
+- Added parameterless arrow declarations (`getAnswer => 42`), object returns, and match expressions.
+- Added single-param (`x => x * 2`) and parenthesized (`(a, b) => a + b`) anonymous lambdas.
+- Added `tests/arrow_functions.test.zv`.
+
 ### ⚡ First-Class Functions & Function Pointers
 - Function declarations can be used as values, assigned to aliases, and passed as callback arguments.
 - Calls through aliases and function parameters emit LLVM indirect calls in both the bootstrap and self-hosting code generators.

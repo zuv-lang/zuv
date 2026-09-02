@@ -647,6 +647,31 @@ parseMultiValueReturn p {
     -> createReturnNode first
 }
 
+isParenLambda p {
+    mut scanPos = p.pos - 1
+    if scanPos < 0 { scanPos = 0 }
+    mut depth = 1
+    wh scanPos < p.totalLen {
+        tok = p.tokens[scanPos]
+        if tok.val == "(" {
+            depth = depth + 1
+        } els if tok.val == ")" {
+            depth = depth - 1
+            if depth == 0 {
+                if scanPos + 1 < p.totalLen {
+                    nextT = p.tokens[scanPos + 1]
+                    if nextT.val == "=>" {
+                        -> 1
+                    }
+                }
+                -> 0
+            }
+        }
+        scanPos = scanPos + 1
+    }
+    -> 0
+}
+
 // ── Expression Parser ────────────────────────────────────────────────────────
 parseExpression p, precedence {
     t = curTok p
@@ -843,6 +868,14 @@ parseExpression p, precedence {
             }
             expectPeekToken p, "SYM", "}"
             left = createStructLitNode varName, fields
+        } els if (peekTok p).val == "=>" {
+            advanceParser p // consume '=>'
+            advanceParser p // body start
+            lambdaExpr = parseExpression p, 0
+            let lambdaStmts = [createReturnNode lambdaExpr]
+            let lambdaBody = createBlockNode lambdaStmts
+            let lambdaParams = [{ name: varName, type: "", isRest: 0 }]
+            left = { kind: "LambdaExpr", name: "", params: lambdaParams, body: lambdaBody }
         } els if (peekTok p).val == "(" {
             advanceParser p // consume '('
             advanceParser p
@@ -959,9 +992,34 @@ parseExpression p, precedence {
         expectPeekToken p, "SYM", "]"
         left = createArrayNode elements
     } els if t.kind == "SYM" && t.val == "(" {
-        advanceParser p
-        left = parseExpression p, 0
-        expectPeekToken p, "SYM", ")"
+        if (isParenLambda p) == 1 {
+            let lambdaParams = []
+            wh (peekTok p).val != ")" && (peekTok p).kind != "EOF" {
+                advanceParser p
+                if (curTok p).kind == "IDENT" {
+                    pName = (curTok p).val
+                    if (peekTok p).val == ":" {
+                        advanceParser p // consume ':'
+                        advanceParser p // consume type
+                    }
+                    lambdaParams.psh { name: pName, type: "", isRest: 0 }
+                }
+                if (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                }
+            }
+            expectPeekToken p, "SYM", ")"
+            expectPeekToken p, "SYM", "=>"
+            advanceParser p // body start
+            lambdaExpr = parseExpression p, 0
+            let lambdaStmts = [createReturnNode lambdaExpr]
+            let lambdaBody = createBlockNode lambdaStmts
+            left = { kind: "LambdaExpr", name: "", params: lambdaParams, body: lambdaBody }
+        } els {
+            advanceParser p
+            left = parseExpression p, 0
+            expectPeekToken p, "SYM", ")"
+        }
     } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--" || t.val == "*")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
@@ -2156,6 +2214,15 @@ parseStatement p {
                 advanceParser p // consume '->'
                 advanceParser p // consume return type
             }
+            if (peekTok p).val == "=>" {
+                advanceParser p // consume '=>'
+                advanceParser p // expression body start
+                arrowExpr = parseExpression p, 0
+                let arrowStmts = [createReturnNode arrowExpr]
+                arrowBody = createBlockNode arrowStmts
+                let arrowAttrs = []
+                -> { kind: "FunctionDecl", name: fnName, params: params, body: arrowBody, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC, attributes: arrowAttrs }
+            }
             body = parseBlock p
             let emptyAttrs2 = []
             fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC, attributes: emptyAttrs2 }
@@ -2370,6 +2437,13 @@ parseStatement p {
             if (peekTok p).val == "{" {
                 body = parseBlock p
                 -> createFuncNode identName, params, body, 0, hasRest
+            } els if (peekTok p).val == "=>" {
+                advanceParser p // consume '=>'
+                advanceParser p // expression body start
+                arrowExpr = parseExpression p, 0
+                let arrowStmts = [createReturnNode arrowExpr]
+                arrowBody = createBlockNode arrowStmts
+                -> createFuncNode identName, params, arrowBody, 0, hasRest
             } els {
                 // Parenthesis-free call statement with identifiers
                 let args = []
