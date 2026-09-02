@@ -1,18 +1,8 @@
 // AST Nodes & Full Recursive Descent Parser for Zuv Self-Hosting Compiler (src/parser.zv)
 imp str, arr, diagnostics
-imp createToken frm tokens
-imp createDiagnostic, formatDiagnostic frm diagnostics
-
-isUpperChar c {
-    if c == "A" || c == "B" || c == "C" || c == "D" || c == "E" || c == "F" ||
-       c == "G" || c == "H" || c == "I" || c == "J" || c == "K" || c == "L" ||
-       c == "M" || c == "N" || c == "O" || c == "P" || c == "Q" || c == "R" ||
-       c == "S" || c == "T" || c == "U" || c == "V" || c == "W" || c == "X" ||
-       c == "Y" || c == "Z" {
-        -> 1
-    }
-    -> 0
-}
+imp CreateToken frm tokens
+imp CreateDiagnostic, FormatDiagnostic frm diagnostics
+imp IsUpperChar frm util
 
 // ── Precedence Constants ─────────────────────────────────────────────────────
 getPrecLowest {
@@ -139,7 +129,7 @@ getTokenPrecedence tok {
 // ── Parser State ─────────────────────────────────────────────────────────────
 createParser tokens, filePath, sourceText {
     l = tokens.ln
-    emptyTok = createToken "EOF", "", 0, 0
+    emptyTok = CreateToken "EOF", "", 0, 0
     let emptyErrors = []
     mut fPath = filePath
     if fPath == und || fPath == nil { fPath = "" }
@@ -165,7 +155,7 @@ advanceParser p {
         p.peekTok = p.tokens[p.pos]
         p.pos = p.pos + 1
     } els {
-        p.peekTok = createToken "EOF", "", 0, 0
+        p.peekTok = CreateToken "EOF", "", 0, 0
     }
 }
 
@@ -184,7 +174,7 @@ expectPeekToken p, expectedKind, expectedVal {
     }
     mut expMsg = expectedVal
     if expMsg == "" { expMsg = expectedKind }
-    errPeek = formatDiagnostic "E0102", `Expected '${expMsg}', got '${peekT.val}' instead`, p.filePath, peekT.line, peekT.col, peekT.val.ln, `expected ${expMsg}`, `add '${expMsg}' here`, p.sourceText
+    errPeek = FormatDiagnostic "E0102", `Expected '${expMsg}', got '${peekT.val}' instead`, p.filePath, peekT.line, peekT.col, peekT.val.ln, `expected ${expMsg}`, `add '${expMsg}' here`, p.sourceText
     p.errors.psh errPeek
     -> 0
 }
@@ -350,8 +340,8 @@ createFuncNode name, params, body, isAsync, hasRest {
     -> res
 }
 
-createImportNode paths, symbols, fromPath {
-    res = { kind: "ImportStmt", paths: paths, symbols: symbols, fromPath: fromPath }
+createImportNode paths, symbols, fromPath, lineNum, colNum {
+    res = { kind: "ImportStmt", paths: paths, symbols: symbols, fromPath: fromPath, line: lineNum, col: colNum }
     -> res
 }
 
@@ -399,7 +389,7 @@ peekAheadToken p, offset {
     if idx >= 0 && idx < p.totalLen {
         -> p.tokens[idx]
     }
-    -> createToken "EOF", "", 0, 0
+    -> CreateToken "EOF", "", 0, 0
 }
 
 isObjectDestructureAssign p {
@@ -647,6 +637,31 @@ parseMultiValueReturn p {
     -> createReturnNode first
 }
 
+isParenLambda p {
+    mut scanPos = p.pos - 1
+    if scanPos < 0 { scanPos = 0 }
+    mut depth = 1
+    wh scanPos < p.totalLen {
+        tok = p.tokens[scanPos]
+        if tok.val == "(" {
+            depth = depth + 1
+        } els if tok.val == ")" {
+            depth = depth - 1
+            if depth == 0 {
+                if scanPos + 1 < p.totalLen {
+                    nextT = p.tokens[scanPos + 1]
+                    if nextT.val == "=>" {
+                        -> 1
+                    }
+                }
+                -> 0
+            }
+        }
+        scanPos = scanPos + 1
+    }
+    -> 0
+}
+
 // ── Expression Parser ────────────────────────────────────────────────────────
 parseExpression p, precedence {
     t = curTok p
@@ -843,16 +858,27 @@ parseExpression p, precedence {
             }
             expectPeekToken p, "SYM", "}"
             left = createStructLitNode varName, fields
+        } els if (peekTok p).val == "=>" {
+            advanceParser p // consume '=>'
+            advanceParser p // body start
+            lambdaExpr = parseExpression p, 0
+            let lambdaStmts = [createReturnNode lambdaExpr]
+            let lambdaBody = createBlockNode lambdaStmts
+            let lambdaParams = [{ name: varName, type: "", isRest: 0 }]
+            left = { kind: "LambdaExpr", name: "", params: lambdaParams, body: lambdaBody }
         } els if (peekTok p).val == "(" {
             advanceParser p // consume '('
-            advanceParser p
-            firstArg = parseExpression p, 0
-            let args = [firstArg]
-            wh (peekTok p).val == "," {
-                advanceParser p // consume ','
+            let args = []
+            if (peekTok p).val != ")" {
                 advanceParser p
-                nextArg = parseExpression p, 0
-                args.psh nextArg
+                firstArg = parseExpression p, 0
+                args.psh firstArg
+                wh (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                    advanceParser p
+                    nextArg = parseExpression p, 0
+                    args.psh nextArg
+                }
             }
             expectPeekToken p, "SYM", ")"
             left = createCallNode varName, args
@@ -959,9 +985,34 @@ parseExpression p, precedence {
         expectPeekToken p, "SYM", "]"
         left = createArrayNode elements
     } els if t.kind == "SYM" && t.val == "(" {
-        advanceParser p
-        left = parseExpression p, 0
-        expectPeekToken p, "SYM", ")"
+        if (isParenLambda p) == 1 {
+            let lambdaParams = []
+            wh (peekTok p).val != ")" && (peekTok p).kind != "EOF" {
+                advanceParser p
+                if (curTok p).kind == "IDENT" {
+                    pName = (curTok p).val
+                    if (peekTok p).val == ":" {
+                        advanceParser p // consume ':'
+                        advanceParser p // consume type
+                    }
+                    lambdaParams.psh { name: pName, type: "", isRest: 0 }
+                }
+                if (peekTok p).val == "," {
+                    advanceParser p // consume ','
+                }
+            }
+            expectPeekToken p, "SYM", ")"
+            expectPeekToken p, "SYM", "=>"
+            advanceParser p // body start
+            lambdaExpr = parseExpression p, 0
+            let lambdaStmts = [createReturnNode lambdaExpr]
+            let lambdaBody = createBlockNode lambdaStmts
+            left = { kind: "LambdaExpr", name: "", params: lambdaParams, body: lambdaBody }
+        } els {
+            advanceParser p
+            left = parseExpression p, 0
+            expectPeekToken p, "SYM", ")"
+        }
     } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--" || t.val == "*")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
@@ -1063,12 +1114,26 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if isUpperV == 1 {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" {
+                                propName = `${varNameStr}.${propName}`
+                            } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
                             } els {
+                                if propName == "cls" || propName == "close" { propName = "chan.cls" }
+                                els if propName == "snd" || propName == "send" { propName = "chan.snd" }
+                                els if propName == "rcv" || propName == "recv" { propName = "chan.rcv" }
+                                els if propName == "lck" || propName == "lock" { propName = "mtx.lck" }
+                                els if propName == "unlck" || propName == "unlock" { propName = "mtx.unlck" }
+                                els if propName == "destroy" || propName == "free" { propName = "mtx.destroy" }
                                 args.psh left
                             }
                         } els {
+                            if propName == "cls" || propName == "close" { propName = "chan.cls" }
+                            els if propName == "snd" || propName == "send" { propName = "chan.snd" }
+                            els if propName == "rcv" || propName == "recv" { propName = "chan.rcv" }
+                            els if propName == "lck" || propName == "lock" { propName = "mtx.lck" }
+                            els if propName == "unlck" || propName == "unlock" { propName = "mtx.unlck" }
+                            els if propName == "destroy" || propName == "free" { propName = "mtx.destroy" }
                             args.psh left
                         }
                         if (peekTok p).val != ")" {
@@ -1113,7 +1178,8 @@ parseExpression p, precedence {
                            propName == "cnt" || propName == "contains" || propName == "sub" || propName == "substr" ||
                            propName == "slc" || propName == "slice" || propName == "chr" || propName == "charAt" ||
                            propName == "cat" || propName == "concat" || propName == "eq" || propName == "streq" ||
-                           propName == "push" || propName == "psh" || propName == "pop" || propName == "pp" {
+                           propName == "push" || propName == "psh" || propName == "pop" || propName == "pp" ||
+                           propName == "env" || propName == "getEnv" || propName == "setEnv" || propName == "chdir" || propName == "setPri" || propName == "watch" || propName == "wtch" {
                             isDotMethod = 1
                         }
                         mut shouldDotCall = 0
@@ -1145,7 +1211,9 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if isUpperV == 1 {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" {
+                                    propName = `${varNameStr}.${propName}`
+                                } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
                                 } els {
                                     args.psh left
@@ -1345,25 +1413,27 @@ parseStatement p {
     }
 
     if t.kind == "KEYWORD" && t.val == "imp" {
+        impLine = t.line
+        impCol = t.col
         advanceParser p
-        let items = [(curTok p).val]
-        wh (peekTok p).val == "," {
+        let items = [p.curTok.val]
+        wh p.peekTok.val == "," {
             advanceParser p // consume ','
             advanceParser p // move to next item
-            items.psh (curTok p).val
+            items.psh p.curTok.val
         }
-        if (peekTok p).val == "frm" {
+        if p.peekTok.val == "frm" {
             advanceParser p // consume 'frm'
             let fromPath = ""
-            wh (peekTok p).line == t.line && (peekTok p).kind != "EOF" {
+            wh p.peekTok.line == t.line && p.peekTok.kind != "EOF" {
                 advanceParser p
-                fromPath = fromPath + (curTok p).val
+                fromPath = fromPath + p.curTok.val
             }
             let emptyPaths = []
-            -> createImportNode emptyPaths, items, fromPath
+            -> createImportNode emptyPaths, items, fromPath, impLine, impCol
         } els {
             let emptySyms = []
-            -> createImportNode items, emptySyms, ""
+            -> createImportNode items, emptySyms, "", impLine, impCol
         }
     } els if (t.kind == "KEYWORD" || t.kind == "IDENT") && (t.val == "extern" || t.val == "ffi") {
         mut libName = "c"
@@ -2156,6 +2226,15 @@ parseStatement p {
                 advanceParser p // consume '->'
                 advanceParser p // consume return type
             }
+            if (peekTok p).val == "=>" {
+                advanceParser p // consume '=>'
+                advanceParser p // expression body start
+                arrowExpr = parseExpression p, 0
+                let arrowStmts = [createReturnNode arrowExpr]
+                arrowBody = createBlockNode arrowStmts
+                let arrowAttrs = []
+                -> { kind: "FunctionDecl", name: fnName, params: params, body: arrowBody, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC, attributes: arrowAttrs }
+            }
             body = parseBlock p
             let emptyAttrs2 = []
             fnNode = { kind: "FunctionDecl", name: fnName, params: params, body: body, isAsync: 0, hasRest: hasRest, isExported: 1, isExternC: isExternC, attributes: emptyAttrs2 }
@@ -2176,7 +2255,7 @@ parseStatement p {
             advanceParser p // consume '='
             if (peekTok p).kind == "EOF" {
                 peekT = peekTok p
-                errEof = formatDiagnostic "E0101", "Expected valid expression, got EOF", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
+                errEof = FormatDiagnostic "E0101", "Expected valid expression, got EOF", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
                 p.errors.psh errEof
                 -> { kind: "" }
             }
@@ -2190,7 +2269,7 @@ parseStatement p {
             advanceParser p // consume compound
             if (peekTok p).kind == "EOF" {
                 peekT = peekTok p
-                errComp = formatDiagnostic "E0101", "Expected valid expression after compound assign", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
+                errComp = FormatDiagnostic "E0101", "Expected valid expression after compound assign", p.filePath, peekT.line, peekT.col, 1, "expected expression", "provide a valid identifier, literal, or expression", p.sourceText
                 p.errors.psh errComp
                 -> { kind: "" }
             }
@@ -2213,7 +2292,7 @@ parseStatement p {
         } els if (peekTok p).val == "." {
             advanceParser p // consume '.'
             advanceParser p // consume method/prop name
-            propName = (curTok p).val
+            mut propName = (curTok p).val
             targetVar = createVariableNode identName
             if (peekTok p).val == "=" {
                 advanceParser p // consume '='
@@ -2235,6 +2314,34 @@ parseStatement p {
                 storeProp = createPropertyAccessNode storeObj, propName
                 assignExpr = createBinaryNode "=", storeProp, binExpr
                 -> createExpressionStmtNode assignExpr
+            } els if (peekTok p).val == "(" {
+                advanceParser p // consume '('
+                let args = []
+                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" {
+                    propName = `${identName}.${propName}`
+                } els {
+                    if propName == "cls" || propName == "close" { propName = "chan.cls" }
+                    els if propName == "snd" || propName == "send" { propName = "chan.snd" }
+                    els if propName == "rcv" || propName == "recv" { propName = "chan.rcv" }
+                    els if propName == "lck" || propName == "lock" { propName = "mtx.lck" }
+                    els if propName == "unlck" || propName == "unlock" { propName = "mtx.unlck" }
+                    els if propName == "destroy" || propName == "free" { propName = "mtx.destroy" }
+                    args.psh targetVar
+                }
+                if (peekTok p).val != ")" {
+                    advanceParser p
+                    firstArg = parseExpression p, 0
+                    args.psh firstArg
+                    wh (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                        advanceParser p
+                        nextArg = parseExpression p, 0
+                        args.psh nextArg
+                    }
+                }
+                expectPeekToken p, "SYM", ")"
+                callNode = createCallNode propName, args
+                -> createExpressionStmtNode callNode
             } els if propName == "pp" || propName == "pop" {
                 let args = [targetVar]
                 callNode = createCallNode propName, args
@@ -2370,6 +2477,13 @@ parseStatement p {
             if (peekTok p).val == "{" {
                 body = parseBlock p
                 -> createFuncNode identName, params, body, 0, hasRest
+            } els if (peekTok p).val == "=>" {
+                advanceParser p // consume '=>'
+                advanceParser p // expression body start
+                arrowExpr = parseExpression p, 0
+                let arrowStmts = [createReturnNode arrowExpr]
+                arrowBody = createBlockNode arrowStmts
+                -> createFuncNode identName, params, arrowBody, 0, hasRest
             } els {
                 // Parenthesis-free call statement with identifiers
                 let args = []
@@ -2411,7 +2525,7 @@ parseStatement p {
     }
 }
 
-parseProgramFull tokens, filePath, sourceText {
+ParseProgramFull tokens, filePath, sourceText {
     p = createParser tokens, filePath, sourceText
     let rawStatements = []
 

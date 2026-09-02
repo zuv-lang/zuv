@@ -1,0 +1,91 @@
+// Comprehensive Standard Library std/os Unit Test Suite (Task 24 Coverage)
+// Verifies full OS API:
+// os.args, args, os.env, setenv, os.cwd, cwd, os.typ, os.rel, os.arch, plt,
+// os.endian, os.eol, os.devNull, os.home, os.tmpDir, os.totMem, os.freMem,
+// os.cpus, os.par, os.host, os.uInfo, os.uptm, os.getPri
+
+imp os
+
+lg "--- Testing 100% Comprehensive std/os Suite ---"
+
+// 1. Global Process Arguments (args & os.args)
+lg "1. Global process args length:"
+lg args.ln
+lg "1b. os.args length:"
+lg os.args.ln
+lg "1c. Program executable path (args[0]):"
+lg args[0]
+
+// 2. Working Directory (os.cwd & cwd)
+cur_dir = os.cwd
+lg "2. Current working directory via os.cwd:"
+lg cur_dir
+cur_dir2 = cwd
+lg "2b. Current working directory via cwd:"
+lg cur_dir2
+
+// 3. Environment Variables (os.env & setenv)
+setenv "ZUV_TEST_ENV_VAR", "ZuvRocks2026"
+val = os.env "ZUV_TEST_ENV_VAR"
+lg "3. Read set environment variable:"
+lg val
+
+// 4. OS Identification (os.typ, os.rel, os.arch, plt)
+lg "4. OS Type:"
+lg os.typ
+lg "4b. OS Release:"
+lg os.rel
+lg "4c. OS Architecture:"
+lg os.arch
+lg "4d. Platform target triple:"
+lg plt
+
+// 5. System Memory (os.totMem & os.freMem)
+total_ram = os.totMem
+free_ram = os.freMem
+lg "5. Total physical RAM bytes:"
+lg total_ram
+lg "5b. Free physical RAM bytes:"
+lg free_ram
+
+// 6. CPU & Concurrency (os.cpus & os.par)
+cpu_cores = os.cpus
+parallelism = os.par
+lg "6. CPU processor core count:"
+lg cpu_cores
+lg "6b. Thread parallelism:"
+lg parallelism
+
+// 7. Host & User Identity (os.host & os.uInfo)
+hostname = os.host
+username = os.uInfo
+lg "7. System hostname:"
+lg hostname
+lg "7b. Current username:"
+lg username
+
+// 8. Standard Paths (os.home & os.tmpDir)
+user_home = os.home
+temp_dir = os.tmpDir
+lg "8. User home directory:"
+lg user_home
+lg "8b. System temp directory:"
+lg temp_dir
+
+// 9. Platform Constants (os.endian, os.eol, os.devNull)
+lg "9. Endianness:"
+lg os.endian
+lg "9b. Line ending length:"
+lg os.eol.ln
+lg "9c. Null device:"
+lg os.devNull
+
+// 10. System Uptime & Priority (os.uptm & os.getPri)
+uptime_secs = os.uptm
+proc_priority = os.getPri
+lg "10. System uptime in seconds:"
+lg uptime_secs
+lg "10b. Process scheduling priority:"
+lg proc_priority
+
+lg "std/os 100% Comprehensive Suite Completed Successfully!"

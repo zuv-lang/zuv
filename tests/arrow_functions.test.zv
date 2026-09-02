@@ -1,0 +1,65 @@
+// Arrow functions & concise expression-bodied functions test suite
+
+// 1. Single-expression bodies (implicit return)
+double n => n * 2
+add a, b => a + b
+divmod a, b => a + b
+
+// 2. Multi-line single expression (split across lines)
+dist x1, y1, x2, y2 =>
+    (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)
+
+// 3. Multi-line statements body with explicit return
+multi a, b =>
+    let c = a * 2
+    -> c + b
+
+// 4. Object literal return
+createUser name, age, role => {
+    name: name,
+    age: age,
+    role: role,
+    isActive: yes
+}
+
+// 5. Direct Pattern Matching (mch) expression return
+describeStatus status => mch status {
+    200 => "OK"
+    404 => "Not Found"
+    500 => "Internal Server Error"
+    _   => "Unknown"
+}
+
+// 6. Parameterless arrow functions
+getAnswer => 42
+
+// 7. Higher-order function calling arrow functions and anonymous lambdas
+apply fn, value => fn value
+
+// Run verifications
+lg double 21
+lg add 10, 5
+lg divmod 10, 20
+lg dist 0, 0, 3, 4
+lg multi 5, 10
+
+u = createUser "Alice", 30, "admin"
+lg u.name
+lg u.age
+lg u.role
+
+lg describeStatus 200
+lg describeStatus 404
+lg describeStatus 999
+
+lg getAnswer
+
+let doubleFn = x => x * 2
+lg doubleFn 21
+
+let addFn = (a, b) => a + b
+lg addFn 15, 25
+
+lg apply double, 7
+lg apply doubleFn, 11
+lg apply((x => x * 3), 7)

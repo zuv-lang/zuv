@@ -1,0 +1,14 @@
+// First-class function values, aliases, indirect calls, and callbacks.
+double n {
+    -> n * 2
+}
+
+apply fn, value {
+    -> fn value
+}
+
+alias = double
+lg alias 21
+lg apply double, 7
+lg apply alias, 9
+

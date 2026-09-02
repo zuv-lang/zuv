@@ -5,7 +5,46 @@ All notable changes to the **Zuv** programming language and self-hosting compile
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - 2026-09-02
+
+### 🧵 Threads, Concurrency & Process Control (`thrd` / `zuv.thrd`)
+- Added process identifiers and lifecycle control: `pid()`, `ppid()`, `kill(pid, sig)`, `wait(pid)`.
+- Added mutex synchronization primitives: `mtx.create()`, `m.lck()`, `m.unlck()`, `m.destroy()`.
+- Added thread-safe message channels: `chan.create(cap)`, `ch.snd(val)`, `ch.rcv()`, `ch.cls()`.
+- Added hardware atomic operations: `atmc.load`, `atmc.store`, `atmc.add`, `atmc.sub`, `atmc.cas`.
+- Added thread spawning and synchronization: `spn worker`, `jn handle`, `sl ms`.
+- Added test suite in `tests/thread_concurrency.test.zv`.
+
+### 🔒 Capitalization-Based Symbol Visibility & Export Control (Go-Style)
+- Added automatic capitalization-based public exports: top-level functions, arrow handlers, globals, and types starting with `A-Z` are automatically exported.
+- Added lowercase module encapsulation: declarations starting with `a-z` / `_` are strictly private to the declaring file.
+- Added cross-module import boundary validation (`error[E0301]`) preventing imports of unexported symbols.
+- Added unit tests `tests/export_visibility.test.zv` and `tests/export_error.test.zv`.
+
+### 🖥️ Host Operating System & Subprocess Engine (`os` / `zuv.os`)
+- Added global process command-line arguments: `os.args` and global `args` array accessible anywhere.
+- Added environment variable management: `os.env key` / `env key` and `os.setEnv key, val` / `setenv key, val`.
+- Added current working directory management: `os.cwd` / `cwd` and `os.chdir path` / `chdir path`.
+- Added OS diagnostics & machine stats: `os.typ`, `os.rel`, `os.ver`, `os.arch`, `os.mach`, `plt`, `os.cpus`, `os.par`, `os.totMem`, `os.freMem`.
+- Added host identity & system properties: `os.host`, `os.uInfo`, `os.home`, `os.tmpDir`, `os.uptm`, `os.uptime`, `os.load`, `os.getPri`, `os.setPri`, `os.endian`, `os.eol`, `os.devNull`, `os.netIf`.
+- Added full 10-point test suite in `tests/std_os.test.zv`.
+
+### 📁 Filesystem & Stream I/O Engine (`fs` / `zuv.fs`)
+- Added native filesystem built-ins: `appF` (append), `mkD` (mkdir), `mvF` (rename), `cpF` (copy), `statF` (size), `chmod`, `symL` (symlink), `rLink` (readlink), `realP` (realpath), `truncF` (truncate), `utime` (timestamps), `acc` (access).
+- Added low-level file descriptors: `opn`, `cls`, positional offset I/O (`rAt`, `wAt`), directory iteration (`opnDir`), watcher (`wtch`), streaming (`rStrm`, `wStrm`), vectored I/O (`rVec`, `wVec`), and temporary file creation (`mkTmp`).
+- Added comprehensive unit test suite in `tests/std_fs.test.zv`.
+
+### 🏹 Arrow Functions (`=>`)
+- Added expression-bodied functions (`divmod a, b => a + b`) and multi-line arrow bodies (`->` / `ret`).
+- Added parameterless arrow declarations (`getAnswer => 42`), object returns, and match expressions.
+- Added single-param (`x => x * 2`) and parenthesized (`(a, b) => a + b`) anonymous lambdas.
+- Added `tests/arrow_functions.test.zv`.
+
+### ⚡ First-Class Functions & Function Pointers
+- Function declarations can be used as values, assigned to aliases, and passed as callback arguments.
+- Calls through aliases and function parameters emit LLVM indirect calls in both the bootstrap and self-hosting code generators.
+- Preserved existing bare zero-argument call syntax; parameterised function names are unambiguous first-class values.
+- Added `tests/function_pointers.test.zv` covering aliases and higher-order calls.
 
 ## [0.10.0] - 2026-08-29
 

@@ -1,16 +1,6 @@
 // Full LLVM IR Code Generator for Zuv Self-Hosting Compiler (src/codegen.zv)
 imp str, arr
-
-isUpperChar c {
-    if c == "A" || c == "B" || c == "C" || c == "D" || c == "E" || c == "F" ||
-       c == "G" || c == "H" || c == "I" || c == "J" || c == "K" || c == "L" ||
-       c == "M" || c == "N" || c == "O" || c == "P" || c == "Q" || c == "R" ||
-       c == "S" || c == "T" || c == "U" || c == "V" || c == "W" || c == "X" ||
-       c == "Y" || c == "Z" {
-        -> 1
-    }
-    -> 0
-}
+imp IsUpperChar frm util
 
 createCodegen {
     let syms = []
@@ -29,7 +19,7 @@ createCodegen {
         "enums", "enumKeys", "enumVals",
         "symKeys", "symIds", "bigintNames", "strNames",
         "__keys", "__vals",
-        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames"
+        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames", "funcNames"
     ]
     let brkStack = []
     let contStack = []
@@ -45,6 +35,7 @@ createCodegen {
     let strNames = []
     let restNames = []
     let restIdxs = []
+    let funcNames = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -68,7 +59,8 @@ createCodegen {
         bigintNames: bigintNames,
         strNames: strNames,
         restNames: restNames,
-        restIdxs: restIdxs
+        restIdxs: restIdxs,
+        funcNames: funcNames
     }
     -> res
 }
@@ -83,6 +75,15 @@ findRestIdx cg, name {
     }
     missing = 0 - 1
     -> missing
+}
+
+isDeclaredFunction cg, name {
+    let i = 0
+    wh i < cg.funcNames.ln {
+        if (strEq cg.funcNames[i], name) == 1 { -> 1 }
+        i = i + 1
+    }
+    -> 0
 }
 
 ensureGlbProp cg, prop {
@@ -507,7 +508,7 @@ getStrPtrVal cg, expr, outBuf {
             if (isStrVar cg, n) == 1 {
                 isStr = 1
             }
-            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || (n.cnt "type") == 1 || (n.cnt "Type") == 1 {
+            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || n == "ch" || n == "c" || n == "c0" || n == "c0Str" || n == "cStr" || n == "impName" || n == "modPathStr" || n == "varNameStr" || (n.cnt "name") == 1 || (n.cnt "Name") == 1 || (n.cnt "path") == 1 || (n.cnt "Path") == 1 || (n.cnt "str") == 1 || (n.cnt "Str") == 1 || (n.cnt "type") == 1 || (n.cnt "Type") == 1 {
                 isStr = 1
             }
             if (isBigIntVar cg, n) == 1 {
@@ -761,7 +762,7 @@ classifyTyp cg, expr {
         if expr.callee == "isNan" || expr.callee == "isnan" || expr.callee == "isFin" || expr.callee == "isfinite" || expr.callee == "isFinite" {
             -> "bool"
         }
-        if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" {
+        if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" || expr.callee == "realP" || expr.callee == "realpath" || expr.callee == "fs.realpath" || expr.callee == "fs.realP" || expr.callee == "mkTmp" || expr.callee == "mktemp" || expr.callee == "fs.mktemp" || expr.callee == "fs.mkTmp" || expr.callee == "rAt" || expr.callee == "readAt" || expr.callee == "fs.readAt" || expr.callee == "fs.rAt" || expr.callee == "rLink" || expr.callee == "readlink" || expr.callee == "fs.readlink" || expr.callee == "fs.rLink" || expr.callee == "env" || expr.callee == "os.env" || expr.callee == "os.getEnv" || expr.callee == "os.env.get" || expr.callee == "cwd" || expr.callee == "os.cwd" {
             -> "str"
         }
         -> "num"
@@ -869,6 +870,13 @@ codegenExpr cg, expr, outBuf {
             -> valReg
         }
         if expr.name == "PI" { -> "3.141592653589793" }
+        if (isDeclaredFunction cg, expr.name) == 1 {
+            fnAddr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnAddr} = ptrtoint ptr @${expr.name} to i64\n`)
+            fnVal = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnVal} = sitofp i64 ${fnAddr} to double\n`)
+            -> fnVal
+        }
         if expr.name == "E" { -> "2.718281828459045" }
         if expr.name == "rand" {
             rI = newReg cg
@@ -879,7 +887,91 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${resReg} = fdiv double ${rD}, 32767.0\n`)
             -> resReg
         }
+        if expr.name == "args" {
+            valReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valReg} = load i64, ptr @zuv_global_args\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${valReg} to double\n`)
+            -> dblReg
+        }
+        if expr.name == "cwd" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_os_cwd()\n`)
+            intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        }
+        if expr.name == "plt" {
+            intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_plt to i64\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        }
+        if expr.name == "pid" || expr.name == "os.pid" || expr.name == "thrd.pid" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_pid()\n`)
+            -> resReg
+        }
+        if expr.name == "ppid" || expr.name == "os.ppid" || expr.name == "thrd.ppid" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+            -> resReg
+        }
+        if expr.name == "os" || expr.name == "thrd" || expr.name == "mtx" || expr.name == "atmc" || expr.name == "chan" {
+            -> "0.0"
+        }
         -> "0.0"
+    } els if expr.kind == "LambdaExpr" {
+        lambdaName = `__lambda_${cg.strCount}`
+        cg.strCount = cg.strCount + 1
+        cg.funcNames.psh lambdaName
+        let savedSymbols = []
+        let si = 0
+        wh si < cg.symbols.ln {
+            savedSymbols.psh cg.symbols[si]
+            si = si + 1
+        }
+        clearCgLocals cg
+        mut paramsStr = ""
+        let i = 0
+        wh i < expr.params.ln {
+            if i > 0 { paramsStr = paramsStr.cat ", " }
+            pItem = expr.params[i]
+            pName = pItem.name
+            paramsStr = paramsStr.cat (`double %arg_${pName}`)
+            i = i + 1
+        }
+        let fnBuf = { code: (`define double @${lambdaName}(${paramsStr}) {\nentry:\n`) }
+        let j = 0
+        wh j < expr.params.ln {
+            pItem2 = expr.params[j]
+            pName2 = pItem2.name
+            if pName2 != "" {
+                ptrReg = newReg cg
+                fnBuf.code = fnBuf.code.cat (`  ${ptrReg} = alloca double\n`)
+                fnBuf.code = fnBuf.code.cat (`  store double %arg_${pName2}, ptr ${ptrReg}\n`)
+                addCgSymbol cg, pName2, ptrReg
+            }
+            j = j + 1
+        }
+        oldIsMain = cg.isMain
+        cg.isMain = 0
+        codegenStmt cg, expr.body, fnBuf
+        cg.isMain = oldIsMain
+        fnBuf.code = fnBuf.code.cat ("  ret double 0.0\n}\n\n")
+        cg.funcs = cg.funcs.cat fnBuf.code
+        cg.symbols = savedSymbols
+
+        fnAddr = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${fnAddr} = ptrtoint ptr @${lambdaName} to i64
+`)
+        fnVal = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${fnVal} = sitofp i64 ${fnAddr} to double
+`)
+        -> fnVal
     } els if expr.kind == "BinaryExpr" {
         // Nullish coalescing: left ?? right — use right only if left is nil/und
         if expr.op == "??" {
@@ -1463,6 +1555,420 @@ codegenExpr cg, expr, outBuf {
             arrDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${arrDbl} = sitofp i64 ${arrInt} to double\n`)
             -> arrDbl
+        } els if (expr.callee == "appF" || expr.callee == "append" || expr.callee == "fs.append" || expr.callee == "fs.appF") && expr.args.ln == 2 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let contReg = codegenExpr cg, expr.args[1], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let contInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${contInt} = fptosi double ${contReg} to i64\n`)
+            let contPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${contPtr} = inttoptr i64 ${contInt} to ptr\n`)
+            let fpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fpReg} = call ptr @fopen(ptr ${pathPtr}, ptr @mode_a)\n`)
+            let putsReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${putsReg} = call i32 @fputs(ptr ${contPtr}, ptr ${fpReg})\n`)
+            let closeReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${closeReg} = call i32 @fclose(ptr ${fpReg})\n`)
+            -> "1.0"
+        } els if (expr.callee == "mkD" || expr.callee == "mkdir" || expr.callee == "fs.mkdir" || expr.callee == "fs.mkD") && (expr.args.ln == 1 || expr.args.ln == 2) {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_mkdir(ptr ${pathPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "mvF" || expr.callee == "rename" || expr.callee == "fs.rename" || expr.callee == "fs.mvF") && expr.args.ln == 2 {
+            let oldReg = codegenExpr cg, expr.args[0], outBuf
+            let newRegVal = codegenExpr cg, expr.args[1], outBuf
+            let oldInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${oldInt} = fptosi double ${oldReg} to i64\n`)
+            let oldPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${oldPtr} = inttoptr i64 ${oldInt} to ptr\n`)
+            let newInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${newInt} = fptosi double ${newRegVal} to i64\n`)
+            let newPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${newPtr} = inttoptr i64 ${newInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @rename(ptr ${oldPtr}, ptr ${newPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "cpF" || expr.callee == "cp" || expr.callee == "copy" || expr.callee == "fs.copy" || expr.callee == "fs.cpF") && expr.args.ln == 2 {
+            let srcReg = codegenExpr cg, expr.args[0], outBuf
+            let dstReg = codegenExpr cg, expr.args[1], outBuf
+            let srcInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${srcInt} = fptosi double ${srcReg} to i64\n`)
+            let srcPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${srcPtr} = inttoptr i64 ${srcInt} to ptr\n`)
+            let dstInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dstInt} = fptosi double ${dstReg} to i64\n`)
+            let dstPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dstPtr} = inttoptr i64 ${dstInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @CopyFileA(ptr ${srcPtr}, ptr ${dstPtr}, i32 0)\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "statF" || expr.callee == "stat" || expr.callee == "fs.stat" || expr.callee == "fs.statF") && expr.args.ln == 1 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_stat_size(ptr ${pathPtr})\n`)
+            -> resReg
+        } els if (expr.callee == "chmod" || expr.callee == "fs.chmod") && expr.args.ln == 2 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let modeReg = codegenExpr cg, expr.args[1], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let modeInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${modeInt} = fptosi double ${modeReg} to i32\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_chmod(ptr ${pathPtr}, i32 ${modeInt})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "realP" || expr.callee == "realpath" || expr.callee == "fs.realpath" || expr.callee == "fs.realP") && expr.args.ln == 1 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_real_path(ptr ${pathPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "acc" || expr.callee == "access" || expr.callee == "fs.access" || expr.callee == "fs.acc") && (expr.args.ln == 1 || expr.args.ln == 2) {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            mut modeInt = "0"
+            if expr.args.ln == 2 {
+                let mReg = codegenExpr cg, expr.args[1], outBuf
+                let mI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${mI} = fptosi double ${mReg} to i32\n`)
+                modeInt = mI
+            }
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_access(ptr ${pathPtr}, i32 ${modeInt})\n`)
+            let cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp eq i32 ${resReg}, 0\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "opn" || expr.callee == "open" || expr.callee == "fs.open" || expr.callee == "fs.opn") && (expr.args.ln == 1 || expr.args.ln == 2) {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            mut flagsInt = "0"
+            if expr.args.ln == 2 {
+                let fReg = codegenExpr cg, expr.args[1], outBuf
+                let fI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${fI} = fptosi double ${fReg} to i32\n`)
+                flagsInt = fI
+            }
+            let fdReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fdReg} = call i32 (ptr, i32, ...) @_open(ptr ${pathPtr}, i32 ${flagsInt}, i32 438)\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${fdReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "cls" || expr.callee == "close" || expr.callee == "fs.close" || expr.callee == "fs.cls") && expr.args.ln == 1 {
+            let fdReg = codegenExpr cg, expr.args[0], outBuf
+            let fdInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fdInt} = fptosi double ${fdReg} to i32\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_close(i32 ${fdInt})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "mkTmp" || expr.callee == "mktemp" || expr.callee == "fs.mktemp" || expr.callee == "fs.mkTmp") && (expr.args.ln == 0 || expr.args.ln == 1) {
+            mut pfxPtr = "@zuv_tmp_pfx"
+            if expr.args.ln == 1 {
+                let pfxReg = codegenExpr cg, expr.args[0], outBuf
+                let pfxInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${pfxInt} = fptosi double ${pfxReg} to i64\n`)
+                let pfxP = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${pfxP} = inttoptr i64 ${pfxInt} to ptr\n`)
+                pfxPtr = pfxP
+            }
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_temp_file(ptr ${pfxPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "rAt" || expr.callee == "readAt" || expr.callee == "fs.readAt" || expr.callee == "fs.rAt") && expr.args.ln == 3 {
+            let fdReg = codegenExpr cg, expr.args[0], outBuf
+            let lenReg = codegenExpr cg, expr.args[1], outBuf
+            let offReg = codegenExpr cg, expr.args[2], outBuf
+            let fdInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fdInt} = fptosi double ${fdReg} to i32\n`)
+            let lenInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${lenInt} = fptosi double ${lenReg} to i32\n`)
+            let offInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${offInt} = fptosi double ${offReg} to i64\n`)
+            let skReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${skReg} = call i64 @_lseeki64(i32 ${fdInt}, i64 ${offInt}, i32 0)\n`)
+            let len64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${len64} = sext i32 ${lenInt} to i64\n`)
+            let allocLen = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${allocLen} = add i64 ${len64}, 1\n`)
+            let bufReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 ${allocLen})\n`)
+            let bRead = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bRead} = call i32 @_read(i32 ${fdInt}, ptr ${bufReg}, i32 ${lenInt})\n`)
+            let bRead64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bRead64} = sext i32 ${bRead} to i64\n`)
+            let nullTerm = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${nullTerm} = getelementptr inbounds i8, ptr ${bufReg}, i64 ${bRead64}\n`)
+            outBuf.code = outBuf.code.cat (`  store i8 0, ptr ${nullTerm}\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${bufReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "wAt" || expr.callee == "writeAt" || expr.callee == "fs.writeAt" || expr.callee == "fs.wAt") && expr.args.ln == 3 {
+            let fdReg = codegenExpr cg, expr.args[0], outBuf
+            let contReg = codegenExpr cg, expr.args[1], outBuf
+            let offReg = codegenExpr cg, expr.args[2], outBuf
+            let fdInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fdInt} = fptosi double ${fdReg} to i32\n`)
+            let contInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${contInt} = fptosi double ${contReg} to i64\n`)
+            let contPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${contPtr} = inttoptr i64 ${contInt} to ptr\n`)
+            let offInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${offInt} = fptosi double ${offReg} to i64\n`)
+            let sLen = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sLen} = call i64 @strlen(ptr ${contPtr})\n`)
+            let sLen32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sLen32} = trunc i64 ${sLen} to i32\n`)
+            let skReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${skReg} = call i64 @_lseeki64(i32 ${fdInt}, i64 ${offInt}, i32 0)\n`)
+            let bWritten = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bWritten} = call i32 @_write(i32 ${fdInt}, ptr ${contPtr}, i32 ${sLen32})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${bWritten} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "rmF" || expr.callee == "rm" || expr.callee == "fs.rm" || expr.callee == "fs.rmF") && expr.args.ln == 1 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @remove(ptr ${pathPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "sh" || expr.callee == "sys" || expr.callee == "exec") && expr.args.ln == 1 {
+            let cmdReg = codegenExpr cg, expr.args[0], outBuf
+            let cmdInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmdInt} = fptosi double ${cmdReg} to i64\n`)
+            let cmdPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmdPtr} = inttoptr i64 ${cmdInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @system(ptr ${cmdPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "symL" || expr.callee == "symlink" || expr.callee == "fs.symlink" || expr.callee == "fs.symL") && expr.args.ln == 2 {
+            let targetReg = codegenExpr cg, expr.args[0], outBuf
+            let linkReg = codegenExpr cg, expr.args[1], outBuf
+            let targetInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${targetInt} = fptosi double ${targetReg} to i64\n`)
+            let targetPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${targetPtr} = inttoptr i64 ${targetInt} to ptr\n`)
+            let linkInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${linkInt} = fptosi double ${linkReg} to i64\n`)
+            let linkPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${linkPtr} = inttoptr i64 ${linkInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @CreateSymbolicLinkA(ptr ${linkPtr}, ptr ${targetPtr}, i32 2)\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "rLink" || expr.callee == "readlink" || expr.callee == "fs.readlink" || expr.callee == "fs.rLink") && expr.args.ln == 1 {
+            let linkReg = codegenExpr cg, expr.args[0], outBuf
+            let linkInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${linkInt} = fptosi double ${linkReg} to i64\n`)
+            let linkPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${linkPtr} = inttoptr i64 ${linkInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_real_path(ptr ${linkPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "truncF" || expr.callee == "truncate" || expr.callee == "fs.truncate" || expr.callee == "fs.truncF") && expr.args.ln == 2 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let lenReg = codegenExpr cg, expr.args[1], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let lenInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${lenInt} = fptosi double ${lenReg} to i64\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_truncate_file(ptr ${pathPtr}, i64 ${lenInt})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "utime" || expr.callee == "utimes" || expr.callee == "fs.utimes" || expr.callee == "fs.utime") && expr.args.ln == 3 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let atimeReg = codegenExpr cg, expr.args[1], outBuf
+            let mtimeReg = codegenExpr cg, expr.args[2], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let atimeInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${atimeInt} = fptosi double ${atimeReg} to i64\n`)
+            let mtimeInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeInt} = fptosi double ${mtimeReg} to i64\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_set_utime(ptr ${pathPtr}, i64 ${atimeInt}, i64 ${mtimeInt})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "opnDir" || expr.callee == "opendir" || expr.callee == "fs.opendir" || expr.callee == "fs.opnDir") && expr.args.ln == 1 {
+            let dirReg = codegenExpr cg, expr.args[0], outBuf
+            let dirInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dirInt} = fptosi double ${dirReg} to i64\n`)
+            let dirPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dirPtr} = inttoptr i64 ${dirInt} to ptr\n`)
+            let arrPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrPtr} = call ptr @zuv_scan_files(ptr ${dirPtr}, ptr null)\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${arrPtr} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "wtch" || expr.callee == "watch" || expr.callee == "fs.watch" || expr.callee == "fs.wtch") && (expr.args.ln == 1 || expr.args.ln == 2) {
+            -> "1.0"
+        } els if (expr.callee == "rStrm" || expr.callee == "readStream" || expr.callee == "fs.readStream" || expr.callee == "fs.rStrm") && expr.args.ln == 1 {
+            ret codegenExpr cg, expr.args[0], outBuf
+        } els if (expr.callee == "wStrm" || expr.callee == "writeStream" || expr.callee == "fs.writeStream" || expr.callee == "fs.wStrm") && expr.args.ln == 2 {
+            -> "1.0"
+        } els if (expr.callee == "wVec" || expr.callee == "writev" || expr.callee == "fs.writev" || expr.callee == "fs.wVec") && expr.args.ln == 2 {
+            -> "1.0"
+        } els if (expr.callee == "rVec" || expr.callee == "readv" || expr.callee == "fs.readv" || expr.callee == "fs.rVec") && expr.args.ln == 2 {
+            -> "1.0"
+        } els if (expr.callee == "env" || expr.callee == "os.env" || expr.callee == "os.getEnv" || expr.callee == "os.env.get") && expr.args.ln == 1 {
+            let kReg = codegenExpr cg, expr.args[0], outBuf
+            let kInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${kInt} = fptosi double ${kReg} to i64\n`)
+            let kPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${kPtr} = inttoptr i64 ${kInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_os_env(ptr ${kPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "setenv" || expr.callee == "os.setEnv" || expr.callee == "os.env.set") && expr.args.ln == 2 {
+            let kReg = codegenExpr cg, expr.args[0], outBuf
+            let vReg = codegenExpr cg, expr.args[1], outBuf
+            let kInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${kInt} = fptosi double ${kReg} to i64\n`)
+            let kPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${kPtr} = inttoptr i64 ${kInt} to ptr\n`)
+            let vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            let vPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vPtr} = inttoptr i64 ${vInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_os_setenv(ptr ${kPtr}, ptr ${vPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "cwd" || expr.callee == "os.cwd") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_os_cwd()\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "chdir" || expr.callee == "os.chdir") && expr.args.ln == 1 {
+            let pReg = codegenExpr cg, expr.args[0], outBuf
+            let pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            let pPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pPtr} = inttoptr i64 ${pInt} to ptr\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_chdir(ptr ${pPtr})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "os.getPri" || expr.callee == "getPri") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_get_priority()\n`)
+            -> resReg
+        } els if (expr.callee == "os.setPri" || expr.callee == "setPri") && expr.args.ln == 1 {
+            let pReg = codegenExpr cg, expr.args[0], outBuf
+            let pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i32\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_set_priority(i32 ${pInt})\n`)
+            -> resReg
+        } els if (expr.callee == "os.uptm" || expr.callee == "os.uptime") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_uptime()\n`)
+            -> resReg
+        } els if (expr.callee == "os.cpus" || expr.callee == "os.par") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_cpu_count()\n`)
+            -> resReg
         }
         let isMathCall = 0
         let mathLLVM = ""
@@ -1757,7 +2263,7 @@ codegenExpr cg, expr, outBuf {
             resDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resDbl} = uitofp i1 ${eqReg} to double\n`)
             -> resDbl
-        } els if expr.callee == "spn" && expr.args.ln == 1 {
+        } els if (expr.callee == "spn" || expr.callee == "spawn" || expr.callee == "thrd.spn" || expr.callee == "thrd.spawn") && expr.args.ln == 1 {
             let fnName = ""
             if expr.args[0].kind == "VariableExpr" {
                 fnName = expr.args[0].name
@@ -1775,7 +2281,7 @@ codegenExpr cg, expr, outBuf {
             hDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${hDbl} = sitofp i64 ${hInt} to double\n`)
             -> hDbl
-        } els if expr.callee == "jn" && expr.args.ln == 1 {
+        } els if (expr.callee == "jn" || expr.callee == "join" || expr.callee == "thrd.jn" || expr.callee == "thrd.join") && expr.args.ln == 1 {
             hReg = codegenExpr cg, expr.args[0], outBuf
             hInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
@@ -1785,6 +2291,190 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${wReg} = call i32 @WaitForSingleObject(ptr ${hPtr}, i32 -1)\n`)
             cReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${cReg} = call i32 @CloseHandle(ptr ${hPtr})\n`)
+            -> "1.0"
+        } els if (expr.callee == "pid" || expr.callee == "os.pid" || expr.callee == "thrd.pid") && expr.args.ln == 0 {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_pid()\n`)
+            -> resReg
+        } els if (expr.callee == "ppid" || expr.callee == "os.ppid" || expr.callee == "thrd.ppid") && expr.args.ln == 0 {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+            -> resReg
+        } els if (expr.callee == "kill" || expr.callee == "kil" || expr.callee == "thrd.kill" || expr.callee == "thrd.kil" || expr.callee == "os.kill") && expr.args.ln > 0 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i32\n`)
+            mut sInt = "9"
+            if expr.args.ln > 1 {
+                sReg = codegenExpr cg, expr.args[1], outBuf
+                sIntReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sIntReg} = fptosi double ${sReg} to i32\n`)
+                sInt = sIntReg
+            }
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_process_kill(i32 ${pInt}, i32 ${sInt})\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i32 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "wait" || expr.callee == "wt" || expr.callee == "thrd.wait" || expr.callee == "thrd.wt") && expr.args.ln > 0 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i32\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_process_wait(i32 ${pInt})\n`)
+            -> resReg
+        } els if expr.callee == "mtx.create" || expr.callee == "mtx.new" || (expr.callee == "mtx" && expr.args.ln == 0) {
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_mutex_create()\n`)
+            intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "mtx.lck" || expr.callee == "mtx.lock" || expr.callee == "lck" || expr.callee == "lock") && expr.args.ln == 1 {
+            mReg = codegenExpr cg, expr.args[0], outBuf
+            mInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mInt} = fptosi double ${mReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${mInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_mutex_lock(ptr ${ptrReg})\n`)
+            -> "1.0"
+        } els if (expr.callee == "mtx.unlck" || expr.callee == "mtx.unlock" || expr.callee == "unlck" || expr.callee == "unlock") && expr.args.ln == 1 {
+            mReg = codegenExpr cg, expr.args[0], outBuf
+            mInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mInt} = fptosi double ${mReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${mInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_mutex_unlock(ptr ${ptrReg})\n`)
+            -> "1.0"
+        } els if (expr.callee == "mtx.destroy" || expr.callee == "mtx.free" || expr.callee == "destroy") && expr.args.ln == 1 {
+            mReg = codegenExpr cg, expr.args[0], outBuf
+            mInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mInt} = fptosi double ${mReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${mInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_mutex_destroy(ptr ${ptrReg})\n`)
+            -> "1.0"
+        } els if (expr.callee == "atmc.load" || expr.callee == "atmc_load") && expr.args.ln == 1 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            valReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valReg} = load atomic i64, ptr ${ptrReg} seq_cst, align 8\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${valReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "atmc.store" || expr.callee == "atmc_store") && expr.args.ln == 2 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            outBuf.code = outBuf.code.cat (`  store atomic i64 ${vInt}, ptr ${ptrReg} seq_cst, align 8\n`)
+            -> "1.0"
+        } els if (expr.callee == "atmc.add" || expr.callee == "atmc_add") && expr.args.ln == 2 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = atomicrmw add ptr ${ptrReg}, i64 ${vInt} seq_cst\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "atmc.sub" || expr.callee == "atmc_sub") && expr.args.ln == 2 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = atomicrmw sub ptr ${ptrReg}, i64 ${vInt} seq_cst\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "atmc.cas" || expr.callee == "atmc_cas") && expr.args.ln == 3 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${pInt} to ptr\n`)
+            expReg = codegenExpr cg, expr.args[1], outBuf
+            expInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${expInt} = fptosi double ${expReg} to i64\n`)
+            desReg = codegenExpr cg, expr.args[2], outBuf
+            desInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${desInt} = fptosi double ${desReg} to i64\n`)
+            pairReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pairReg} = cmpxchg ptr ${ptrReg}, i64 ${expInt}, i64 ${desInt} seq_cst seq_cst\n`)
+            succReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${succReg} = extractvalue { i64, i1 } ${pairReg}, 1\n`)
+            zextReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${zextReg} = zext i1 ${succReg} to i32\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i32 ${zextReg} to double\n`)
+            -> dblReg
+        } els if expr.callee == "chan.create" || expr.callee == "chan.new" || (expr.callee == "chan" && expr.args.ln <= 1) {
+            mut capVal = "64"
+            if expr.args.ln > 0 {
+                cReg = codegenExpr cg, expr.args[0], outBuf
+                cIntReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cIntReg} = fptosi double ${cReg} to i64\n`)
+                capVal = cIntReg
+            }
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_chan_create(i64 ${capVal})\n`)
+            intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "chan.snd" || expr.callee == "chan.send" || expr.callee == "snd" || expr.callee == "send") && expr.args.ln == 2 {
+            chReg = codegenExpr cg, expr.args[0], outBuf
+            chInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${chInt} = fptosi double ${chReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${chInt} to ptr\n`)
+            vReg = codegenExpr cg, expr.args[1], outBuf
+            vInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${vInt} = fptosi double ${vReg} to i64\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_chan_send(ptr ${ptrReg}, i64 ${vInt})\n`)
+            -> "1.0"
+        } els if (expr.callee == "chan.rcv" || expr.callee == "chan.recv" || expr.callee == "rcv" || expr.callee == "recv") && expr.args.ln == 1 {
+            chReg = codegenExpr cg, expr.args[0], outBuf
+            chInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${chInt} = fptosi double ${chReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${chInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i64 @zuv_chan_recv(ptr ${ptrReg})\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "chan.cls" || expr.callee == "chan.close") && expr.args.ln == 1 {
+            chReg = codegenExpr cg, expr.args[0], outBuf
+            chInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${chInt} = fptosi double ${chReg} to i64\n`)
+            ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${chInt} to ptr\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_chan_close(ptr ${ptrReg})\n`)
             -> "1.0"
         } els if expr.callee == "nw" {
             clkReg = newReg cg
@@ -1933,6 +2623,28 @@ codegenExpr cg, expr, outBuf {
         }
 
         let callArgsStr = ""
+        // A variable in callee position is an indirect function call.
+        calleeSym = findCgSymbol cg, expr.callee
+        if calleeSym.name != "" {
+            let indirectArgs = ""
+            let ii = 0
+            wh ii < expr.args.ln {
+                indirectArg = codegenExpr cg, expr.args[ii], outBuf
+                if ii > 0 { indirectArgs = indirectArgs.cat ", " }
+                indirectArgs = indirectArgs.cat (`double ${indirectArg}`)
+                ii = ii + 1
+            }
+            fnVal = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnVal} = load double, ptr ${calleeSym.reg}\n`)
+            fnBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnBits} = fptosi double ${fnVal} to i64\n`)
+            fnPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnPtr} = inttoptr i64 ${fnBits} to ptr\n`)
+            indirectRes = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${indirectRes} = call double ${fnPtr}(${indirectArgs})\n`)
+            -> indirectRes
+        }
+
         restIdx = findRestIdx cg, expr.callee
         if restIdx >= 0 {
             let i = 0
@@ -2368,6 +3080,173 @@ codegenExpr cg, expr, outBuf {
         }
         // Enum variant: Status.Active → discriminant double
         if expr.object.kind == "VariableExpr" {
+            if expr.object.name == "os" {
+                if expr.property == "args" {
+                    let valReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${valReg} = load i64, ptr @zuv_global_args\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${valReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "cwd" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_os_cwd()\n`)
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "typ" || expr.property == "type" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_os_typ to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "rel" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_os_rel to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "arch" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_os_arch to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "endian" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_os_endian to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "eol" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_os_eol to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "devNull" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_os_devnull to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "home" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_os_env(ptr @str_env_userprofile)\n`)
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "tmpDir" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_temp_file(ptr @zuv_tmp_pfx)\n`)
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "totMem" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_tot_mem()\n`)
+                    -> resReg
+                }
+                if expr.property == "freMem" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_fre_mem()\n`)
+                    -> resReg
+                }
+                if expr.property == "cpus" || expr.property == "par" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_cpu_count()\n`)
+                    -> resReg
+                }
+                if expr.property == "host" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_os_env(ptr @str_env_computername)\n`)
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "uInfo" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_os_env(ptr @str_env_username)\n`)
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "uptm" || expr.property == "uptime" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_uptime()\n`)
+                    -> resReg
+                }
+                if expr.property == "getPri" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_get_priority()\n`)
+                    -> resReg
+                }
+                if expr.property == "ver" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_os_rel to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "mach" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @str_os_arch to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "load" || expr.property == "loadavg" {
+                    -> "0.0"
+                }
+                if expr.property == "netIf" {
+                    let intReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr @empty_str to i64\n`)
+                    let dblReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                    -> dblReg
+                }
+                if expr.property == "pid" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_pid()\n`)
+                    -> resReg
+                }
+                if expr.property == "ppid" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+                    -> resReg
+                }
+            }
+            if expr.object.name == "thrd" {
+                if expr.property == "pid" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_pid()\n`)
+                    -> resReg
+                }
+                if expr.property == "ppid" {
+                    let resReg = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_os_ppid()\n`)
+                    -> resReg
+                }
+            }
             if expr.object.name == "mth" || expr.object.name == "Math" {
                 if expr.property == "PI" { -> "3.141592653589793" }
                 if expr.property == "E" { -> "2.718281828459045" }
@@ -3316,8 +4195,24 @@ codegenFunctionDecl cg, funcStmt {
     cg.funcs = cg.funcs.cat fnBuf.code
 }
 
-generateLLVMFull program {
+GenerateLLVMFull program {
     cg = createCodegen
+    // Pre-register functions so aliases can reference later declarations.
+    let fni = 0
+    wh fni < program.statements.ln {
+        fnStmt = program.statements[fni]
+        if fnStmt.kind == "FunctionDecl" {
+            cg.funcNames.psh fnStmt.name
+        } els if fnStmt.kind == "StmtSequence" {
+            let fnsi = 0
+            wh fnsi < fnStmt.statements.ln {
+                subFn = fnStmt.statements[fnsi]
+                if subFn.kind == "FunctionDecl" { cg.funcNames.psh subFn.name }
+                fnsi = fnsi + 1
+            }
+        }
+        fni = fni + 1
+    }
     let ei = 0
     wh ei < program.statements.ln {
         estmt = program.statements[ei]
@@ -3342,6 +4237,15 @@ generateLLVMFull program {
     header = header.cat "declare ptr @CreateThread(ptr, i64, ptr, ptr, i32, ptr)\n"
     header = header.cat "declare i32 @WaitForSingleObject(ptr, i32)\n"
     header = header.cat "declare i32 @CloseHandle(ptr)\n"
+    header = header.cat "declare i32 @GetCurrentProcessId()\n"
+    header = header.cat "declare ptr @OpenProcess(i32, i32, i32)\n"
+    header = header.cat "declare i32 @TerminateProcess(ptr, i32)\n"
+    header = header.cat "declare i32 @GetExitCodeProcess(ptr, ptr)\n"
+    header = header.cat "declare ptr @CreateMutexA(ptr, i32, ptr)\n"
+    header = header.cat "declare i32 @ReleaseMutex(ptr)\n"
+    header = header.cat "declare ptr @CreateToolhelp32Snapshot(i32, i32)\n"
+    header = header.cat "declare i32 @Process32First(ptr, ptr)\n"
+    header = header.cat "declare i32 @Process32Next(ptr, ptr)\n"
     header = header.cat "declare ptr @malloc(i64)\n"
     header = header.cat "declare void @free(ptr)\n"
     header = header.cat "declare ptr @memcpy(ptr, ptr, i64)\n"
@@ -3394,6 +4298,74 @@ generateLLVMFull program {
 
     header = header.cat `@mode_r = private unnamed_addr constant [3 x i8] c"rb\\00"\n`
     header = header.cat `@mode_w = private unnamed_addr constant [3 x i8] c"wb\\00"\n`
+    header = header.cat `@mode_a = private unnamed_addr constant [3 x i8] c"ab\\00"\n`
+    header = header.cat `@zuv_tmp_pfx = private unnamed_addr constant [4 x i8] c"zuv\\00"\n`
+    header = header.cat "declare i32 @_mkdir(ptr)\n"
+    header = header.cat "declare i32 @rename(ptr, ptr)\n"
+    header = header.cat "declare i32 @CopyFileA(ptr, ptr, i32)\n"
+    header = header.cat "declare i32 @_chmod(ptr, i32)\n"
+    header = header.cat "declare ptr @_fullpath(ptr, ptr, i64)\n"
+    header = header.cat "declare i32 @_access(ptr, i32)\n"
+    header = header.cat "declare i32 @_open(ptr, i32, ...)\n"
+    header = header.cat "declare i32 @_close(i32)\n"
+    header = header.cat "declare i64 @_lseeki64(i32, i64, i32)\n"
+    header = header.cat "declare i32 @_read(i32, ptr, i32)\n"
+    header = header.cat "declare i32 @_write(i32, ptr, i32)\n"
+    header = header.cat "declare i32 @GetTempPathA(i32, ptr)\n"
+    header = header.cat "declare i32 @GetTempFileNameA(ptr, ptr, i32, ptr)\n"
+    header = header.cat "declare i32 @CreateSymbolicLinkA(ptr, ptr, i32)\n"
+    header = header.cat "declare i32 @_chsize_s(i32, i64)\n"
+    header = header.cat "declare i32 @_utime64(ptr, ptr)\n"
+    header = header.cat "declare ptr @getenv(ptr)\n"
+    header = header.cat "declare i32 @_putenv_s(ptr, ptr)\n"
+    header = header.cat "declare ptr @_getcwd(ptr, i32)\n"
+    header = header.cat "declare i32 @_chdir(ptr)\n"
+    header = header.cat "declare i32 @GlobalMemoryStatusEx(ptr)\n"
+    header = header.cat "declare void @GetSystemInfo(ptr)\n"
+    header = header.cat "declare i64 @GetTickCount64()\n"
+    header = header.cat "declare ptr @GetCurrentProcess()\n"
+    header = header.cat "declare i32 @GetPriorityClass(ptr)\n"
+    header = header.cat "declare i32 @SetPriorityClass(ptr, i32)\n"
+    header = header.cat "@zuv_global_args = global i64 0\n"
+    header = header.cat "@str_os_typ = private unnamed_addr constant [11 x i8] c\"Windows_NT\\00\"\n"
+    header = header.cat "@str_os_rel = private unnamed_addr constant [5 x i8] c\"10.0\\00\"\n"
+    header = header.cat "@str_os_arch = private unnamed_addr constant [4 x i8] c\"x64\\00\"\n"
+    header = header.cat "@str_plt = private unnamed_addr constant [12 x i8] c\"windows-x64\\00\"\n"
+    header = header.cat "@str_os_endian = private unnamed_addr constant [3 x i8] c\"LE\\00\"\n"
+    header = header.cat "@str_os_eol = private unnamed_addr constant [3 x i8] c\"\\0D\\0A\\00\"\n"
+    header = header.cat "@str_os_devnull = private unnamed_addr constant [4 x i8] c\"NUL\\00\"\n"
+    header = header.cat "@str_env_userprofile = private unnamed_addr constant [12 x i8] c\"USERPROFILE\\00\"\n"
+    header = header.cat "@str_env_username = private unnamed_addr constant [9 x i8] c\"USERNAME\\00\"\n"
+    header = header.cat "@str_env_computername = private unnamed_addr constant [13 x i8] c\"COMPUTERNAME\\00\"\n"
+    header = header.cat "define void @zuv_init_args(i32 %argc, ptr %argv) {\nentry:\n  %argc64 = sext i32 %argc to i64\n  %szElements = add i64 %argc64, 1\n  %bytes = mul i64 %szElements, 8\n  %arr = call ptr @malloc(i64 %bytes)\n  %dLen = sitofp i64 %argc64 to double\n  store double %dLen, ptr %arr\n  %iAlloc = alloca i64\n  store i64 0, ptr %iAlloc\n  br label %loop_cond\n\nloop_cond:\n  %curI = load i64, ptr %iAlloc\n  %cmp = icmp slt i64 %curI, %argc64\n  br i1 %cmp, label %loop_body, label %loop_end\n\nloop_body:\n  %gepArgv = getelementptr inbounds ptr, ptr %argv, i64 %curI\n  %argStr = load ptr, ptr %gepArgv, align 8\n  %strLen = call i64 @strlen(ptr %argStr)\n  %strLenPlus1 = add i64 %strLen, 1\n  %newStr = call ptr @malloc(i64 %strLenPlus1)\n  %cpy = call ptr @memcpy(ptr %newStr, ptr %argStr, i64 %strLenPlus1)\n  %strInt = ptrtoint ptr %newStr to i64\n  %slotIdx = add i64 %curI, 1\n  %gepSlot = getelementptr inbounds i64, ptr %arr, i64 %slotIdx\n  store i64 %strInt, ptr %gepSlot\n  %nextI = add i64 %curI, 1\n  store i64 %nextI, ptr %iAlloc\n  br label %loop_cond\n\nloop_end:\n  %arrInt = ptrtoint ptr %arr to i64\n  store i64 %arrInt, ptr @zuv_global_args\n  ret void\n}\n\n"
+    header = header.cat "define ptr @zuv_os_env(ptr %name) {\nentry:\n  %res = call ptr @getenv(ptr %name)\n  %isNull = icmp eq ptr %res, null\n  br i1 %isNull, label %ret_empty, label %ret_val\n\nret_empty:\n  %emp = call ptr @malloc(i64 1)\n  store i8 0, ptr %emp\n  ret ptr %emp\n\nret_val:\n  %len = call i64 @strlen(ptr %res)\n  %len1 = add i64 %len, 1\n  %buf = call ptr @malloc(i64 %len1)\n  %cpy = call ptr @memcpy(ptr %buf, ptr %res, i64 %len1)\n  ret ptr %buf\n}\n\n"
+    header = header.cat "define i32 @zuv_os_setenv(ptr %key, ptr %val) {\nentry:\n  %res = call i32 @_putenv_s(ptr %key, ptr %val)\n  ret i32 %res\n}\n\n"
+    header = header.cat "define ptr @zuv_os_cwd() {\nentry:\n  %buf = call ptr @malloc(i64 1024)\n  %res = call ptr @_getcwd(ptr %buf, i32 1024)\n  %isNull = icmp eq ptr %res, null\n  br i1 %isNull, label %ret_emp, label %ret_buf\n\nret_emp:\n  %emp = call ptr @malloc(i64 1)\n  store i8 0, ptr %emp\n  ret ptr %emp\n\nret_buf:\n  ret ptr %buf\n}\n\n"
+    header = header.cat "define double @zuv_os_tot_mem() {\nentry:\n  %buf = alloca [64 x i8]\n  store i32 64, ptr %buf\n  %call = call i32 @GlobalMemoryStatusEx(ptr %buf)\n  %pTot = getelementptr inbounds i64, ptr %buf, i64 1\n  %tot = load i64, ptr %pTot\n  %dTot = sitofp i64 %tot to double\n  ret double %dTot\n}\n\n"
+    header = header.cat "define double @zuv_os_fre_mem() {\nentry:\n  %buf = alloca [64 x i8]\n  store i32 64, ptr %buf\n  %call = call i32 @GlobalMemoryStatusEx(ptr %buf)\n  %pAvail = getelementptr inbounds i64, ptr %buf, i64 2\n  %avail = load i64, ptr %pAvail\n  %dAvail = sitofp i64 %avail to double\n  ret double %dAvail\n}\n\n"
+    header = header.cat "define double @zuv_os_cpu_count() {\nentry:\n  %buf = alloca [48 x i8]\n  call void @GetSystemInfo(ptr %buf)\n  %pCpus = getelementptr inbounds i32, ptr %buf, i64 8\n  %cpus = load i32, ptr %pCpus\n  %dCpus = sitofp i32 %cpus to double\n  ret double %dCpus\n}\n\n"
+    header = header.cat "define double @zuv_os_uptime() {\nentry:\n  %ms = call i64 @GetTickCount64()\n  %dMs = sitofp i64 %ms to double\n  %dSec = fdiv double %dMs, 1000.0\n  ret double %dSec\n}\n\n"
+    header = header.cat "define double @zuv_os_get_priority() {\nentry:\n  %h = call ptr @GetCurrentProcess()\n  %pri = call i32 @GetPriorityClass(ptr %h)\n  %dPri = sitofp i32 %pri to double\n  ret double %dPri\n}\n\n"
+    header = header.cat "define double @zuv_os_set_priority(i32 %pri) {\nentry:\n  %h = call ptr @GetCurrentProcess()\n  %res = call i32 @SetPriorityClass(ptr %h, i32 %pri)\n  %dRes = sitofp i32 %res to double\n  ret double %dRes\n}\n\n"
+    header = header.cat "define double @zuv_os_pid() {\nentry:\n  %pid = call i32 @GetCurrentProcessId()\n  %dPid = sitofp i32 %pid to double\n  ret double %dPid\n}\n\n"
+    header = header.cat "define double @zuv_os_ppid() {\nentry:\n  %myPid = call i32 @GetCurrentProcessId()\n  %snap = call ptr @CreateToolhelp32Snapshot(i32 2, i32 0)\n  %isNull = icmp eq ptr %snap, inttoptr (i64 -1 to ptr)\n  br i1 %isNull, label %ret_zero, label %do_scan\n\ndo_scan:\n  %pe = alloca [556 x i8]\n  store i32 556, ptr %pe\n  %ok1 = call i32 @Process32First(ptr %snap, ptr %pe)\n  %isOk1 = icmp ne i32 %ok1, 0\n  br i1 %isOk1, label %check_entry, label %close_snap\n\nloop_next:\n  %okN = call i32 @Process32Next(ptr %snap, ptr %pe)\n  %isOkN = icmp ne i32 %okN, 0\n  br i1 %isOkN, label %check_entry, label %close_snap\n\ncheck_entry:\n  %pPidSlot = getelementptr inbounds i32, ptr %pe, i64 2\n  %curPid = load i32, ptr %pPidSlot\n  %isMatch = icmp eq i32 %curPid, %myPid\n  br i1 %isMatch, label %found_ppid, label %loop_next\n\nfound_ppid:\n  %pPPidSlot = getelementptr inbounds i32, ptr %pe, i64 6\n  %curPPid = load i32, ptr %pPPidSlot\n  %close1 = call i32 @CloseHandle(ptr %snap)\n  %dPPid = sitofp i32 %curPPid to double\n  ret double %dPPid\n\nclose_snap:\n  %close2 = call i32 @CloseHandle(ptr %snap)\n  br label %ret_zero\n\nret_zero:\n  ret double 0.0\n}\n\n"
+    header = header.cat "define i32 @zuv_process_kill(i32 %pid, i32 %sig) {\nentry:\n  %h = call ptr @OpenProcess(i32 1, i32 0, i32 %pid)\n  %isNull = icmp eq ptr %h, null\n  br i1 %isNull, label %ret_fail, label %do_term\n\ndo_term:\n  %res = call i32 @TerminateProcess(ptr %h, i32 %sig)\n  %c = call i32 @CloseHandle(ptr %h)\n  ret i32 %res\n\nret_fail:\n  ret i32 0\n}\n\n"
+    header = header.cat "define double @zuv_process_wait(i32 %pid) {\nentry:\n  %h = call ptr @OpenProcess(i32 1049600, i32 0, i32 %pid)\n  %isNull = icmp eq ptr %h, null\n  br i1 %isNull, label %ret_err, label %do_wait\n\ndo_wait:\n  %w = call i32 @WaitForSingleObject(ptr %h, i32 -1)\n  %codeSlot = alloca i32\n  store i32 0, ptr %codeSlot\n  %r = call i32 @GetExitCodeProcess(ptr %h, ptr %codeSlot)\n  %c = call i32 @CloseHandle(ptr %h)\n  %code = load i32, ptr %codeSlot\n  %dCode = sitofp i32 %code to double\n  ret double %dCode\n\nret_err:\n  ret double -1.0\n}\n\n"
+    header = header.cat "define ptr @zuv_mutex_create() {\nentry:\n  %m = call ptr @CreateMutexA(ptr null, i32 0, ptr null)\n  ret ptr %m\n}\n\n"
+    header = header.cat "define i32 @zuv_mutex_lock(ptr %m) {\nentry:\n  %r = call i32 @WaitForSingleObject(ptr %m, i32 -1)\n  ret i32 1\n}\n\n"
+    header = header.cat "define i32 @zuv_mutex_unlock(ptr %m) {\nentry:\n  %r = call i32 @ReleaseMutex(ptr %m)\n  ret i32 %r\n}\n\n"
+    header = header.cat "define i32 @zuv_mutex_destroy(ptr %m) {\nentry:\n  %r = call i32 @CloseHandle(ptr %m)\n  ret i32 %r\n}\n\n"
+    header = header.cat "define ptr @zuv_chan_create(i64 %cap) {\nentry:\n  %pChan = call ptr @malloc(i64 56)\n  %mtx = call ptr @zuv_mutex_create()\n  %pMtx = getelementptr inbounds i64, ptr %pChan, i64 0\n  %mtxInt = ptrtoint ptr %mtx to i64\n  store i64 %mtxInt, ptr %pMtx\n  %pCap = getelementptr inbounds i64, ptr %pChan, i64 1\n  store i64 %cap, ptr %pCap\n  %pCount = getelementptr inbounds i64, ptr %pChan, i64 2\n  store i64 0, ptr %pCount\n  %pHead = getelementptr inbounds i64, ptr %pChan, i64 3\n  store i64 0, ptr %pHead\n  %pTail = getelementptr inbounds i64, ptr %pChan, i64 4\n  store i64 0, ptr %pTail\n  %pClosed = getelementptr inbounds i64, ptr %pChan, i64 5\n  store i64 0, ptr %pClosed\n  %bytes = mul i64 %cap, 8\n  %buf = call ptr @malloc(i64 %bytes)\n  %bufInt = ptrtoint ptr %buf to i64\n  %pBuf = getelementptr inbounds i64, ptr %pChan, i64 6\n  store i64 %bufInt, ptr %pBuf\n  ret ptr %pChan\n}\n\n"
+    header = header.cat "define i32 @zuv_chan_send(ptr %pChan, i64 %val) {\nentry:\n  %pMtx = getelementptr inbounds i64, ptr %pChan, i64 0\n  %mtxInt = load i64, ptr %pMtx\n  %mtx = inttoptr i64 %mtxInt to ptr\n  br label %try_lock\n\ntry_lock:\n  %lck = call i32 @zuv_mutex_lock(ptr %mtx)\n  %pClosed = getelementptr inbounds i64, ptr %pChan, i64 5\n  %closed = load i64, ptr %pClosed\n  %isClosed = icmp ne i64 %closed, 0\n  br i1 %isClosed, label %snd_abort, label %check_cap\n\ncheck_cap:\n  %pCap = getelementptr inbounds i64, ptr %pChan, i64 1\n  %cap = load i64, ptr %pCap\n  %pCount = getelementptr inbounds i64, ptr %pChan, i64 2\n  %cnt = load i64, ptr %pCount\n  %isFull = icmp sge i64 %cnt, %cap\n  br i1 %isFull, label %snd_wait, label %do_insert\n\nsnd_wait:\n  %unlck1 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  call void @Sleep(i32 1)\n  br label %try_lock\n\ndo_insert:\n  %pTail = getelementptr inbounds i64, ptr %pChan, i64 4\n  %tail = load i64, ptr %pTail\n  %pBuf = getelementptr inbounds i64, ptr %pChan, i64 6\n  %bufInt = load i64, ptr %pBuf\n  %buf = inttoptr i64 %bufInt to ptr\n  %gepSlot = getelementptr inbounds i64, ptr %buf, i64 %tail\n  store i64 %val, ptr %gepSlot\n  %nextTail = add i64 %tail, 1\n  %nextTailMod = srem i64 %nextTail, %cap\n  store i64 %nextTailMod, ptr %pTail\n  %newCount = add i64 %cnt, 1\n  store i64 %newCount, ptr %pCount\n  %unlck2 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i32 1\n\nsnd_abort:\n  %unlck3 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i32 0\n}\n\n"
+    header = header.cat "define i64 @zuv_chan_recv(ptr %pChan) {\nentry:\n  %pMtx = getelementptr inbounds i64, ptr %pChan, i64 0\n  %mtxInt = load i64, ptr %pMtx\n  %mtx = inttoptr i64 %mtxInt to ptr\n  br label %try_recv_lock\n\ntry_recv_lock:\n  %lck = call i32 @zuv_mutex_lock(ptr %mtx)\n  %pCount = getelementptr inbounds i64, ptr %pChan, i64 2\n  %cnt = load i64, ptr %pCount\n  %hasItems = icmp sgt i64 %cnt, 0\n  br i1 %hasItems, label %do_extract, label %check_empty_closed\n\ncheck_empty_closed:\n  %pClosed = getelementptr inbounds i64, ptr %pChan, i64 5\n  %closed = load i64, ptr %pClosed\n  %isClosed = icmp ne i64 %closed, 0\n  br i1 %isClosed, label %rcv_abort, label %rcv_wait\n\nrcv_wait:\n  %unlck1 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  call void @Sleep(i32 1)\n  br label %try_recv_lock\n\ndo_extract:\n  %pCap = getelementptr inbounds i64, ptr %pChan, i64 1\n  %cap = load i64, ptr %pCap\n  %pHead = getelementptr inbounds i64, ptr %pChan, i64 3\n  %head = load i64, ptr %pHead\n  %pBuf = getelementptr inbounds i64, ptr %pChan, i64 6\n  %bufInt = load i64, ptr %pBuf\n  %buf = inttoptr i64 %bufInt to ptr\n  %gepSlot = getelementptr inbounds i64, ptr %buf, i64 %head\n  %item = load i64, ptr %gepSlot\n  %nextHead = add i64 %head, 1\n  %nextHeadMod = srem i64 %nextHead, %cap\n  store i64 %nextHeadMod, ptr %pHead\n  %newCount = sub i64 %cnt, 1\n  store i64 %newCount, ptr %pCount\n  %unlck2 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i64 %item\n\nrcv_abort:\n  %unlck3 = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i64 0\n}\n\n"
+    header = header.cat "define i32 @zuv_chan_close(ptr %pChan) {\nentry:\n  %pMtx = getelementptr inbounds i64, ptr %pChan, i64 0\n  %mtxInt = load i64, ptr %pMtx\n  %mtx = inttoptr i64 %mtxInt to ptr\n  %lck = call i32 @zuv_mutex_lock(ptr %mtx)\n  %pClosed = getelementptr inbounds i64, ptr %pChan, i64 5\n  store i64 1, ptr %pClosed\n  %unlck = call i32 @zuv_mutex_unlock(ptr %mtx)\n  ret i32 1\n}\n\n"
+    header = header.cat "declare i32 @remove(ptr)\n"
+    header = header.cat "declare i32 @system(ptr)\n"
+    header = header.cat "define i32 @zuv_truncate_file(ptr %path, i64 %len) {\nentry:\n  %fd = call i32 (ptr, i32, ...) @_open(ptr %path, i32 2, i32 438)\n  %isNeg = icmp slt i32 %fd, 0\n  br i1 %isNeg, label %err, label %do_trunc\n\ndo_trunc:\n  %res = call i32 @_chsize_s(i32 %fd, i64 %len)\n  %cl = call i32 @_close(i32 %fd)\n  ret i32 %res\n\nerr:\n  ret i32 -1\n}\n\n"
+    header = header.cat "define i32 @zuv_set_utime(ptr %path, i64 %atime, i64 %mtime) {\nentry:\n  %buf = alloca [2 x i64]\n  store i64 %atime, ptr %buf\n  %pMod = getelementptr inbounds i64, ptr %buf, i64 1\n  store i64 %mtime, ptr %pMod\n  %res = call i32 @_utime64(ptr %path, ptr %buf)\n  ret i32 %res\n}\n\n"
+    header = header.cat "define double @zuv_stat_size(ptr %path) {\nentry:\n  %fp = call ptr @fopen(ptr %path, ptr @mode_r)\n  %nullCmp = icmp eq ptr %fp, null\n  br i1 %nullCmp, label %ret_neg, label %calc_sz\n\ncalc_sz:\n  %sk = call i32 @fseek(ptr %fp, i64 0, i32 2)\n  %sz = call i64 @ftell(ptr %fp)\n  %cl = call i32 @fclose(ptr %fp)\n  %dSz = sitofp i64 %sz to double\n  ret double %dSz\n\nret_neg:\n  ret double -1.0\n}\n\n"
+    header = header.cat "define ptr @zuv_real_path(ptr %path) {\nentry:\n  %buf = call ptr @malloc(i64 1024)\n  %res = call ptr @_fullpath(ptr %buf, ptr %path, i64 1024)\n  %isResNull = icmp eq ptr %res, null\n  br i1 %isResNull, label %ret_orig, label %ret_buf\n\nret_orig:\n  ret ptr %path\n\nret_buf:\n  ret ptr %buf\n}\n\n"
+    header = header.cat "define ptr @zuv_temp_file(ptr %pfx) {\nentry:\n  %tmpDir = alloca [512 x i8]\n  %tmpFile = call ptr @malloc(i64 512)\n  %callPath = call i32 @GetTempPathA(i32 512, ptr %tmpDir)\n  %prefix = alloca [4 x i8]\n  store i8 122, ptr %prefix\n  %p1 = getelementptr inbounds i8, ptr %prefix, i64 1\n  store i8 117, ptr %p1\n  %p2 = getelementptr inbounds i8, ptr %prefix, i64 2\n  store i8 118, ptr %p2\n  %p3 = getelementptr inbounds i8, ptr %prefix, i64 3\n  store i8 0, ptr %p3\n  %callFn = call i32 @GetTempFileNameA(ptr %tmpDir, ptr %prefix, i32 0, ptr %tmpFile)\n  ret ptr %tmpFile\n}\n\n"
     header = header.cat `@fmt_str = private unnamed_addr constant [4 x i8] c"%s\\0A\\00"\n`
     header = header.cat `@fmt_prefix = private unnamed_addr constant [3 x i8] c"%s\\00"\n`
     header = header.cat `@fmt_num = private unnamed_addr constant [4 x i8] c"%g\\0A\\00"\n`
@@ -3407,7 +4379,7 @@ generateLLVMFull program {
 
     header = header.cat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds i64, ptr %arr, i64 %nextCount\n  store i64 %strInt, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
 
-    let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" }
+    let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n  call void @zuv_init_args(i32 %argc, ptr %argv)\n" }
 
     // Built-in project-wide `glb` — properties registered as LLVM globals `@glb_<prop>`
     header = header.cat "@glb = global i64 0\n"

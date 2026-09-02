@@ -1,12 +1,12 @@
 // Unit Test: Importing ONLY required functions from a local file without curly braces
-// Tests clean brace-free selective function import syntax: imp addNumbers frm tests/my_helper
+// Tests clean brace-free selective function import syntax: imp AddNumbers frm tests/my_helper
 
-imp addNumbers frm tests/my_helper
+imp AddNumbers frm tests/my_helper
 
 lg "--- Testing Clean Brace-Free Selective Function Import ---"
 
-sum = addNumbers 100, 200
-lg "Sum via selectively imported addNumbers(100, 200):"
+sum = AddNumbers 100, 200
+lg "Sum via selectively imported AddNumbers(100, 200):"
 lg sum
 
 lg "Brace-Free Selective Function Import Test Completed!"

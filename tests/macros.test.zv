@@ -1,0 +1,41 @@
+// Test Suite: Macros & Compile-Time AST Code Generation (macro)
+
+macro logVal name {
+    prnt ("Value of " + #name + ": " + (toStr name))
+}
+
+macro swap a, b {
+    let temp = a
+    a = b
+    b = temp
+}
+
+macro minVal a, b {
+    a < b ? a : b
+}
+
+macro checkEq actual, expected {
+    if actual != expected {
+        prnt ("Assertion failed: " + #actual + " != " + #expected)
+    }
+}
+
+// 1. Basic stringification and logging macro
+let totalCount = 100
+logVal totalCount
+
+// 2. In-place multi-statement swap macro
+mut x = 10
+mut y = 20
+swap x, y
+checkEq x, 20
+checkEq y, 10
+
+// 3. Expression macro expansion
+let m = minVal(50, 30)
+checkEq m, 30
+
+let m2 = minVal 15, 25
+checkEq m2, 15
+
+prnt "All macro tests passed!"

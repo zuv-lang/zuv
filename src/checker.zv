@@ -1,6 +1,7 @@
 // Full Static Semantic & Borrow Checker for Zuv Self-Hosting Compiler (src/checker.zv)
 imp str, arr, diagnostics
-imp createDiagnostic, formatDiagnostic frm diagnostics
+imp CreateDiagnostic, FormatDiagnostic frm diagnostics
+imp IsUpperChar frm util
 
 createScope {
     let vars = []
@@ -74,7 +75,7 @@ declareVar checker, name, isMut, line, col {
             mut dCol = col
             if dLine == und || dLine == nil || dLine <= 0 { dLine = 1 }
             if dCol == und || dCol == nil || dCol <= 0 { dCol = 1 }
-            errRedecl = formatDiagnostic "E0201", `Variable '${name}' is already declared in this scope`, checker.filePath, dLine, dCol, name.ln, "duplicate declaration", "remove the duplicate 'let' / 'mut' or rename the variable", checker.sourceText
+            errRedecl = FormatDiagnostic "E0201", `Variable '${name}' is already declared in this scope`, checker.filePath, dLine, dCol, name.ln, "duplicate declaration", "remove the duplicate 'let' / 'mut' or rename the variable", checker.sourceText
             checker.errors.psh errRedecl
         } els {
             curIdx = checker.scopes.ln - 1
@@ -330,16 +331,42 @@ checkStatement checker, stmt {
             impName = stmt.symbols[si]
             if impName != "" {
                 declareVar checker, impName, 0
+                c0Str = impName.slc 0, 1
+                if (IsUpperChar c0Str) == 0 {
+                    mut modPathStr = stmt.fromPath
+                    if modPathStr == "" && stmt.paths.ln > 0 {
+                        modPathStr = stmt.paths[0]
+                    }
+                    if modPathStr != "" {
+                        let isStd = 0
+                        if modPathStr == "str" || modPathStr == "arr" || modPathStr == "obj" || modPathStr == "fs" || modPathStr == "os" || modPathStr == "time" || modPathStr == "thrd" || modPathStr == "mtx" || modPathStr == "atmc" || modPathStr == "chan" || modPathStr == "math" || modPathStr == "mth" || modPathStr == "json" || modPathStr == "net" || modPathStr == "http" || modPathStr == "mem" || modPathStr == "ffi" || modPathStr == "assert" {
+                            isStd = 1
+                        }
+                        if modPathStr.ln >= 4 {
+                            if (modPathStr.slc 0, 4) == "std/" {
+                                isStd = 1
+                            }
+                        }
+                        if isStd == 0 {
+                            mut dLine = stmt.line
+                            mut dCol = stmt.col
+                            if dLine == und || dLine == nil || dLine <= 0 { dLine = 1 }
+                            if dCol == und || dCol == nil || dCol <= 0 { dCol = 1 }
+                            errImp = FormatDiagnostic "E0301", `Cannot import unexported symbol '${impName}' from module '${modPathStr}'`, checker.filePath, dLine, dCol, impName.ln, "unexported symbol (starts with lowercase)", "symbols must start with an uppercase letter (A-Z) to be exported across modules", checker.sourceText
+                            checker.errors.psh errImp
+                        }
+                    }
+                }
             }
             si = si + 1
         }
-        let pi = 0
-        wh pi < stmt.paths.ln {
-            p = stmt.paths[pi]
-            if p != "" {
-                declareVar checker, p, 0
+        let pi2 = 0
+        wh pi2 < stmt.paths.ln {
+            p2 = stmt.paths[pi2]
+            if p2 != "" {
+                declareVar checker, p2, 0
             }
-            pi = pi + 1
+            pi2 = pi2 + 1
         }
     } els if stmt.kind == "MatchStmt" {
         checkExpr checker, stmt.target
@@ -404,7 +431,7 @@ checkStatement checker, stmt {
     }
 }
 
-checkProgram program, filePath, sourceText {
+CheckProgram program, filePath, sourceText {
     checker = createChecker
     mut fPath = filePath
     if fPath == und || fPath == nil { fPath = "" }

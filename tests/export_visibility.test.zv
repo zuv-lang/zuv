@@ -1,0 +1,29 @@
+// Test Suite: Go-Style Capitalization-Based Symbol Visibility & Export Control
+imp AddNumbers, MultiplyNumbers frm tests/my_helper
+
+// 1. Calling exported functions imported from external module
+let sum = AddNumbers 40, 60
+if sum != 100 {
+    prnt "FAIL: AddNumbers expected 100"
+}
+
+let prod = MultiplyNumbers 8, 9
+if prod != 72 {
+    prnt "FAIL: MultiplyNumbers expected 72"
+}
+
+// 2. Local lowercase function (unexported / module-private)
+calcLocalSquare x => x * x
+let sq = calcLocalSquare 7
+if sq != 49 {
+    prnt "FAIL: calcLocalSquare expected 49"
+}
+
+// 3. Local lambda arrow function
+let doubleVal = x => x * 2
+let dbl = doubleVal 25
+if dbl != 50 {
+    prnt "FAIL: doubleVal expected 50"
+}
+
+prnt "All export visibility tests passed!"

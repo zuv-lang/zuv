@@ -3,10 +3,9 @@
 # Zuv (`.zv`) ⚡
 ### *Write Less, Do More. Code Like You Chat.*
 
-[![GitHub Repo](https://img.shields.io/badge/GitHub-zuv--lang%2Fzuv-792ee5?style=for-the-badge&logo=github)](https://github.com/zuv-lang/zuv)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 [![Compiler-Backend](https://img.shields.io/badge/Backend-LLVM%20In--Process-orange.svg?style=for-the-badge)](https://llvm.org/)
-[![Pure Self-Hosting](https://img.shields.io/badge/Self--Hosting-100%25%20Zuv-success.svg?style=for-the-badge)](src/)
+[![Pure Self-Hosting](https://img.shields.io/badge/Self--Hosting-Zuv-success.svg?style=for-the-badge)](src/)
 
 <br/>
 

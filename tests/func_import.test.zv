@@ -1,16 +1,16 @@
 // Multi-Import Unit Test: Importing multiple functions in a single line from a module
-// Syntax: imp addNumbers, multiplyNumbers frm tests/my_helper
+// Syntax: imp AddNumbers, MultiplyNumbers frm tests/my_helper
 
-imp addNumbers, multiplyNumbers frm tests/my_helper
+imp AddNumbers, MultiplyNumbers frm tests/my_helper
 
-lg "--- Testing Multi-Function Import (addNumbers, multiplyNumbers) ---"
+lg "--- Testing Multi-Function Import (AddNumbers, MultiplyNumbers) ---"
 
-res1 = addNumbers 15, 25
-lg "Result of addNumbers 15, 25:"
+res1 = AddNumbers 15, 25
+lg "Result of AddNumbers 15, 25:"
 lg res1
 
-res2 = multiplyNumbers 6, 7
-lg "Result of multiplyNumbers 6, 7:"
+res2 = MultiplyNumbers 6, 7
+lg "Result of MultiplyNumbers 6, 7:"
 lg res2
 
 lg "Multi-Import Function Test Completed Successfully!"

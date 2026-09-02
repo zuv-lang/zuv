@@ -1,8 +1,15 @@
-// Auxiliary local module helper file for local import test
-addNumbers a, b {
+// Auxiliary local module helper file with Go-style exported and unexported functions
+let AppVersion = "v2.0.0"
+
+AddNumbers a, b {
     -> a + b
 }
 
-multiplyNumbers a, b {
+MultiplyNumbers a, b {
     -> a * b
+}
+
+// Unexported local helper (module-private)
+internalDiff a, b {
+    -> a - b
 }
