@@ -2622,7 +2622,76 @@ codegenExpr cg, expr, outBuf {
             if tn == "i32" || tn == "u32" || tn == "f32" { -> "4.0" }
             if tn == "num" || tn == "f64" || tn == "i64" || tn == "u64" || tn == "str" || tn == "bool" || tn == "ptr" { -> "8.0" }
             if tn == "User" || tn == "Schema" || tn == "App" { -> "16.0" }
-            -> "8.0"
+        } els if (expr.callee == "ffi.ld" || expr.callee == "ffi.load" || expr.callee == "ldLib" || expr.callee == "loadLib") && expr.args.ln == 1 {
+            pReg = codegenExpr cg, expr.args[0], outBuf
+            pInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
+            pPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pPtr} = inttoptr i64 ${pInt} to ptr\n`)
+            hMod = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hMod} = call ptr @LoadLibraryA(ptr ${pPtr})\n`)
+            hInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInt} = ptrtoint ptr ${hMod} to i64\n`)
+            hDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hDbl} = sitofp i64 ${hInt} to double\n`)
+            -> hDbl
+        } els if (expr.callee == "ffi.sym" || expr.callee == "ffi.getSym" || expr.callee == "getSym" || expr.callee == "ffi.symbol" || expr.callee == "symbol") && expr.args.ln == 2 {
+            hReg = codegenExpr cg, expr.args[0], outBuf
+            hInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
+            hPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hPtr} = inttoptr i64 ${hInt} to ptr\n`)
+            sReg = codegenExpr cg, expr.args[1], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            sPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sPtr} = inttoptr i64 ${sInt} to ptr\n`)
+            fnPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnPtr} = call ptr @GetProcAddress(ptr ${hPtr}, ptr ${sPtr})\n`)
+            fnInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnInt} = ptrtoint ptr ${fnPtr} to i64\n`)
+            fnDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnDbl} = sitofp i64 ${fnInt} to double\n`)
+            -> fnDbl
+        } els if (expr.callee == "ffi.cls" || expr.callee == "ffi.close" || expr.callee == "clsLib" || expr.callee == "closeLib") && expr.args.ln == 1 {
+            hReg = codegenExpr cg, expr.args[0], outBuf
+            hInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
+            hPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hPtr} = inttoptr i64 ${hInt} to ptr\n`)
+            outBuf.code = outBuf.code.cat (`  call i32 @FreeLibrary(ptr ${hPtr})\n`)
+            -> "1.0"
+        } els if (expr.callee == "ffi.call" || expr.callee == "call") && expr.args.ln >= 1 {
+            fnReg = codegenExpr cg, expr.args[0], outBuf
+            fnInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnInt} = fptosi double ${fnReg} to i64\n`)
+            fnPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnPtr} = inttoptr i64 ${fnInt} to ptr\n`)
+            let callArgs = []
+            let ai = 1
+            wh ai < expr.args.ln {
+                arg = expr.args[ai]
+                aReg = codegenExpr cg, arg, outBuf
+                aInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${aInt} = fptosi double ${aReg} to i64\n`)
+                callArgs.psh aInt
+                ai = ai + 1
+            }
+            mut argList = ""
+            let ci = 0
+            wh ci < callArgs.ln {
+                argItem = callArgs[ci]
+                if ci > 0 {
+                    argList = argList.cat ", "
+                }
+                argList = argList.cat (`i64 ${argItem}`)
+                ci = ci + 1
+            }
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i64 ${fnPtr}(${argList})\n`)
+            resDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resDbl} = sitofp i64 ${resReg} to double\n`)
+            -> resDbl
         }
 
         if expr.callee == "zuv_ptr_deref" && expr.args.ln == 1 {
@@ -4361,6 +4430,9 @@ GenerateLLVMFull program {
     header = header.cat "declare ptr @CreateToolhelp32Snapshot(i32, i32)\n"
     header = header.cat "declare i32 @Process32First(ptr, ptr)\n"
     header = header.cat "declare i32 @Process32Next(ptr, ptr)\n"
+    header = header.cat "declare ptr @LoadLibraryA(ptr)\n"
+    header = header.cat "declare ptr @GetProcAddress(ptr, ptr)\n"
+    header = header.cat "declare i32 @FreeLibrary(ptr)\n"
     header = header.cat "declare ptr @malloc(i64)\n"
     header = header.cat "declare ptr @realloc(ptr, i64)\n"
     header = header.cat "declare void @free(ptr)\n"

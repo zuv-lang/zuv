@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔌 Dynamic FFI & Runtime Symbol Resolution (`ffi` / `extern`)
+- Added dynamic library loading: `ffi.ld(path)`, `ffi.load(path)`, `ldLib(path)`.
+- Added dynamic symbol lookup: `ffi.sym(lib, sym)`, `ffi.getSym`, `getSym`.
+- Added dynamic library unloading: `ffi.cls(lib)`, `ffi.close(lib)`, `clsLib(lib)`.
+- Added dynamic function call: `ffi.call(fnPtr, ...args)` and `call(fnPtr, ...args)`.
+- Disambiguated `ffi` in lexer and parser for both `ffi "lib"` declarations and `ffi.*` method calls.
+- Added test suite in `tests/c_ffi_lib.test.zv`.
+
 ### 🛡️ Low-Level Memory & Unsafe Buffer Primitives (`mem` / `unsafe`)
 - Added heap reallocation: `realloc(ptr, size)` and `mem.realloc(ptr, size)`.
 - Added memory buffer copy: `memcpy(dst, src, len)`, `mem.cp(dst, src, len)`, `mem.copy(dst, src, len)`.

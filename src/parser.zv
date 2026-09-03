@@ -893,7 +893,9 @@ parseExpression p, precedence {
                varName == "sub" || varName == "substr" || varName == "slc" || varName == "slice" ||
                varName == "chr" || varName == "charAt" || varName == "cat" || varName == "concat" ||
                varName == "eq" || varName == "streq" || varName == "push" || varName == "psh" ||
-               varName == "pop" || varName == "pp" || varName == "len" || varName == "ln" {
+               varName == "pop" || varName == "pp" || varName == "len" || varName == "ln" ||
+               varName == "ldLib" || varName == "loadLib" || varName == "getSym" ||
+               varName == "clsLib" || varName == "closeLib" || varName == "call" {
                 isBuiltinMathOrStd = 1
             }
             mut shouldCall = 0
@@ -1114,7 +1116,7 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" {
                                 propName = `${varNameStr}.${propName}`
                             } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
@@ -1212,7 +1214,7 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" {
                                     propName = `${varNameStr}.${propName}`
                                 } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
@@ -1436,7 +1438,7 @@ parseStatement p {
             let emptySyms = []
             -> createImportNode items, emptySyms, "", impLine, impCol
         }
-    } els if (t.kind == "KEYWORD" || t.kind == "IDENT") && (t.val == "extern" || t.val == "ffi") {
+    } els if (t.kind == "KEYWORD" || t.kind == "IDENT") && (t.val == "extern" || (t.val == "ffi" && ((peekTok p).val == "{" || (peekTok p).kind == "STR" || (peekTok p).kind == "STRING"))) {
         mut libName = "c"
         advanceParser p
         if (curTok p).kind == "STR" || (curTok p).kind == "STRING" {
@@ -2318,7 +2320,7 @@ parseStatement p {
             } els if (peekTok p).val == "(" {
                 advanceParser p // consume '('
                 let args = []
-                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" {
+                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" {
                     propName = `${identName}.${propName}`
                 } els {
                     if propName == "cls" || propName == "close" { propName = "chan.cls" }
@@ -2379,7 +2381,7 @@ parseStatement p {
                     argExpr = parseExpression p, 0
                     mut callTarget = propName
                     let args = []
-                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" {
+                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" {
                         callTarget = `${identName}.${propName}`
                         args.psh argExpr
                     } els {

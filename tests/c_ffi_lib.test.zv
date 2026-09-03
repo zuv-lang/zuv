@@ -1,4 +1,4 @@
-// C Foreign Function Interface (FFI) with .lib Test Suite
+// C Foreign Function Interface (FFI) with .lib and Dynamic FFI Test Suite
 extern "msvcrt.lib" puts s: str -> num
 extern "kernel32.lib" {
     GetCurrentProcessId -> num
@@ -6,22 +6,38 @@ extern "kernel32.lib" {
 }
 extern "user32.lib" GetSystemMetrics nIndex: num -> num
 
-// Call C runtime function directly via .lib
+// 1. Call C runtime function directly via .lib
 puts "=== Native C FFI (.lib) Test Output ==="
 
-// Call Win32 Kernel32 API directly via .lib
+// 2. Call Win32 Kernel32 API directly via .lib
 pid = GetCurrentProcessId
 if pid > 0 {
     prnt ("Win32 PID verified via kernel32.lib: " + pid)
 }
 
-// Call Win32 User32 API via .lib
+// 3. Call Win32 User32 API via .lib
 screenWidth = GetSystemMetrics 0
 if screenWidth > 0 {
     prnt ("User32 Screen Width via user32.lib: " + screenWidth)
 }
 
-// Call Win32 Sleep API via .lib
+// 4. Call Win32 Sleep API via .lib
 Sleep 10
 
-prnt "C FFI with .lib Test Passed"
+// 5. Dynamic Runtime FFI (ffi.ld / ffi.sym / ffi.call / ffi.cls)
+let k32 = ffi.ld "kernel32.dll"
+if k32 != 0 {
+    prnt "Dynamically loaded kernel32.dll via ffi.ld"
+    let dynPidFn = ffi.sym k32, "GetCurrentProcessId"
+    if dynPidFn != 0 {
+        prnt "Resolved symbol GetCurrentProcessId via ffi.sym"
+        let dynPid = ffi.call dynPidFn
+        if dynPid > 0 {
+            prnt ("Dynamic FFI invoked GetCurrentProcessId: " + dynPid)
+        }
+    }
+    ffi.cls k32
+    prnt "Closed dynamic library handle via ffi.cls"
+}
+
+prnt "C FFI & Dynamic FFI Test Passed"
