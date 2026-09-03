@@ -336,7 +336,7 @@ createForNode initS, cond, incS, body {
 
 createFuncNode name, params, body, isAsync, hasRest {
     let emptyAttrs = []
-    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest, attributes: emptyAttrs }
+    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest, attributes: emptyAttrs, isAsyncST: 0 }
     -> res
 }
 
@@ -721,7 +721,96 @@ parseExpression p, precedence {
     } els if t.kind == "KEYWORD" && t.val == "new" {
         advanceParser p // consume 'new'
         typeName = (curTok p).val
-        if (peekTok p).val == "{" {
+        if (typeName == "Prm" || typeName == "Promise") && ((peekTok p).kind == "IDENT" || (peekTok p).val == "(") {
+            let prmParams = []
+            if (peekTok p).val == "(" {
+                advanceParser p // consume '('
+                wh (peekTok p).val != ")" && (peekTok p).kind != "EOF" {
+                    advanceParser p
+                    if (curTok p).kind == "IDENT" {
+                        prmParams.psh { name: (curTok p).val, type: "", isRest: 0 }
+                    }
+                    if (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                    }
+                }
+                expectPeekToken p, "SYM", ")"
+            } els {
+                wh (peekTok p).kind == "IDENT" {
+                    advanceParser p
+                    prmParams.psh { name: (curTok p).val, type: "", isRest: 0 }
+                    if (peekTok p).val == "," {
+                        advanceParser p // consume ','
+                    } els {
+                        brk
+                    }
+                }
+            }
+            if (peekTok p).val == "=>" {
+                advanceParser p // consume '=>'
+                mut prmBody = { kind: "BlockStmt", statements: [] }
+                if (peekTok p).val == "{" {
+                    advanceParser p // move to '{'
+                    prmBody = parseBlock p
+                } els {
+                    let stmts = []
+                    // Collect the indentation column of the first body token as the
+                    // body indent level. Stop when we see a token at a lower or
+                    // equal indent to the parent statement (column of prmParams[0]).
+                    mut bodyIndent = 0 - 1
+                    wh (peekTok p).kind != "EOF" {
+                        // Stop if next token is at column 0 (top-level) or is a keyword
+                        // that starts a new declaration (asc, ascST, new, etc.)
+                        nextTok = peekTok p
+                        mut shouldStop = 0
+                        if nextTok.col == 0 && nextTok.kind != "EOF" && stmts.ln > 0 {
+                            shouldStop = 1
+                        }
+                        if nextTok.val == "asc" || nextTok.val == "ascST" || nextTok.val == "asyncST" {
+                            shouldStop = 1
+                        }
+                        if bodyIndent >= 0 && nextTok.col < bodyIndent && stmts.ln > 0 {
+                            shouldStop = 1
+                        }
+                        if shouldStop == 1 {
+                            brk
+                        }
+                        advanceParser p
+                        if bodyIndent < 0 {
+                            bodyIndent = (curTok p).col
+                        }
+                        s = parseStatement p
+                        if s.kind != "" {
+                            stmts.psh s
+                            if s.kind == "ReturnStmt" {
+                                brk
+                            }
+                            // Break on call to res/rej params (terminal Prm operations)
+                            mut isTerminal = 0
+                            if s.kind == "ExpressionStmt" {
+                                if s.expr.kind == "CallExpr" {
+                                    let pi = 0
+                                    wh pi < prmParams.ln {
+                                        if s.expr.callee == prmParams[pi].name {
+                                            isTerminal = 1
+                                        }
+                                        pi = pi + 1
+                                    }
+                                }
+                            }
+                            if isTerminal == 1 {
+                                brk
+                            }
+                        }
+                    }
+                    prmBody = createBlockNode stmts
+                }
+                let lambdaNode = { kind: "LambdaExpr", name: "", params: prmParams, body: prmBody }
+                let prmArgs = [lambdaNode]
+                let emptyFields = []
+                left = { kind: "NewExpr", typeName: typeName, fields: emptyFields, args: prmArgs, isStructLiteral: 0 }
+            }
+        } els if (peekTok p).val == "{" {
             advanceParser p // consume '{'
             let fields = []
             wh (peekTok p).val != "}" && (peekTok p).kind != "EOF" {
@@ -1023,12 +1112,7 @@ parseExpression p, precedence {
         advanceParser p
         right = parseExpression p, 16
         if op == "awt" || op == "await" {
-            let emptyArgs = []
-            if right.kind == "VariableExpr" {
-                left = createCallNode right.name, emptyArgs
-            } els {
-                left = right
-            }
+            left = { kind: "AwaitExpr", expr: right }
         } els if op == "*" {
             left = createDerefNode right
         } els {
@@ -1116,7 +1200,7 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "Prm" || varNameStr == "Promise" {
                                 propName = `${varNameStr}.${propName}`
                             } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
@@ -1182,6 +1266,8 @@ parseExpression p, precedence {
                            propName == "cat" || propName == "concat" || propName == "eq" || propName == "streq" ||
                            propName == "push" || propName == "psh" || propName == "pop" || propName == "pp" ||
                            propName == "env" || propName == "getEnv" || propName == "setEnv" || propName == "chdir" || propName == "setPri" || propName == "watch" || propName == "wtch" ||
+                           propName == "all" || propName == "race" || propName == "allSettled" ||
+                           propName == "rFAsync" || propName == "wFAsync" || propName == "recvAsync" || propName == "sendAsync" ||
                            propName == "sleep" || propName == "sl" {
                             isDotMethod = 1
                         }
@@ -1214,7 +1300,7 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "Prm" || varNameStr == "Promise" {
                                     propName = `${varNameStr}.${propName}`
                                 } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
@@ -1295,6 +1381,13 @@ parseExpression p, precedence {
                     expectPeekToken p, "SYM", ")"
                     if left.kind == "VariableExpr" {
                         left = createCallNode left.name, args
+                    } els if left.kind == "PropertyAccess" {
+                        if left.object.kind == "VariableExpr" {
+                            left = createCallNode `${left.object.name}.${left.property}`, args
+                        } els {
+                            args.psh left.object
+                            left = createCallNode left.property, args
+                        }
                     } els {
                         left = createCallNode "", args
                     }
@@ -1400,6 +1493,14 @@ parseStatement p {
         stmt = parseStatement p
         if stmt.kind == "FunctionDecl" {
             stmt.attributes = attrs
+            let ai = 0
+            wh ai < attrs.ln {
+                if attrs[ai].name == "st" {
+                    stmt.isAsyncST = 1
+                    stmt.isAsync = 1
+                }
+                ai = ai + 1
+            }
         } els if stmt.kind == "ObjDecl" {
             stmt.attributes = attrs
         } els if stmt.kind == "StmtSequence" {
@@ -1408,6 +1509,16 @@ parseStatement p {
                 subS = stmt.statements[ssi]
                 if subS.kind == "FunctionDecl" || subS.kind == "ObjDecl" {
                     subS.attributes = attrs
+                    if subS.kind == "FunctionDecl" {
+                        let ai2 = 0
+                        wh ai2 < attrs.ln {
+                            if attrs[ai2].name == "st" {
+                                subS.isAsyncST = 1
+                                subS.isAsync = 1
+                            }
+                            ai2 = ai2 + 1
+                        }
+                    }
                 }
                 ssi = ssi + 1
             }
@@ -1526,12 +1637,44 @@ parseStatement p {
         -> parseMultiValueReturn p
     } els if t.kind == "ARROW" || (t.kind == "SYM" && t.val == "->") {
         -> parseMultiValueReturn p
-    } els if t.kind == "KEYWORD" && (t.val == "wrk" || t.val == "worker" || t.val == "asc" || t.val == "async") {
+    } els if t.kind == "KEYWORD" && (t.val == "wrk" || t.val == "worker" || t.val == "asc" || t.val == "async" || t.val == "ascST" || t.val == "asyncST") {
+        mut isAsync = 0
+        mut isAsyncST = 0
+        if t.val == "asc" || t.val == "async" {
+            isAsync = 1
+        } els if t.val == "ascST" || t.val == "asyncST" {
+            isAsyncST = 1
+            isAsync = 1
+        }
         advanceParser p
         fnName = (curTok p).val
-        body = parseBlock p
+        mut body = { kind: "BlockStmt", statements: [] }
+        if (peekTok p).val == "=>" {
+            advanceParser p // consume '=>'
+            if (peekTok p).val == "{" {
+                advanceParser p // move to '{'
+                body = parseBlock p
+            } els {
+                let stmts = []
+                wh (peekTok p).kind != "EOF" {
+                    advanceParser p
+                    s = parseStatement p
+                    if s.kind != "" {
+                        stmts.psh s
+                        if s.kind == "ReturnStmt" {
+                            brk
+                        }
+                    }
+                }
+                body = createBlockNode stmts
+            }
+        } els {
+            body = parseBlock p
+        }
         let emptyParams = []
-        -> createFuncNode fnName, emptyParams, body, 0, 0
+        node = createFuncNode fnName, emptyParams, body, isAsync, 0
+        node.isAsyncST = isAsyncST
+        -> node
     } els if t.kind == "KEYWORD" && (t.val == "mch" || t.val == "sw") {
         advanceParser p
         // Match target must NOT use parseExpression — `ident {` is struct-literal

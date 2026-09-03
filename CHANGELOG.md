@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔄 Native Async Event Loop, Dual Scheduler & JS-like Promises (`Promise`, `Prm`, `netpoll`, `asc` / `ascST` / `awt`)
+- Added first-class `Prm` / `Promise` primitive with constructor `new Prm res, rej => { ... }` and modern callback-free `awt` keyword.
+- Added promise combinators: `Prm.all([p1, p2])`, `Prm.race([p1, p2])`, and `Prm.allSettled([p1, p2])` with null/empty array guards and lossless float/pointer bitcasting.
+- Added dual async execution scheduler: multi-threaded work-stealing pool (`asc`) vs single-threaded local event loop (`ascST` / `@st`).
+- Added thread-local context isolation and inheritance: `@zuv_async_context_mode` and `@zuv_active_prm` as `thread_local global`.
+- Added non-blocking async file and socket operations: `fs.rFAsync`, `fs.wFAsync`, `net.recvAsync`, and `net.sendAsync`.
+- Added test suites: `tests/async_prm.test.zv`, `tests/async_combinators.test.zv`, and `tests/async_io.test.zv`.
+
 ### 🌐 Native Networking, Sockets, DNS & HTTP Engine (`net` / `dns` / `http` / `ws`)
 - Added socket creation, options, and streaming: `net.sock`, `net.tcpSock`, `net.udpSock`, `net.setTimeout`, `net.setNonBlocking`, `net.snd`, `net.rcv`, `net.cls`.
 - Added TCP server/client helpers: `net.tcpSrv(port)`, `net.tcpCli(host, port)`.

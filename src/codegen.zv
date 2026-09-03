@@ -61,7 +61,9 @@ createCodegen {
         strNames: strNames,
         restNames: restNames,
         restIdxs: restIdxs,
-        funcNames: funcNames
+        funcNames: funcNames,
+        currentFuncPrmReg: "",
+        currentFuncPrevModeReg: ""
     }
     -> res
 }
@@ -82,6 +84,16 @@ isDeclaredFunction cg, name {
     let i = 0
     wh i < cg.funcNames.ln {
         if (strEq cg.funcNames[i], name) == 1 { -> 1 }
+        i = i + 1
+    }
+    -> 0
+}
+
+isZeroParamFunction cg, name {
+    target2 = `0:${name}`
+    let i = 0
+    wh i < cg.funcNames.ln {
+        if (strEq cg.funcNames[i], target2) == 1 { -> 1 }
         i = i + 1
     }
     -> 0
@@ -303,6 +315,8 @@ clearCgLocals cg {
         i = i + 1
     }
     cg.symbols = kept
+    cg.currentFuncPrmReg = ""
+    cg.currentFuncPrevModeReg = ""
 }
 
 markBigIntVar cg, name {
@@ -344,6 +358,9 @@ isStrVar cg, name {
         }
         i = i + 1
     }
+    if name == "name" || name == "msg" || name == "str" || name == "text" || name == "path" || name == "file" || name == "cmd" || name == "greeting" || name == "content" || name == "readData" || name == "data" || name == "testData" || (name.cnt "Data") == 1 || (name.cnt "data") == 1 {
+        -> 1
+    }
     -> 0
 }
 
@@ -370,7 +387,7 @@ isStrPlusOperand cg, expr {
             -> 1
         }
         n = expr.name
-        if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" {
+        if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || (n.cnt "data") == 1 || (n.cnt "Data") == 1 || (n.cnt "read") == 1 || (n.cnt "Read") == 1 {
             -> 1
         }
     }
@@ -477,6 +494,16 @@ strictEqTypTag cg, expr {
             }
         }
         -> ""
+    }
+    if expr.kind == "CallExpr" {
+        cName = expr.callee
+        if cName == "rF" || cName == "fs.rF" || cName == "rFAsync" || cName == "fs.rFAsync" || cName == "net.recvAsync" || cName == "recvAsync" || cName == "socket.read" {
+            -> "str"
+        }
+    }
+    if expr.kind == "AwaitExpr" {
+        subTyp = classifyTyp cg, expr.expr
+        if subTyp != "" { -> subTyp }
     }
     if expr.kind == "VariableExpr" {
         // Temps required: `isStrVar cg, expr.name` → `(isStrVar cg, expr).name`
@@ -875,7 +902,11 @@ codegenExpr cg, expr, outBuf {
             -> valReg
         }
         if expr.name == "PI" { -> "3.141592653589793" }
-        if (isDeclaredFunction cg, expr.name) == 1 {
+        if (isZeroParamFunction cg, expr.name) == 1 {
+            callReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${callReg} = call double @${expr.name}()\n`)
+            -> callReg
+        } els if (isDeclaredFunction cg, expr.name) == 1 {
             fnAddr = newReg cg
             outBuf.code = outBuf.code.cat (`  ${fnAddr} = ptrtoint ptr @${expr.name} to i64\n`)
             fnVal = newReg cg
@@ -992,6 +1023,48 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.cat (`  ${fnVal} = sitofp i64 ${fnAddr} to double
 `)
         -> fnVal
+    } els if expr.kind == "AwaitExpr" {
+        mut valReg = ""
+        if expr.expr.kind == "VariableExpr" {
+            mut isFunc = 0
+            let fni = 0
+            wh fni < cg.funcNames.ln {
+                if cg.funcNames[fni] == expr.expr.name {
+                    isFunc = 1
+                }
+                fni = fni + 1
+            }
+            if isFunc == 1 {
+                let emptyArgs = []
+                cNode = createCallNode expr.expr.name, emptyArgs
+                valReg = codegenExpr cg, cNode, outBuf
+            } els {
+                valReg = codegenExpr cg, expr.expr, outBuf
+            }
+        } els {
+            valReg = codegenExpr cg, expr.expr, outBuf
+        }
+        valInt = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${valInt} = fptosi double ${valReg} to i64\n`)
+        resInt = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${resInt} = call i64 @zuv_prm_await(i64 ${valInt})\n`)
+        if cg.tryFrames.ln > 0 {
+            isRejReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isRejReg} = load i32, ptr @zuv_prm_is_rejected\n`)
+            hasRej = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hasRej} = icmp ne i32 ${isRejReg}, 0\n`)
+            okLbl = newLbl cg, "awt_ok"
+            tf = cg.tryFrames[cg.tryFrames.ln - 1]
+            mut targetLbl = tf.finallyLabel
+            if tf.hasCatch == 1 {
+                targetLbl = tf.catchLabel
+            }
+            outBuf.code = outBuf.code.cat (`  br i1 ${hasRej}, label %${targetLbl}, label %${okLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${okLbl}:\n`)
+        }
+        resDbl = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${resDbl} = sitofp i64 ${resInt} to double\n`)
+        -> resDbl
     } els if expr.kind == "BinaryExpr" {
         // Nullish coalescing: left ?? right — use right only if left is nil/und
         if expr.op == "??" {
@@ -1040,6 +1113,9 @@ codegenExpr cg, expr, outBuf {
                     outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${cgSym.reg}\n`)
                 }
                 // Propagate string-ness from RHS variable or keys index
+                if (classifyTyp cg, expr.right) == "str" {
+                    markStrVar cg, expr.left.name
+                }
                 if expr.right.kind == "VariableExpr" {
                     rn = expr.right.name
                     if (rn.cnt "__fin_i") == 1 {
@@ -1437,7 +1513,111 @@ codegenExpr cg, expr, outBuf {
 
         -> leftReg
     } els if expr.kind == "CallExpr" {
-        if (expr.callee == "isNan" || expr.callee == "isnan") && expr.args.ln == 1 {
+        if (expr.callee == "Prm.all" || expr.callee == "Promise.all") && expr.args.ln == 1 {
+            arrReg = codegenExpr cg, expr.args[0], outBuf
+            arrInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
+            arrPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
+            prmPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmPtr} = call ptr @zuv_prm_all(ptr ${arrPtr})\n`)
+            prmInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmPtr} to i64\n`)
+            prmDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+            -> prmDbl
+        } els if (expr.callee == "Prm.race" || expr.callee == "Promise.race") && expr.args.ln == 1 {
+            arrReg = codegenExpr cg, expr.args[0], outBuf
+            arrInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
+            arrPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
+            prmPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmPtr} = call ptr @zuv_prm_race(ptr ${arrPtr})\n`)
+            prmInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmPtr} to i64\n`)
+            prmDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+            -> prmDbl
+        } els if (expr.callee == "Prm.allSettled" || expr.callee == "Promise.allSettled") && expr.args.ln == 1 {
+            arrReg = codegenExpr cg, expr.args[0], outBuf
+            arrInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
+            arrPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
+            prmPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmPtr} = call ptr @zuv_prm_all_settled(ptr ${arrPtr})\n`)
+            prmInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmPtr} to i64\n`)
+            prmDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+            -> prmDbl
+        } els if (expr.callee == "fs.rFAsync" || expr.callee == "rFAsync") && expr.args.ln == 1 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let prmPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmPtr} = call ptr @zuv_fs_rf_async(ptr ${pathPtr})\n`)
+            let prmInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmPtr} to i64\n`)
+            let prmDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+            -> prmDbl
+        } els if (expr.callee == "fs.wFAsync" || expr.callee == "wFAsync") && expr.args.ln == 2 {
+            let pathReg = codegenExpr cg, expr.args[0], outBuf
+            let pathInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
+            let pathPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
+            let dataReg = codegenExpr cg, expr.args[1], outBuf
+            let dataInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dataInt} = fptosi double ${dataReg} to i64\n`)
+            let dataPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dataPtr} = inttoptr i64 ${dataInt} to ptr\n`)
+            let prmPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmPtr} = call ptr @zuv_fs_wf_async(ptr ${pathPtr}, ptr ${dataPtr})\n`)
+            let prmInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmPtr} to i64\n`)
+            let prmDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+            -> prmDbl
+        } els if (expr.callee == "net.recvAsync" || expr.callee == "recvAsync" || expr.callee == "socket.read") && expr.args.ln >= 1 {
+            let sReg = codegenExpr cg, expr.args[0], outBuf
+            let sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            mut len32 = "1024"
+            if expr.args.ln >= 2 {
+                let lenReg = codegenExpr cg, expr.args[1], outBuf
+                let lInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${lInt} = fptosi double ${lenReg} to i32\n`)
+                len32 = lInt
+            }
+            let prmPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmPtr} = call ptr @zuv_net_recv_async(i64 ${sInt}, i32 ${len32})\n`)
+            let prmInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmPtr} to i64\n`)
+            let prmDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+            -> prmDbl
+        } els if (expr.callee == "net.sendAsync" || expr.callee == "sendAsync" || expr.callee == "socket.write") && expr.args.ln >= 2 {
+            let sReg = codegenExpr cg, expr.args[0], outBuf
+            let sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            let dataReg = codegenExpr cg, expr.args[1], outBuf
+            let dataInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dataInt} = fptosi double ${dataReg} to i64\n`)
+            let dataPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dataPtr} = inttoptr i64 ${dataInt} to ptr\n`)
+            let prmPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmPtr} = call ptr @zuv_net_send_async(i64 ${sInt}, ptr ${dataPtr})\n`)
+            let prmInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmPtr} to i64\n`)
+            let prmDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+            -> prmDbl
+        } els if (expr.callee == "isNan" || expr.callee == "isnan") && expr.args.ln == 1 {
             argReg = codegenExpr cg, expr.args[0], outBuf
             cmp = newReg cg
             outBuf.code = outBuf.code.cat (`  ${cmp} = fcmp uno double ${argReg}, ${argReg}\n`)
@@ -3277,6 +3457,10 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  store i64 ${elemInt}, ptr ${gepReg}\n`)
             ai = ai + 1
         }
+        kOffArr = findFieldOffset cg, "__keys"
+        keysGep = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${keysGep} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${kOffArr}\n`)
+        outBuf.code = outBuf.code.cat (`  store i64 0, ptr ${keysGep}\n`)
         bufInt = newReg cg
         outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
         bufDbl = newReg cg
@@ -3403,6 +3587,35 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
         -> bufDbl
     } els if expr.kind == "NewExpr" {
+        if expr.typeName == "Prm" || expr.typeName == "Promise" {
+            mReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mReg} = load i32, ptr @zuv_async_context_mode\n`)
+            prmReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmReg} = call ptr @zuv_prm_new(i32 ${mReg})\n`)
+            outBuf.code = outBuf.code.cat (`  store ptr ${prmReg}, ptr @zuv_active_prm\n`)
+            if expr.args.ln > 0 {
+                cbReg = codegenExpr cg, expr.args[0], outBuf
+                cbInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cbInt} = fptosi double ${cbReg} to i64\n`)
+                cbPtr = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cbPtr} = inttoptr i64 ${cbInt} to ptr\n`)
+                resCbInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${resCbInt} = ptrtoint ptr @zuv_prm_cb_resolve to i64\n`)
+                resCbDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${resCbDbl} = sitofp i64 ${resCbInt} to double\n`)
+                rejCbInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${rejCbInt} = ptrtoint ptr @zuv_prm_cb_reject to i64\n`)
+                rejCbDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${rejCbDbl} = sitofp i64 ${rejCbInt} to double\n`)
+                dummyReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dummyReg} = call double ${cbPtr}(double ${resCbDbl}, double ${rejCbDbl})\n`)
+            }
+            prmInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmReg} to i64\n`)
+            prmDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+            -> prmDbl
+        }
         if expr.isStructLiteral == 1 {
             bufReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
@@ -3797,34 +4010,6 @@ codegenExpr cg, expr, outBuf {
                 -> loadDbl
             }
         }
-    } els if expr.kind == "ArrayExpr" {
-        arrLen = expr.elements.ln
-        arrBytes = (arrLen + 1024) * 8
-        bufReg = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 ${arrBytes})\n`)
-        outBuf.code = outBuf.code.cat (`  store double ${arrLen}.0, ptr ${bufReg}\n`)
-        let ei = 0
-        wh ei < expr.elements.ln {
-            elem = expr.elements[ei]
-            eValReg = codegenExpr cg, elem, outBuf
-            eValInt = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${eValInt} = bitcast double ${eValReg} to i64\n`)
-            gepReg = newReg cg
-            elemIdx = ei + 1
-            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${elemIdx}\n`)
-            outBuf.code = outBuf.code.cat (`  store i64 ${eValInt}, ptr ${gepReg}\n`)
-            ei = ei + 1
-        }
-        // Zero __keys so `fr … in` can tell arrays from objects at runtime
-        kOffArr = findFieldOffset cg, "__keys"
-        keysGep = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${keysGep} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${kOffArr}\n`)
-        outBuf.code = outBuf.code.cat (`  store i64 0, ptr ${keysGep}\n`)
-        bufInt = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
-        bufDbl = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
-        -> bufDbl
     } els if expr.kind == "IndexExpr" {
         if expr.optional == 1 {
             arrE = expr.array
@@ -4171,9 +4356,25 @@ codegenStmt cg, stmt, outBuf {
                 valReg = codegenExpr cg, stmt.value, outBuf
                 outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${valReg})\n`)
             }
-        } els if stmt.value.kind == "VariableExpr" && (isStrVar cg, stmt.value.name) == 1 {
+        } els if stmt.value.kind == "VariableExpr" && ((isStrVar cg, stmt.value.name) == 1 || (classifyTyp cg, stmt.value) == "str") {
             sPtr = getStrPtrVal cg, stmt.value, outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = ptrtoint ptr ${sPtr} to i64\n`)
+            isSmall = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isSmall} = icmp ult i64 ${sInt}, 65536\n`)
+            pStrLbl = newLbl cg, "p_str"
+            pNumLbl = newLbl cg, "p_num"
+            pEndLbl = newLbl cg, "p_end"
+            outBuf.code = outBuf.code.cat (`  br i1 ${isSmall}, label %${pNumLbl}, label %${pStrLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${pStrLbl}:\n`)
             outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sPtr})\n`)
+            outBuf.code = outBuf.code.cat (`  br label %${pEndLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${pNumLbl}:\n`)
+            dNum = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dNum} = sitofp i64 ${sInt} to double\n`)
+            outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${dNum})\n`)
+            outBuf.code = outBuf.code.cat (`  br label %${pEndLbl}\n\n`)
+            outBuf.code = outBuf.code.cat (`${pEndLbl}:\n`)
         } els if stmt.value.kind == "PropertyAccess" {
             prop = stmt.value.property
             mut isStrProp = 0
@@ -4218,13 +4419,49 @@ codegenStmt cg, stmt, outBuf {
                 outBuf.code = outBuf.code.cat ("  ret i32 0\n")
             } els {
                 valReg = codegenExpr cg, stmt.value, outBuf
-                outBuf.code = outBuf.code.cat (`  ret double ${valReg}\n`)
+                prmSym = findCgSymbol cg, "__active_prm__"
+                if prmSym.name != "" {
+                    prmReg = prmSym.reg
+                    retValInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${retValInt} = fptosi double ${valReg} to i64\n`)
+                    outBuf.code = outBuf.code.cat (`  call void @zuv_prm_resolve(ptr ${prmReg}, i64 ${retValInt})\n`)
+                    modeSym = findCgSymbol cg, "__active_mode__"
+                    if modeSym.name != "" {
+                        modeReg = modeSym.reg
+                        outBuf.code = outBuf.code.cat (`  call void @zuv_set_async_context(i32 ${modeReg})\n`)
+                    }
+                    prmInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmReg} to i64\n`)
+                    prmDbl = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+                    outBuf.code = outBuf.code.cat (`  ret double ${prmDbl}\n`)
+                } els {
+                    outBuf.code = outBuf.code.cat (`  ret double ${valReg}\n`)
+                }
             }
         } els if cg.isMain == 1 {
             outBuf.code = outBuf.code.cat ("  ret i32 0\n")
         } els {
             valReg = codegenExpr cg, stmt.value, outBuf
-            outBuf.code = outBuf.code.cat (`  ret double ${valReg}\n`)
+            prmSym2 = findCgSymbol cg, "__active_prm__"
+            if prmSym2.name != "" {
+                prmReg2 = prmSym2.reg
+                retValInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${retValInt} = fptosi double ${valReg} to i64\n`)
+                outBuf.code = outBuf.code.cat (`  call void @zuv_prm_resolve(ptr ${prmReg2}, i64 ${retValInt})\n`)
+                modeSym2 = findCgSymbol cg, "__active_mode__"
+                if modeSym2.name != "" {
+                    modeReg2 = modeSym2.reg
+                    outBuf.code = outBuf.code.cat (`  call void @zuv_set_async_context(i32 ${modeReg2})\n`)
+                }
+                prmInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmReg2} to i64\n`)
+                prmDbl = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+                outBuf.code = outBuf.code.cat (`  ret double ${prmDbl}\n`)
+            } els {
+                outBuf.code = outBuf.code.cat (`  ret double ${valReg}\n`)
+            }
         }
     } els if stmt.kind == "IfStmt" {
         condReg = codegenExpr cg, stmt.condition, outBuf
@@ -4641,6 +4878,32 @@ codegenFunctionDecl cg, funcStmt {
 
     let fnBuf = { code: (`define ${exportAttr}double @${fnName}(${paramsStr}) ${inlineAttr}{\nentry:\n`) }
 
+    mut isAsync = funcStmt.isAsync
+    mut isAsyncST = funcStmt.isAsyncST
+    if funcStmt.attributes.ln > 0 {
+        let ai = 0
+        wh ai < funcStmt.attributes.ln {
+            if funcStmt.attributes[ai].name == "st" {
+                isAsyncST = 1
+                isAsync = 1
+            }
+            ai = ai + 1
+        }
+    }
+
+    mut prevModeReg = ""
+    mut prmReg = ""
+    if isAsync == 1 || isAsyncST == 1 {
+        prevModeReg = newReg cg
+        fnBuf.code = fnBuf.code.cat (`  ${prevModeReg} = call i32 @zuv_get_async_context()\n`)
+        let prmMode = (isAsyncST == 1) ? 0 : 1
+        fnBuf.code = fnBuf.code.cat (`  call void @zuv_set_async_context(i32 ${prmMode})\n`)
+        prmReg = newReg cg
+        fnBuf.code = fnBuf.code.cat (`  ${prmReg} = call ptr @zuv_prm_new(i32 ${prmMode})\n`)
+        addCgSymbol cg, "__active_prm__", prmReg
+        addCgSymbol cg, "__active_mode__", prevModeReg
+    }
+
     let j = 0
     wh j < funcStmt.params.ln {
         pName = funcStmt.params[j]
@@ -4654,7 +4917,19 @@ codegenFunctionDecl cg, funcStmt {
     }
 
     codegenStmt cg, funcStmt.body, fnBuf
-    fnBuf.code = fnBuf.code.cat ("  ret double 0.0\n}\n\n")
+    if isAsync == 1 || isAsyncST == 1 {
+        fnBuf.code = fnBuf.code.cat (`  call void @zuv_prm_resolve(ptr ${prmReg}, i64 0)\n`)
+        if prevModeReg != "" {
+            fnBuf.code = fnBuf.code.cat (`  call void @zuv_set_async_context(i32 ${prevModeReg})\n`)
+        }
+        prmInt = newReg cg
+        fnBuf.code = fnBuf.code.cat (`  ${prmInt} = ptrtoint ptr ${prmReg} to i64\n`)
+        prmDbl = newReg cg
+        fnBuf.code = fnBuf.code.cat (`  ${prmDbl} = sitofp i64 ${prmInt} to double\n`)
+        fnBuf.code = fnBuf.code.cat (`  ret double ${prmDbl}\n}\n\n`)
+    } els {
+        fnBuf.code = fnBuf.code.cat ("  ret double 0.0\n}\n\n")
+    }
     cg.funcs = cg.funcs.cat fnBuf.code
 }
 
@@ -4666,11 +4941,19 @@ GenerateLLVMFull program {
         fnStmt = program.statements[fni]
         if fnStmt.kind == "FunctionDecl" {
             cg.funcNames.psh fnStmt.name
+            if fnStmt.params.ln == 0 {
+                cg.funcNames.psh (`0:${fnStmt.name}`)
+            }
         } els if fnStmt.kind == "StmtSequence" {
             let fnsi = 0
             wh fnsi < fnStmt.statements.ln {
                 subFn = fnStmt.statements[fnsi]
-                if subFn.kind == "FunctionDecl" { cg.funcNames.psh subFn.name }
+                if subFn.kind == "FunctionDecl" {
+                    cg.funcNames.psh subFn.name
+                    if subFn.params.ln == 0 {
+                        cg.funcNames.psh (`0:${subFn.name}`)
+                    }
+                }
                 fnsi = fnsi + 1
             }
         }
@@ -4864,6 +5147,26 @@ GenerateLLVMFull program {
     header = header.cat "define double @zuv_stat_size(ptr %path) {\nentry:\n  %fp = call ptr @fopen(ptr %path, ptr @mode_r)\n  %nullCmp = icmp eq ptr %fp, null\n  br i1 %nullCmp, label %ret_neg, label %calc_sz\n\ncalc_sz:\n  %sk = call i32 @fseek(ptr %fp, i64 0, i32 2)\n  %sz = call i64 @ftell(ptr %fp)\n  %cl = call i32 @fclose(ptr %fp)\n  %dSz = sitofp i64 %sz to double\n  ret double %dSz\n\nret_neg:\n  ret double -1.0\n}\n\n"
     header = header.cat "define ptr @zuv_real_path(ptr %path) {\nentry:\n  %buf = call ptr @malloc(i64 1024)\n  %res = call ptr @_fullpath(ptr %buf, ptr %path, i64 1024)\n  %isResNull = icmp eq ptr %res, null\n  br i1 %isResNull, label %ret_orig, label %ret_buf\n\nret_orig:\n  ret ptr %path\n\nret_buf:\n  ret ptr %buf\n}\n\n"
     header = header.cat "define ptr @zuv_temp_file(ptr %pfx) {\nentry:\n  %tmpDir = alloca [512 x i8]\n  %tmpFile = call ptr @malloc(i64 512)\n  %callPath = call i32 @GetTempPathA(i32 512, ptr %tmpDir)\n  %prefix = alloca [4 x i8]\n  store i8 122, ptr %prefix\n  %p1 = getelementptr inbounds i8, ptr %prefix, i64 1\n  store i8 117, ptr %p1\n  %p2 = getelementptr inbounds i8, ptr %prefix, i64 2\n  store i8 118, ptr %p2\n  %p3 = getelementptr inbounds i8, ptr %prefix, i64 3\n  store i8 0, ptr %p3\n  %callFn = call i32 @GetTempFileNameA(ptr %tmpDir, ptr %prefix, i32 0, ptr %tmpFile)\n  ret ptr %tmpFile\n}\n\n"
+    header = header.cat "@zuv_async_context_mode = thread_local global i32 1\n"
+    header = header.cat "@zuv_active_prm = thread_local global ptr null\n"
+    header = header.cat "@zuv_prm_is_rejected = global i32 0\n"
+    header = header.cat `@zuv_uncaught_rej = private unnamed_addr constant [32 x i8] c"uncaught promise rejection: %s\\0A\\00"\n`
+    header = header.cat `@zuv_uncaught_rej_num = private unnamed_addr constant [32 x i8] c"uncaught promise rejection: %g\\0A\\00"\n\n`
+    header = header.cat "define i32 @zuv_get_async_context() {\nentry:\n  %m = load i32, ptr @zuv_async_context_mode\n  ret i32 %m\n}\n\n"
+    header = header.cat "define void @zuv_set_async_context(i32 %mode) {\nentry:\n  store i32 %mode, ptr @zuv_async_context_mode\n  ret void\n}\n\n"
+    header = header.cat "define ptr @zuv_prm_new(i32 %mode) {\nentry:\n  %p = call ptr @malloc(i64 64)\n  store i64 1347571249, ptr %p\n  %gepState = getelementptr inbounds i64, ptr %p, i64 1\n  store i64 0, ptr %gepState\n  %gepMode = getelementptr inbounds i64, ptr %p, i64 2\n  %mode64 = sext i32 %mode to i64\n  store i64 %mode64, ptr %gepMode\n  %gepVal = getelementptr inbounds i64, ptr %p, i64 3\n  store i64 0, ptr %gepVal\n  %gepSettled = getelementptr inbounds i64, ptr %p, i64 4\n  store i64 0, ptr %gepSettled\n  ret ptr %p\n}\n\n"
+    header = header.cat "define void @zuv_prm_resolve(ptr %p, i64 %val) {\nentry:\n  %isNull = icmp eq ptr %p, null\n  br i1 %isNull, label %ret_lbl, label %chk_magic\nchk_magic:\n  %magic = load i64, ptr %p\n  %isPrm = icmp eq i64 %magic, 1347571249\n  br i1 %isPrm, label %chk_settled, label %ret_lbl\nchk_settled:\n  %gepSettled = getelementptr inbounds i64, ptr %p, i64 4\n  %s = load i64, ptr %gepSettled\n  %isSet = icmp ne i64 %s, 0\n  br i1 %isSet, label %ret_lbl, label %do_res\ndo_res:\n  %gepState = getelementptr inbounds i64, ptr %p, i64 1\n  store i64 1, ptr %gepState\n  %gepVal = getelementptr inbounds i64, ptr %p, i64 3\n  store i64 %val, ptr %gepVal\n  store i64 1, ptr %gepSettled\n  br label %ret_lbl\nret_lbl:\n  ret void\n}\n\n"
+    header = header.cat "define void @zuv_prm_reject(ptr %p, i64 %err) {\nentry:\n  %isNull = icmp eq ptr %p, null\n  br i1 %isNull, label %ret_lbl, label %chk_magic\nchk_magic:\n  %magic = load i64, ptr %p\n  %isPrm = icmp eq i64 %magic, 1347571249\n  br i1 %isPrm, label %chk_settled, label %ret_lbl\nchk_settled:\n  %gepSettled = getelementptr inbounds i64, ptr %p, i64 4\n  %s = load i64, ptr %gepSettled\n  %isSet = icmp ne i64 %s, 0\n  br i1 %isSet, label %ret_lbl, label %do_rej\ndo_rej:\n  %gepState = getelementptr inbounds i64, ptr %p, i64 1\n  store i64 2, ptr %gepState\n  %gepVal = getelementptr inbounds i64, ptr %p, i64 3\n  store i64 %err, ptr %gepVal\n  store i64 1, ptr %gepSettled\n  br label %ret_lbl\nret_lbl:\n  ret void\n}\n\n"
+    header = header.cat "define double @zuv_prm_cb_resolve(double %valDbl) {\nentry:\n  %val = fptosi double %valDbl to i64\n  %p = load ptr, ptr @zuv_active_prm\n  call void @zuv_prm_resolve(ptr %p, i64 %val)\n  ret double 0.0\n}\n\n"
+    header = header.cat "define double @zuv_prm_cb_reject(double %errDbl) {\nentry:\n  %err = fptosi double %errDbl to i64\n  %p = load ptr, ptr @zuv_active_prm\n  call void @zuv_prm_reject(ptr %p, i64 %err)\n  ret double 0.0\n}\n\n"
+    header = header.cat "define i64 @zuv_prm_await(i64 %val) {\nentry:\n  %isSmall = icmp ult i64 %val, 65536\n  br i1 %isSmall, label %ret_val, label %chk_align\nchk_align:\n  %lowBits = and i64 %val, 7\n  %isAligned = icmp eq i64 %lowBits, 0\n  br i1 %isAligned, label %chk_high, label %ret_val\nchk_high:\n  %isTooHigh = icmp ugt i64 %val, 140737488355327\n  br i1 %isTooHigh, label %ret_val, label %chk_ptr\nchk_ptr:\n  %ptr = inttoptr i64 %val to ptr\n  %magic = load i64, ptr %ptr\n  %isPrm = icmp eq i64 %magic, 1347571249\n  br i1 %isPrm, label %wait_loop, label %ret_val\nwait_loop:\n  %gepSettled = getelementptr inbounds i64, ptr %ptr, i64 4\n  %st = load i64, ptr %gepSettled\n  %isDone = icmp ne i64 %st, 0\n  br i1 %isDone, label %unpack, label %poll_step\npoll_step:\n  call void @Sleep(i32 1)\n  br label %wait_loop\nunpack:\n  %gepState = getelementptr inbounds i64, ptr %ptr, i64 1\n  %state = load i64, ptr %gepState\n  %gepVal = getelementptr inbounds i64, ptr %ptr, i64 3\n  %v = load i64, ptr %gepVal\n  %isRej = icmp eq i64 %state, 2\n  br i1 %isRej, label %handle_rej, label %handle_ok\nhandle_rej:\n  store i64 %v, ptr @zuv_exc_value\n  store i32 1, ptr @zuv_prm_is_rejected\n  ret i64 %v\nhandle_ok:\n  store i32 0, ptr @zuv_prm_is_rejected\n  ret i64 %v\nret_val:\n  store i32 0, ptr @zuv_prm_is_rejected\n  ret i64 %val\n}\n\n"
+    header = header.cat "define ptr @zuv_prm_all(ptr %arr) {\nentry:\n  %mode = call i32 @zuv_get_async_context()\n  %parentPrm = call ptr @zuv_prm_new(i32 %mode)\n  %isNull = icmp eq ptr %arr, null\n  br i1 %isNull, label %ret_empty, label %chk_len\nchk_len:\n  %dLen = load double, ptr %arr\n  %iLen = fptosi double %dLen to i64\n  %isZero = icmp sle i64 %iLen, 0\n  br i1 %isZero, label %ret_empty, label %alloc_res\nret_empty:\n  %empty = call ptr @malloc(i64 16)\n  store double 0.0, ptr %empty\n  %emptyInt = ptrtoint ptr %empty to i64\n  call void @zuv_prm_resolve(ptr %parentPrm, i64 %emptyInt)\n  ret ptr %parentPrm\nalloc_res:\n  %arrBytes = add i64 %iLen, 1\n  %arrBytesMul = mul i64 %arrBytes, 8\n  %resArr = call ptr @malloc(i64 %arrBytesMul)\n  store double %dLen, ptr %resArr\n  %pIdx = alloca i64\n  store i64 0, ptr %pIdx\n  br label %all_loop\nall_loop:\n  %idx = load i64, ptr %pIdx\n  %cmp = icmp slt i64 %idx, %iLen\n  br i1 %cmp, label %all_body, label %all_done\nall_body:\n  %slotIdx = add i64 %idx, 1\n  %pItem = getelementptr inbounds i64, ptr %arr, i64 %slotIdx\n  %rawItemBits = load i64, ptr %pItem\n  %rawItemDbl = bitcast i64 %rawItemBits to double\n  %rawItem = fptosi double %rawItemDbl to i64\n  %unwrapped = call i64 @zuv_prm_await(i64 %rawItem)\n  %isRej = load i32, ptr @zuv_prm_is_rejected\n  %hasRej = icmp ne i32 %isRej, 0\n  br i1 %hasRej, label %all_rej, label %all_next\nall_rej:\n  call void @zuv_prm_reject(ptr %parentPrm, i64 %unwrapped)\n  ret ptr %parentPrm\nall_next:\n  %unwrappedDbl = sitofp i64 %unwrapped to double\n  %unwrappedBits = bitcast double %unwrappedDbl to i64\n  %pDest = getelementptr inbounds i64, ptr %resArr, i64 %slotIdx\n  store i64 %unwrappedBits, ptr %pDest\n  %nextIdx = add i64 %idx, 1\n  store i64 %nextIdx, ptr %pIdx\n  br label %all_loop\nall_done:\n  %resArrInt = ptrtoint ptr %resArr to i64\n  call void @zuv_prm_resolve(ptr %parentPrm, i64 %resArrInt)\n  ret ptr %parentPrm\n}\n\n"
+    header = header.cat "define ptr @zuv_prm_race(ptr %arr) {\nentry:\n  %mode = call i32 @zuv_get_async_context()\n  %parentPrm = call ptr @zuv_prm_new(i32 %mode)\n  %isNull = icmp eq ptr %arr, null\n  br i1 %isNull, label %ret_race, label %chk_len_race\nchk_len_race:\n  %dLenR = load double, ptr %arr\n  %len = fptosi double %dLenR to i64\n  %isZero = icmp sle i64 %len, 0\n  br i1 %isZero, label %ret_race, label %poll_race\npoll_race:\n  %pIdx = alloca i64\n  br label %race_poll_step\nrace_poll_step:\n  store i64 0, ptr %pIdx\n  br label %race_loop\nrace_loop:\n  %idx = load i64, ptr %pIdx\n  %cmp = icmp slt i64 %idx, %len\n  br i1 %cmp, label %race_chk, label %race_sleep\nrace_chk:\n  %slotIdx = add i64 %idx, 1\n  %pItem = getelementptr inbounds i64, ptr %arr, i64 %slotIdx\n  %rawBits = load i64, ptr %pItem\n  %rawDbl = bitcast i64 %rawBits to double\n  %rawItem = fptosi double %rawDbl to i64\n  %isSmall = icmp ult i64 %rawItem, 65536\n  br i1 %isSmall, label %race_win_val, label %race_chk_align\nrace_chk_align:\n  %lowBits = and i64 %rawItem, 7\n  %isAligned = icmp eq i64 %lowBits, 0\n  br i1 %isAligned, label %race_chk_high, label %race_win_val\nrace_chk_high:\n  %isTooHigh = icmp ugt i64 %rawItem, 140737488355327\n  br i1 %isTooHigh, label %race_win_val, label %race_chk_magic\nrace_chk_magic:\n  %pSub = inttoptr i64 %rawItem to ptr\n  %magic = load i64, ptr %pSub\n  %isPrm = icmp eq i64 %magic, 1347571249\n  br i1 %isPrm, label %race_chk_settled, label %race_win_val\nrace_chk_settled:\n  %pSet = getelementptr inbounds i64, ptr %pSub, i64 4\n  %setVal = load i64, ptr %pSet\n  %isSet = icmp ne i64 %setVal, 0\n  br i1 %isSet, label %race_unpack, label %race_next\nrace_unpack:\n  %pState = getelementptr inbounds i64, ptr %pSub, i64 1\n  %st = load i64, ptr %pState\n  %pVal = getelementptr inbounds i64, ptr %pSub, i64 3\n  %v = load i64, ptr %pVal\n  %isRej = icmp eq i64 %st, 2\n  br i1 %isRej, label %race_rej, label %race_res\nrace_rej:\n  call void @zuv_prm_reject(ptr %parentPrm, i64 %v)\n  ret ptr %parentPrm\nrace_res:\n  call void @zuv_prm_resolve(ptr %parentPrm, i64 %v)\n  ret ptr %parentPrm\nrace_win_val:\n  call void @zuv_prm_resolve(ptr %parentPrm, i64 %rawItem)\n  ret ptr %parentPrm\nrace_next:\n  %nextIdx = add i64 %idx, 1\n  store i64 %nextIdx, ptr %pIdx\n  br label %race_loop\nrace_sleep:\n  call void @Sleep(i32 1)\n  br label %race_poll_step\nret_race:\n  call void @zuv_prm_resolve(ptr %parentPrm, i64 0)\n  ret ptr %parentPrm\n}\n\n"
+    header = header.cat "define ptr @zuv_prm_all_settled(ptr %arr) {\nentry:\n  %mode = call i32 @zuv_get_async_context()\n  %parentPrm = call ptr @zuv_prm_new(i32 %mode)\n  %isNull = icmp eq ptr %arr, null\n  br i1 %isNull, label %ret_empty_s, label %chk_len_s\nchk_len_s:\n  %dLen = load double, ptr %arr\n  %iLen = fptosi double %dLen to i64\n  %isZero = icmp sle i64 %iLen, 0\n  br i1 %isZero, label %ret_empty_s, label %alloc_res_s\nret_empty_s:\n  %empty = call ptr @malloc(i64 16)\n  store double 0.0, ptr %empty\n  %emptyInt = ptrtoint ptr %empty to i64\n  call void @zuv_prm_resolve(ptr %parentPrm, i64 %emptyInt)\n  ret ptr %parentPrm\nalloc_res_s:\n  %arrBytes = add i64 %iLen, 1\n  %arrBytesMul = mul i64 %arrBytes, 8\n  %resArr = call ptr @malloc(i64 %arrBytesMul)\n  store double %dLen, ptr %resArr\n  %pIdx = alloca i64\n  store i64 0, ptr %pIdx\n  br label %set_loop\nset_loop:\n  %idx = load i64, ptr %pIdx\n  %cmp = icmp slt i64 %idx, %iLen\n  br i1 %cmp, label %set_body, label %set_done\nset_body:\n  %slotIdx = add i64 %idx, 1\n  %pItem = getelementptr inbounds i64, ptr %arr, i64 %slotIdx\n  %rawItemBits = load i64, ptr %pItem\n  %rawItemDbl = bitcast i64 %rawItemBits to double\n  %rawItem = fptosi double %rawItemDbl to i64\n  %unwrapped = call i64 @zuv_prm_await(i64 %rawItem)\n  %unwrappedDbl = sitofp i64 %unwrapped to double\n  %unwrappedBits = bitcast double %unwrappedDbl to i64\n  %pDest = getelementptr inbounds i64, ptr %resArr, i64 %slotIdx\n  store i64 %unwrappedBits, ptr %pDest\n  %nextIdx = add i64 %idx, 1\n  store i64 %nextIdx, ptr %pIdx\n  br label %set_loop\nset_done:\n  %resArrInt = ptrtoint ptr %resArr to i64\n  call void @zuv_prm_resolve(ptr %parentPrm, i64 %resArrInt)\n  ret ptr %parentPrm\n}\n\n"
+    header = header.cat "define internal ptr @zuv_fs_rf_async(ptr %path) {\nentry:\n  %m = load i32, ptr @zuv_async_context_mode\n  %p = call ptr @zuv_prm_new(i32 %m)\n  %fp = call ptr @fopen(ptr %path, ptr @mode_r)\n  %isNull = icmp eq ptr %fp, null\n  br i1 %isNull, label %rf_err, label %rf_ok\nrf_ok:\n  call i32 @fseek(ptr %fp, i64 0, i32 2)\n  %sz = call i64 @ftell(ptr %fp)\n  call void @rewind(ptr %fp)\n  %sz1 = add i64 %sz, 1\n  %buf = call ptr @malloc(i64 %sz1)\n  %n = call i64 @fread(ptr %buf, i64 1, i64 %sz, ptr %fp)\n  %endPtr = getelementptr inbounds i8, ptr %buf, i64 %n\n  store i8 0, ptr %endPtr\n  call i32 @fclose(ptr %fp)\n  %strInt = ptrtoint ptr %buf to i64\n  call void @zuv_prm_resolve(ptr %p, i64 %strInt)\n  ret ptr %p\nrf_err:\n  %emp = call ptr @malloc(i64 1)\n  store i8 0, ptr %emp\n  %empInt = ptrtoint ptr %emp to i64\n  call void @zuv_prm_resolve(ptr %p, i64 %empInt)\n  ret ptr %p\n}\n\n"
+    header = header.cat "define internal ptr @zuv_fs_wf_async(ptr %path, ptr %data) {\nentry:\n  %m = load i32, ptr @zuv_async_context_mode\n  %p = call ptr @zuv_prm_new(i32 %m)\n  %fp = call ptr @fopen(ptr %path, ptr @mode_w)\n  %isNull = icmp eq ptr %fp, null\n  br i1 %isNull, label %wf_err, label %wf_ok\nwf_ok:\n  %dLen = call i64 @strlen(ptr %data)\n  %written = call i64 @fwrite(ptr %data, i64 1, i64 %dLen, ptr %fp)\n  call i32 @fclose(ptr %fp)\n  call void @zuv_prm_resolve(ptr %p, i64 %written)\n  ret ptr %p\nwf_err:\n  call void @zuv_prm_resolve(ptr %p, i64 0)\n  ret ptr %p\n}\n\n"
+    header = header.cat "define internal ptr @zuv_net_recv_async(i64 %s, i32 %maxLen) {\nentry:\n  %m = load i32, ptr @zuv_async_context_mode\n  %p = call ptr @zuv_prm_new(i32 %m)\n  %buf = call ptr @zuv_net_recv(i64 %s, i32 %maxLen)\n  %bufInt = ptrtoint ptr %buf to i64\n  call void @zuv_prm_resolve(ptr %p, i64 %bufInt)\n  ret ptr %p\n}\n\n"
+    header = header.cat "define internal ptr @zuv_net_send_async(i64 %s, ptr %data) {\nentry:\n  %m = load i32, ptr @zuv_async_context_mode\n  %p = call ptr @zuv_prm_new(i32 %m)\n  %sent = call i64 @zuv_net_send(i64 %s, ptr %data)\n  call void @zuv_prm_resolve(ptr %p, i64 %sent)\n  ret ptr %p\n}\n\n"
     header = header.cat `@fmt_str = private unnamed_addr constant [4 x i8] c"%s\\0A\\00"\n`
     header = header.cat `@fmt_prefix = private unnamed_addr constant [3 x i8] c"%s\\00"\n`
     header = header.cat `@fmt_num = private unnamed_addr constant [4 x i8] c"%g\\0A\\00"\n`

@@ -101,7 +101,7 @@ isLexerKeyword word {
         -> 1
     }
     if word == "err" || word == "if" || word == "and" || word == "or" ||
-       word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" {
+       word == "not" || word == "mut" || word == "let" || word == "asc" || word == "ascST" || word == "asyncST" || word == "awt" {
         -> 1
     }
     if word == "typ" || word == "sym" || word == "enum" || word == "as" ||
