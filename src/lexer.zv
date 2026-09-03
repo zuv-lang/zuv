@@ -110,7 +110,7 @@ isLexerKeyword word {
         -> 1
     }
     if word == "extern" || word == "main" || word == "pub" ||
-       word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" || word == "unsafe" {
+       word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" || word == "unsafe" || word == "panic" {
         -> 1
     }
     -> 0

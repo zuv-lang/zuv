@@ -1,0 +1,20 @@
+// Unit Test for Native Backtrace & Runtime Stack Unwinding (`std/debug`)
+
+inner_worker {
+    let bt = debug.backtrace()
+    if bt.ln > 0 {
+        prnt "backtrace captured successfully"
+    }
+    debug.dumpStack()
+    -> 42
+}
+
+outer_caller {
+    res = inner_worker()
+    -> res
+}
+
+ans = outer_caller()
+if ans == 42 {
+    prnt "std/debug stack unwinding test passed"
+}

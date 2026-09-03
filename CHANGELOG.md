@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 💥 Stack Unwinding, Panics, Backtraces & Embedded PC Table (`panic` / `debug.*` / Windows VEH)
+- Added native `panic <expr>` statement with source context, exit code 101, and backtrace via `ZUV_BACKTRACE=1`.
+- Added embedded PC function descriptor table (`@zuv_fn_descs`) with binary-search runtime symbol resolution.
+- Added in-process stack unwinding via `RtlCaptureStackBackTrace` for up to 32 frames.
+- Added `debug` module: `debug.backtrace()`, `debug.dumpStack()`, and `debug.panic(msg)`.
+- Added Windows Vectored Exception Handler catching hardware faults (`0xC0000005`, `0xC0000094`, `0xC00000FD`).
+- Added test suites: `tests/std_debug.test.zv` and `tests/panic_backtrace.test.zv`.
+
 ### 🔄 Native Async Event Loop, Dual Scheduler & JS-like Promises (`Promise`, `Prm`, `netpoll`, `asc` / `ascST` / `awt`)
 - Added first-class `Prm` / `Promise` primitive with constructor `new Prm res, rej => { ... }` and modern callback-free `awt` keyword.
 - Added promise combinators: `Prm.all([p1, p2])`, `Prm.race([p1, p2])`, and `Prm.allSettled([p1, p2])` with null/empty array guards and lossless float/pointer bitcasting.

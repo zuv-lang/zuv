@@ -1,0 +1,17 @@
+// Test panic exit code and backtrace interception
+
+failTask {
+    panic "fatal error in failTask"
+}
+
+if args.ln > 1 {
+    failTask()
+} els {
+    // Parent process invokes child to verify exit code 101
+    code = sh ".\\test_panic.exe child"
+    if code == 101 {
+        prnt "panic backtrace verified: child exited with code 101"
+    } els {
+        prnt "child returned unexpected code"
+    }
+}

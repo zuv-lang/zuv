@@ -16,10 +16,18 @@ createCodegen {
         "regCount", "labelCount", "strCount", "strConstants", "fieldNames",
         "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
         "destructKind", "bindNames", "source",
-        "enums", "enumKeys", "enumVals",
-        "symKeys", "symIds", "bigintNames", "strNames",
+        "externDecls", "glbDeclList",
+        "enums", "enumKeys", "enumVals", "enumArms",
+        "variants", "key", "disc", "pattern",
+        "symKeys", "symIds", "nextSymId",
+        "bigintNames", "strNames",
+        "restNames", "restIdxs",
         "__keys", "__vals",
-        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames", "funcNames",
+        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames",
+        "funcNames", "funcDescsStr", "funcCount",
+        "currentFuncPrmReg", "currentFuncPrevModeReg",
+        "isStructLiteral", "isSpread", "sourceFile", "sourceLine",
+        "macros", "bodyTokens", "filePath", "sourceText", "desCount", "allowIdentStruct",
         "method", "path", "url", "version"
     ]
     let brkStack = []
@@ -62,6 +70,8 @@ createCodegen {
         restNames: restNames,
         restIdxs: restIdxs,
         funcNames: funcNames,
+        funcDescsStr: "",
+        funcCount: 0,
         currentFuncPrmReg: "",
         currentFuncPrevModeReg: ""
     }
@@ -597,7 +607,7 @@ getStrPtrVal cg, expr, outBuf {
     }
 }
 
-addStrConstant cg, strVal {
+addStrConstant cg, strVal: str {
     sName = `@str_${cg.strCount}`
     cg.strCount = cg.strCount + 1
     let escaped = ""
@@ -2730,6 +2740,31 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${msInt} = fptosi double ${msReg} to i32\n`)
             outBuf.code = outBuf.code.cat (`  call void @Sleep(i32 ${msInt})\n`)
             -> "0.0"
+        } els if expr.callee == "debug.dumpStack" || expr.callee == "dumpStack" {
+            outBuf.code = outBuf.code.cat "  call void @zuv_dump_stack()\n"
+            -> "0.0"
+        } els if expr.callee == "debug.backtrace" || expr.callee == "backtrace" {
+            btStr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btStr} = call ptr @zuv_backtrace()\n`)
+            btAsI = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btAsI} = ptrtoint ptr ${btStr} to i64\n`)
+            btDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btDbl} = sitofp i64 ${btAsI} to double\n`)
+            -> btDbl
+        } els if expr.callee == "debug.panic" || expr.callee == "panic" {
+            mut msgPtr = ""
+            if expr.args.ln > 0 {
+                msgPtr = getStrPtrVal cg, expr.args[0], outBuf
+            } els {
+                strName = `@strlit_${cg.strCount}`
+                cg.strCount = cg.strCount + 1
+                cg.strConstants.psh (`${strName} = private unnamed_addr constant [6 x i8] c"panic\\00"\n`)
+                msgPtr = strName
+            }
+            fileStrName = addStrConstant cg, "main.zv"
+            outBuf.code = outBuf.code.cat (`  call void @zuv_panic(ptr ${msgPtr}, ptr ${fileStrName}, i32 0)\n`)
+            outBuf.code = outBuf.code.cat "  unreachable\n"
+            -> "0.0"
         } els if (expr.callee == "malloc" || expr.callee == "mem.alloc" || expr.callee == "mem.malloc") && expr.args.ln == 1 {
             szReg = codegenExpr cg, expr.args[0], outBuf
             szInt = newReg cg
@@ -4266,6 +4301,31 @@ codegenExpr cg, expr, outBuf {
     -> "0.0"
 }
 
+codegenPanic cg, stmt, outBuf {
+    mut msgPtr = ""
+    if stmt.value != und && stmt.value != nil {
+        msgPtr = getStrPtrVal cg, stmt.value, outBuf
+    } els {
+        strName = `@strlit_${cg.strCount}`
+        cg.strCount = cg.strCount + 1
+        cg.strConstants.psh (`${strName} = private unnamed_addr constant [6 x i8] c"panic\\00"\n`)
+        msgPtr = strName
+    }
+    mut fileStr = stmt.file
+    if fileStr == "" || fileStr == und {
+        fileStr = "main.zv"
+    }
+    fileStrName = addStrConstant cg, fileStr
+    mut lineNum = stmt.line
+    if lineNum == 0 || lineNum == und {
+        lineNum = 1
+    }
+    outBuf.code = outBuf.code.cat (`  call void @zuv_panic(ptr ${msgPtr}, ptr ${fileStrName}, i32 ${lineNum})\n`)
+    outBuf.code = outBuf.code.cat "  unreachable\n"
+    afterPanic = newLbl cg, "after_panic"
+    outBuf.code = outBuf.code.cat (`\n${afterPanic}:\n`)
+}
+
 codegenStmt cg, stmt, outBuf {
     if stmt.kind == "VarDecl" {
         valReg = codegenExpr cg, stmt.value, outBuf
@@ -4804,6 +4864,8 @@ codegenStmt cg, stmt, outBuf {
             afterThr = newLbl cg, "after_thr_exit"
             outBuf.code = outBuf.code.cat (`\n${afterThr}:\n`)
         }
+    } els if stmt.kind == "PanicStmt" {
+        codegenPanic cg, stmt, outBuf
     } els if stmt.kind == "FunctionDecl" {
         codegenFunctionDecl cg, stmt
     } els if stmt.kind == "ExternDecl" {
@@ -4844,6 +4906,18 @@ codegenFunctionDecl cg, funcStmt {
     if fnNameRaw == "main" {
         fnName = "main_user"
     }
+    mut fPath = funcStmt.sourceFile
+    if fPath == und || fPath == "" { fPath = "main.zv" }
+    mut fLine = funcStmt.sourceLine
+    if fLine == und || fLine == 0 { fLine = 1 }
+    fnIdx = cg.funcCount
+    cg.funcCount = cg.funcCount + 1
+    nStr = addStrConstant cg, fnNameRaw
+    fStr = addStrConstant cg, fPath
+    if fnIdx > 0 {
+        cg.funcDescsStr = cg.funcDescsStr.cat ",\n"
+    }
+    cg.funcDescsStr = cg.funcDescsStr.cat (`  %struct.ZuvFuncDesc { ptr @${fnName}, ptr ${nStr}, ptr ${fStr}, i32 ${fLine} }`)
     let paramsStr = ""
     let i = 0
     wh i < funcStmt.params.ln {
@@ -5104,6 +5178,8 @@ GenerateLLVMFull program {
     header = header.cat "declare i64 @_time64(ptr)\n"
     header = header.cat "declare i32 @QueryPerformanceCounter(ptr)\n"
     header = header.cat "declare i32 @QueryPerformanceFrequency(ptr)\n"
+    header = header.cat "declare ptr @AddVectoredExceptionHandler(i32, ptr)\n"
+    header = header.cat "declare i32 @RtlCaptureStackBackTrace(i32, i32, ptr, ptr)\n"
     header = header.cat "@zuv_global_args = global i64 0\n"
     header = header.cat "@str_os_typ = private unnamed_addr constant [11 x i8] c\"Windows_NT\\00\"\n"
     header = header.cat "@str_os_rel = private unnamed_addr constant [5 x i8] c\"10.0\\00\"\n"
@@ -5233,7 +5309,15 @@ GenerateLLVMFull program {
 
     header = header.cat "define internal ptr @zuv_ws_recv(i64 %s) {\nentry:\n  %hdr = alloca [2 x i8], align 1\n  %n1 = call i32 @recv(i64 %s, ptr %hdr, i32 2, i32 0)\n  %cmpBad = icmp slt i32 %n1, 2\n  br i1 %cmpBad, label %err, label %read_body\nread_body:\n  %gepLen = getelementptr inbounds i8, ptr %hdr, i64 1\n  %rawLen = load i8, ptr %gepLen\n  %pLen8 = and i8 %rawLen, 127\n  %pLen32 = zext i8 %pLen8 to i32\n  %pLen64 = zext i8 %pLen8 to i64\n  %allocSz = add i64 %pLen64, 1\n  %buf = call ptr @malloc(i64 %allocSz)\n  %n2 = call i32 @recv(i64 %s, ptr %buf, i32 %pLen32, i32 0)\n  %endPtr = getelementptr inbounds i8, ptr %buf, i64 %pLen64\n  store i8 0, ptr %endPtr\n  ret ptr %buf\nerr:\n  ret ptr @empty_str\n}\n\n"
 
-    let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n  call void @zuv_init_args(i32 %argc, ptr %argv)\n" }
+    let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n  call void @zuv_init_args(i32 %argc, ptr %argv)\n  call void @zuv_init_crash_handler()\n" }
+    mIdx = cg.funcCount
+    cg.funcCount = cg.funcCount + 1
+    mNameStr = addStrConstant cg, "main"
+    mFileStr = addStrConstant cg, "main.zv"
+    if mIdx > 0 {
+        cg.funcDescsStr = cg.funcDescsStr.cat ",\n"
+    }
+    cg.funcDescsStr = cg.funcDescsStr.cat (`  %struct.ZuvFuncDesc { ptr @main, ptr ${mNameStr}, ptr ${mFileStr}, i32 1 }`)
 
     // Built-in project-wide `glb` — properties registered as LLVM globals `@glb_<prop>`
     header = header.cat "@glb = global i64 0\n"
@@ -5440,6 +5524,51 @@ GenerateLLVMFull program {
         gdi = gdi + 1
     }
 
-    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}`
+    btRuntimeStr = emitBacktraceRuntime cg
+    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}\n${btRuntimeStr}`
     -> fullIR
+}
+
+emitBacktraceRuntime cg {
+    mut count = cg.funcCount
+    if count == 0 {
+        mNameStr = addStrConstant cg, "main"
+        mFileStr = addStrConstant cg, "main.zv"
+        cg.funcDescsStr = `  %struct.ZuvFuncDesc { ptr @main, ptr ${mNameStr}, ptr ${mFileStr}, i32 1 }`
+        count = 1
+    }
+    mut btIR = "\n; --- Zuv Embedded PC-Line Table & Runtime Crash Backtraces ---\n"
+    btIR = btIR.cat "%struct.ZuvFuncDesc = type { ptr, ptr, ptr, i32 }\n\n"
+    btIR = btIR.cat (`\n@zuv_fn_descs = internal global [${count} x %struct.ZuvFuncDesc] [\n`)
+    btIR = btIR.cat cg.funcDescsStr
+    btIR = btIR.cat "\n]\n"
+    btIR = btIR.cat (`@zuv_fn_count = internal constant i64 ${count}\n`)
+    btIR = btIR.cat "@zuv_fn_sorted = internal global i32 0\n\n"
+
+    btIR = btIR.cat "@zuv_fmt_panic_msg = private unnamed_addr constant [37 x i8] c\"\\0Afatal runtime error: %s\\0A  at %s:%d\\0A\\00\"\n"
+    btIR = btIR.cat "@zuv_fmt_panic_simple = private unnamed_addr constant [26 x i8] c\"\\0Afatal runtime error: %s\\0A\\00\"\n"
+    btIR = btIR.cat "@zuv_fmt_bt_header = private unnamed_addr constant [18 x i8] c\"stack backtrace:\\0A\\00\"\n"
+    btIR = btIR.cat "@zuv_fmt_bt_frame_sym = private unnamed_addr constant [37 x i8] c\"  %2d: %s\\0A       at %s:%d (+0x%llx)\\0A\\00\"\n"
+    btIR = btIR.cat "@zuv_fmt_bt_frame_unk = private unnamed_addr constant [30 x i8] c\"  %2d: [unknown] (0x%016llx)\\0A\\00\"\n"
+    btIR = btIR.cat "@zuv_fmt_bt_hint = private unnamed_addr constant [78 x i8] c\"note: run with 'ZUV_BACKTRACE=1' environment variable to display a backtrace\\0A\\00\"\n"
+    btIR = btIR.cat "@zuv_env_backtrace = private unnamed_addr constant [14 x i8] c\"ZUV_BACKTRACE\\00\"\n"
+    btIR = btIR.cat "@zuv_fmt_crash_msg = private unnamed_addr constant [58 x i8] c\"\\0Afatal runtime error: hardware crash 0x%08X at 0x%016llx\\0A\\00\"\n\n"
+
+    btIR = btIR.cat "define internal void @zuv_ensure_fn_sorted() {\nentry:\n  %flag = load i32, ptr @zuv_fn_sorted\n  %already = icmp ne i32 %flag, 0\n  br i1 %already, label %ret, label %do_sort\n\ndo_sort:\n  store i32 1, ptr @zuv_fn_sorted\n  %count = load i64, ptr @zuv_fn_count\n  %has_elems = icmp sgt i64 %count, 1\n  br i1 %has_elems, label %init_i, label %ret\n\ninit_i:\n  %p_i = alloca i64, align 8\n  %p_j = alloca i64, align 8\n  store i64 1, ptr %p_i\n  br label %cond_i\n\ncond_i:\n  %i_val = load i64, ptr %p_i\n  %i_cmp = icmp slt i64 %i_val, %count\n  br i1 %i_cmp, label %body_i, label %ret\n\nbody_i:\n  %i_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %i_val\n  %key_fn = load ptr, ptr %i_ptr\n  %key_fn_int = ptrtoint ptr %key_fn to i64\n  %key_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 1\n  %key_name = load ptr, ptr %key_name_ptr\n  %key_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 2\n  %key_file = load ptr, ptr %key_file_ptr\n  %key_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 3\n  %key_line = load i32, ptr %key_line_ptr\n  store i64 %i_val, ptr %p_j\n  br label %cond_j\n\ncond_j:\n  %j_val = load i64, ptr %p_j\n  %j_gt_zero = icmp sgt i64 %j_val, 0\n  br i1 %j_gt_zero, label %check_prev, label %insert\n\ncheck_prev:\n  %j_prev = sub i64 %j_val, 1\n  %prev_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %j_prev\n  %prev_fn = load ptr, ptr %prev_ptr\n  %prev_fn_int = ptrtoint ptr %prev_fn to i64\n  %prev_gt = icmp ugt i64 %prev_fn_int, %key_fn_int\n  br i1 %prev_gt, label %shift_j, label %insert\n\nshift_j:\n  %cur_j_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %j_val\n  %prev_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 1\n  %prev_name = load ptr, ptr %prev_name_ptr\n  %prev_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 2\n  %prev_file = load ptr, ptr %prev_file_ptr\n  %prev_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 3\n  %prev_line = load i32, ptr %prev_line_ptr\n  store ptr %prev_fn, ptr %cur_j_ptr\n  %cur_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 1\n  store ptr %prev_name, ptr %cur_name_ptr\n  %cur_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 2\n  store ptr %prev_file, ptr %cur_file_ptr\n  %cur_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 3\n  store i32 %prev_line, ptr %cur_line_ptr\n  store i64 %j_prev, ptr %p_j\n  br label %cond_j\n\ninsert:\n  %ins_j = load i64, ptr %p_j\n  %pos_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %ins_j\n  store ptr %key_fn, ptr %pos_ptr\n  %ins_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 1\n  store ptr %key_name, ptr %ins_name_ptr\n  %ins_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 2\n  store ptr %key_file, ptr %ins_file_ptr\n  %ins_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 3\n  store i32 %key_line, ptr %ins_line_ptr\n  %i_next = add i64 %i_val, 1\n  store i64 %i_next, ptr %p_i\n  br label %cond_i\n\nret:\n  ret void\n}\n\n"
+
+    btIR = btIR.cat "define internal ptr @zuv_resolve_pc(ptr %pc) {\nentry:\n  call void @zuv_ensure_fn_sorted()\n  %count = load i64, ptr @zuv_fn_count\n  %has_elems = icmp sgt i64 %count, 0\n  br i1 %has_elems, label %init, label %not_found\n\ninit:\n  %p_k = alloca i64, align 8\n  %init_idx = sub i64 %count, 1\n  store i64 %init_idx, ptr %p_k\n  %target = ptrtoint ptr %pc to i64\n  br label %loop\n\nloop:\n  %k = load i64, ptr %p_k\n  %k_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %k\n  %entry_fn = load ptr, ptr %k_ptr\n  %entry_fn_int = ptrtoint ptr %entry_fn to i64\n  %is_le = icmp ule i64 %entry_fn_int, %target\n  br i1 %is_le, label %check_dist, label %step_back\n\ncheck_dist:\n  %dist = sub i64 %target, %entry_fn_int\n  %in_range = icmp ult i64 %dist, 2097152\n  br i1 %in_range, label %found, label %not_found\n\nfound:\n  ret ptr %k_ptr\n\nstep_back:\n  %k_is_zero = icmp eq i64 %k, 0\n  br i1 %k_is_zero, label %not_found, label %do_step\n\ndo_step:\n  %k_prev = sub i64 %k, 1\n  store i64 %k_prev, ptr %p_k\n  br label %loop\n\nnot_found:\n  ret ptr null\n}\n\n"
+
+    btIR = btIR.cat "define internal void @zuv_walk_stack(i32 %skip, i32 %maxFrames) {\nentry:\n  %buf = alloca [32 x ptr], align 8\n  %frames = call i32 @RtlCaptureStackBackTrace(i32 %skip, i32 %maxFrames, ptr %buf, ptr null)\n  %has_frames = icmp sgt i32 %frames, 0\n  br i1 %has_frames, label %init, label %done\n\ninit:\n  %p_idx = alloca i32, align 4\n  store i32 0, ptr %p_idx\n  br label %loop\n\nloop:\n  %idx = load i32, ptr %p_idx\n  %slot = getelementptr inbounds [32 x ptr], ptr %buf, i32 0, i32 %idx\n  %pc = load ptr, ptr %slot\n  %desc = call ptr @zuv_resolve_pc(ptr %pc)\n  %is_null = icmp eq ptr %desc, null\n  br i1 %is_null, label %print_unk, label %print_sym\n\nprint_sym:\n  %fn_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 1\n  %fn_name = load ptr, ptr %fn_name_ptr\n  %file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 2\n  %file = load ptr, ptr %file_ptr\n  %line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 3\n  %line = load i32, ptr %line_ptr\n  %fn_entry_ptr = load ptr, ptr %desc\n  %pc_int = ptrtoint ptr %pc to i64\n  %entry_int = ptrtoint ptr %fn_entry_ptr to i64\n  %offset = sub i64 %pc_int, %entry_int\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_frame_sym, i32 %idx, ptr %fn_name, ptr %file, i32 %line, i64 %offset)\n  br label %cont\n\nprint_unk:\n  %pc_as_i64 = ptrtoint ptr %pc to i64\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_frame_unk, i32 %idx, i64 %pc_as_i64)\n  br label %cont\n\ncont:\n  %next_idx = add i32 %idx, 1\n  store i32 %next_idx, ptr %p_idx\n  %more = icmp slt i32 %next_idx, %frames\n  br i1 %more, label %loop, label %done\n\ndone:\n  ret void\n}\n\n"
+
+    btIR = btIR.cat "define void @zuv_panic(ptr %msg, ptr %file, i32 %line) {\nentry:\n  %has_file = icmp ne ptr %file, null\n  br i1 %has_file, label %p_file, label %p_simple\n\np_file:\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_panic_msg, ptr %msg, ptr %file, i32 %line)\n  br label %check_env\n\np_simple:\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_panic_simple, ptr %msg)\n  br label %check_env\n\ncheck_env:\n  %env = call ptr @getenv(ptr @zuv_env_backtrace)\n  %has_env = icmp ne ptr %env, null\n  br i1 %has_env, label %check_val, label %print_hint\n\ncheck_val:\n  %ch = load i8, ptr %env\n  %is_zero = icmp eq i8 %ch, 48\n  br i1 %is_zero, label %print_hint, label %print_bt\n\nprint_bt:\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)\n  call void @zuv_walk_stack(i32 1, i32 32)\n  br label %do_exit\n\nprint_hint:\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_hint)\n  br label %do_exit\n\ndo_exit:\n  call void @exit(i32 101)\n  unreachable\n}\n\n"
+
+    btIR = btIR.cat "define void @zuv_dump_stack() {\nentry:\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)\n  call void @zuv_walk_stack(i32 1, i32 32)\n  ret void\n}\n\n"
+
+    btIR = btIR.cat "define ptr @zuv_backtrace() {\nentry:\n  %buf = alloca [32 x ptr], align 8\n  %frames = call i32 @RtlCaptureStackBackTrace(i32 1, i32 32, ptr %buf, ptr null)\n  %out = call ptr @malloc(i64 4096)\n  store i8 0, ptr %out\n  %has_frames = icmp sgt i32 %frames, 0\n  br i1 %has_frames, label %init, label %done\n\ninit:\n  %p_bidx = alloca i32, align 4\n  store i32 0, ptr %p_bidx\n  br label %loop\n\nloop:\n  %idx = load i32, ptr %p_bidx\n  %cur_len = call i64 @strlen(ptr %out)\n  %slot = getelementptr inbounds [32 x ptr], ptr %buf, i32 0, i32 %idx\n  %pc = load ptr, ptr %slot\n  %desc = call ptr @zuv_resolve_pc(ptr %pc)\n  %is_null = icmp eq ptr %desc, null\n  %dest_ptr = getelementptr inbounds i8, ptr %out, i64 %cur_len\n  %avail = sub i64 4000, %cur_len\n  br i1 %is_null, label %fmt_unk, label %fmt_sym\n\nfmt_sym:\n  %fn_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 1\n  %fn_name = load ptr, ptr %fn_name_ptr\n  %file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 2\n  %file = load ptr, ptr %file_ptr\n  %line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 3\n  %line = load i32, ptr %line_ptr\n  %fn_entry_ptr = load ptr, ptr %desc\n  %pc_int = ptrtoint ptr %pc to i64\n  %entry_int = ptrtoint ptr %fn_entry_ptr to i64\n  %offset = sub i64 %pc_int, %entry_int\n  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %dest_ptr, i64 %avail, ptr @zuv_fmt_bt_frame_sym, i32 %idx, ptr %fn_name, ptr %file, i32 %line, i64 %offset)\n  br label %cont\n\nfmt_unk:\n  %pc_as_i64 = ptrtoint ptr %pc to i64\n  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %dest_ptr, i64 %avail, ptr @zuv_fmt_bt_frame_unk, i32 %idx, i64 %pc_as_i64)\n  br label %cont\n\ncont:\n  %next_idx = add i32 %idx, 1\n  store i32 %next_idx, ptr %p_bidx\n  %more = icmp slt i32 %next_idx, %frames\n  br i1 %more, label %loop, label %done\n\ndone:\n  ret ptr %out\n}\n\n"
+
+    btIR = btIR.cat "define internal i32 @zuv_crash_handler(ptr %pExc) {\nentry:\n  %rec_ptr = load ptr, ptr %pExc\n  %code = load i32, ptr %rec_ptr\n  %is_av = icmp eq i32 %code, -1073741819\n  %is_dz = icmp eq i32 %code, -1073741676\n  %is_ab = icmp eq i32 %code, -1073741684\n  %is_so = icmp eq i32 %code, -1073741571\n  %fatal1 = or i1 %is_av, %is_dz\n  %fatal2 = or i1 %is_ab, %is_so\n  %is_fatal = or i1 %fatal1, %fatal2\n  br i1 %is_fatal, label %handle_crash, label %pass\n\nhandle_crash:\n  %addr_ptr = getelementptr inbounds i8, ptr %rec_ptr, i64 16\n  %fault_pc = load ptr, ptr %addr_ptr\n  %fault_pc_i64 = ptrtoint ptr %fault_pc to i64\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_crash_msg, i32 %code, i64 %fault_pc_i64)\n  %env = call ptr @getenv(ptr @zuv_env_backtrace)\n  %has_env = icmp ne ptr %env, null\n  br i1 %has_env, label %check_crash_env, label %print_crash_hint\n\ncheck_crash_env:\n  %ch = load i8, ptr %env\n  %is_zero = icmp eq i8 %ch, 48\n  br i1 %is_zero, label %print_crash_hint, label %print_crash_bt\n\nprint_crash_bt:\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)\n  call void @zuv_walk_stack(i32 0, i32 32)\n  br label %exit_crash\n\nprint_crash_hint:\n  call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_hint)\n  br label %exit_crash\n\nexit_crash:\n  call void @exit(i32 101)\n  ret i32 0\n\npass:\n  ret i32 0\n}\n\n"
+
+    btIR = btIR.cat "define void @zuv_init_crash_handler() {\nentry:\n  call ptr @AddVectoredExceptionHandler(i32 1, ptr @zuv_crash_handler)\n  ret void\n}\n"
+
+    -> btIR
 }
