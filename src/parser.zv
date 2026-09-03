@@ -1116,7 +1116,7 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" {
                                 propName = `${varNameStr}.${propName}`
                             } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
@@ -1214,7 +1214,7 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" {
                                     propName = `${varNameStr}.${propName}`
                                 } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
@@ -2320,7 +2320,7 @@ parseStatement p {
             } els if (peekTok p).val == "(" {
                 advanceParser p // consume '('
                 let args = []
-                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" {
+                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" {
                     propName = `${identName}.${propName}`
                 } els {
                     if propName == "cls" || propName == "close" { propName = "chan.cls" }
@@ -2381,7 +2381,7 @@ parseStatement p {
                     argExpr = parseExpression p, 0
                     mut callTarget = propName
                     let args = []
-                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" {
+                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" {
                         callTarget = `${identName}.${propName}`
                         args.psh argExpr
                     } els {

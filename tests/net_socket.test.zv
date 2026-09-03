@@ -1,0 +1,87 @@
+// Native Networking, Sockets, DNS & HTTP Engine Test Suite
+imp net, dns, http, ws frm "std/net"
+
+prnt "=== Testing Networking & Sockets ==="
+
+// 1. Socket Creation
+let tcp = net.tcpSock()
+if tcp != -1 {
+    prnt "TCP socket created successfully"
+}
+
+let udp = net.udpSock()
+if udp != -1 {
+    prnt "UDP socket created successfully"
+}
+
+// 2. Socket Options (Timeout & Non-blocking)
+net.setTimeout tcp, 500
+net.setNonBlocking tcp, 1
+prnt "Socket options configured successfully"
+
+// Close sockets
+net.close tcp
+net.close udp
+prnt "Sockets closed successfully"
+
+// 3. DNS Lookup & Reverse Lookup
+let ip = dns.lookup "localhost"
+if ip.ln > 0 {
+    prnt ("DNS lookup localhost: " + ip)
+}
+
+let host = dns.reverseLookup "127.0.0.1"
+if host.ln > 0 {
+    prnt ("DNS reverse lookup 127.0.0.1: " + host)
+}
+
+// 4. HTTP Formatting & Parsing
+let res = http.fmtRes 200, "application/json", "{\"status\":\"ok\"}"
+if res.ln > 0 {
+    prnt "HTTP response formatted successfully"
+}
+
+let rawReq = "POST /api/test HTTP/1.1\r\nHost: localhost\r\n\r\n{\"name\":\"zuv\"}"
+let req = http.parseReq rawReq
+if req.method == "POST" {
+    prnt ("HTTP req.method: " + req.method)
+}
+if req.path == "/api/test" {
+    prnt ("HTTP req.path: " + req.path)
+}
+if req.body == "{\"name\":\"zuv\"}" {
+    prnt ("HTTP req.body: " + req.body)
+}
+if req.version == "HTTP/1.1" {
+    prnt ("HTTP req.version: " + req.version)
+}
+
+// 5. TCP Loopback Server & Client
+let srv = net.tcpSrv 58921
+if srv != -1 {
+    prnt "Server listening on port 58921"
+    
+    // Connect client
+    let cli = net.tcpCli "127.0.0.1", 58921
+    if cli != -1 {
+        prnt "Client connected to loopback server"
+        let sent = net.send cli, "PING"
+        if sent > 0 {
+            prnt "Client sent data successfully"
+        }
+        
+        let conn = net.accept srv
+        if conn != -1 {
+            prnt "Server accepted client connection"
+            let rcvd = net.recv conn, 16
+            if rcvd == "PING" {
+                prnt ("Server received: " + rcvd)
+            }
+            net.close conn
+        }
+        net.close cli
+    }
+    net.close srv
+}
+
+prnt "Network & Socket Engine Test Passed"

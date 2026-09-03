@@ -18,6 +18,7 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
     let isRelease = 0
     let emitLlvm = 0
     mut isCdylib = 0
+    mut isQuiet = 0
     mut outExe = "output.exe"
     mut targetAlias = ""
     mut targetTriple = ""
@@ -34,6 +35,9 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
         }
         if a == "--emit-llvm" || a == "-S" {
             emitLlvm = 1
+        }
+        if a == "--quiet" || a == "-q" {
+            isQuiet = 1
         }
         if a == "-o" && ai + 1 < args.ln {
             ai = ai + 1
@@ -74,13 +78,16 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
         HandleCheckAll
     } els {
         if cmd == "check" {
-            HandleCheck targetFile
+            r = HandleCheck targetFile
+            if r == 0 { -> 1 }
         } els {
             if cmd == "build" {
-                HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple
+                r = HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple, isQuiet
+                if r == 0 { -> 1 }
             } els {
                 if cmd == "run" {
-                    HandleRun targetFile
+                    r = HandleRun targetFile
+                    if r != 0 { -> r }
                 } els {
                     if cmd == "fmt" {
                         HandleFmt targetFile

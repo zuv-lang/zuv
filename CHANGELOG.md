@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🌐 Native Networking, Sockets, DNS & HTTP Engine (`net` / `dns` / `http` / `ws`)
+- Added socket creation, options, and streaming: `net.sock`, `net.tcpSock`, `net.udpSock`, `net.setTimeout`, `net.setNonBlocking`, `net.snd`, `net.rcv`, `net.cls`.
+- Added TCP server/client helpers: `net.tcpSrv(port)`, `net.tcpCli(host, port)`.
+- Added DNS resolution: `dns.lookup(host)`, `dns.reverseLookup(ip)`.
+- Added HTTP engine: `http.fmtRes`, `http.parseReq` (`method`, `path`, `body`, `version`), `http.get`, `http.post`.
+- Added WebSocket helpers: `ws.conn`, `ws.send`, `ws.recv`.
+- Added test suite in `tests/net_socket.test.zv`.
+
 ### 🔌 Dynamic FFI & Runtime Symbol Resolution (`ffi` / `extern`)
 - Added dynamic library loading: `ffi.ld(path)`, `ffi.load(path)`, `ldLib(path)`.
 - Added dynamic symbol lookup: `ffi.sym(lib, sym)`, `ffi.getSym`, `getSym`.

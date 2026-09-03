@@ -19,7 +19,8 @@ createCodegen {
         "enums", "enumKeys", "enumVals",
         "symKeys", "symIds", "bigintNames", "strNames",
         "__keys", "__vals",
-        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames", "funcNames"
+        "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames", "funcNames",
+        "method", "path", "url", "version"
     ]
     let brkStack = []
     let contStack = []
@@ -348,6 +349,9 @@ isStrVar cg, name {
 
 // True if this expr should participate in string + (concat / number coercion)
 isStrPlusOperand cg, expr {
+    if (classifyTyp cg, expr) == "str" {
+        -> 1
+    }
     if expr.kind == "StringExpr" {
         -> 1
     }
@@ -522,7 +526,7 @@ getStrPtrVal cg, expr, outBuf {
         }
         if expr.kind == "PropertyAccess" {
             prop = expr.property
-            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" || prop == "file" || prop == "cmd" || prop == "kind" {
+            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" || prop == "file" || prop == "cmd" || prop == "kind" || prop == "method" || prop == "body" || prop == "version" || prop == "url" {
                 isStr = 1
             }
             if expr.object.kind == "VariableExpr" {
@@ -762,7 +766,8 @@ classifyTyp cg, expr {
         if expr.callee == "isNan" || expr.callee == "isnan" || expr.callee == "isFin" || expr.callee == "isfinite" || expr.callee == "isFinite" {
             -> "bool"
         }
-        if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" || expr.callee == "realP" || expr.callee == "realpath" || expr.callee == "fs.realpath" || expr.callee == "fs.realP" || expr.callee == "mkTmp" || expr.callee == "mktemp" || expr.callee == "fs.mktemp" || expr.callee == "fs.mkTmp" || expr.callee == "rAt" || expr.callee == "readAt" || expr.callee == "fs.readAt" || expr.callee == "fs.rAt" || expr.callee == "rLink" || expr.callee == "readlink" || expr.callee == "fs.readlink" || expr.callee == "fs.rLink" || expr.callee == "env" || expr.callee == "os.env" || expr.callee == "os.getEnv" || expr.callee == "os.env.get" || expr.callee == "cwd" || expr.callee == "os.cwd" {
+        if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" || expr.callee == "realP" || expr.callee == "realpath" || expr.callee == "fs.realpath" || expr.callee == "fs.realP" || expr.callee == "mkTmp" || expr.callee == "mktemp" || expr.callee == "fs.mktemp" || expr.callee == "fs.mkTmp" || expr.callee == "rAt" || expr.callee == "readAt" || expr.callee == "fs.readAt" || expr.callee == "fs.rAt" || expr.callee == "rLink" || expr.callee == "readlink" || expr.callee == "fs.readlink" || expr.callee == "fs.rLink" || expr.callee == "env" || expr.callee == "os.env" || expr.callee == "os.getEnv" || expr.callee == "os.env.get" || expr.callee == "cwd" || expr.callee == "os.cwd" ||
+           expr.callee == "net.rcv" || expr.callee == "net.recv" || expr.callee == "rcv" || expr.callee == "recv" || expr.callee == "net.rcvFrm" || expr.callee == "rcvFrm" || expr.callee == "dns.lookup" || expr.callee == "dns.resolve" || expr.callee == "dns.reverseLookup" || expr.callee == "http.get" || expr.callee == "http.post" || expr.callee == "http.fmtRes" || expr.callee == "ws.recv" {
             -> "str"
         }
         -> "num"
@@ -771,7 +776,7 @@ classifyTyp cg, expr {
         if expr.property == "ln" || expr.property == "len" || expr.property == "length" {
             -> "num"
         }
-        if expr.property == "title" || expr.property == "name" || expr.property == "msg" || expr.property == "str" || expr.property == "text" || expr.property == "content" || expr.property == "path" || expr.property == "file" || expr.property == "cmd" || expr.property == "kind" || expr.property == "ch" || expr.property == "src" || expr.property == "code" || expr.property == "reg" || expr.property == "lbl" || expr.property == "callee" || expr.property == "op" {
+        if expr.property == "title" || expr.property == "name" || expr.property == "msg" || expr.property == "str" || expr.property == "text" || expr.property == "content" || expr.property == "path" || expr.property == "file" || expr.property == "cmd" || expr.property == "kind" || expr.property == "ch" || expr.property == "src" || expr.property == "code" || expr.property == "reg" || expr.property == "lbl" || expr.property == "callee" || expr.property == "op" || expr.property == "method" || expr.property == "body" || expr.property == "version" {
             -> "str"
         }
         -> "num"
@@ -2692,6 +2697,275 @@ codegenExpr cg, expr, outBuf {
             resDbl = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resDbl} = sitofp i64 ${resReg} to double\n`)
             -> resDbl
+        } els if (expr.callee == "net.sock" || expr.callee == "sock") && expr.args.ln <= 2 {
+            mut af = "2"
+            mut sockTyp = "1"
+            mut proto = "6"
+            if expr.args.ln >= 1 {
+                rReg = codegenExpr cg, expr.args[0], outBuf
+                af32 = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${af32} = fptosi double ${rReg} to i32\n`)
+                af = af32
+            }
+            if expr.args.ln >= 2 {
+                rReg2 = codegenExpr cg, expr.args[1], outBuf
+                typ32 = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${typ32} = fptosi double ${rReg2} to i32\n`)
+                sockTyp = typ32
+                proto = "0"
+            }
+            sReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sReg} = call i64 @zuv_net_sock(i32 ${af}, i32 ${sockTyp}, i32 ${proto})\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${sReg} to double\n`)
+            -> dReg
+        } els if expr.callee == "net.tcpSock" || expr.callee == "tcpSock" {
+            sReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sReg} = call i64 @zuv_net_sock(i32 2, i32 1, i32 6)\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${sReg} to double\n`)
+            -> dReg
+        } els if expr.callee == "net.udpSock" || expr.callee == "udpSock" {
+            sReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sReg} = call i64 @zuv_net_sock(i32 2, i32 2, i32 17)\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${sReg} to double\n`)
+            -> dReg
+        } els if (expr.callee == "net.bind" || expr.callee == "bind") && (expr.args.ln == 2 || expr.args.ln == 3) {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            mut hostPtr = "null"
+            mut portReg = "80"
+            if expr.args.ln == 2 {
+                portReg = codegenExpr cg, expr.args[1], outBuf
+            } els {
+                hostPtr = getStrPtrVal cg, expr.args[1], outBuf
+                portReg = codegenExpr cg, expr.args[2], outBuf
+            }
+            port32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${port32} = fptosi double ${portReg} to i32\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_net_bind(i64 ${sInt}, ptr ${hostPtr}, i32 ${port32})\n`)
+            -> resReg
+        } els if (expr.callee == "net.listen" || expr.callee == "listen") && expr.args.ln >= 1 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            mut backlog = "128"
+            if expr.args.ln >= 2 {
+                bReg = codegenExpr cg, expr.args[1], outBuf
+                b32 = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${b32} = fptosi double ${bReg} to i32\n`)
+                backlog = b32
+            }
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_net_listen(i64 ${sInt}, i32 ${backlog})\n`)
+            -> resReg
+        } els if (expr.callee == "net.acc" || expr.callee == "net.accept" || expr.callee == "acc" || expr.callee == "accept") && expr.args.ln == 1 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            cliReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cliReg} = call i64 @zuv_net_accept(i64 ${sInt})\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${cliReg} to double\n`)
+            -> dReg
+        } els if (expr.callee == "net.conn" || expr.callee == "net.connect" || expr.callee == "conn" || expr.callee == "connect") && (expr.args.ln == 2 || expr.args.ln == 3) {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            mut hostPtr = "@str_localhost"
+            mut portReg = "80"
+            if expr.args.ln == 2 {
+                portReg = codegenExpr cg, expr.args[1], outBuf
+            } els {
+                hostPtr = getStrPtrVal cg, expr.args[1], outBuf
+                portReg = codegenExpr cg, expr.args[2], outBuf
+            }
+            port32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${port32} = fptosi double ${portReg} to i32\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_net_connect(i64 ${sInt}, ptr ${hostPtr}, i32 ${port32})\n`)
+            -> resReg
+        } els if (expr.callee == "net.tcpCli" || expr.callee == "tcpCli") && expr.args.ln == 2 {
+            hostPtr = getStrPtrVal cg, expr.args[0], outBuf
+            portReg = codegenExpr cg, expr.args[1], outBuf
+            port32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${port32} = fptosi double ${portReg} to i32\n`)
+            cliReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cliReg} = call i64 @zuv_net_tcp_cli(ptr ${hostPtr}, i32 ${port32})\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${cliReg} to double\n`)
+            -> dReg
+        } els if (expr.callee == "net.tcpSrv" || expr.callee == "tcpSrv" || expr.callee == "http.srv") && expr.args.ln >= 1 {
+            portReg = codegenExpr cg, expr.args[0], outBuf
+            port32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${port32} = fptosi double ${portReg} to i32\n`)
+            sReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sReg} = call i64 @zuv_net_sock(i32 2, i32 1, i32 6)\n`)
+            bReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bReg} = call double @zuv_net_bind(i64 ${sReg}, ptr null, i32 ${port32})\n`)
+            lReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${lReg} = call double @zuv_net_listen(i64 ${sReg}, i32 128)\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${sReg} to double\n`)
+            -> dReg
+        } els if (expr.callee == "net.snd" || expr.callee == "net.send") && expr.args.ln == 2 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            dataPtr = getStrPtrVal cg, expr.args[1], outBuf
+            sentReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sentReg} = call i64 @zuv_net_send(i64 ${sInt}, ptr ${dataPtr})\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${sentReg} to double\n`)
+            -> dReg
+        } els if (expr.callee == "net.rcv" || expr.callee == "net.recv") && expr.args.ln >= 1 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            mut maxLen = "4096"
+            if expr.args.ln >= 2 {
+                mReg = codegenExpr cg, expr.args[1], outBuf
+                m32 = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${m32} = fptosi double ${mReg} to i32\n`)
+                maxLen = m32
+            }
+            bufPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufPtr} = call ptr @zuv_net_recv(i64 ${sInt}, i32 ${maxLen})\n`)
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufPtr} to i64\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${bufInt} to double\n`)
+            -> dReg
+        } els if (expr.callee == "net.cls" || expr.callee == "net.close") && expr.args.ln == 1 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_net_close(i64 ${sInt})\n`)
+            -> resReg
+        } els if (expr.callee == "net.sndTo" || expr.callee == "sndTo") && expr.args.ln == 4 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            dataPtr = getStrPtrVal cg, expr.args[1], outBuf
+            hostPtr = getStrPtrVal cg, expr.args[2], outBuf
+            portReg = codegenExpr cg, expr.args[3], outBuf
+            port32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${port32} = fptosi double ${portReg} to i32\n`)
+            sentReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sentReg} = call i64 @zuv_net_sendto(i64 ${sInt}, ptr ${dataPtr}, ptr ${hostPtr}, i32 ${port32})\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${sentReg} to double\n`)
+            -> dReg
+        } els if (expr.callee == "net.rcvFrm" || expr.callee == "rcvFrm") && expr.args.ln >= 1 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            mut maxLen = "4096"
+            if expr.args.ln >= 2 {
+                mReg = codegenExpr cg, expr.args[1], outBuf
+                m32 = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${m32} = fptosi double ${mReg} to i32\n`)
+                maxLen = m32
+            }
+            bufPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufPtr} = call ptr @zuv_net_recvfrom(i64 ${sInt}, i32 ${maxLen})\n`)
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufPtr} to i64\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${bufInt} to double\n`)
+            -> dReg
+        } els if expr.callee == "net.setNonBlocking" && expr.args.ln == 2 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            mReg = codegenExpr cg, expr.args[1], outBuf
+            m32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${m32} = fptosi double ${mReg} to i32\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_net_set_nonblocking(i64 ${sInt}, i32 ${m32})\n`)
+            -> resReg
+        } els if expr.callee == "net.setTimeout" && expr.args.ln == 2 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            msReg = codegenExpr cg, expr.args[1], outBuf
+            ms32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ms32} = fptosi double ${msReg} to i32\n`)
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_net_set_timeout(i64 ${sInt}, i32 ${ms32})\n`)
+            -> resReg
+        } els if (expr.callee == "dns.lookup" || expr.callee == "dns.resolve") && expr.args.ln >= 1 {
+            hostPtr = getStrPtrVal cg, expr.args[0], outBuf
+            ipPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ipPtr} = call ptr @zuv_dns_lookup(ptr ${hostPtr})\n`)
+            ipInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ipInt} = ptrtoint ptr ${ipPtr} to i64\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${ipInt} to double\n`)
+            -> dReg
+        } els if expr.callee == "dns.reverseLookup" && expr.args.ln == 1 {
+            ipPtr = getStrPtrVal cg, expr.args[0], outBuf
+            hostPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hostPtr} = call ptr @zuv_dns_reverse_lookup(ptr ${ipPtr})\n`)
+            hostInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hostInt} = ptrtoint ptr ${hostPtr} to i64\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${hostInt} to double\n`)
+            -> dReg
+        } els if (expr.callee == "http.fmtRes" || expr.callee == "fmtRes") && expr.args.ln == 3 {
+            stReg = codegenExpr cg, expr.args[0], outBuf
+            st32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${st32} = fptosi double ${stReg} to i32\n`)
+            ctPtr = getStrPtrVal cg, expr.args[1], outBuf
+            bPtr = getStrPtrVal cg, expr.args[2], outBuf
+            resPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resPtr} = call ptr @zuv_http_fmt_res(i32 ${st32}, ptr ${ctPtr}, ptr ${bPtr})\n`)
+            resInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resInt} = ptrtoint ptr ${resPtr} to i64\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${resInt} to double\n`)
+            -> dReg
+        } els if (expr.callee == "http.parseReq" || expr.callee == "parseReq") && expr.args.ln == 1 {
+            rawPtr = getStrPtrVal cg, expr.args[0], outBuf
+            objPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${objPtr} = call ptr @zuv_http_parse_req(ptr ${rawPtr})\n`)
+            objInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${objInt} = ptrtoint ptr ${objPtr} to i64\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${objInt} to double\n`)
+            -> dReg
+        } els if expr.callee == "ws.conn" && expr.args.ln == 1 {
+            urlPtr = getStrPtrVal cg, expr.args[0], outBuf
+            sReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sReg} = call i64 @zuv_ws_conn(ptr ${urlPtr})\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${sReg} to double\n`)
+            -> dReg
+        } els if expr.callee == "ws.send" && expr.args.ln == 2 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            msgPtr = getStrPtrVal cg, expr.args[1], outBuf
+            sentReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sentReg} = call i64 @zuv_ws_send(i64 ${sInt}, ptr ${msgPtr})\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${sentReg} to double\n`)
+            -> dReg
+        } els if expr.callee == "ws.recv" && expr.args.ln == 1 {
+            sReg = codegenExpr cg, expr.args[0], outBuf
+            sInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${sInt} = fptosi double ${sReg} to i64\n`)
+            resPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resPtr} = call ptr @zuv_ws_recv(i64 ${sInt})\n`)
+            resInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resInt} = ptrtoint ptr ${resPtr} to i64\n`)
+            dReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dReg} = sitofp i64 ${resInt} to double\n`)
+            -> dReg
         }
 
         if expr.callee == "zuv_ptr_deref" && expr.args.ln == 1 {
@@ -3472,11 +3746,13 @@ codegenExpr cg, expr, outBuf {
 
         if (strEq expr.property, "ln") == 1 || (strEq expr.property, "len") == 1 || (strEq expr.property, "length") == 1 {
             let isStrObj = 0
-            if expr.object.kind == "StringExpr" {
+            if (classifyTyp cg, expr.object) == "str" {
+                isStrObj = 1
+            } els if expr.object.kind == "StringExpr" {
                 isStrObj = 1
             } els if expr.object.kind == "VariableExpr" {
                 oName = expr.object.name
-                if oName == "text" || oName == "str" || oName == "s" || oName == "msg" || oName == "content" || oName == "path" || oName == "file" {
+                if oName == "text" || oName == "str" || oName == "s" || oName == "msg" || oName == "content" || oName == "path" || oName == "file" || oName == "ip" || oName == "host" || oName == "res" || oName == "url" || oName == "body" || oName == "val" || oName == "name" || oName == "line" {
                     isStrObj = 1
                 }
             }
@@ -3816,6 +4092,9 @@ codegenStmt cg, stmt, outBuf {
                 markBigIntVar cg, stmt.name
             }
         }
+        if (classifyTyp cg, stmt.value) == "str" {
+            markStrVar cg, stmt.name
+        }
         if (isStrPlusOperand cg, stmt.value) == 1 {
             markStrVar cg, stmt.name
         }
@@ -3898,7 +4177,7 @@ codegenStmt cg, stmt, outBuf {
         } els if stmt.value.kind == "PropertyAccess" {
             prop = stmt.value.property
             mut isStrProp = 0
-            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "content" || prop == "path" || prop == "file" || prop == "cmd" {
+            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "content" || prop == "path" || prop == "file" || prop == "cmd" || prop == "method" || prop == "body" || prop == "version" || prop == "url" {
                 isStrProp = 1
             }
             if stmt.value.object.kind == "VariableExpr" {
@@ -4433,6 +4712,30 @@ GenerateLLVMFull program {
     header = header.cat "declare ptr @LoadLibraryA(ptr)\n"
     header = header.cat "declare ptr @GetProcAddress(ptr, ptr)\n"
     header = header.cat "declare i32 @FreeLibrary(ptr)\n"
+    header = header.cat "declare i32 @WSAStartup(i32, ptr)\n"
+    header = header.cat "declare i32 @WSACleanup()\n"
+    header = header.cat "declare i64 @socket(i32, i32, i32)\n"
+    header = header.cat "declare i32 @bind(i64, ptr, i32)\n"
+    header = header.cat "declare i32 @listen(i64, i32)\n"
+    header = header.cat "declare i64 @accept(i64, ptr, ptr)\n"
+    header = header.cat "declare i32 @connect(i64, ptr, i32)\n"
+    header = header.cat "declare i32 @closesocket(i64)\n"
+    header = header.cat "declare i32 @send(i64, ptr, i32, i32)\n"
+    header = header.cat "declare i32 @recv(i64, ptr, i32, i32)\n"
+    header = header.cat "declare i32 @sendto(i64, ptr, i32, i32, ptr, i32)\n"
+    header = header.cat "declare i32 @recvfrom(i64, ptr, i32, i32, ptr, ptr)\n"
+    header = header.cat "declare i32 @setsockopt(i64, i32, i32, ptr, i32)\n"
+    header = header.cat "declare i32 @ioctlsocket(i64, i32, ptr)\n"
+    header = header.cat "declare i32 @getaddrinfo(ptr, ptr, ptr, ptr)\n"
+    header = header.cat "declare void @freeaddrinfo(ptr)\n"
+    header = header.cat "declare i32 @getnameinfo(ptr, i32, ptr, i32, ptr, i32, i32)\n"
+    header = header.cat "declare i32 @inet_addr(ptr)\n"
+    header = header.cat "declare ptr @inet_ntoa(i32)\n"
+    header = header.cat "declare i16 @htons(i16)\n"
+    header = header.cat "declare i16 @ntohs(i16)\n"
+    header = header.cat "declare i32 @WSAGetLastError()\n"
+    header = header.cat "declare ptr @strchr(ptr, i32)\n"
+    header = header.cat "declare i32 @atoi(ptr)\n"
     header = header.cat "declare ptr @malloc(i64)\n"
     header = header.cat "declare ptr @realloc(ptr, i64)\n"
     header = header.cat "declare void @free(ptr)\n"
@@ -4573,6 +4876,59 @@ GenerateLLVMFull program {
     header = header.cat `@dotdot_str = private unnamed_addr constant [3 x i8] c"..\\00"\n\n`
 
     header = header.cat "define ptr @zuv_scan_files(ptr %dir, ptr %ext) {\nentry:\n  %arr = call ptr @malloc(i64 8008)\n  store double 0.0, ptr %arr\n  %countAlloca = alloca i64\n  store i64 0, ptr %countAlloca\n  %pattern = alloca [512 x i8]\n  %callSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %pattern, i64 512, ptr @fmt_pattern, ptr %dir)\n  %fd = alloca [320 x i8]\n  %hFind = call ptr @FindFirstFileA(ptr %pattern, ptr %fd)\n  %hInt = ptrtoint ptr %hFind to i64\n  %inv = icmp eq i64 %hInt, -1\n  %nullH = icmp eq ptr %hFind, null\n  %badH = or i1 %inv, %nullH\n  br i1 %badH, label %done, label %loop_body\n\nloop_body:\n  %cFileName = getelementptr inbounds i8, ptr %fd, i64 44\n  %isDot = call i32 @strcmp(ptr %cFileName, ptr @dot_str)\n  %isDotZero = icmp eq i32 %isDot, 0\n  %isDotDot = call i32 @strcmp(ptr %cFileName, ptr @dotdot_str)\n  %isDotDotZero = icmp eq i32 %isDotDot, 0\n  %isSpecial = or i1 %isDotZero, %isDotDotZero\n  br i1 %isSpecial, label %loop_next, label %check_ext\n\ncheck_ext:\n  %extNull = icmp eq ptr %ext, null\n  br i1 %extNull, label %match_file, label %check_ext_str\n\ncheck_ext_str:\n  %extLen = call i64 @strlen(ptr %ext)\n  %extEmpty = icmp eq i64 %extLen, 0\n  br i1 %extEmpty, label %match_file, label %do_strstr\n\ndo_strstr:\n  %sub = call ptr @strstr(ptr %cFileName, ptr %ext)\n  %hasSub = icmp ne ptr %sub, null\n  br i1 %hasSub, label %match_file, label %loop_next\n\nmatch_file:\n  %fullPath = alloca [512 x i8]\n  %pSnp = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %fullPath, i64 512, ptr @fmt_filepath, ptr %dir, ptr %cFileName)\n  %fLen = call i64 @strlen(ptr %fullPath)\n  %fLenP1 = add i64 %fLen, 1\n  %strCopy = call ptr @malloc(i64 %fLenP1)\n  %cpy = call ptr @memcpy(ptr %strCopy, ptr %fullPath, i64 %fLenP1)\n  %strInt = ptrtoint ptr %strCopy to i64\n  %curCount = load i64, ptr %countAlloca\n  %nextCount = add i64 %curCount, 1\n  store i64 %nextCount, ptr %countAlloca\n  %elemGep = getelementptr inbounds i64, ptr %arr, i64 %nextCount\n  store i64 %strInt, ptr %elemGep\n  %countDbl = sitofp i64 %nextCount to double\n  store double %countDbl, ptr %arr\n  br label %loop_next\n\nloop_next:\n  %nextRes = call i32 @FindNextFileA(ptr %hFind, ptr %fd)\n  %hasMore = icmp ne i32 %nextRes, 0\n  br i1 %hasMore, label %loop_body, label %close_find\n\nclose_find:\n  %cl = call i32 @FindClose(ptr %hFind)\n  br label %done\n\ndone:\n  ret ptr %arr\n}\n\n"
+
+    header = header.cat "@zuv_ws2_inited = internal global i32 0\n"
+    header = header.cat "@zuv_wsa_data = internal global [408 x i8] zeroinitializer\n"
+    header = header.cat "@fmt_http_res = private unnamed_addr constant [61 x i8] c\"HTTP/1.1 %d OK\\0D\\0AContent-Type: %s\\0D\\0AContent-Length: %lld\\0D\\0A\\0D\\0A%s\\00\"\n"
+    header = header.cat "@str_crlf2 = private unnamed_addr constant [5 x i8] c\"\\0D\\0A\\0D\\0A\\00\"\n"
+    header = header.cat "@str_http_ver = private unnamed_addr constant [9 x i8] c\"HTTP/1.1\\00\"\n"
+    header = header.cat "@str_localhost = private unnamed_addr constant [10 x i8] c\"127.0.0.1\\00\"\n\n"
+
+    header = header.cat "define internal void @zuv_net_init() {\nentry:\n  %inited = load i32, ptr @zuv_ws2_inited\n  %cmp = icmp eq i32 %inited, 0\n  br i1 %cmp, label %do_init, label %done\ndo_init:\n  %wsaRes = call i32 @WSAStartup(i32 514, ptr @zuv_wsa_data)\n  store i32 1, ptr @zuv_ws2_inited\n  br label %done\ndone:\n  ret void\n}\n\n"
+
+    header = header.cat "define internal i64 @zuv_net_sock(i32 %af, i32 %type, i32 %proto) {\nentry:\n  call void @zuv_net_init()\n  %s = call i64 @socket(i32 %af, i32 %type, i32 %proto)\n  ret i64 %s\n}\n\n"
+
+    header = header.cat "define internal double @zuv_net_bind(i64 %s, ptr %host, i32 %port) {\nentry:\n  call void @zuv_net_init()\n  %addr = alloca [16 x i8], align 4\n  call ptr @memset(ptr %addr, i32 0, i64 16)\n  store i16 2, ptr %addr\n  %p16 = trunc i32 %port to i16\n  %netPort = call i16 @htons(i16 %p16)\n  %portPtr = getelementptr inbounds i8, ptr %addr, i64 2\n  store i16 %netPort, ptr %portPtr\n  %addrPtr = getelementptr inbounds i8, ptr %addr, i64 4\n  %isHostNull = icmp eq ptr %host, null\n  br i1 %isHostNull, label %bind_any, label %check_host\ncheck_host:\n  %ch = load i8, ptr %host\n  %isEmpty = icmp eq i8 %ch, 0\n  br i1 %isEmpty, label %bind_any, label %parse_host\nparse_host:\n  %ip32 = call i32 @inet_addr(ptr %host)\n  %cmpNone = icmp eq i32 %ip32, -1\n  br i1 %cmpNone, label %bind_any, label %store_ip\nstore_ip:\n  store i32 %ip32, ptr %addrPtr\n  br label %do_bind\nbind_any:\n  store i32 0, ptr %addrPtr\n  br label %do_bind\ndo_bind:\n  %res = call i32 @bind(i64 %s, ptr %addr, i32 16)\n  %dres = sitofp i32 %res to double\n  ret double %dres\n}\n\n"
+
+    header = header.cat "define internal double @zuv_net_listen(i64 %s, i32 %backlog) {\nentry:\n  %res = call i32 @listen(i64 %s, i32 %backlog)\n  %dres = sitofp i32 %res to double\n  ret double %dres\n}\n\n"
+
+    header = header.cat "define internal i64 @zuv_net_accept(i64 %s) {\nentry:\n  %client = call i64 @accept(i64 %s, ptr null, ptr null)\n  ret i64 %client\n}\n\n"
+
+    header = header.cat "define internal double @zuv_net_connect(i64 %s, ptr %host, i32 %port) {\nentry:\n  call void @zuv_net_init()\n  %addr = alloca [16 x i8], align 4\n  call ptr @memset(ptr %addr, i32 0, i64 16)\n  store i16 2, ptr %addr\n  %p16 = trunc i32 %port to i16\n  %netPort = call i16 @htons(i16 %p16)\n  %portPtr = getelementptr inbounds i8, ptr %addr, i64 2\n  store i16 %netPort, ptr %portPtr\n  %addrPtr = getelementptr inbounds i8, ptr %addr, i64 4\n  %ip32 = call i32 @inet_addr(ptr %host)\n  %cmpNone = icmp eq i32 %ip32, -1\n  br i1 %cmpNone, label %resolve_dns, label %store_ip\nresolve_dns:\n  %resHolder = alloca ptr, align 8\n  store ptr null, ptr %resHolder\n  %aiRes = call i32 @getaddrinfo(ptr %host, ptr null, ptr null, ptr %resHolder)\n  %aiPtr = load ptr, ptr %resHolder\n  %cmpAi = icmp ne ptr %aiPtr, null\n  br i1 %cmpAi, label %extract_ai, label %store_fail\nextract_ai:\n  %gepAddr = getelementptr inbounds i8, ptr %aiPtr, i64 32\n  %sockAddrPtr = load ptr, ptr %gepAddr\n  %gepIp = getelementptr inbounds i8, ptr %sockAddrPtr, i64 4\n  %resolvedIp = load i32, ptr %gepIp\n  store i32 %resolvedIp, ptr %addrPtr\n  call void @freeaddrinfo(ptr %aiPtr)\n  br label %do_conn\nstore_fail:\n  ret double -1.0\nstore_ip:\n  store i32 %ip32, ptr %addrPtr\n  br label %do_conn\ndo_conn:\n  %res = call i32 @connect(i64 %s, ptr %addr, i32 16)\n  %dres = sitofp i32 %res to double\n  ret double %dres\n}\n\n"
+
+    header = header.cat "define internal i64 @zuv_net_tcp_cli(ptr %host, i32 %port) {\nentry:\n  %s = call i64 @zuv_net_sock(i32 2, i32 1, i32 6)\n  %cmpBad = icmp slt i64 %s, 0\n  br i1 %cmpBad, label %err, label %try_conn\ntry_conn:\n  %cres = call double @zuv_net_connect(i64 %s, ptr %host, i32 %port)\n  %cmpOk = fcmp oeq double %cres, 0.0\n  br i1 %cmpOk, label %done, label %close_and_err\nclose_and_err:\n  %c = call i32 @closesocket(i64 %s)\n  ret i64 -1\nerr:\n  ret i64 -1\ndone:\n  ret i64 %s\n}\n\n"
+
+    header = header.cat "define internal i64 @zuv_net_send(i64 %s, ptr %data) {\nentry:\n  %isDataNull = icmp eq ptr %data, null\n  br i1 %isDataNull, label %ret_zero, label %do_send\ndo_send:\n  %len = call i64 @strlen(ptr %data)\n  %len32 = trunc i64 %len to i32\n  %sent = call i32 @send(i64 %s, ptr %data, i32 %len32, i32 0)\n  %sent64 = sext i32 %sent to i64\n  ret i64 %sent64\nret_zero:\n  ret i64 0\n}\n\n"
+
+    header = header.cat "define internal ptr @zuv_net_recv(i64 %s, i32 %maxLen) {\nentry:\n  %allocSz = add i32 %maxLen, 1\n  %sz64 = sext i32 %allocSz to i64\n  %buf = call ptr @malloc(i64 %sz64)\n  %n = call i32 @recv(i64 %s, ptr %buf, i32 %maxLen, i32 0)\n  %cmpLe = icmp sle i32 %n, 0\n  br i1 %cmpLe, label %empty, label %ok\nempty:\n  call void @free(ptr %buf)\n  ret ptr @empty_str\nok:\n  %n64 = sext i32 %n to i64\n  %endPtr = getelementptr inbounds i8, ptr %buf, i64 %n64\n  store i8 0, ptr %endPtr\n  ret ptr %buf\n}\n\n"
+
+    header = header.cat "define internal double @zuv_net_close(i64 %s) {\nentry:\n  %res = call i32 @closesocket(i64 %s)\n  %dres = sitofp i32 %res to double\n  ret double %dres\n}\n\n"
+
+    header = header.cat "define internal i64 @zuv_net_sendto(i64 %s, ptr %data, ptr %host, i32 %port) {\nentry:\n  call void @zuv_net_init()\n  %addr = alloca [16 x i8], align 4\n  call ptr @memset(ptr %addr, i32 0, i64 16)\n  store i16 2, ptr %addr\n  %p16 = trunc i32 %port to i16\n  %netPort = call i16 @htons(i16 %p16)\n  %portPtr = getelementptr inbounds i8, ptr %addr, i64 2\n  store i16 %netPort, ptr %portPtr\n  %addrPtr = getelementptr inbounds i8, ptr %addr, i64 4\n  %ip32 = call i32 @inet_addr(ptr %host)\n  store i32 %ip32, ptr %addrPtr\n  %len = call i64 @strlen(ptr %data)\n  %len32 = trunc i64 %len to i32\n  %sent = call i32 @sendto(i64 %s, ptr %data, i32 %len32, i32 0, ptr %addr, i32 16)\n  %sent64 = sext i32 %sent to i64\n  ret i64 %sent64\n}\n\n"
+
+    header = header.cat "define internal ptr @zuv_net_recvfrom(i64 %s, i32 %maxLen) {\nentry:\n  %allocSz = add i32 %maxLen, 1\n  %sz64 = sext i32 %allocSz to i64\n  %buf = call ptr @malloc(i64 %sz64)\n  %fromAddr = alloca [16 x i8], align 4\n  %fromLen = alloca i32, align 4\n  store i32 16, ptr %fromLen\n  %n = call i32 @recvfrom(i64 %s, ptr %buf, i32 %maxLen, i32 0, ptr %fromAddr, ptr %fromLen)\n  %cmpLe = icmp sle i32 %n, 0\n  br i1 %cmpLe, label %empty, label %ok\nempty:\n  call void @free(ptr %buf)\n  ret ptr @empty_str\nok:\n  %n64 = sext i32 %n to i64\n  %endPtr = getelementptr inbounds i8, ptr %buf, i64 %n64\n  store i8 0, ptr %endPtr\n  ret ptr %buf\n}\n\n"
+
+    header = header.cat "define internal double @zuv_net_set_nonblocking(i64 %s, i32 %mode) {\nentry:\n  %arg = alloca i32, align 4\n  store i32 %mode, ptr %arg\n  %res = call i32 @ioctlsocket(i64 %s, i32 -2147195266, ptr %arg)\n  %dres = sitofp i32 %res to double\n  ret double %dres\n}\n\n"
+
+    header = header.cat "define internal double @zuv_net_set_timeout(i64 %s, i32 %ms) {\nentry:\n  %arg = alloca i32, align 4\n  store i32 %ms, ptr %arg\n  %r1 = call i32 @setsockopt(i64 %s, i32 65535, i32 4102, ptr %arg, i32 4)\n  %r2 = call i32 @setsockopt(i64 %s, i32 65535, i32 4101, ptr %arg, i32 4)\n  ret double 0.0\n}\n\n"
+
+    header = header.cat "define internal ptr @zuv_dns_lookup(ptr %host) {\nentry:\n  call void @zuv_net_init()\n  %resHolder = alloca ptr, align 8\n  store ptr null, ptr %resHolder\n  %rc = call i32 @getaddrinfo(ptr %host, ptr null, ptr null, ptr %resHolder)\n  %ai = load ptr, ptr %resHolder\n  %cmpNull = icmp eq ptr %ai, null\n  br i1 %cmpNull, label %fallback, label %get_ip\nget_ip:\n  %gepAddr = getelementptr inbounds i8, ptr %ai, i64 32\n  %saddr = load ptr, ptr %gepAddr\n  %gepIp = getelementptr inbounds i8, ptr %saddr, i64 4\n  %ipVal = load i32, ptr %gepIp\n  %ipStr = call ptr @inet_ntoa(i32 %ipVal)\n  %len = call i64 @strlen(ptr %ipStr)\n  %sz = add i64 %len, 1\n  %out = call ptr @malloc(i64 %sz)\n  call ptr @memcpy(ptr %out, ptr %ipStr, i64 %sz)\n  call void @freeaddrinfo(ptr %ai)\n  ret ptr %out\nfallback:\n  ret ptr %host\n}\n\n"
+
+    header = header.cat "define internal ptr @zuv_dns_reverse_lookup(ptr %ip) {\nentry:\n  call void @zuv_net_init()\n  %addr = alloca [16 x i8], align 4\n  call ptr @memset(ptr %addr, i32 0, i64 16)\n  store i16 2, ptr %addr\n  %addrPtr = getelementptr inbounds i8, ptr %addr, i64 4\n  %ip32 = call i32 @inet_addr(ptr %ip)\n  store i32 %ip32, ptr %addrPtr\n  %hostBuf = call ptr @malloc(i64 256)\n  %rc = call i32 @getnameinfo(ptr %addr, i32 16, ptr %hostBuf, i32 256, ptr null, i32 0, i32 0)\n  %cmpOk = icmp eq i32 %rc, 0\n  br i1 %cmpOk, label %ok, label %fail\nok:\n  ret ptr %hostBuf\nfail:\n  ret ptr %ip\n}\n\n"
+
+    header = header.cat "define internal ptr @zuv_http_fmt_res(i32 %statusCode, ptr %contentType, ptr %body) {\nentry:\n  %bodyLen = call i64 @strlen(ptr %body)\n  %totLen = add i64 %bodyLen, 256\n  %out = call ptr @malloc(i64 %totLen)\n  %n = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %out, i64 %totLen, ptr @fmt_http_res, i32 %statusCode, ptr %contentType, i64 %bodyLen, ptr %body)\n  ret ptr %out\n}\n\n"
+
+    let mOff = findFieldOffset cg, "method"
+    let pOff = findFieldOffset cg, "path"
+    let bOff = findFieldOffset cg, "body"
+    let vOff = findFieldOffset cg, "version"
+    header = header.cat (`define internal ptr @zuv_http_parse_req(ptr %raw) {\nentry:\n  %obj = call ptr @malloc(i64 8192)\n  call ptr @memset(ptr %obj, i32 0, i64 8192)\n  %space1 = call ptr @strchr(ptr %raw, i32 32)\n  %cmpSp1 = icmp ne ptr %space1, null\n  br i1 %cmpSp1, label %parse_method, label %done\nparse_method:\n  %rawInt = ptrtoint ptr %raw to i64\n  %sp1Int = ptrtoint ptr %space1 to i64\n  %mLen = sub i64 %sp1Int, %rawInt\n  %mLenPlus1 = add i64 %mLen, 1\n  %mBuf = call ptr @malloc(i64 %mLenPlus1)\n  call ptr @memcpy(ptr %mBuf, ptr %raw, i64 %mLen)\n  %mEnd = getelementptr inbounds i8, ptr %mBuf, i64 %mLen\n  store i8 0, ptr %mEnd\n  %mInt = ptrtoint ptr %mBuf to i64\n  %mDbl = sitofp i64 %mInt to double\n  %mBits = bitcast double %mDbl to i64\n  %gepM = getelementptr inbounds i64, ptr %obj, i64 ${mOff}\n  store i64 %mBits, ptr %gepM\n  %pathStart = getelementptr inbounds i8, ptr %space1, i64 1\n  %space2 = call ptr @strchr(ptr %pathStart, i32 32)\n  %cmpSp2 = icmp ne ptr %space2, null\n  br i1 %cmpSp2, label %parse_path, label %check_body\nparse_path:\n  %pStartInt = ptrtoint ptr %pathStart to i64\n  %sp2Int = ptrtoint ptr %space2 to i64\n  %pLen = sub i64 %sp2Int, %pStartInt\n  %pLenPlus1 = add i64 %pLen, 1\n  %pBuf = call ptr @malloc(i64 %pLenPlus1)\n  call ptr @memcpy(ptr %pBuf, ptr %pathStart, i64 %pLen)\n  %pEnd = getelementptr inbounds i8, ptr %pBuf, i64 %pLen\n  store i8 0, ptr %pEnd\n  %pInt = ptrtoint ptr %pBuf to i64\n  %pDbl = sitofp i64 %pInt to double\n  %pBits = bitcast double %pDbl to i64\n  %gepP = getelementptr inbounds i64, ptr %obj, i64 ${pOff}\n  store i64 %pBits, ptr %gepP\n  br label %check_body\ncheck_body:\n  %bodySep = call ptr @strstr(ptr %raw, ptr @str_crlf2)\n  %hasBody = icmp ne ptr %bodySep, null\n  br i1 %hasBody, label %parse_body, label %no_body\nparse_body:\n  %bodyPtr = getelementptr inbounds i8, ptr %bodySep, i64 4\n  %bLen = call i64 @strlen(ptr %bodyPtr)\n  %bLenPlus1 = add i64 %bLen, 1\n  %bBuf = call ptr @malloc(i64 %bLenPlus1)\n  call ptr @memcpy(ptr %bBuf, ptr %bodyPtr, i64 %bLenPlus1)\n  %bInt = ptrtoint ptr %bBuf to i64\n  %bDbl = sitofp i64 %bInt to double\n  %bBits = bitcast double %bDbl to i64\n  %gepB = getelementptr inbounds i64, ptr %obj, i64 ${bOff}\n  store i64 %bBits, ptr %gepB\n  br label %set_version\nno_body:\n  %empInt = ptrtoint ptr @empty_str to i64\n  %empDbl = sitofp i64 %empInt to double\n  %empBits = bitcast double %empDbl to i64\n  %gepB2 = getelementptr inbounds i64, ptr %obj, i64 ${bOff}\n  store i64 %empBits, ptr %gepB2\n  br label %set_version\nset_version:\n  %vInt = ptrtoint ptr @str_http_ver to i64\n  %vDbl = sitofp i64 %vInt to double\n  %vBits = bitcast double %vDbl to i64\n  %gepV = getelementptr inbounds i64, ptr %obj, i64 ${vOff}\n  store i64 %vBits, ptr %gepV\n  br label %done\ndone:\n  ret ptr %obj\n}\n\n`)
+
+    header = header.cat "define internal i64 @zuv_ws_conn(ptr %url) {\nentry:\n  %s = call i64 @zuv_net_sock(i32 2, i32 1, i32 6)\n  %res = call double @zuv_net_connect(i64 %s, ptr @str_localhost, i32 80)\n  ret i64 %s\n}\n\n"
+
+    header = header.cat "define internal i64 @zuv_ws_send(i64 %s, ptr %msg) {\nentry:\n  %len = call i64 @strlen(ptr %msg)\n  %frameSz = add i64 %len, 2\n  %fbuf = call ptr @malloc(i64 %frameSz)\n  store i8 -127, ptr %fbuf\n  %lenTrunc = trunc i64 %len to i8\n  %gep1 = getelementptr inbounds i8, ptr %fbuf, i64 1\n  store i8 %lenTrunc, ptr %gep1\n  %gep2 = getelementptr inbounds i8, ptr %fbuf, i64 2\n  call ptr @memcpy(ptr %gep2, ptr %msg, i64 %len)\n  %sz32 = trunc i64 %frameSz to i32\n  %sent = call i32 @send(i64 %s, ptr %fbuf, i32 %sz32, i32 0)\n  call void @free(ptr %fbuf)\n  %sent64 = sext i32 %sent to i64\n  ret i64 %sent64\n}\n\n"
+
+    header = header.cat "define internal ptr @zuv_ws_recv(i64 %s) {\nentry:\n  %hdr = alloca [2 x i8], align 1\n  %n1 = call i32 @recv(i64 %s, ptr %hdr, i32 2, i32 0)\n  %cmpBad = icmp slt i32 %n1, 2\n  br i1 %cmpBad, label %err, label %read_body\nread_body:\n  %gepLen = getelementptr inbounds i8, ptr %hdr, i64 1\n  %rawLen = load i8, ptr %gepLen\n  %pLen8 = and i8 %rawLen, 127\n  %pLen32 = zext i8 %pLen8 to i32\n  %pLen64 = zext i8 %pLen8 to i64\n  %allocSz = add i64 %pLen64, 1\n  %buf = call ptr @malloc(i64 %allocSz)\n  %n2 = call i32 @recv(i64 %s, ptr %buf, i32 %pLen32, i32 0)\n  %endPtr = getelementptr inbounds i8, ptr %buf, i64 %pLen64\n  store i8 0, ptr %endPtr\n  ret ptr %buf\nerr:\n  ret ptr @empty_str\n}\n\n"
 
     let mainBuf = { code: "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n  call void @zuv_init_args(i32 %argc, ptr %argv)\n" }
 
