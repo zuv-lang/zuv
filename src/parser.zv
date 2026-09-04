@@ -966,9 +966,29 @@ parseExpression p, precedence {
         } els if (peekTok p).val == "=>" {
             advanceParser p // consume '=>'
             advanceParser p // body start
-            lambdaExpr = parseExpression p, 0
-            let lambdaStmts = [createReturnNode lambdaExpr]
-            let lambdaBody = createBlockNode lambdaStmts
+            mut lambdaBody = { kind: "BlockStmt", statements: [] }
+            mut isBlock = 0
+            if (curTok p).val == "{" {
+                mut isObjLit = 0
+                t1 = peekTok p
+                if t1.val == "}" || t1.val == "..." {
+                    isObjLit = 1
+                } els if t1.kind == "IDENT" {
+                    t2 = peekAheadToken p, 2
+                    if t2.val == ":" || t2.val == "," || t2.val == "}" {
+                        isObjLit = 1
+                    }
+                }
+                if isObjLit == 0 {
+                    isBlock = 1
+                    lambdaBody = parseBlock p
+                }
+            }
+            if isBlock == 0 {
+                lambdaExpr = parseExpression p, 0
+                let lambdaStmts = [createReturnNode lambdaExpr]
+                lambdaBody = createBlockNode lambdaStmts
+            }
             let lambdaParams = [{ name: varName, type: "", isRest: 0 }]
             left = { kind: "LambdaExpr", name: "", params: lambdaParams, body: lambdaBody }
         } els if (peekTok p).val == "(" {
@@ -1111,9 +1131,29 @@ parseExpression p, precedence {
             expectPeekToken p, "SYM", ")"
             expectPeekToken p, "SYM", "=>"
             advanceParser p // body start
-            lambdaExpr = parseExpression p, 0
-            let lambdaStmts = [createReturnNode lambdaExpr]
-            let lambdaBody = createBlockNode lambdaStmts
+            mut lambdaBody = { kind: "BlockStmt", statements: [] }
+            mut isBlock = 0
+            if (curTok p).val == "{" {
+                mut isObjLit = 0
+                t1 = peekTok p
+                if t1.val == "}" || t1.val == "..." {
+                    isObjLit = 1
+                } els if t1.kind == "IDENT" {
+                    t2 = peekAheadToken p, 2
+                    if t2.val == ":" || t2.val == "," || t2.val == "}" {
+                        isObjLit = 1
+                    }
+                }
+                if isObjLit == 0 {
+                    isBlock = 1
+                    lambdaBody = parseBlock p
+                }
+            }
+            if isBlock == 0 {
+                lambdaExpr = parseExpression p, 0
+                let lambdaStmts = [createReturnNode lambdaExpr]
+                lambdaBody = createBlockNode lambdaStmts
+            }
             left = { kind: "LambdaExpr", name: "", params: lambdaParams, body: lambdaBody }
         } els {
             advanceParser p
@@ -1216,7 +1256,7 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "debug" || varNameStr == "Prm" || varNameStr == "Promise" {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "debug" || varNameStr == "signal" || varNameStr == "Prm" || varNameStr == "Promise" {
                                 propName = `${varNameStr}.${propName}`
                             } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
@@ -1316,7 +1356,7 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "debug" || varNameStr == "Prm" || varNameStr == "Promise" {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "debug" || varNameStr == "signal" || varNameStr == "Prm" || varNameStr == "Promise" {
                                     propName = `${varNameStr}.${propName}`
                                 } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
@@ -2488,7 +2528,7 @@ parseStatement p {
             } els if (peekTok p).val == "(" {
                 advanceParser p // consume '('
                 let args = []
-                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" || identName == "debug" {
+                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" || identName == "debug" || identName == "signal" {
                     propName = `${identName}.${propName}`
                 } els {
                     if propName == "cls" || propName == "close" { propName = "chan.cls" }
@@ -2549,7 +2589,7 @@ parseStatement p {
                     argExpr = parseExpression p, 0
                     mut callTarget = propName
                     let args = []
-                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" || identName == "debug" {
+                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" || identName == "debug" || identName == "signal" {
                         callTarget = `${identName}.${propName}`
                         args.psh argExpr
                     } els {

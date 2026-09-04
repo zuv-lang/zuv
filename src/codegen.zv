@@ -2765,6 +2765,102 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  call void @zuv_panic(ptr ${msgPtr}, ptr ${fileStrName}, i32 0)\n`)
             outBuf.code = outBuf.code.cat "  unreachable\n"
             -> "0.0"
+        } els if (expr.callee == "signal.on" || expr.callee == "os.signal.on" || expr.callee == "on") && expr.args.ln == 2 {
+            mut sigInt = ""
+            if (classifyTyp cg, expr.args[0]) == "str" || expr.args[0].kind == "StringExpr" {
+                sPtr = getStrPtrVal cg, expr.args[0], outBuf
+                sigInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sigInt} = call i32 @zuv_signal_map_name(ptr ${sPtr})\n`)
+            } els {
+                sigReg = codegenExpr cg, expr.args[0], outBuf
+                sigInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sigInt} = fptosi double ${sigReg} to i32\n`)
+            }
+            cbVal = codegenExpr cg, expr.args[1], outBuf
+            cbInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cbInt} = fptosi double ${cbVal} to i64\n`)
+            cbPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cbPtr} = inttoptr i64 ${cbInt} to ptr\n`)
+            outBuf.code = outBuf.code.cat (`  call void @zuv_signal_on(i32 ${sigInt}, ptr ${cbPtr})\n`)
+            -> "1.0"
+        } els if (expr.callee == "signal.notify" || expr.callee == "os.signal.notify" || expr.callee == "notify") && (expr.args.ln == 1 || expr.args.ln == 2) {
+            if expr.args.ln == 1 {
+                ptrReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_chan_create(i64 16)\n`)
+                mut sigInt = ""
+                if (classifyTyp cg, expr.args[0]) == "str" || expr.args[0].kind == "StringExpr" {
+                    sPtr = getStrPtrVal cg, expr.args[0], outBuf
+                    sigInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${sigInt} = call i32 @zuv_signal_map_name(ptr ${sPtr})\n`)
+                } els {
+                    sigReg = codegenExpr cg, expr.args[0], outBuf
+                    sigInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${sigInt} = fptosi double ${sigReg} to i32\n`)
+                }
+                outBuf.code = outBuf.code.cat (`  call void @zuv_signal_notify(ptr ${ptrReg}, i32 ${sigInt})\n`)
+                intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+                dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            } els {
+                chVal = codegenExpr cg, expr.args[0], outBuf
+                chInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${chInt} = fptosi double ${chVal} to i64\n`)
+                ptrReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ptrReg} = inttoptr i64 ${chInt} to ptr\n`)
+                mut sigInt = ""
+                if (classifyTyp cg, expr.args[1]) == "str" || expr.args[1].kind == "StringExpr" {
+                    sPtr = getStrPtrVal cg, expr.args[1], outBuf
+                    sigInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${sigInt} = call i32 @zuv_signal_map_name(ptr ${sPtr})\n`)
+                } els {
+                    sigReg = codegenExpr cg, expr.args[1], outBuf
+                    sigInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${sigInt} = fptosi double ${sigReg} to i32\n`)
+                }
+                outBuf.code = outBuf.code.cat (`  call void @zuv_signal_notify(ptr ${ptrReg}, i32 ${sigInt})\n`)
+                -> "1.0"
+            }
+        } els if (expr.callee == "signal.raise" || expr.callee == "os.signal.raise" || expr.callee == "raise") && expr.args.ln == 1 {
+            mut sigInt = ""
+            if (classifyTyp cg, expr.args[0]) == "str" || expr.args[0].kind == "StringExpr" {
+                sPtr = getStrPtrVal cg, expr.args[0], outBuf
+                sigInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sigInt} = call i32 @zuv_signal_map_name(ptr ${sPtr})\n`)
+            } els {
+                sigReg = codegenExpr cg, expr.args[0], outBuf
+                sigInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sigInt} = fptosi double ${sigReg} to i32\n`)
+            }
+            outBuf.code = outBuf.code.cat (`  call void @zuv_signal_raise(i32 ${sigInt})\n`)
+            -> "1.0"
+        } els if (expr.callee == "signal.reset" || expr.callee == "os.signal.reset" || expr.callee == "reset") && expr.args.ln == 1 {
+            mut sigInt = ""
+            if (classifyTyp cg, expr.args[0]) == "str" || expr.args[0].kind == "StringExpr" {
+                sPtr = getStrPtrVal cg, expr.args[0], outBuf
+                sigInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sigInt} = call i32 @zuv_signal_map_name(ptr ${sPtr})\n`)
+            } els {
+                sigReg = codegenExpr cg, expr.args[0], outBuf
+                sigInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sigInt} = fptosi double ${sigReg} to i32\n`)
+            }
+            outBuf.code = outBuf.code.cat (`  call void @zuv_signal_reset(i32 ${sigInt})\n`)
+            -> "1.0"
+        } els if (expr.callee == "signal.ignore" || expr.callee == "os.signal.ignore" || expr.callee == "ignore") && expr.args.ln == 1 {
+            mut sigInt = ""
+            if (classifyTyp cg, expr.args[0]) == "str" || expr.args[0].kind == "StringExpr" {
+                sPtr = getStrPtrVal cg, expr.args[0], outBuf
+                sigInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sigInt} = call i32 @zuv_signal_map_name(ptr ${sPtr})\n`)
+            } els {
+                sigReg = codegenExpr cg, expr.args[0], outBuf
+                sigInt = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${sigInt} = fptosi double ${sigReg} to i32\n`)
+            }
+            outBuf.code = outBuf.code.cat (`  call void @zuv_signal_ignore(i32 ${sigInt})\n`)
+            -> "1.0"
         } els if (expr.callee == "malloc" || expr.callee == "mem.alloc" || expr.callee == "mem.malloc") && expr.args.ln == 1 {
             szReg = codegenExpr cg, expr.args[0], outBuf
             szInt = newReg cg
@@ -5180,6 +5276,10 @@ GenerateLLVMFull program {
     header = header.cat "declare i32 @QueryPerformanceFrequency(ptr)\n"
     header = header.cat "declare ptr @AddVectoredExceptionHandler(i32, ptr)\n"
     header = header.cat "declare i32 @RtlCaptureStackBackTrace(i32, i32, ptr, ptr)\n"
+    header = header.cat "declare i32 @_stricmp(ptr, ptr)\n"
+    header = header.cat "declare i32 @SetConsoleCtrlHandler(ptr, i32)\n"
+    header = header.cat "declare i32 @GenerateConsoleCtrlEvent(i32, i32)\n"
+    header = header.cat "declare i32 @raise(i32)\n"
     header = header.cat "@zuv_global_args = global i64 0\n"
     header = header.cat "@str_os_typ = private unnamed_addr constant [11 x i8] c\"Windows_NT\\00\"\n"
     header = header.cat "@str_os_rel = private unnamed_addr constant [5 x i8] c\"10.0\\00\"\n"
@@ -5525,7 +5625,8 @@ GenerateLLVMFull program {
     }
 
     btRuntimeStr = emitBacktraceRuntime cg
-    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}\n${btRuntimeStr}`
+    sigRuntimeStr = emitSignalRuntime cg
+    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}\n${btRuntimeStr}\n${sigRuntimeStr}`
     -> fullIR
 }
 
@@ -5571,4 +5672,47 @@ emitBacktraceRuntime cg {
     btIR = btIR.cat "define void @zuv_init_crash_handler() {\nentry:\n  call ptr @AddVectoredExceptionHandler(i32 1, ptr @zuv_crash_handler)\n  ret void\n}\n"
 
     -> btIR
+}
+
+emitSignalRuntime cg {
+    mut sigIR = "\n; --- Zuv OS Signal Handling & Process Traps (`os/signal`, `signal.on`) ---\n"
+    sigIR = sigIR.cat "@zuv_sig_trampoline_installed = internal global i32 0\n"
+    sigIR = sigIR.cat "@zuv_sig_handlers = internal global [32 x ptr] zeroinitializer\n"
+    sigIR = sigIR.cat "@zuv_sig_channels = internal global [32 x ptr] zeroinitializer\n"
+    sigIR = sigIR.cat "@zuv_sig_disposition = internal global [32 x i32] zeroinitializer\n\n"
+
+    sigIR = sigIR.cat "@zuv_sig_name_int = private unnamed_addr constant [4 x i8] c\"INT\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_sigint = private unnamed_addr constant [7 x i8] c\"SIGINT\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_term = private unnamed_addr constant [5 x i8] c\"TERM\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_sigterm = private unnamed_addr constant [8 x i8] c\"SIGTERM\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_hup = private unnamed_addr constant [4 x i8] c\"HUP\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_sighup = private unnamed_addr constant [7 x i8] c\"SIGHUP\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_quit = private unnamed_addr constant [5 x i8] c\"QUIT\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_sigquit = private unnamed_addr constant [8 x i8] c\"SIGQUIT\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_break = private unnamed_addr constant [6 x i8] c\"BREAK\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_sigbreak = private unnamed_addr constant [9 x i8] c\"SIGBREAK\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_usr1 = private unnamed_addr constant [5 x i8] c\"USR1\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_sigusr1 = private unnamed_addr constant [8 x i8] c\"SIGUSR1\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_usr2 = private unnamed_addr constant [5 x i8] c\"USR2\\00\"\n"
+    sigIR = sigIR.cat "@zuv_sig_name_sigusr2 = private unnamed_addr constant [8 x i8] c\"SIGUSR2\\00\"\n\n"
+
+    sigIR = sigIR.cat "define internal i32 @zuv_signal_map_name(ptr %str) {\nentry:\n  %isNull = icmp eq ptr %str, null\n  br i1 %isNull, label %ret_default, label %check_first_char\n\ncheck_first_char:\n  %c0 = load i8, ptr %str\n  %isDigit = icmp uge i8 %c0, 48\n  %isDigit2 = icmp ule i8 %c0, 57\n  %isNum = and i1 %isDigit, %isDigit2\n  br i1 %isNum, label %do_atoi, label %check_int\n\ndo_atoi:\n  %numVal = call i32 @atoi(ptr %str)\n  ret i32 %numVal\n\ncheck_int:\n  %cmpInt = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_int)\n  %isInt = icmp eq i32 %cmpInt, 0\n  br i1 %isInt, label %ret_int, label %check_sigint\n\ncheck_sigint:\n  %cmpSigInt = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_sigint)\n  %isSigInt = icmp eq i32 %cmpSigInt, 0\n  br i1 %isSigInt, label %ret_int, label %check_term\n\nret_int:\n  ret i32 2\n\ncheck_term:\n  %cmpTerm = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_term)\n  %isTerm = icmp eq i32 %cmpTerm, 0\n  br i1 %isTerm, label %ret_term, label %check_sigterm\n\ncheck_sigterm:\n  %cmpSigTerm = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_sigterm)\n  %isSigTerm = icmp eq i32 %cmpSigTerm, 0\n  br i1 %isSigTerm, label %ret_term, label %check_hup\n\nret_term:\n  ret i32 15\n\ncheck_hup:\n  %cmpHup = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_hup)\n  %isHup = icmp eq i32 %cmpHup, 0\n  br i1 %isHup, label %ret_hup, label %check_sighup\n\ncheck_sighup:\n  %cmpSigHup = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_sighup)\n  %isSigHup = icmp eq i32 %cmpSigHup, 0\n  br i1 %isSigHup, label %ret_hup, label %check_quit\n\nret_hup:\n  ret i32 1\n\ncheck_quit:\n  %cmpQuit = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_quit)\n  %isQuit = icmp eq i32 %cmpQuit, 0\n  br i1 %isQuit, label %ret_quit, label %check_sigquit\n\ncheck_sigquit:\n  %cmpSigQuit = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_sigquit)\n  %isSigQuit = icmp eq i32 %cmpSigQuit, 0\n  br i1 %isSigQuit, label %ret_quit, label %check_break\n\nret_quit:\n  ret i32 3\n\ncheck_break:\n  %cmpBreak = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_break)\n  %isBreak = icmp eq i32 %cmpBreak, 0\n  br i1 %isBreak, label %ret_break, label %check_sigbreak\n\ncheck_sigbreak:\n  %cmpSigBreak = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_sigbreak)\n  %isSigBreak = icmp eq i32 %cmpSigBreak, 0\n  br i1 %isSigBreak, label %ret_break, label %check_usr1\n\nret_break:\n  ret i32 21\n\ncheck_usr1:\n  %cmpUsr1 = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_usr1)\n  %isUsr1 = icmp eq i32 %cmpUsr1, 0\n  br i1 %isUsr1, label %ret_usr1, label %check_sigusr1\n\ncheck_sigusr1:\n  %cmpSigUsr1 = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_sigusr1)\n  %isSigUsr1 = icmp eq i32 %cmpSigUsr1, 0\n  br i1 %isSigUsr1, label %ret_usr1, label %check_usr2\n\nret_usr1:\n  ret i32 10\n\ncheck_usr2:\n  %cmpUsr2 = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_usr2)\n  %isUsr2 = icmp eq i32 %cmpUsr2, 0\n  br i1 %isUsr2, label %ret_usr2, label %check_sigusr2\n\ncheck_sigusr2:\n  %cmpSigUsr2 = call i32 @_stricmp(ptr %str, ptr @zuv_sig_name_sigusr2)\n  %isSigUsr2 = icmp eq i32 %cmpSigUsr2, 0\n  br i1 %isSigUsr2, label %ret_usr2, label %ret_default\n\nret_usr2:\n  ret i32 12\n\nret_default:\n  ret i32 2\n}\n\n"
+
+    sigIR = sigIR.cat "define internal void @zuv_signal_dispatch(i32 %sigId) {\nentry:\n  %isGtZero = icmp sgt i32 %sigId, 0\n  %isLt32 = icmp slt i32 %sigId, 32\n  %inRange = and i1 %isGtZero, %isLt32\n  br i1 %inRange, label %check_disp, label %ret_lbl\n\ncheck_disp:\n  %dispSlot = getelementptr inbounds i32, ptr @zuv_sig_disposition, i32 %sigId\n  %disp = load i32, ptr %dispSlot\n  %isIgnored = icmp eq i32 %disp, 2\n  br i1 %isIgnored, label %ret_lbl, label %check_chan\n\ncheck_chan:\n  %chanSlot = getelementptr inbounds ptr, ptr @zuv_sig_channels, i32 %sigId\n  %chan = load ptr, ptr %chanSlot\n  %hasChan = icmp ne ptr %chan, null\n  br i1 %hasChan, label %do_send_chan, label %check_handler\n\ndo_send_chan:\n  %sig64 = sext i32 %sigId to i64\n  %sndRes = call i32 @zuv_chan_send(ptr %chan, i64 %sig64)\n  br label %check_handler\n\ncheck_handler:\n  %fnSlot = getelementptr inbounds ptr, ptr @zuv_sig_handlers, i32 %sigId\n  %fn = load ptr, ptr %fnSlot\n  %hasFn = icmp ne ptr %fn, null\n  br i1 %hasFn, label %do_call_handler, label %ret_lbl\n\ndo_call_handler:\n  %sigDbl = sitofp i32 %sigId to double\n  %callRes = call double %fn(double %sigDbl)\n  br label %ret_lbl\n\nret_lbl:\n  ret void\n}\n\n"
+
+    sigIR = sigIR.cat "define internal i32 @zuv_win_ctrl_handler(i32 %ctrlType) {\nentry:\n  %isC = icmp eq i32 %ctrlType, 0\n  br i1 %isC, label %sig_int, label %check_brk\n\ncheck_brk:\n  %isBrk = icmp eq i32 %ctrlType, 1\n  br i1 %isBrk, label %sig_break, label %check_cls\n\ncheck_cls:\n  %isCls = icmp eq i32 %ctrlType, 2\n  br i1 %isCls, label %sig_term, label %check_logoff\n\ncheck_logoff:\n  %isLogoff = icmp eq i32 %ctrlType, 5\n  br i1 %isLogoff, label %sig_hup, label %check_shutdown\n\ncheck_shutdown:\n  %isShutdown = icmp eq i32 %ctrlType, 6\n  br i1 %isShutdown, label %sig_term, label %sig_int\n\nsig_int:\n  br label %eval_sig\n\nsig_break:\n  br label %eval_sig\n\nsig_term:\n  br label %eval_sig\n\nsig_hup:\n  br label %eval_sig\n\neval_sig:\n  %sig = phi i32 [ 2, %sig_int ], [ 21, %sig_break ], [ 15, %sig_term ], [ 1, %sig_hup ]\n  %dispSlot = getelementptr inbounds i32, ptr @zuv_sig_disposition, i32 %sig\n  %disp = load i32, ptr %dispSlot\n  %isUnhandled = icmp eq i32 %disp, 0\n  br i1 %isUnhandled, label %ret_false, label %do_handle\n\ndo_handle:\n  call void @zuv_signal_dispatch(i32 %sig)\n  ret i32 1\n\nret_false:\n  ret i32 0\n}\n\n"
+
+    sigIR = sigIR.cat "define internal void @zuv_signal_init_trampoline() {\nentry:\n  %inst = load i32, ptr @zuv_sig_trampoline_installed\n  %isInst = icmp ne i32 %inst, 0\n  br i1 %isInst, label %done, label %do_install\n\ndo_install:\n  store i32 1, ptr @zuv_sig_trampoline_installed\n  %res = call i32 @SetConsoleCtrlHandler(ptr @zuv_win_ctrl_handler, i32 1)\n  br label %done\n\ndone:\n  ret void\n}\n\n"
+
+    sigIR = sigIR.cat "define internal void @zuv_signal_on(i32 %sigId, ptr %fnPtr) {\nentry:\n  call void @zuv_signal_init_trampoline()\n  %isGtZero = icmp sgt i32 %sigId, 0\n  %isLt32 = icmp slt i32 %sigId, 32\n  %inRange = and i1 %isGtZero, %isLt32\n  br i1 %inRange, label %store_fn, label %ret_lbl\n\nstore_fn:\n  %fnSlot = getelementptr inbounds ptr, ptr @zuv_sig_handlers, i32 %sigId\n  store ptr %fnPtr, ptr %fnSlot\n  %dispSlot = getelementptr inbounds i32, ptr @zuv_sig_disposition, i32 %sigId\n  store i32 1, ptr %dispSlot\n  br label %ret_lbl\n\nret_lbl:\n  ret void\n}\n\n"
+
+    sigIR = sigIR.cat "define internal void @zuv_signal_notify(ptr %pChan, i32 %sigId) {\nentry:\n  call void @zuv_signal_init_trampoline()\n  %isGtZero = icmp sgt i32 %sigId, 0\n  %isLt32 = icmp slt i32 %sigId, 32\n  %inRange = and i1 %isGtZero, %isLt32\n  br i1 %inRange, label %store_ch, label %ret_lbl\n\nstore_ch:\n  %chanSlot = getelementptr inbounds ptr, ptr @zuv_sig_channels, i32 %sigId\n  store ptr %pChan, ptr %chanSlot\n  %dispSlot = getelementptr inbounds i32, ptr @zuv_sig_disposition, i32 %sigId\n  store i32 1, ptr %dispSlot\n  br label %ret_lbl\n\nret_lbl:\n  ret void\n}\n\n"
+
+    sigIR = sigIR.cat "define internal void @zuv_signal_raise(i32 %sigId) {\nentry:\n  call void @zuv_signal_dispatch(i32 %sigId)\n  ret void\n}\n\n"
+
+    sigIR = sigIR.cat "define internal void @zuv_signal_reset(i32 %sigId) {\nentry:\n  %isGtZero = icmp sgt i32 %sigId, 0\n  %isLt32 = icmp slt i32 %sigId, 32\n  %inRange = and i1 %isGtZero, %isLt32\n  br i1 %inRange, label %do_reset, label %ret_lbl\n\ndo_reset:\n  %fnSlot = getelementptr inbounds ptr, ptr @zuv_sig_handlers, i32 %sigId\n  store ptr null, ptr %fnSlot\n  %chanSlot = getelementptr inbounds ptr, ptr @zuv_sig_channels, i32 %sigId\n  store ptr null, ptr %chanSlot\n  %dispSlot = getelementptr inbounds i32, ptr @zuv_sig_disposition, i32 %sigId\n  store i32 0, ptr %dispSlot\n  br label %ret_lbl\n\nret_lbl:\n  ret void\n}\n\n"
+
+    sigIR = sigIR.cat "define internal void @zuv_signal_ignore(i32 %sigId) {\nentry:\n  call void @zuv_signal_init_trampoline()\n  %isGtZero = icmp sgt i32 %sigId, 0\n  %isLt32 = icmp slt i32 %sigId, 32\n  %inRange = and i1 %isGtZero, %isLt32\n  br i1 %inRange, label %do_ignore, label %ret_lbl\n\ndo_ignore:\n  %fnSlot = getelementptr inbounds ptr, ptr @zuv_sig_handlers, i32 %sigId\n  store ptr null, ptr %fnSlot\n  %chanSlot = getelementptr inbounds ptr, ptr @zuv_sig_channels, i32 %sigId\n  store ptr null, ptr %chanSlot\n  %dispSlot = getelementptr inbounds i32, ptr @zuv_sig_disposition, i32 %sigId\n  store i32 2, ptr %dispSlot\n  br label %ret_lbl\n\nret_lbl:\n  ret void\n}\n"
+
+    -> sigIR
 }

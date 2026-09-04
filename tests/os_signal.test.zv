@@ -1,0 +1,76 @@
+// Unit Test for OS Signal Handling & Process Traps (`os/signal`, `signal.on`)
+imp signal frm "os/signal"
+
+// 1. Test event handler with function reference
+let caughtInt = 0
+handleInt sig {
+    caughtInt = 1
+}
+signal.on "INT", handleInt
+signal.raise "INT"
+if caughtInt == 1 {
+    prnt "signal.on callback received SIGINT successfully"
+}
+
+// 2. Test event handler with lambda () => { ... }
+let caughtHup = 0
+signal.on "HUP", () => {
+    caughtHup = 1
+}
+signal.raise "HUP"
+if caughtHup == 1 {
+    prnt "signal.on lambda received SIGHUP successfully"
+}
+
+// 3. Test channel-based notification queue (auto channel creation)
+let sigChan = signal.notify "TERM"
+signal.raise "TERM"
+let receivedSig = chan.rcv sigChan
+if receivedSig == 15 {
+    prnt "signal.notify channel received SIGTERM successfully"
+}
+
+// 4. Test explicit channel notification
+let myChan = chan.create 10
+signal.notify myChan, "USR1"
+signal.raise "USR1"
+let usrSig = chan.rcv myChan
+if usrSig == 10 {
+    prnt "signal.notify explicit channel received SIGUSR1 successfully"
+}
+
+// 5. Test numeric signal code
+let caughtBreak = 0
+signal.on 21, () => {
+    caughtBreak = 1
+}
+signal.raise 21
+if caughtBreak == 1 {
+    prnt "signal numeric code (21) handled successfully"
+}
+
+// 6. Test signal.ignore suppresses dispatch
+let ignoredFired = 0
+signal.on "QUIT", () => {
+    ignoredFired = 1
+}
+signal.ignore "QUIT"
+signal.raise "QUIT"
+if ignoredFired == 0 {
+    prnt "signal.ignore successfully suppressed handler"
+}
+
+// 7. Test signal.reset resets handler
+let resetFired = 0
+signal.on "USR2", () => {
+    resetFired = 1
+}
+signal.reset "USR2"
+signal.raise "USR2"
+if resetFired == 0 {
+    prnt "signal.reset successfully restored handler"
+}
+
+if caughtInt == 1 && caughtHup == 1 && receivedSig == 15 && usrSig == 10 && caughtBreak == 1 && ignoredFired == 0 && resetFired == 0 {
+    prnt "os_signal test passed"
+}

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🚨 OS Signal Handling & Process Traps (`os/signal`, `signal.on`)
+- Added native OS signal interception (`CTRL_C`, `CTRL_BREAK`, `CLOSE`, `SHUTDOWN`).
+- Added event-driven signal listeners: `signal.on(sig, handler)`.
+- Added channel-based signal notifications: `signal.notify(sig)`.
+- Added manual software signaling: `signal.raise(sig)` by name or code.
+- Added signal disposition control: `signal.ignore(sig)` and `signal.reset(sig)`.
+- Added test suite in `tests/os_signal.test.zv`.
+
 ### 💥 Stack Unwinding, Panics, Backtraces & Embedded PC Table (`panic` / `debug.*` / Windows VEH)
 - Added native `panic <expr>` statement with source context, exit code 101, and backtrace via `ZUV_BACKTRACE=1`.
 - Added embedded PC function descriptor table (`@zuv_fn_descs`) with binary-search runtime symbol resolution.
