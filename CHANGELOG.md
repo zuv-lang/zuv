@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🖧 Inter-Process Communication (IPC) & Shared Memory (`ipc`, `mmap`, `Named Pipes`)
+- Added Windows named pipe streaming: `net.listen("pipe", name)` and `net.conn("pipe", name)`.
+- Added file & shared memory mapping: `mmap`, `munmap`, `ipc.shm`, `ipc.openShm`.
+- Added shared memory operations: `ipc.write`, `ipc.read`, `ipc.readStr`, `ipc.flush`, `ipc.unmap`.
+- Added synchronization: named mutexes (`ipc.mutex`, `ipc.lock`, `ipc.unlock`), semaphores (`ipc.sem`, `ipc.semWait`, `ipc.semPost`), and events (`ipc.event`, `ipc.eventSet`, `ipc.eventReset`, `ipc.eventWait`, `ipc.close`).
+- Added test suite in `tests/ipc.test.zv`.
+
 ### 🚨 OS Signal Handling & Process Traps (`os/signal`, `signal.on`)
 - Added native OS signal interception (`CTRL_C`, `CTRL_BREAK`, `CLOSE`, `SHUTDOWN`).
 - Added event-driven signal listeners: `signal.on(sig, handler)`.

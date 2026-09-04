@@ -1020,7 +1020,8 @@ parseExpression p, precedence {
                varName == "eq" || varName == "streq" || varName == "push" || varName == "psh" ||
                varName == "pop" || varName == "pp" || varName == "len" || varName == "ln" ||
                varName == "ldLib" || varName == "loadLib" || varName == "getSym" ||
-               varName == "clsLib" || varName == "closeLib" || varName == "call" {
+               varName == "clsLib" || varName == "closeLib" || varName == "call" ||
+               varName == "mmap" || varName == "munmap" {
                 isBuiltinMathOrStd = 1
             }
             mut shouldCall = 0
@@ -1256,7 +1257,7 @@ parseExpression p, precedence {
                                     isUpperV = 1
                                 }
                             }
-                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "debug" || varNameStr == "signal" || varNameStr == "Prm" || varNameStr == "Promise" {
+                            if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "debug" || varNameStr == "signal" || varNameStr == "ipc" || varNameStr == "Prm" || varNameStr == "Promise" {
                                 propName = `${varNameStr}.${propName}`
                             } els if isUpperV == 1 {
                                 propName = `${varNameStr}_${propName}`
@@ -1356,7 +1357,7 @@ parseExpression p, precedence {
                                         isUpperV = 1
                                     }
                                 }
-                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "debug" || varNameStr == "signal" || varNameStr == "Prm" || varNameStr == "Promise" {
+                                if varNameStr == "os" || varNameStr == "fs" || varNameStr == "mth" || varNameStr == "Math" || varNameStr == "thrd" || varNameStr == "mtx" || varNameStr == "atmc" || varNameStr == "chan" || varNameStr == "time" || varNameStr == "mem" || varNameStr == "ffi" || varNameStr == "net" || varNameStr == "http" || varNameStr == "dns" || varNameStr == "ws" || varNameStr == "debug" || varNameStr == "signal" || varNameStr == "ipc" || varNameStr == "Prm" || varNameStr == "Promise" {
                                     propName = `${varNameStr}.${propName}`
                                 } els if isUpperV == 1 {
                                     propName = `${varNameStr}_${propName}`
@@ -2528,7 +2529,7 @@ parseStatement p {
             } els if (peekTok p).val == "(" {
                 advanceParser p // consume '('
                 let args = []
-                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" || identName == "debug" || identName == "signal" {
+                if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" || identName == "debug" || identName == "signal" || identName == "ipc" {
                     propName = `${identName}.${propName}`
                 } els {
                     if propName == "cls" || propName == "close" { propName = "chan.cls" }
@@ -2589,7 +2590,7 @@ parseStatement p {
                     argExpr = parseExpression p, 0
                     mut callTarget = propName
                     let args = []
-                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" || identName == "debug" || identName == "signal" {
+                    if identName == "os" || identName == "fs" || identName == "mth" || identName == "Math" || identName == "thrd" || identName == "mtx" || identName == "atmc" || identName == "chan" || identName == "time" || identName == "mem" || identName == "ffi" || identName == "net" || identName == "http" || identName == "dns" || identName == "ws" || identName == "debug" || identName == "signal" || identName == "ipc" {
                         callTarget = `${identName}.${propName}`
                         args.psh argExpr
                     } els {
