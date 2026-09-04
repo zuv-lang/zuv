@@ -347,7 +347,7 @@ checkStatement checker, stmt {
                     }
                     if modPathStr != "" {
                         let isStd = 0
-                        if modPathStr == "str" || modPathStr == "arr" || modPathStr == "obj" || modPathStr == "fs" || modPathStr == "os" || modPathStr == "time" || modPathStr == "thrd" || modPathStr == "mtx" || modPathStr == "atmc" || modPathStr == "chan" || modPathStr == "math" || modPathStr == "mth" || modPathStr == "json" || modPathStr == "net" || modPathStr == "http" || modPathStr == "dns" || modPathStr == "ws" || modPathStr == "mem" || modPathStr == "ffi" || modPathStr == "assert" || modPathStr == "signal" || modPathStr == "os/signal" || modPathStr == "std/signal" || modPathStr == "ipc" || modPathStr == "os/ipc" || modPathStr == "std/ipc" || modPathStr == "mmap" {
+                        if modPathStr == "str" || modPathStr == "arr" || modPathStr == "obj" || modPathStr == "fs" || modPathStr == "os" || modPathStr == "time" || modPathStr == "thrd" || modPathStr == "mtx" || modPathStr == "atmc" || modPathStr == "chan" || modPathStr == "math" || modPathStr == "mth" || modPathStr == "json" || modPathStr == "net" || modPathStr == "http" || modPathStr == "dns" || modPathStr == "ws" || modPathStr == "mem" || modPathStr == "ffi" || modPathStr == "assert" || modPathStr == "signal" || modPathStr == "os/signal" || modPathStr == "std/signal" || modPathStr == "ipc" || modPathStr == "os/ipc" || modPathStr == "std/ipc" || modPathStr == "mmap" || modPathStr == "term" || modPathStr == "os/term" || modPathStr == "std/term" || modPathStr == "pty" || modPathStr == "os/pty" || modPathStr == "std/pty" {
                             isStd = 1
                         }
                         if modPathStr.ln >= 4 {

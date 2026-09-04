@@ -507,7 +507,7 @@ strictEqTypTag cg, expr {
     }
     if expr.kind == "CallExpr" {
         cName = expr.callee
-        if cName == "rF" || cName == "fs.rF" || cName == "rFAsync" || cName == "fs.rFAsync" || cName == "net.recvAsync" || cName == "recvAsync" || cName == "socket.read" || cName == "ipc.read" || cName == "ipc.readStr" || cName == "ipc.pipeRecv" || cName == "ipc.pipeRead" {
+        if cName == "rF" || cName == "fs.rF" || cName == "rFAsync" || cName == "fs.rFAsync" || cName == "net.recvAsync" || cName == "recvAsync" || cName == "socket.read" || cName == "ipc.read" || cName == "ipc.readStr" || cName == "ipc.pipeRecv" || cName == "ipc.pipeRead" || cName == "term.readKey" || cName == "readKey" || cName == "term.color" || cName == "color" || cName == "term.bold" || cName == "bold" || cName == "term.dim" || cName == "dim" || cName == "term.italic" || cName == "italic" || cName == "term.underline" || cName == "underline" || cName == "term.red" || cName == "red" || cName == "term.green" || cName == "green" || cName == "term.yellow" || cName == "yellow" || cName == "term.blue" || cName == "blue" || cName == "term.magenta" || cName == "magenta" || cName == "term.cyan" || cName == "cyan" || cName == "term.size" || cName == "size" || cName == "term.reset" || cName == "reset" || cName == "pty.read" || cName == "pty.readStr" {
             -> "str"
         }
     }
@@ -805,7 +805,15 @@ classifyTyp cg, expr {
         }
         if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" || expr.callee == "realP" || expr.callee == "realpath" || expr.callee == "fs.realpath" || expr.callee == "fs.realP" || expr.callee == "mkTmp" || expr.callee == "mktemp" || expr.callee == "fs.mktemp" || expr.callee == "fs.mkTmp" || expr.callee == "rAt" || expr.callee == "readAt" || expr.callee == "fs.readAt" || expr.callee == "fs.rAt" || expr.callee == "rLink" || expr.callee == "readlink" || expr.callee == "fs.readlink" || expr.callee == "fs.rLink" || expr.callee == "env" || expr.callee == "os.env" || expr.callee == "os.getEnv" || expr.callee == "os.env.get" || expr.callee == "cwd" || expr.callee == "os.cwd" ||
            expr.callee == "net.rcv" || expr.callee == "net.recv" || expr.callee == "rcv" || expr.callee == "recv" || expr.callee == "net.rcvFrm" || expr.callee == "rcvFrm" || expr.callee == "dns.lookup" || expr.callee == "dns.resolve" || expr.callee == "dns.reverseLookup" || expr.callee == "http.get" || expr.callee == "http.post" || expr.callee == "http.fmtRes" || expr.callee == "ws.recv" ||
-           expr.callee == "ipc.read" || expr.callee == "ipc.readStr" || expr.callee == "ipc.pipeRecv" || expr.callee == "ipc.pipeRead" {
+           expr.callee == "ipc.read" || expr.callee == "ipc.readStr" || expr.callee == "ipc.pipeRecv" || expr.callee == "ipc.pipeRead" ||
+           expr.callee == "term.readKey" || expr.callee == "readKey" || expr.callee == "term.color" || expr.callee == "color" ||
+           expr.callee == "term.bold" || expr.callee == "bold" || expr.callee == "term.dim" || expr.callee == "dim" ||
+           expr.callee == "term.italic" || expr.callee == "italic" || expr.callee == "term.underline" || expr.callee == "underline" ||
+           expr.callee == "term.red" || expr.callee == "red" || expr.callee == "term.green" || expr.callee == "green" ||
+           expr.callee == "term.yellow" || expr.callee == "yellow" || expr.callee == "term.blue" || expr.callee == "blue" ||
+           expr.callee == "term.magenta" || expr.callee == "magenta" || expr.callee == "term.cyan" || expr.callee == "cyan" ||
+           expr.callee == "term.size" || expr.callee == "size" || expr.callee == "term.reset" || expr.callee == "reset" ||
+           expr.callee == "pty.read" || expr.callee == "pty.readStr" {
             -> "str"
         }
         -> "num"
@@ -3201,6 +3209,274 @@ codegenExpr cg, expr, outBuf {
             let dblReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
             -> dblReg
+        } els if (expr.callee == "term.makeRaw" || expr.callee == "makeRaw") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_make_raw()\n`)
+            -> resReg
+        } els if (expr.callee == "term.restore" || expr.callee == "restore") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_restore()\n`)
+            -> resReg
+        } els if (expr.callee == "term.isRaw" || expr.callee == "isRaw") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_is_raw()\n`)
+            -> resReg
+        } els if (expr.callee == "term.hasKey" || expr.callee == "hasKey") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_has_key()\n`)
+            -> resReg
+        } els if (expr.callee == "term.readKey" || expr.callee == "readKey") && (expr.args.ln == 0 || expr.args.ln == 1) {
+            mut toReg = "0"
+            if expr.args.ln == 1 {
+                let tReg = codegenExpr cg, expr.args[0], outBuf
+                let tI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${tI} = fptosi double ${tReg} to i32\n`)
+                toReg = tI
+            }
+            let ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_term_read_key(i32 ${toReg})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "term.width" || expr.callee == "width") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_width()\n`)
+            -> resReg
+        } els if (expr.callee == "term.height" || expr.callee == "height") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_height()\n`)
+            -> resReg
+        } els if (expr.callee == "term.size" || expr.callee == "size") && expr.args.ln == 0 {
+            let ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_term_size()\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "term.write" || expr.callee == "write") && expr.args.ln == 1 {
+            let sPtr = getStrPtrVal cg, expr.args[0], outBuf
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_write(ptr ${sPtr})\n`)
+            -> resReg
+        } els if (expr.callee == "term.cursorTo" || expr.callee == "cursorTo") && expr.args.ln == 2 {
+            let xReg = codegenExpr cg, expr.args[0], outBuf
+            let xI = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${xI} = fptosi double ${xReg} to i32\n`)
+            let yReg = codegenExpr cg, expr.args[1], outBuf
+            let yI = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${yI} = fptosi double ${yReg} to i32\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_cursor_to(i32 ${xI}, i32 ${yI})\n`)
+            -> resReg
+        } els if (expr.callee == "term.cursorUp" || expr.callee == "cursorUp") && (expr.args.ln == 0 || expr.args.ln == 1) {
+            mut nI = "1"
+            if expr.args.ln == 1 {
+                let nReg = codegenExpr cg, expr.args[0], outBuf
+                let cI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cI} = fptosi double ${nReg} to i32\n`)
+                nI = cI
+            }
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_cursor_up(i32 ${nI})\n`)
+            -> resReg
+        } els if (expr.callee == "term.cursorDown" || expr.callee == "cursorDown") && (expr.args.ln == 0 || expr.args.ln == 1) {
+            mut nI = "1"
+            if expr.args.ln == 1 {
+                let nReg = codegenExpr cg, expr.args[0], outBuf
+                let cI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cI} = fptosi double ${nReg} to i32\n`)
+                nI = cI
+            }
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_cursor_down(i32 ${nI})\n`)
+            -> resReg
+        } els if (expr.callee == "term.cursorForward" || expr.callee == "cursorForward") && (expr.args.ln == 0 || expr.args.ln == 1) {
+            mut nI = "1"
+            if expr.args.ln == 1 {
+                let nReg = codegenExpr cg, expr.args[0], outBuf
+                let cI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cI} = fptosi double ${nReg} to i32\n`)
+                nI = cI
+            }
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_cursor_forward(i32 ${nI})\n`)
+            -> resReg
+        } els if (expr.callee == "term.cursorBack" || expr.callee == "cursorBack") && (expr.args.ln == 0 || expr.args.ln == 1) {
+            mut nI = "1"
+            if expr.args.ln == 1 {
+                let nReg = codegenExpr cg, expr.args[0], outBuf
+                let cI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cI} = fptosi double ${nReg} to i32\n`)
+                nI = cI
+            }
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_cursor_back(i32 ${nI})\n`)
+            -> resReg
+        } els if (expr.callee == "term.clear" || expr.callee == "clear") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_clear()\n`)
+            -> resReg
+        } els if (expr.callee == "term.clearLine" || expr.callee == "clearLine") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_clear_line()\n`)
+            -> resReg
+        } els if (expr.callee == "term.hideCursor" || expr.callee == "hideCursor") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_hide_cursor()\n`)
+            -> resReg
+        } els if (expr.callee == "term.showCursor" || expr.callee == "showCursor") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_show_cursor()\n`)
+            -> resReg
+        } els if (expr.callee == "term.enterAltScreen" || expr.callee == "enterAltScreen") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_enter_alt()\n`)
+            -> resReg
+        } els if (expr.callee == "term.exitAltScreen" || expr.callee == "exitAltScreen") && expr.args.ln == 0 {
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_term_exit_alt()\n`)
+            -> resReg
+        } els if (expr.callee == "term.reset" || expr.callee == "reset") && expr.args.ln == 0 {
+            let ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_term_reset()\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "term.color" || expr.callee == "color") && (expr.args.ln == 1 || expr.args.ln == 2) {
+            let cPtr = getStrPtrVal cg, expr.args[0], outBuf
+            if expr.args.ln == 1 {
+                let ptrReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_term_color_code(ptr ${cPtr})\n`)
+                let intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+                let dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            } els {
+                let tPtr = getStrPtrVal cg, expr.args[1], outBuf
+                let ptrReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_term_color(ptr ${cPtr}, ptr ${tPtr})\n`)
+                let intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+                let dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            }
+        } els if (expr.callee == "term.bold" || expr.callee == "bold" || expr.callee == "term.dim" || expr.callee == "dim" || expr.callee == "term.italic" || expr.callee == "italic" || expr.callee == "term.underline" || expr.callee == "underline" || expr.callee == "term.red" || expr.callee == "red" || expr.callee == "term.green" || expr.callee == "green" || expr.callee == "term.yellow" || expr.callee == "yellow" || expr.callee == "term.blue" || expr.callee == "blue" || expr.callee == "term.magenta" || expr.callee == "magenta" || expr.callee == "term.cyan" || expr.callee == "cyan") && (expr.args.ln == 0 || expr.args.ln == 1) {
+            mut baseStyle = expr.callee
+            if baseStyle.ln >= 5 {
+                if (baseStyle.slc 0, 5) == "term." {
+                    baseStyle = baseStyle.slc 5, baseStyle.ln
+                }
+            }
+            if expr.args.ln == 0 {
+                let ptrReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_term_style_code(ptr @.zuv_term_code_${baseStyle})\n`)
+                let intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+                let dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            } els {
+                let tPtr = getStrPtrVal cg, expr.args[0], outBuf
+                let ptrReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_term_style(ptr @.zuv_term_pfx_${baseStyle}, ptr ${tPtr})\n`)
+                let intReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+                let dblReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+                -> dblReg
+            }
+        } els if expr.callee == "pty.open" && (expr.args.ln == 0 || expr.args.ln == 2) {
+            mut cReg = "80"
+            mut rReg = "24"
+            if expr.args.ln == 2 {
+                let cv = codegenExpr cg, expr.args[0], outBuf
+                let cI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cI} = fptosi double ${cv} to i32\n`)
+                cReg = cI
+                let rv = codegenExpr cg, expr.args[1], outBuf
+                let rI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${rI} = fptosi double ${rv} to i32\n`)
+                rReg = rI
+            }
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i64 @zuv_pty_open(i32 ${cReg}, i32 ${rReg})\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if expr.callee == "pty.spawn" && (expr.args.ln == 1 || expr.args.ln == 3) {
+            let cmdPtr = getStrPtrVal cg, expr.args[0], outBuf
+            mut cReg = "80"
+            mut rReg = "24"
+            if expr.args.ln == 3 {
+                let cv = codegenExpr cg, expr.args[1], outBuf
+                let cI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cI} = fptosi double ${cv} to i32\n`)
+                cReg = cI
+                let rv = codegenExpr cg, expr.args[2], outBuf
+                let rI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${rI} = fptosi double ${rv} to i32\n`)
+                rReg = rI
+            }
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i64 @zuv_pty_spawn(ptr ${cmdPtr}, i32 ${cReg}, i32 ${rReg})\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if expr.callee == "pty.write" && expr.args.ln == 2 {
+            let hReg = codegenExpr cg, expr.args[0], outBuf
+            let hInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
+            let dPtr = getStrPtrVal cg, expr.args[1], outBuf
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i64 @zuv_pty_write(i64 ${hInt}, ptr ${dPtr})\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${resReg} to double\n`)
+            -> dblReg
+        } els if (expr.callee == "pty.read" || expr.callee == "pty.readStr") && (expr.args.ln == 1 || expr.args.ln == 2) {
+            let hReg = codegenExpr cg, expr.args[0], outBuf
+            let hInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
+            mut maxLen = "4096"
+            if expr.args.ln >= 2 {
+                let mReg = codegenExpr cg, expr.args[1], outBuf
+                let mI = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${mI} = fptosi double ${mReg} to i32\n`)
+                maxLen = mI
+            }
+            let ptrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ptrReg} = call ptr @zuv_pty_read(i64 ${hInt}, i32 ${maxLen})\n`)
+            let intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${ptrReg} to i64\n`)
+            let dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
+        } els if expr.callee == "pty.resize" && expr.args.ln == 3 {
+            let hReg = codegenExpr cg, expr.args[0], outBuf
+            let hInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
+            let cv = codegenExpr cg, expr.args[1], outBuf
+            let cI = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cI} = fptosi double ${cv} to i32\n`)
+            let rv = codegenExpr cg, expr.args[2], outBuf
+            let rI = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${rI} = fptosi double ${rv} to i32\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_pty_resize(i64 ${hInt}, i32 ${cI}, i32 ${rI})\n`)
+            -> resReg
+        } els if expr.callee == "pty.close" && expr.args.ln == 1 {
+            let hReg = codegenExpr cg, expr.args[0], outBuf
+            let hInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInt} = fptosi double ${hReg} to i64\n`)
+            let resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_pty_close(i64 ${hInt})\n`)
+            -> resReg
         } els if (expr.callee == "malloc" || expr.callee == "mem.alloc" || expr.callee == "mem.malloc") && expr.args.ln == 1 {
             szReg = codegenExpr cg, expr.args[0], outBuf
             szInt = newReg cg
@@ -5666,6 +5942,21 @@ GenerateLLVMFull program {
     header = header.cat "declare ptr @CreateEventA(ptr, i32, i32, ptr)\n"
     header = header.cat "declare i32 @SetEvent(ptr)\n"
     header = header.cat "declare i32 @ResetEvent(ptr)\n"
+    header = header.cat "declare ptr @GetStdHandle(i32)\n"
+    header = header.cat "declare i32 @GetConsoleMode(ptr, ptr)\n"
+    header = header.cat "declare i32 @SetConsoleMode(ptr, i32)\n"
+    header = header.cat "declare i32 @GetConsoleScreenBufferInfo(ptr, ptr)\n"
+    header = header.cat "declare i32 @_kbhit()\n"
+    header = header.cat "declare i32 @_getch()\n"
+    header = header.cat "declare i32 @CreatePipe(ptr, ptr, ptr, i32)\n"
+    header = header.cat "declare i32 @PeekNamedPipe(ptr, ptr, i32, ptr, ptr, ptr)\n"
+    header = header.cat "declare i32 @CreatePseudoConsole(i32, ptr, ptr, i32, ptr)\n"
+    header = header.cat "declare i32 @ResizePseudoConsole(ptr, i32)\n"
+    header = header.cat "declare void @ClosePseudoConsole(ptr)\n"
+    header = header.cat "declare i32 @CreateProcessA(ptr, ptr, ptr, ptr, i32, i32, ptr, ptr, ptr, ptr)\n"
+    header = header.cat "declare i32 @InitializeProcThreadAttributeList(ptr, i32, i32, ptr)\n"
+    header = header.cat "declare i32 @UpdateProcThreadAttribute(ptr, i32, i64, ptr, i64, ptr, ptr)\n"
+    header = header.cat "declare void @DeleteProcThreadAttributeList(ptr)\n"
     header = header.cat "@zuv_global_args = global i64 0\n"
     header = header.cat "@str_os_typ = private unnamed_addr constant [11 x i8] c\"Windows_NT\\00\"\n"
     header = header.cat "@str_os_rel = private unnamed_addr constant [5 x i8] c\"10.0\\00\"\n"
@@ -6013,7 +6304,9 @@ GenerateLLVMFull program {
     btRuntimeStr = emitBacktraceRuntime cg
     sigRuntimeStr = emitSignalRuntime cg
     ipcRuntimeStr = emitIpcRuntime cg
-    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}\n${btRuntimeStr}\n${sigRuntimeStr}\n${ipcRuntimeStr}`
+    termRuntimeStr = emitTermRuntime cg
+    ptyRuntimeStr = emitPtyRuntime cg
+    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}\n${btRuntimeStr}\n${sigRuntimeStr}\n${ipcRuntimeStr}\n${termRuntimeStr}\n${ptyRuntimeStr}`
     -> fullIR
 }
 
@@ -6156,5 +6449,160 @@ emitIpcRuntime cg {
     ipcIR = ipcIR.cat "define internal double @zuv_ipc_close(i64 %h) {\nentry:\n  %rawI64 = and i64 %h, -281474976710657\n  %hPtr = inttoptr i64 %rawI64 to ptr\n  %res = call i32 @CloseHandle(ptr %hPtr)\n  %dres = sitofp i32 %res to double\n  ret double %dres\n}\n"
 
     -> ipcIR
+}
+
+emitTermRuntime cg {
+    mut termIR = "\n; --- Zuv Raw Terminal Controls & ANSI Virtual Console (`term`) ---\n"
+    termIR = termIR.cat "@zuv_term_orig_in = internal global i32 0\n"
+    termIR = termIR.cat "@zuv_term_orig_out = internal global i32 0\n"
+    termIR = termIR.cat "@zuv_term_raw_active = internal global i32 0\n"
+    termIR = termIR.cat "@zuv_term_saved = internal global i32 0\n\n"
+
+    termIR = termIR.cat "@.zuv_term_str_empty = private unnamed_addr constant [1 x i8] c\"\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_up = private unnamed_addr constant [3 x i8] c\"up\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_down = private unnamed_addr constant [5 x i8] c\"down\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_left = private unnamed_addr constant [5 x i8] c\"left\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_right = private unnamed_addr constant [6 x i8] c\"right\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_home = private unnamed_addr constant [5 x i8] c\"home\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_end = private unnamed_addr constant [4 x i8] c\"end\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_delete = private unnamed_addr constant [7 x i8] c\"delete\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_insert = private unnamed_addr constant [7 x i8] c\"insert\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_pageup = private unnamed_addr constant [7 x i8] c\"pageup\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_pagedown = private unnamed_addr constant [9 x i8] c\"pagedown\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f1 = private unnamed_addr constant [3 x i8] c\"f1\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f2 = private unnamed_addr constant [3 x i8] c\"f2\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f3 = private unnamed_addr constant [3 x i8] c\"f3\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f4 = private unnamed_addr constant [3 x i8] c\"f4\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f5 = private unnamed_addr constant [3 x i8] c\"f5\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f6 = private unnamed_addr constant [3 x i8] c\"f6\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f7 = private unnamed_addr constant [3 x i8] c\"f7\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f8 = private unnamed_addr constant [3 x i8] c\"f8\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f9 = private unnamed_addr constant [3 x i8] c\"f9\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_f10 = private unnamed_addr constant [4 x i8] c\"f10\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_special = private unnamed_addr constant [8 x i8] c\"special\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_enter = private unnamed_addr constant [6 x i8] c\"enter\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_backspace = private unnamed_addr constant [10 x i8] c\"backspace\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_tab = private unnamed_addr constant [4 x i8] c\"tab\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_str_esc = private unnamed_addr constant [4 x i8] c\"esc\\00\"\n\n"
+
+    termIR = termIR.cat "@.zuv_term_fmt_cur = private unnamed_addr constant [9 x i8] c\"\\1B[%d;%dH\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_fmt_up = private unnamed_addr constant [6 x i8] c\"\\1B[%dA\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_fmt_down = private unnamed_addr constant [6 x i8] c\"\\1B[%dB\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_fmt_fwd = private unnamed_addr constant [6 x i8] c\"\\1B[%dC\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_fmt_back = private unnamed_addr constant [6 x i8] c\"\\1B[%dD\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_clear = private unnamed_addr constant [8 x i8] c\"\\1B[2J\\1B[H\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_clear_line = private unnamed_addr constant [6 x i8] c\"\\1B[2K\\0D\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_hide_cur = private unnamed_addr constant [7 x i8] c\"\\1B[?25l\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_show_cur = private unnamed_addr constant [7 x i8] c\"\\1B[?25h\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_enter_alt = private unnamed_addr constant [9 x i8] c\"\\1B[?1049h\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_exit_alt = private unnamed_addr constant [9 x i8] c\"\\1B[?1049l\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_reset = private unnamed_addr constant [5 x i8] c\"\\1B[0m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_fmt_size = private unnamed_addr constant [6 x i8] c\"%dx%d\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_fmt_style = private unnamed_addr constant [9 x i8] c\"%s%s\\1B[0m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_fmt_color = private unnamed_addr constant [12 x i8] c\"\\1B[%dm%s\\1B[0m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_fmt_color_only = private unnamed_addr constant [6 x i8] c\"\\1B[%dm\\00\"\n\n"
+
+    termIR = termIR.cat "@.zuv_term_code_bold = private unnamed_addr constant [5 x i8] c\"\\1B[1m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_dim = private unnamed_addr constant [5 x i8] c\"\\1B[2m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_italic = private unnamed_addr constant [5 x i8] c\"\\1B[3m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_underline = private unnamed_addr constant [5 x i8] c\"\\1B[4m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_red = private unnamed_addr constant [6 x i8] c\"\\1B[31m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_green = private unnamed_addr constant [6 x i8] c\"\\1B[32m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_yellow = private unnamed_addr constant [6 x i8] c\"\\1B[33m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_blue = private unnamed_addr constant [6 x i8] c\"\\1B[34m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_magenta = private unnamed_addr constant [6 x i8] c\"\\1B[35m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_code_cyan = private unnamed_addr constant [6 x i8] c\"\\1B[36m\\00\"\n\n"
+
+    termIR = termIR.cat "@.zuv_term_pfx_bold = private unnamed_addr constant [5 x i8] c\"\\1B[1m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_dim = private unnamed_addr constant [5 x i8] c\"\\1B[2m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_italic = private unnamed_addr constant [5 x i8] c\"\\1B[3m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_underline = private unnamed_addr constant [5 x i8] c\"\\1B[4m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_red = private unnamed_addr constant [6 x i8] c\"\\1B[31m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_green = private unnamed_addr constant [6 x i8] c\"\\1B[32m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_yellow = private unnamed_addr constant [6 x i8] c\"\\1B[33m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_blue = private unnamed_addr constant [6 x i8] c\"\\1B[34m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_magenta = private unnamed_addr constant [6 x i8] c\"\\1B[35m\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_pfx_cyan = private unnamed_addr constant [6 x i8] c\"\\1B[36m\\00\"\n\n"
+
+    termIR = termIR.cat "@.zuv_term_col_red = private unnamed_addr constant [4 x i8] c\"red\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_col_green = private unnamed_addr constant [6 x i8] c\"green\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_col_yellow = private unnamed_addr constant [7 x i8] c\"yellow\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_col_blue = private unnamed_addr constant [5 x i8] c\"blue\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_col_magenta = private unnamed_addr constant [8 x i8] c\"magenta\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_col_cyan = private unnamed_addr constant [5 x i8] c\"cyan\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_col_white = private unnamed_addr constant [6 x i8] c\"white\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_col_gray = private unnamed_addr constant [5 x i8] c\"gray\\00\"\n"
+    termIR = termIR.cat "@.zuv_term_col_black = private unnamed_addr constant [6 x i8] c\"black\\00\"\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_make_raw() {\nentry:\n  %inH = call ptr @GetStdHandle(i32 -10)\n  %outH = call ptr @GetStdHandle(i32 -11)\n  %saved = load i32, ptr @zuv_term_saved\n  %isSaved = icmp ne i32 %saved, 0\n  br i1 %isSaved, label %set_raw, label %save_modes\nsave_modes:\n  call i32 @GetConsoleMode(ptr %inH, ptr @zuv_term_orig_in)\n  call i32 @GetConsoleMode(ptr %outH, ptr @zuv_term_orig_out)\n  store i32 1, ptr @zuv_term_saved\n  br label %set_raw\nset_raw:\n  call i32 @SetConsoleMode(ptr %inH, i32 512)\n  call i32 @SetConsoleMode(ptr %outH, i32 7)\n  store i32 1, ptr @zuv_term_raw_active\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_restore() {\nentry:\n  %saved = load i32, ptr @zuv_term_saved\n  %isSaved = icmp ne i32 %saved, 0\n  br i1 %isSaved, label %do_restore, label %done\ndo_restore:\n  %inH = call ptr @GetStdHandle(i32 -10)\n  %outH = call ptr @GetStdHandle(i32 -11)\n  %origIn = load i32, ptr @zuv_term_orig_in\n  %origOut = load i32, ptr @zuv_term_orig_out\n  call i32 @SetConsoleMode(ptr %inH, i32 %origIn)\n  call i32 @SetConsoleMode(ptr %outH, i32 %origOut)\n  store i32 0, ptr @zuv_term_raw_active\n  br label %done\ndone:\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_is_raw() {\nentry:\n  %raw = load i32, ptr @zuv_term_raw_active\n  %d = sitofp i32 %raw to double\n  ret double %d\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_has_key() {\nentry:\n  %hit = call i32 @_kbhit()\n  %cmp = icmp ne i32 %hit, 0\n  %sel = select i1 %cmp, double 1.0, double 0.0\n  ret double %sel\n}\n\n"
+
+    termIR = termIR.cat "define internal ptr @zuv_term_read_key(i32 %timeoutMs) {\nentry:\n  %cmpTo = icmp sgt i32 %timeoutMs, 0\n  br i1 %cmpTo, label %loop_check, label %check_hit\nloop_check:\n  %rem = phi i32 [ %timeoutMs, %entry ], [ %remNext, %loop_sleep ]\n  %h = call i32 @_kbhit()\n  %isHit = icmp ne i32 %h, 0\n  br i1 %isHit, label %read_char, label %loop_sleep\nloop_sleep:\n  call void @Sleep(i32 10)\n  %remNext = sub i32 %rem, 10\n  %stillWait = icmp sgt i32 %remNext, 0\n  br i1 %stillWait, label %loop_check, label %ret_empty\ncheck_hit:\n  %cmpInf = icmp slt i32 %timeoutMs, 0\n  br i1 %cmpInf, label %read_char, label %check_zero\ncheck_zero:\n  %h0 = call i32 @_kbhit()\n  %isHit0 = icmp ne i32 %h0, 0\n  br i1 %isHit0, label %read_char, label %ret_empty\nread_char:\n  %c = call i32 @_getch()\n  %isExt0 = icmp eq i32 %c, 0\n  %isExtE0 = icmp eq i32 %c, 224\n  %isExt = or i1 %isExt0, %isExtE0\n  br i1 %isExt, label %read_extended, label %check_control\nread_extended:\n  %c2 = call i32 @_getch()\n  switch i32 %c2, label %ext_special [\n    i32 72, label %ext_up\n    i32 80, label %ext_down\n    i32 75, label %ext_left\n    i32 77, label %ext_right\n    i32 71, label %ext_home\n    i32 79, label %ext_end\n    i32 83, label %ext_del\n    i32 82, label %ext_ins\n    i32 73, label %ext_pgup\n    i32 81, label %ext_pgdn\n    i32 59, label %ext_f1\n    i32 60, label %ext_f2\n    i32 61, label %ext_f3\n    i32 62, label %ext_f4\n    i32 63, label %ext_f5\n    i32 64, label %ext_f6\n    i32 65, label %ext_f7\n    i32 66, label %ext_f8\n    i32 67, label %ext_f9\n    i32 68, label %ext_f10\n  ]\next_up: ret ptr @.zuv_term_str_up\next_down: ret ptr @.zuv_term_str_down\next_left: ret ptr @.zuv_term_str_left\next_right: ret ptr @.zuv_term_str_right\next_home: ret ptr @.zuv_term_str_home\next_end: ret ptr @.zuv_term_str_end\next_del: ret ptr @.zuv_term_str_delete\next_ins: ret ptr @.zuv_term_str_insert\next_pgup: ret ptr @.zuv_term_str_pageup\next_pgdn: ret ptr @.zuv_term_str_pagedown\next_f1: ret ptr @.zuv_term_str_f1\next_f2: ret ptr @.zuv_term_str_f2\next_f3: ret ptr @.zuv_term_str_f3\next_f4: ret ptr @.zuv_term_str_f4\next_f5: ret ptr @.zuv_term_str_f5\next_f6: ret ptr @.zuv_term_str_f6\next_f7: ret ptr @.zuv_term_str_f7\next_f8: ret ptr @.zuv_term_str_f8\next_f9: ret ptr @.zuv_term_str_f9\next_f10: ret ptr @.zuv_term_str_f10\next_special: ret ptr @.zuv_term_str_special\ncheck_control:\n  switch i32 %c, label %ret_char [\n    i32 13, label %ctrl_enter\n    i32 8, label %ctrl_backspace\n    i32 9, label %ctrl_tab\n    i32 27, label %ctrl_esc\n  ]\nctrl_enter: ret ptr @.zuv_term_str_enter\nctrl_backspace: ret ptr @.zuv_term_str_backspace\nctrl_tab: ret ptr @.zuv_term_str_tab\nctrl_esc: ret ptr @.zuv_term_str_esc\nret_char:\n  %buf = call ptr @malloc(i64 2)\n  %c8 = trunc i32 %c to i8\n  store i8 %c8, ptr %buf\n  %buf1 = getelementptr inbounds i8, ptr %buf, i64 1\n  store i8 0, ptr %buf1\n  ret ptr %buf\nret_empty:\n  ret ptr @.zuv_term_str_empty\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_width() {\nentry:\n  %csbi = alloca [24 x i8], align 4\n  %outH = call ptr @GetStdHandle(i32 -11)\n  %ok = call i32 @GetConsoleScreenBufferInfo(ptr %outH, ptr %csbi)\n  %isOk = icmp ne i32 %ok, 0\n  br i1 %isOk, label %calc, label %fallback\ncalc:\n  %leftPtr = getelementptr inbounds i8, ptr %csbi, i64 10\n  %rightPtr = getelementptr inbounds i8, ptr %csbi, i64 14\n  %left = load i16, ptr %leftPtr\n  %right = load i16, ptr %rightPtr\n  %w16 = sub i16 %right, %left\n  %w16_1 = add i16 %w16, 1\n  %w32 = sext i16 %w16_1 to i32\n  %wDbl = sitofp i32 %w32 to double\n  ret double %wDbl\nfallback:\n  ret double 80.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_height() {\nentry:\n  %csbi = alloca [24 x i8], align 4\n  %outH = call ptr @GetStdHandle(i32 -11)\n  %ok = call i32 @GetConsoleScreenBufferInfo(ptr %outH, ptr %csbi)\n  %isOk = icmp ne i32 %ok, 0\n  br i1 %isOk, label %calc, label %fallback\ncalc:\n  %topPtr = getelementptr inbounds i8, ptr %csbi, i64 12\n  %botPtr = getelementptr inbounds i8, ptr %csbi, i64 16\n  %top = load i16, ptr %topPtr\n  %bot = load i16, ptr %botPtr\n  %h16 = sub i16 %bot, %top\n  %h16_1 = add i16 %h16, 1\n  %h32 = sext i16 %h16_1 to i32\n  %hDbl = sitofp i32 %h32 to double\n  ret double %hDbl\nfallback:\n  ret double 24.0\n}\n\n"
+
+    termIR = termIR.cat "define internal ptr @zuv_term_size() {\nentry:\n  %csbi = alloca [24 x i8], align 4\n  %outH = call ptr @GetStdHandle(i32 -11)\n  %ok = call i32 @GetConsoleScreenBufferInfo(ptr %outH, ptr %csbi)\n  %isOk = icmp ne i32 %ok, 0\n  br i1 %isOk, label %calc, label %fallback\ncalc:\n  %leftPtr = getelementptr inbounds i8, ptr %csbi, i64 10\n  %rightPtr = getelementptr inbounds i8, ptr %csbi, i64 14\n  %left = load i16, ptr %leftPtr\n  %right = load i16, ptr %rightPtr\n  %w16 = sub i16 %right, %left\n  %w16_1 = add i16 %w16, 1\n  %w32 = sext i16 %w16_1 to i32\n  %topPtr = getelementptr inbounds i8, ptr %csbi, i64 12\n  %botPtr = getelementptr inbounds i8, ptr %csbi, i64 16\n  %top = load i16, ptr %topPtr\n  %bot = load i16, ptr %botPtr\n  %h16 = sub i16 %bot, %top\n  %h16_1 = add i16 %h16, 1\n  %h32 = sext i16 %h16_1 to i32\n  %buf = call ptr @malloc(i64 32)\n  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 32, ptr @.zuv_term_fmt_size, i32 %w32, i32 %h32)\n  ret ptr %buf\nfallback:\n  %buf2 = call ptr @malloc(i64 32)\n  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf2, i64 32, ptr @.zuv_term_fmt_size, i32 80, i32 24)\n  ret ptr %buf2\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_write(ptr %s) {\nentry:\n  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr %s)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_cursor_to(i32 %x, i32 %y) {\nentry:\n  call i32 (ptr, ...) @printf(ptr @.zuv_term_fmt_cur, i32 %y, i32 %x)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_cursor_up(i32 %n) {\nentry:\n  call i32 (ptr, ...) @printf(ptr @.zuv_term_fmt_up, i32 %n)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_cursor_down(i32 %n) {\nentry:\n  call i32 (ptr, ...) @printf(ptr @.zuv_term_fmt_down, i32 %n)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_cursor_forward(i32 %n) {\nentry:\n  call i32 (ptr, ...) @printf(ptr @.zuv_term_fmt_fwd, i32 %n)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_cursor_back(i32 %n) {\nentry:\n  call i32 (ptr, ...) @printf(ptr @.zuv_term_fmt_back, i32 %n)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_clear() {\nentry:\n  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr @.zuv_term_clear)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_clear_line() {\nentry:\n  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr @.zuv_term_clear_line)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_hide_cursor() {\nentry:\n  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr @.zuv_term_hide_cur)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_show_cursor() {\nentry:\n  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr @.zuv_term_show_cur)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_enter_alt() {\nentry:\n  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr @.zuv_term_enter_alt)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal double @zuv_term_exit_alt() {\nentry:\n  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr @.zuv_term_exit_alt)\n  ret double 0.0\n}\n\n"
+
+    termIR = termIR.cat "define internal ptr @zuv_term_reset() {\nentry:\n  ret ptr @.zuv_term_reset\n}\n\n"
+
+    termIR = termIR.cat "define internal ptr @zuv_term_style_code(ptr %code) {\nentry:\n  ret ptr %code\n}\n\n"
+
+    termIR = termIR.cat "define internal ptr @zuv_term_style(ptr %pfx, ptr %s) {\nentry:\n  %pLen = call i64 @strlen(ptr %pfx)\n  %sLen = call i64 @strlen(ptr %s)\n  %tot = add i64 %pLen, %sLen\n  %tot1 = add i64 %tot, 8\n  %buf = call ptr @malloc(i64 %tot1)\n  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 %tot1, ptr @.zuv_term_fmt_style, ptr %pfx, ptr %s)\n  ret ptr %buf\n}\n\n"
+
+    termIR = termIR.cat "define internal i32 @zuv_term_resolve_color(ptr %name) {\nentry:\n  %c1 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_red)\n  %e1 = icmp eq i32 %c1, 0\n  br i1 %e1, label %ret_31, label %ck_green\nret_31: ret i32 31\nck_green:\n  %c2 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_green)\n  %e2 = icmp eq i32 %c2, 0\n  br i1 %e2, label %ret_32, label %ck_yellow\nret_32: ret i32 32\nck_yellow:\n  %c3 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_yellow)\n  %e3 = icmp eq i32 %c3, 0\n  br i1 %e3, label %ret_33, label %ck_blue\nret_33: ret i32 33\nck_blue:\n  %c4 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_blue)\n  %e4 = icmp eq i32 %c4, 0\n  br i1 %e4, label %ret_34, label %ck_magenta\nret_34: ret i32 34\nck_magenta:\n  %c5 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_magenta)\n  %e5 = icmp eq i32 %c5, 0\n  br i1 %e5, label %ret_35, label %ck_cyan\nret_35: ret i32 35\nck_cyan:\n  %c6 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_cyan)\n  %e6 = icmp eq i32 %c6, 0\n  br i1 %e6, label %ret_36, label %ck_white\nret_36: ret i32 36\nck_white:\n  %c7 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_white)\n  %e7 = icmp eq i32 %c7, 0\n  br i1 %e7, label %ret_37, label %ck_gray\nret_37: ret i32 37\nck_gray:\n  %c8 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_gray)\n  %e8 = icmp eq i32 %c8, 0\n  br i1 %e8, label %ret_90, label %ck_black\nret_90: ret i32 90\nck_black:\n  %c9 = call i32 @_stricmp(ptr %name, ptr @.zuv_term_col_black)\n  %e9 = icmp eq i32 %c9, 0\n  br i1 %e9, label %ret_30, label %ret_def\nret_30: ret i32 30\nret_def:\n  ret i32 37\n}\n\n"
+
+    termIR = termIR.cat "define internal ptr @zuv_term_color_code(ptr %name) {\nentry:\n  %code = call i32 @zuv_term_resolve_color(ptr %name)\n  %buf = call ptr @malloc(i64 16)\n  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 16, ptr @.zuv_term_fmt_color_only, i32 %code)\n  ret ptr %buf\n}\n\n"
+
+    termIR = termIR.cat "define internal ptr @zuv_term_color(ptr %name, ptr %s) {\nentry:\n  %code = call i32 @zuv_term_resolve_color(ptr %name)\n  %sLen = call i64 @strlen(ptr %s)\n  %tot = add i64 %sLen, 16\n  %buf = call ptr @malloc(i64 %tot)\n  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 %tot, ptr @.zuv_term_fmt_color, i32 %code, ptr %s)\n  ret ptr %buf\n}\n"
+
+    -> termIR
+}
+
+emitPtyRuntime cg {
+    mut ptyIR = "\n; --- Zuv Pseudo-Terminal Runtime (`pty`) ---\n"
+    ptyIR = ptyIR.cat "define internal i64 @zuv_pty_open(i32 %cols, i32 %rows) {\nentry:\n  %inRead = alloca ptr, align 8\n  %inWrite = alloca ptr, align 8\n  %outRead = alloca ptr, align 8\n  %outWrite = alloca ptr, align 8\n  %hPC = alloca ptr, align 8\n  store ptr null, ptr %inRead\n  store ptr null, ptr %inWrite\n  store ptr null, ptr %outRead\n  store ptr null, ptr %outWrite\n  store ptr null, ptr %hPC\n  call i32 @CreatePipe(ptr %inRead, ptr %inWrite, ptr null, i32 0)\n  call i32 @CreatePipe(ptr %outRead, ptr %outWrite, ptr null, i32 0)\n  %r16 = shl i32 %rows, 16\n  %c16 = and i32 %cols, 65535\n  %coord = or i32 %r16, %c16\n  %inR = load ptr, ptr %inRead\n  %outW = load ptr, ptr %outWrite\n  %hr = call i32 @CreatePseudoConsole(i32 %coord, ptr %inR, ptr %outW, i32 0, ptr %hPC)\n  %pcOk = icmp eq i32 %hr, 0\n  br i1 %pcOk, label %pc_success, label %alloc_desc\npc_success:\n  call i32 @CloseHandle(ptr %inR)\n  call i32 @CloseHandle(ptr %outW)\n  br label %alloc_desc\nalloc_desc:\n  %desc = call ptr @malloc(i64 32)\n  %inW = load ptr, ptr %inWrite\n  %outR = load ptr, ptr %outRead\n  %pc = load ptr, ptr %hPC\n  %inW64 = ptrtoint ptr %inW to i64\n  %outR64 = ptrtoint ptr %outR to i64\n  %pc64 = ptrtoint ptr %pc to i64\n  %p0 = getelementptr inbounds i64, ptr %desc, i64 0\n  %p1p = getelementptr inbounds i64, ptr %desc, i64 1\n  %p2p = getelementptr inbounds i64, ptr %desc, i64 2\n  %p3p = getelementptr inbounds i64, ptr %desc, i64 3\n  store i64 %inW64, ptr %p0\n  store i64 %outR64, ptr %p1p\n  store i64 0, ptr %p2p\n  store i64 %pc64, ptr %p3p\n  %desc64 = ptrtoint ptr %desc to i64\n  ret i64 %desc64\n}\n\n"
+
+    ptyIR = ptyIR.cat "define internal i64 @zuv_pty_spawn(ptr %cmd, i32 %cols, i32 %rows) {\nentry:\n  %p64 = call i64 @zuv_pty_open(i32 %cols, i32 %rows)\n  %pPtr = inttoptr i64 %p64 to ptr\n  %pcPtr = getelementptr inbounds i64, ptr %pPtr, i64 3\n  %pc64 = load i64, ptr %pcPtr\n  %hasPC = icmp ne i64 %pc64, 0\n  br i1 %hasPC, label %spawn_conpty, label %done\nspawn_conpty:\n  %pcHandle = inttoptr i64 %pc64 to ptr\n  %attrSize = alloca i64, align 8\n  store i64 0, ptr %attrSize\n  call i32 @InitializeProcThreadAttributeList(ptr null, i32 1, i32 0, ptr %attrSize)\n  %size = load i64, ptr %attrSize\n  %attrList = call ptr @malloc(i64 %size)\n  call i32 @InitializeProcThreadAttributeList(ptr %attrList, i32 1, i32 0, ptr %attrSize)\n  %pcVar = alloca ptr, align 8\n  store ptr %pcHandle, ptr %pcVar\n  call i32 @UpdateProcThreadAttribute(ptr %attrList, i32 0, i64 131094, ptr %pcVar, i64 8, ptr null, ptr null)\n  %siEx = alloca [112 x i8], align 8\n  call ptr @memset(ptr %siEx, i32 0, i64 112)\n  store i32 112, ptr %siEx\n  %attrField = getelementptr inbounds i8, ptr %siEx, i64 104\n  store ptr %attrList, ptr %attrField\n  %pi = alloca [24 x i8], align 8\n  call ptr @memset(ptr %pi, i32 0, i64 24)\n  %cpOk = call i32 @CreateProcessA(ptr null, ptr %cmd, ptr null, ptr null, i32 0, i32 524288, ptr null, ptr null, ptr %siEx, ptr %pi)\n  call void @DeleteProcThreadAttributeList(ptr %attrList)\n  call void @free(ptr %attrList)\n  %isOk = icmp ne i32 %cpOk, 0\n  br i1 %isOk, label %save_proc, label %done\nsave_proc:\n  %hProc = load ptr, ptr %pi\n  %hProc64 = ptrtoint ptr %hProc to i64\n  %procField = getelementptr inbounds i64, ptr %pPtr, i64 2\n  store i64 %hProc64, ptr %procField\n  %hThrdPtr = getelementptr inbounds i8, ptr %pi, i64 8\n  %hThrd = load ptr, ptr %hThrdPtr\n  call i32 @CloseHandle(ptr %hThrd)\n  br label %done\ndone:\n  ret i64 %p64\n}\n\n"
+
+    ptyIR = ptyIR.cat "define internal i64 @zuv_pty_write(i64 %h, ptr %data) {\nentry:\n  %cmpZ = icmp eq i64 %h, 0\n  br i1 %cmpZ, label %ret_zero, label %do_write\ndo_write:\n  %rawI64 = and i64 %h, -281474976710657\n  %desc = inttoptr i64 %rawI64 to ptr\n  %inW64 = load i64, ptr %desc\n  %inW = inttoptr i64 %inW64 to ptr\n  %len = call i64 @strlen(ptr %data)\n  %len32 = trunc i64 %len to i32\n  %written = alloca i32, align 4\n  store i32 0, ptr %written\n  call i32 @WriteFile(ptr %inW, ptr %data, i32 %len32, ptr %written, ptr null)\n  %w = load i32, ptr %written\n  %w64 = zext i32 %w to i64\n  ret i64 %w64\nret_zero:\n  ret i64 0\n}\n\n"
+
+    ptyIR = ptyIR.cat "define internal ptr @zuv_pty_read(i64 %h, i32 %maxLen) {\nentry:\n  %cmpZ = icmp eq i64 %h, 0\n  br i1 %cmpZ, label %ret_empty, label %check_pipe\ncheck_pipe:\n  %rawI64 = and i64 %h, -281474976710657\n  %desc = inttoptr i64 %rawI64 to ptr\n  %outRField = getelementptr inbounds i64, ptr %desc, i64 1\n  %outR64 = load i64, ptr %outRField\n  %outR = inttoptr i64 %outR64 to ptr\n  %avail = alloca i32, align 4\n  store i32 0, ptr %avail\n  call i32 @PeekNamedPipe(ptr %outR, ptr null, i32 0, ptr null, ptr %avail, ptr null)\n  %av = load i32, ptr %avail\n  %hasData = icmp sgt i32 %av, 0\n  br i1 %hasData, label %do_read, label %ret_empty\ndo_read:\n  %cmpMin = icmp slt i32 %av, %maxLen\n  %toRead = select i1 %cmpMin, i32 %av, i32 %maxLen\n  %toRead64 = zext i32 %toRead to i64\n  %allocSize = add i64 %toRead64, 1\n  %buf = call ptr @malloc(i64 %allocSize)\n  %readBytes = alloca i32, align 4\n  store i32 0, ptr %readBytes\n  call i32 @ReadFile(ptr %outR, ptr %buf, i32 %toRead, ptr %readBytes, ptr null)\n  %rb = load i32, ptr %readBytes\n  %rb64 = zext i32 %rb to i64\n  %nullByte = getelementptr inbounds i8, ptr %buf, i64 %rb64\n  store i8 0, ptr %nullByte\n  ret ptr %buf\nret_empty:\n  ret ptr @.zuv_term_str_empty\n}\n\n"
+
+    ptyIR = ptyIR.cat "define internal double @zuv_pty_resize(i64 %h, i32 %cols, i32 %rows) {\nentry:\n  %cmpZ = icmp eq i64 %h, 0\n  br i1 %cmpZ, label %done, label %do_resize\ndo_resize:\n  %rawI64 = and i64 %h, -281474976710657\n  %desc = inttoptr i64 %rawI64 to ptr\n  %pcField = getelementptr inbounds i64, ptr %desc, i64 3\n  %pc64 = load i64, ptr %pcField\n  %hasPC = icmp ne i64 %pc64, 0\n  br i1 %hasPC, label %call_resize, label %done\ncall_resize:\n  %pcHandle = inttoptr i64 %pc64 to ptr\n  %r16 = shl i32 %rows, 16\n  %c16 = and i32 %cols, 65535\n  %coord = or i32 %r16, %c16\n  call i32 @ResizePseudoConsole(ptr %pcHandle, i32 %coord)\n  br label %done\ndone:\n  ret double 0.0\n}\n\n"
+
+    ptyIR = ptyIR.cat "define internal double @zuv_pty_close(i64 %h) {\nentry:\n  %cmpZ = icmp eq i64 %h, 0\n  br i1 %cmpZ, label %done, label %do_close\ndo_close:\n  %rawI64 = and i64 %h, -281474976710657\n  %desc = inttoptr i64 %rawI64 to ptr\n  %p0 = getelementptr inbounds i64, ptr %desc, i64 0\n  %p1 = getelementptr inbounds i64, ptr %desc, i64 1\n  %p2 = getelementptr inbounds i64, ptr %desc, i64 2\n  %p3 = getelementptr inbounds i64, ptr %desc, i64 3\n  %inW64 = load i64, ptr %p0\n  %outR64 = load i64, ptr %p1\n  %proc64 = load i64, ptr %p2\n  %pc64 = load i64, ptr %p3\n  %hasIn = icmp ne i64 %inW64, 0\n  br i1 %hasIn, label %close_in, label %check_out\nclose_in:\n  %inH = inttoptr i64 %inW64 to ptr\n  call i32 @CloseHandle(ptr %inH)\n  br label %check_out\ncheck_out:\n  %hasOut = icmp ne i64 %outR64, 0\n  br i1 %hasOut, label %close_out, label %check_pc\nclose_out:\n  %outH = inttoptr i64 %outR64 to ptr\n  call i32 @CloseHandle(ptr %outH)\n  br label %check_pc\ncheck_pc:\n  %hasPC = icmp ne i64 %pc64, 0\n  br i1 %hasPC, label %close_pc, label %check_proc\nclose_pc:\n  %pcH = inttoptr i64 %pc64 to ptr\n  call void @ClosePseudoConsole(ptr %pcH)\n  br label %check_proc\ncheck_proc:\n  %hasProc = icmp ne i64 %proc64, 0\n  br i1 %hasProc, label %close_proc, label %free_desc\nclose_proc:\n  %procH = inttoptr i64 %proc64 to ptr\n  call i32 @TerminateProcess(ptr %procH, i32 0)\n  call i32 @CloseHandle(ptr %procH)\n  br label %free_desc\nfree_desc:\n  call void @free(ptr %desc)\n  br label %done\ndone:\n  ret double 0.0\n}\n"
+
+    -> ptyIR
 }
 

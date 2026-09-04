@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 💻 Raw Terminal Controls, ANSI Virtual Console & PTY Engine (`term`, `pty`)
+- Added terminal raw mode: `term.makeRaw()`, `term.restore()`, `term.isRaw()`.
+- Added non-blocking key reader & window size: `term.hasKey()`, `term.readKey()`, `term.width()`, `term.height()`, `term.size()`.
+- Added ANSI console & styling: `term.cursorTo`, `term.clear`, `term.enterAltScreen`, `term.color`, `term.bold`, `term.red`, etc.
+- Added PTY engine: `pty.open`, `pty.spawn`, `pty.read`, `pty.write`, `pty.resize`, `pty.close`.
+- Added test suite in `tests/term_pty.test.zv`.
+
 ### 🖧 Inter-Process Communication (IPC) & Shared Memory (`ipc`, `mmap`, `Named Pipes`)
 - Added Windows named pipe streaming: `net.listen("pipe", name)` and `net.conn("pipe", name)`.
 - Added file & shared memory mapping: `mmap`, `munmap`, `ipc.shm`, `ipc.openShm`.
