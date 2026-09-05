@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔀 Braceless Single-Statement Control Flow (`if`, `els`, `wh`)
+- Added support for single-statement `if` without curly braces across single-line (`if x > 10 lg "msg"`) and multi-line formats (`if x > 10 \n lg "msg"`).
+- Added support for single-statement `els` and chained `els if` without curly braces (`els lg "fallback"`).
+- Added support for single-statement `wh` loops without curly braces (`wh i < 5 \n i = i + 1`).
+- Preserved proper statement termination, preventing non-braced condition branches from swallowing subsequent outer statements.
+- Added comprehensive test coverage in `tests/control_flow.test.zv`.
+
 ### 🛡️ Hardware-Assisted Memory & UB Sanitizers (`--sanitize`)
 - Added zero-dependency standalone sanitizer runtime generated directly as portable LLVM IR (no `clang_rt.asan_dynamic-x86_64.dll` required).
 - Added Address Sanitizer (`--sanitize=address` / `-fsanitize=address`): heap boundary checks, use-after-free, double-free, and process exit memory leak detection.

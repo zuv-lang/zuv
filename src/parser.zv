@@ -2159,15 +2159,37 @@ parseStatement p {
         p.allowIdentStruct = 0
         condExpr = parseExpression p, 0
         p.allowIdentStruct = 1
-        thenBranch = parseBlock p
+        mut thenBranch = createNilNode
+        if (peekTok p).val == "{" {
+            thenBranch = parseBlock p
+        } els {
+            advanceParser p
+            singleThenStmt = parseStatement p
+            let thenStmts = []
+            if singleThenStmt.kind != "" {
+                thenStmts.psh singleThenStmt
+            }
+            thenBranch = createBlockNode thenStmts
+        }
         let elseBranch = createNilNode
+        if (peekTok p).val == ";" {
+            advanceParser p
+        }
         if (peekTok p).kind == "KEYWORD" && (peekTok p).val == "els" {
             advanceParser p // consume 'els'
             if (peekTok p).kind == "KEYWORD" && (peekTok p).val == "if" {
                 advanceParser p
                 elseBranch = parseStatement p
-            } els {
+            } els if (peekTok p).val == "{" {
                 elseBranch = parseBlock p
+            } els {
+                advanceParser p
+                singleElseStmt = parseStatement p
+                let elseStmts = []
+                if singleElseStmt.kind != "" {
+                    elseStmts.psh singleElseStmt
+                }
+                elseBranch = createBlockNode elseStmts
             }
         }
         -> createIfNode condExpr, thenBranch, elseBranch
@@ -2176,7 +2198,18 @@ parseStatement p {
         p.allowIdentStruct = 0
         condExpr = parseExpression p, 0
         p.allowIdentStruct = 1
-        body = parseBlock p
+        mut body = createNilNode
+        if (peekTok p).val == "{" {
+            body = parseBlock p
+        } els {
+            advanceParser p
+            singleBodyStmt = parseStatement p
+            let bodyStmts = []
+            if singleBodyStmt.kind != "" {
+                bodyStmts.psh singleBodyStmt
+            }
+            body = createBlockNode bodyStmts
+        }
         -> createWhileNode condExpr, body
     } els if t.kind == "KEYWORD" && t.val == "try" {
         advanceParser p
