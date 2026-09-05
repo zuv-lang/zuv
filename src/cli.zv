@@ -148,14 +148,18 @@ linkDirectObjectFile objPath, outExePath, isCdylib, customLibs {
     -> res
 }
 
-HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple, isQuiet {
+HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple, isQuiet, sanitizeModeStr {
     if fE targetFile {
         code = rF targetFile
         if isQuiet == 0 {
             prnt "==========================================="
             prnt "     Zuv Self-Hosting Compiler [BUILD]     "
             prnt "==========================================="
-            prnt (`Compiling target file: ${targetFile}`)
+            if sanitizeModeStr != "" {
+                prnt (`Compiling target file: ${targetFile} [sanitize: ${sanitizeModeStr}]`)
+            } els {
+                prnt (`Compiling target file: ${targetFile}`)
+            }
 
             if isRelease == 1 {
                 prnt "Optimization: Release Mode (-O3 Native)"
@@ -223,7 +227,7 @@ HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple, isQ
 
         okSafety = CheckProgram prog, targetFile, code
         if okSafety == 1 {
-            ir = GenerateLLVMFull prog
+            ir = GenerateLLVMFull prog, sanitizeModeStr
 
             let targetExe = outExe
             if targetExe == "" {
@@ -384,8 +388,8 @@ HandleCheck targetFile {
     }
 }
 
-HandleRun targetFile {
-    res = HandleBuild targetFile, 0, 0, "output.exe", 0, "", 0
+HandleRun targetFile, sanitizeModeStr {
+    res = HandleBuild targetFile, 0, 0, "output.exe", 0, "", 0, sanitizeModeStr
     if res == 1 {
         prnt (`[zuv run] Executing output.exe for ${targetFile}`)
         sh ".\\output.exe"

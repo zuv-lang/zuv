@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🛡️ Hardware-Assisted Memory & UB Sanitizers (`--sanitize`)
+- Added zero-dependency standalone sanitizer runtime generated directly as portable LLVM IR (no `clang_rt.asan_dynamic-x86_64.dll` required).
+- Added Address Sanitizer (`--sanitize=address` / `-fsanitize=address`): heap boundary checks, use-after-free, double-free, and process exit memory leak detection.
+- Added Undefined Behavior Sanitizer (`--sanitize=undefined` / `-fsanitize=undefined`): array and string index bounds checks, division-by-zero checks, and null pointer dereference checks.
+- Added dual sanitizer mode (`--sanitize=all` / `--sanitize=address,undefined`).
+- Added CLI flag support in self-host compiler (`zuv_selfhost.exe build ... --sanitize=...`).
+- Added comprehensive test suite in `tests/sanitize.test.zv`.
+
 ### 🏷️ User-Defined Decorators & Attributes
 - Added user-defined decorators: apply any custom function to objects, methods, and standalone functions via `@identifier`.
 - Added parameterized decorator factories: functions returning active decorator closures (`@identifier(...)`).

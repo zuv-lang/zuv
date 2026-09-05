@@ -28,7 +28,7 @@ createCodegen {
         "currentFuncPrmReg", "currentFuncPrevModeReg",
         "isStructLiteral", "isSpread", "sourceFile", "sourceLine", "isMethod",
         "macros", "bodyTokens", "filePath", "sourceText", "desCount", "allowIdentStruct",
-        "method", "path", "url", "version"
+        "method", "path", "url", "version", "sanitizeAddress", "sanitizeUndefined", "sanitizeMode"
     ]
     let brkStack = []
     let contStack = []
@@ -79,7 +79,10 @@ createCodegen {
         currentFuncPrevModeReg: "",
         decoratedMethods: decoratedMethods,
         objPrototypes: objPrototypes,
-        capturedSymbols: capturedSymbols
+        capturedSymbols: capturedSymbols,
+        sanitizeAddress: 0,
+        sanitizeUndefined: 0,
+        sanitizeMode: ""
     }
     -> res
 }
@@ -1319,10 +1322,17 @@ codegenExpr cg, expr, outBuf {
                 outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
                 arrPtr = newReg cg
                 outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
-                idxInt = newReg cg
-                outBuf.code = outBuf.code.cat (`  ${idxInt} = fptosi double ${idxReg} to i64\n`)
+                valStr = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${valStr} = fptosi double ${idxReg} to i64\n`)
+                if cg.sanitizeUndefined == 1 {
+                    rawDblStr = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${rawDblStr} = load double, ptr ${arrPtr}\n`)
+                    maxStr = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${maxStr} = fptosi double ${rawDblStr} to i64\n`)
+                    emitUbsanCheckBounds cg, valStr, maxStr, expr.left.line, outBuf
+                }
                 elemIdx = newReg cg
-                outBuf.code = outBuf.code.cat (`  ${elemIdx} = add i64 ${idxInt}, 1\n`)
+                outBuf.code = outBuf.code.cat (`  ${elemIdx} = add i64 ${valStr}, 1\n`)
                 gepReg = newReg cg
                 outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${elemIdx}\n`)
                 rInt = newReg cg
@@ -1396,12 +1406,18 @@ codegenExpr cg, expr, outBuf {
         }
 
         if expr.op == "/" {
+            if cg.sanitizeUndefined == 1 {
+                emitUbsanCheckDivZero cg, rightReg, expr.line, outBuf
+            }
             resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = fdiv double ${leftReg}, ${rightReg}\n`)
             -> resReg
         }
 
         if expr.op == "%" {
+            if cg.sanitizeUndefined == 1 {
+                emitUbsanCheckDivZero cg, rightReg, expr.line, outBuf
+            }
             resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = frem double ${leftReg}, ${rightReg}\n`)
             -> resReg
@@ -3606,7 +3622,11 @@ codegenExpr cg, expr, outBuf {
             szInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${szInt} = fptosi double ${szReg} to i64\n`)
             bufPtr = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${bufPtr} = call ptr @malloc(i64 ${szInt})\n`)
+            if cg.sanitizeAddress == 1 {
+                outBuf.code = outBuf.code.cat (`  ${bufPtr} = call ptr @zuv_asan_malloc(i64 ${szInt}, i32 ${expr.line})\n`)
+            } els {
+                outBuf.code = outBuf.code.cat (`  ${bufPtr} = call ptr @malloc(i64 ${szInt})\n`)
+            }
             bufInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufPtr} to i64\n`)
             bufDbl = newReg cg
@@ -3622,7 +3642,11 @@ codegenExpr cg, expr, outBuf {
             szInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${szInt} = fptosi double ${szReg} to i64\n`)
             newPtr = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${newPtr} = call ptr @realloc(ptr ${rawPtr}, i64 ${szInt})\n`)
+            if cg.sanitizeAddress == 1 {
+                outBuf.code = outBuf.code.cat (`  ${newPtr} = call ptr @zuv_asan_realloc(ptr ${rawPtr}, i64 ${szInt}, i32 ${expr.line})\n`)
+            } els {
+                outBuf.code = outBuf.code.cat (`  ${newPtr} = call ptr @realloc(ptr ${rawPtr}, i64 ${szInt})\n`)
+            }
             bufInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${newPtr} to i64\n`)
             bufDbl = newReg cg
@@ -3634,7 +3658,11 @@ codegenExpr cg, expr, outBuf {
             outBuf.code = outBuf.code.cat (`  ${pInt} = fptosi double ${pReg} to i64\n`)
             rawPtr = newReg cg
             outBuf.code = outBuf.code.cat (`  ${rawPtr} = inttoptr i64 ${pInt} to ptr\n`)
-            outBuf.code = outBuf.code.cat (`  call void @free(ptr ${rawPtr})\n`)
+            if cg.sanitizeAddress == 1 {
+                outBuf.code = outBuf.code.cat (`  call void @zuv_asan_free(ptr ${rawPtr}, i32 ${expr.line})\n`)
+            } els {
+                outBuf.code = outBuf.code.cat (`  call void @free(ptr ${rawPtr})\n`)
+            }
             -> "0.0"
         } els if (expr.callee == "memcpy" || expr.callee == "mem.cp" || expr.callee == "mem.copy") && expr.args.ln == 3 {
             dReg = codegenExpr cg, expr.args[0], outBuf
@@ -5086,10 +5114,39 @@ codegenExpr cg, expr, outBuf {
         outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
         arrPtr = newReg cg
         outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
-        idxInt = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${idxInt} = fptosi double ${idxReg} to i64\n`)
+        valStr = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${valStr} = fptosi double ${idxReg} to i64\n`)
+        if (classifyTyp cg, expr.array) == "str" || expr.array.kind == "StringExpr" {
+            if cg.sanitizeUndefined == 1 {
+                maxStr = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${maxStr} = call i64 @strlen(ptr ${arrPtr})\n`)
+                emitUbsanCheckBounds cg, valStr, maxStr, expr.line, outBuf
+            }
+            charPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${charPtr} = getelementptr inbounds i8, ptr ${arrPtr}, i64 ${valStr}\n`)
+            charVal = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${charVal} = load i8, ptr ${charPtr}\n`)
+            bufPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufPtr} = call ptr @malloc(i64 2)\n`)
+            outBuf.code = outBuf.code.cat (`  store i8 ${charVal}, ptr ${bufPtr}\n`)
+            endPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${endPtr} = getelementptr inbounds i8, ptr ${bufPtr}, i64 1\n`)
+            outBuf.code = outBuf.code.cat (`  store i8 0, ptr ${endPtr}\n`)
+            bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufPtr} to i64\n`)
+            bufDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+            -> bufDbl
+        }
+        if cg.sanitizeUndefined == 1 {
+            rawDblStr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${rawDblStr} = load double, ptr ${arrPtr}\n`)
+            maxStr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${maxStr} = fptosi double ${rawDblStr} to i64\n`)
+            emitUbsanCheckBounds cg, valStr, maxStr, expr.line, outBuf
+        }
         elemIdx = newReg cg
-        outBuf.code = outBuf.code.cat (`  ${elemIdx} = add i64 ${idxInt}, 1\n`)
+        outBuf.code = outBuf.code.cat (`  ${elemIdx} = add i64 ${valStr}, 1\n`)
         gepReg = newReg cg
         outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${elemIdx}\n`)
         loadInt = newReg cg
@@ -6311,8 +6368,19 @@ initDecorators cg, program, mainBuf {
     }
 }
 
-GenerateLLVMFull program {
+GenerateLLVMFull program, sanitizeModeStr {
     cg = createCodegen
+    if sanitizeModeStr != "" && sanitizeModeStr != 0 {
+        if sanitizeModeStr == "address" || sanitizeModeStr == "asan" {
+            cg.sanitizeAddress = 1
+        } els if sanitizeModeStr == "undefined" || sanitizeModeStr == "ubsan" {
+            cg.sanitizeUndefined = 1
+        } els if sanitizeModeStr == "all" || sanitizeModeStr == "address,undefined" || sanitizeModeStr == "undefined,address" {
+            cg.sanitizeAddress = 1
+            cg.sanitizeUndefined = 1
+        }
+        cg.sanitizeMode = sanitizeModeStr
+    }
     // Pre-register functions so aliases can reference later declarations.
     let fni = 0
     wh fni < program.statements.ln {
@@ -6850,6 +6918,9 @@ GenerateLLVMFull program {
         mainBuf.code = mainBuf.code.cat "  %call_res = call double @main_user(double %a1, double %a2, double %a3, double %a4)\n"
     }
 
+    if cg.sanitizeAddress == 1 {
+        mainBuf.code = mainBuf.code.cat "  call void @zuv_asan_check_leaks()\n"
+    }
     mainBuf.code = mainBuf.code.cat ("  ret i32 0\n}\n")
 
     // Merge constant declarations
@@ -6872,7 +6943,8 @@ GenerateLLVMFull program {
     ipcRuntimeStr = emitIpcRuntime cg
     termRuntimeStr = emitTermRuntime cg
     ptyRuntimeStr = emitPtyRuntime cg
-    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}\n${btRuntimeStr}\n${sigRuntimeStr}\n${ipcRuntimeStr}\n${termRuntimeStr}\n${ptyRuntimeStr}`
+    sanRuntimeStr = emitSanitizerRuntime cg
+    fullIR = `${header}${glbDeclsStr}${constsStr}\n${cg.funcs}\n${mainBuf.code}\n${btRuntimeStr}\n${sigRuntimeStr}\n${ipcRuntimeStr}\n${termRuntimeStr}\n${ptyRuntimeStr}\n${sanRuntimeStr}`
     -> fullIR
 }
 
@@ -7171,4 +7243,74 @@ emitPtyRuntime cg {
 
     -> ptyIR
 }
+
+emitUbsanCheckBounds cg, valStr, maxStr, line, outBuf {
+    if cg.sanitizeUndefined == 1 {
+        outBuf.code = outBuf.code.cat (`  call void @zuv_ubsan_check_bounds(i64 ${valStr}, i64 ${maxStr}, i32 ${line})\n`)
+    }
+}
+
+emitUbsanCheckDivZero cg, divStr, line, outBuf {
+    if cg.sanitizeUndefined == 1 {
+        outBuf.code = outBuf.code.cat (`  call void @zuv_ubsan_check_divzero(double ${divStr}, i32 ${line})\n`)
+    }
+}
+
+emitUbsanCheckNull cg, ptrStr, line, outBuf {
+    if cg.sanitizeUndefined == 1 {
+        outBuf.code = outBuf.code.cat (`  call void @zuv_ubsan_check_null(i64 ${ptrStr}, i32 ${line})\n`)
+    }
+}
+
+emitAsanCheckAccess cg, ptrStr, size, isWrite, line, outBuf {
+    if cg.sanitizeAddress == 1 {
+        outBuf.code = outBuf.code.cat (`  call void @zuv_asan_check_access(ptr ${ptrStr}, i64 ${size}, i32 ${isWrite}, i32 ${line})\n`)
+    }
+}
+
+emitSanitizerRuntime cg {
+    if cg.sanitizeAddress == 0 && cg.sanitizeUndefined == 0 {
+        -> ""
+    }
+    mut sanIR = "\n; --- Zuv Sanitizer Runtime (Zero External Dependency) ---\n"
+    sanIR = sanIR.cat "@zuv_asan_banner = private unnamed_addr constant [67 x i8] c\"=================================================================\\0A\\00\"\n"
+
+    if cg.sanitizeUndefined == 1 {
+        sanIR = sanIR.cat "@zuv_ubsan_err_bounds = private unnamed_addr constant [104 x i8] c\"==ERROR: UndefinedBehaviorSanitizer: index-out-of-bounds: index %lld out of range [0, %lld) at line %d\\0A\\00\"\n"
+        sanIR = sanIR.cat "@zuv_ubsan_err_divzero = private unnamed_addr constant [66 x i8] c\"==ERROR: UndefinedBehaviorSanitizer: division-by-zero at line %d\\0A\\00\"\n"
+        sanIR = sanIR.cat "@zuv_ubsan_err_null = private unnamed_addr constant [74 x i8] c\"==ERROR: UndefinedBehaviorSanitizer: null-pointer-dereference at line %d\\0A\\00\"\n\n"
+
+        sanIR = sanIR.cat "define internal void @zuv_ubsan_check_bounds(i64 %idx, i64 %len, i32 %line) {\nentry:\n  %is_neg = icmp slt i64 %idx, 0\n  %is_ge = icmp sge i64 %idx, %len\n  %is_oob = or i1 %is_neg, %is_ge\n  br i1 %is_oob, label %fail, label %ok\n\nfail:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call i32 (ptr, ...) @printf(ptr @zuv_ubsan_err_bounds, i64 %idx, i64 %len, i32 %line)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 101)\n  unreachable\n\nok:\n  ret void\n}\n\n"
+
+        sanIR = sanIR.cat "define internal void @zuv_ubsan_check_divzero(double %divisor, i32 %line) {\nentry:\n  %is_zero = fcmp oeq double %divisor, 0.0\n  br i1 %is_zero, label %fail, label %ok\n\nfail:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call i32 (ptr, ...) @printf(ptr @zuv_ubsan_err_divzero, i32 %line)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 101)\n  unreachable\n\nok:\n  ret void\n}\n\n"
+
+        sanIR = sanIR.cat "define internal void @zuv_ubsan_check_null(i64 %ptrInt, i32 %line) {\nentry:\n  %is_null = icmp eq i64 %ptrInt, 0\n  br i1 %is_null, label %fail, label %ok\n\nfail:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call i32 (ptr, ...) @printf(ptr @zuv_ubsan_err_null, i32 %line)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 101)\n  unreachable\n\nok:\n  ret void\n}\n\n"
+    }
+
+    if cg.sanitizeAddress == 1 {
+        sanIR = sanIR.cat "@zuv_asan_err_oob = private unnamed_addr constant [73 x i8] c\"==ERROR: AddressSanitizer: heap-buffer-overflow on address %p (line %d)\\0A\\00\"\n"
+        sanIR = sanIR.cat "@zuv_asan_err_uaf = private unnamed_addr constant [72 x i8] c\"==ERROR: AddressSanitizer: heap-use-after-free on address %p (line %d)\\0A\\00\"\n"
+        sanIR = sanIR.cat "@zuv_asan_err_df = private unnamed_addr constant [75 x i8] c\"==ERROR: AddressSanitizer: attempting double-free on address %p (line %d)\\0A\\00\"\n"
+        sanIR = sanIR.cat "@zuv_asan_err_badfree = private unnamed_addr constant [80 x i8] c\"==ERROR: AddressSanitizer: attempting free on unallocated address %p (line %d)\\0A\\00\"\n"
+        sanIR = sanIR.cat "@zuv_asan_err_leak = private unnamed_addr constant [92 x i8] c\"==ERROR: AddressSanitizer: detected memory leak of %lld bytes at %p (allocated at line %d)\\0A\\00\"\n\n"
+
+        sanIR = sanIR.cat "@zuv_asan_head = internal global ptr null\n"
+        sanIR = sanIR.cat "@zuv_asan_quarantine_ptrs = internal global [128 x ptr] zeroinitializer\n"
+        sanIR = sanIR.cat "@zuv_asan_quarantine_sizes = internal global [128 x i64] zeroinitializer\n"
+        sanIR = sanIR.cat "@zuv_asan_quarantine_idx = internal global i32 0\n\n"
+
+        sanIR = sanIR.cat "define internal ptr @zuv_asan_malloc(i64 %size, i32 %line) {\nentry:\n  %tot_sz = add i64 %size, 64\n  %raw = call ptr @malloc(i64 %tot_sz)\n  %is_null = icmp eq ptr %raw, null\n  br i1 %is_null, label %ret_null, label %init\n\ninit:\n  store i64 16045690984833338535, ptr %raw\n  %sz_ptr = getelementptr inbounds i8, ptr %raw, i64 8\n  store i64 %size, ptr %sz_ptr\n  %line_ptr = getelementptr inbounds i8, ptr %raw, i64 16\n  store i32 %line, ptr %line_ptr\n  %freed_ptr = getelementptr inbounds i8, ptr %raw, i64 20\n  store i32 0, ptr %freed_ptr\n  %cur_head = load ptr, ptr @zuv_asan_head\n  %next_ptr = getelementptr inbounds i8, ptr %raw, i64 24\n  store ptr %cur_head, ptr %next_ptr\n  store ptr %raw, ptr @zuv_asan_head\n  %user_ptr = getelementptr inbounds i8, ptr %raw, i64 32\n  %tail_ptr = getelementptr inbounds i8, ptr %user_ptr, i64 %size\n  call ptr @memset(ptr %tail_ptr, i32 250, i64 32)\n  ret ptr %user_ptr\n\nret_null:\n  ret ptr null\n}\n\n"
+
+        sanIR = sanIR.cat "define internal void @zuv_asan_free(ptr %user_ptr, i32 %line) {\nentry:\n  %is_null = icmp eq ptr %user_ptr, null\n  br i1 %is_null, label %done, label %check_hdr\n\ncheck_hdr:\n  %raw = getelementptr inbounds i8, ptr %user_ptr, i64 -32\n  %magic = load i64, ptr %raw\n  %is_df = icmp eq i64 %magic, -2401053088876216593\n  br i1 %is_df, label %err_df, label %check_magic\n\ncheck_magic:\n  %is_valid_magic = icmp eq i64 %magic, 16045690984833338535\n  br i1 %is_valid_magic, label %check_freed, label %err_badfree\n\ncheck_freed:\n  %freed_ptr = getelementptr inbounds i8, ptr %raw, i64 20\n  %freed = load i32, ptr %freed_ptr\n  %is_already_freed = icmp ne i32 %freed, 0\n  br i1 %is_already_freed, label %err_df, label %check_redzone\n\ncheck_redzone:\n  %sz_ptr = getelementptr inbounds i8, ptr %raw, i64 8\n  %user_sz = load i64, ptr %sz_ptr\n  %tail_ptr = getelementptr inbounds i8, ptr %user_ptr, i64 %user_sz\n  %p_rz_idx = alloca i64\n  store i64 0, ptr %p_rz_idx\n  br label %rz_loop\n\nrz_loop:\n  %rz_i = load i64, ptr %p_rz_idx\n  %rz_done = icmp sge i64 %rz_i, 32\n  br i1 %rz_done, label %rz_passed, label %rz_body\n\nrz_body:\n  %rz_byte_ptr = getelementptr inbounds i8, ptr %tail_ptr, i64 %rz_i\n  %rz_val = load i8, ptr %rz_byte_ptr\n  %rz_ok = icmp eq i8 %rz_val, -6\n  br i1 %rz_ok, label %rz_next, label %err_oob\n\nrz_next:\n  %rz_next_i = add i64 %rz_i, 1\n  store i64 %rz_next_i, ptr %p_rz_idx\n  br label %rz_loop\n\nrz_passed:\n  store i32 1, ptr %freed_ptr\n  store i64 -2401053088876216593, ptr %raw\n  call ptr @memset(ptr %user_ptr, i32 253, i64 %user_sz)\n  %q_idx = load i32, ptr @zuv_asan_quarantine_idx\n  %slot_idx = srem i32 %q_idx, 128\n  %q_slot = getelementptr inbounds [128 x ptr], ptr @zuv_asan_quarantine_ptrs, i32 0, i32 %slot_idx\n  %old_q = load ptr, ptr %q_slot\n  %has_old = icmp ne ptr %old_q, null\n  br i1 %has_old, label %evict_old, label %store_q\n\nevict_old:\n  %old_raw = getelementptr inbounds i8, ptr %old_q, i64 -32\n  call void @free(ptr %old_raw)\n  br label %store_q\n\nstore_q:\n  store ptr %user_ptr, ptr %q_slot\n  %q_sz_slot = getelementptr inbounds [128 x i64], ptr @zuv_asan_quarantine_sizes, i32 0, i32 %slot_idx\n  store i64 %user_sz, ptr %q_sz_slot\n  %next_q = add i32 %q_idx, 1\n  store i32 %next_q, ptr @zuv_asan_quarantine_idx\n  br label %done\n\nerr_df:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_err_df, ptr %user_ptr, i32 %line)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 101)\n  unreachable\n\nerr_badfree:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_err_badfree, ptr %user_ptr, i32 %line)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 101)\n  unreachable\n\nerr_oob:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_err_oob, ptr %user_ptr, i32 %line)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 101)\n  unreachable\n\ndone:\n  ret void\n}\n\n"
+
+        sanIR = sanIR.cat "define internal ptr @zuv_asan_realloc(ptr %old_ptr, i64 %new_sz, i32 %line) {\nentry:\n  %old_null = icmp eq ptr %old_ptr, null\n  br i1 %old_null, label %do_alloc, label %do_realloc\n\ndo_alloc:\n  %np = call ptr @zuv_asan_malloc(i64 %new_sz, i32 %line)\n  ret ptr %np\n\ndo_realloc:\n  %new_ptr = call ptr @zuv_asan_malloc(i64 %new_sz, i32 %line)\n  %raw_old = getelementptr inbounds i8, ptr %old_ptr, i64 -32\n  %old_sz_ptr = getelementptr inbounds i8, ptr %raw_old, i64 8\n  %old_sz = load i64, ptr %old_sz_ptr\n  %copy_new = icmp ult i64 %new_sz, %old_sz\n  %copy_sz = select i1 %copy_new, i64 %new_sz, i64 %old_sz\n  call ptr @memcpy(ptr %new_ptr, ptr %old_ptr, i64 %copy_sz)\n  call void @zuv_asan_free(ptr %old_ptr, i32 %line)\n  ret ptr %new_ptr\n}\n\n"
+
+        sanIR = sanIR.cat "define internal void @zuv_asan_check_access(ptr %ptr, i64 %size, i32 %is_write, i32 %line) {\nentry:\n  %is_null = icmp eq ptr %ptr, null\n  br i1 %is_null, label %ret, label %check_q\n\ncheck_q:\n  %p_qi = alloca i32\n  store i32 0, ptr %p_qi\n  br label %q_loop\n\nq_loop:\n  %qi = load i32, ptr %p_qi\n  %q_done = icmp sge i32 %qi, 128\n  br i1 %q_done, label %check_act, label %q_body\n\nq_body:\n  %q_elem = getelementptr inbounds [128 x ptr], ptr @zuv_asan_quarantine_ptrs, i32 0, i32 %qi\n  %qp = load ptr, ptr %q_elem\n  %qp_null = icmp eq ptr %qp, null\n  br i1 %qp_null, label %q_next, label %q_check_ptr\n\nq_check_ptr:\n  %qp_int = ptrtoint ptr %qp to i64\n  %p_int = ptrtoint ptr %ptr to i64\n  %q_diff = sub i64 %p_int, %qp_int\n  %qsz_elem = getelementptr inbounds [128 x i64], ptr @zuv_asan_quarantine_sizes, i32 0, i32 %qi\n  %qsz = load i64, ptr %qsz_elem\n  %q_ge_zero = icmp sge i64 %q_diff, 0\n  %q_lt_sz = icmp slt i64 %q_diff, %qsz\n  %is_uaf = and i1 %q_ge_zero, %q_lt_sz\n  br i1 %is_uaf, label %err_uaf, label %q_next\n\nq_next:\n  %qi_next = add i32 %qi, 1\n  store i32 %qi_next, ptr %p_qi\n  br label %q_loop\n\nerr_uaf:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_err_uaf, ptr %ptr, i32 %line)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 101)\n  unreachable\n\ncheck_act:\n  %p_curr = alloca ptr\n  %head = load ptr, ptr @zuv_asan_head\n  store ptr %head, ptr %p_curr\n  br label %act_loop\n\nact_loop:\n  %curr = load ptr, ptr %p_curr\n  %curr_null = icmp eq ptr %curr, null\n  br i1 %curr_null, label %ret, label %act_body\n\nact_body:\n  %c_magic = load i64, ptr %curr\n  %c_valid = icmp eq i64 %c_magic, 16045690984833338535\n  br i1 %c_valid, label %act_check_bounds, label %act_next\n\nact_check_bounds:\n  %c_uptr = getelementptr inbounds i8, ptr %curr, i64 32\n  %c_uint = ptrtoint ptr %c_uptr to i64\n  %ptr_int2 = ptrtoint ptr %ptr to i64\n  %diff = sub i64 %ptr_int2, %c_uint\n  %c_szptr = getelementptr inbounds i8, ptr %curr, i64 8\n  %c_sz = load i64, ptr %c_szptr\n  %c_tot = add i64 %c_sz, 32\n  %ge_zero = icmp sge i64 %diff, 0\n  %lt_tot = icmp slt i64 %diff, %c_tot\n  %in_block = and i1 %ge_zero, %lt_tot\n  br i1 %in_block, label %act_verify, label %act_next\n\nact_verify:\n  %acc_end = add i64 %diff, %size\n  %is_oob = icmp ugt i64 %acc_end, %c_sz\n  br i1 %is_oob, label %err_act_oob, label %ret\n\nerr_act_oob:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_err_oob, ptr %ptr, i32 %line)\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 101)\n  unreachable\n\nact_next:\n  %c_nextptr = getelementptr inbounds i8, ptr %curr, i64 24\n  %c_next = load ptr, ptr %c_nextptr\n  store ptr %c_next, ptr %p_curr\n  br label %act_loop\n\nret:\n  ret void\n}\n\n"
+
+        sanIR = sanIR.cat "define internal void @zuv_asan_check_leaks() {\nentry:\n  %p_curr = alloca ptr\n  %p_leaks = alloca i32\n  store i32 0, ptr %p_leaks\n  %head = load ptr, ptr @zuv_asan_head\n  store ptr %head, ptr %p_curr\n  br label %loop\n\nloop:\n  %curr = load ptr, ptr %p_curr\n  %is_end = icmp eq ptr %curr, null\n  br i1 %is_end, label %done, label %body\n\nbody:\n  %magic = load i64, ptr %curr\n  %is_active = icmp eq i64 %magic, 16045690984833338535\n  br i1 %is_active, label %check_freed, label %next\n\ncheck_freed:\n  %freed_ptr = getelementptr inbounds i8, ptr %curr, i64 20\n  %freed = load i32, ptr %freed_ptr\n  %is_unfreed = icmp eq i32 %freed, 0\n  br i1 %is_unfreed, label %report_leak, label %next\n\nreport_leak:\n  %cnt = load i32, ptr %p_leaks\n  %is_first = icmp eq i32 %cnt, 0\n  br i1 %is_first, label %print_head, label %print_item\n\nprint_head:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  br label %print_item\n\nprint_item:\n  %sz_ptr = getelementptr inbounds i8, ptr %curr, i64 8\n  %sz = load i64, ptr %sz_ptr\n  %line_ptr = getelementptr inbounds i8, ptr %curr, i64 16\n  %line = load i32, ptr %line_ptr\n  %uptr = getelementptr inbounds i8, ptr %curr, i64 32\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_err_leak, i64 %sz, ptr %uptr, i32 %line)\n  %cnt_next = add i32 %cnt, 1\n  store i32 %cnt_next, ptr %p_leaks\n  br label %next\n\nnext:\n  %next_ptr = getelementptr inbounds i8, ptr %curr, i64 24\n  %next_node = load ptr, ptr %next_ptr\n  store ptr %next_node, ptr %p_curr\n  br label %loop\n\ndone:\n  %total_leaks = load i32, ptr %p_leaks\n  %has_leaks = icmp sgt i32 %total_leaks, 0\n  br i1 %has_leaks, label %exit_leak, label %ret_ok\n\nexit_leak:\n  call i32 (ptr, ...) @printf(ptr @zuv_asan_banner)\n  call void @exit(i32 1)\n  unreachable\n\nret_ok:\n  ret void\n}\n\n"
+    }
+
+    -> sanIR
+}
+
 
