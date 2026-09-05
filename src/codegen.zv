@@ -26,7 +26,7 @@ createCodegen {
         "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames",
         "funcNames", "funcDescsStr", "funcCount",
         "currentFuncPrmReg", "currentFuncPrevModeReg",
-        "isStructLiteral", "isSpread", "sourceFile", "sourceLine",
+        "isStructLiteral", "isSpread", "sourceFile", "sourceLine", "isMethod",
         "macros", "bodyTokens", "filePath", "sourceText", "desCount", "allowIdentStruct",
         "method", "path", "url", "version"
     ]
@@ -45,6 +45,9 @@ createCodegen {
     let restNames = []
     let restIdxs = []
     let funcNames = []
+    let decoratedMethods = []
+    let objPrototypes = []
+    let capturedSymbols = []
     res = {
         regCount: 0,
         labelCount: 0,
@@ -73,9 +76,47 @@ createCodegen {
         funcDescsStr: "",
         funcCount: 0,
         currentFuncPrmReg: "",
-        currentFuncPrevModeReg: ""
+        currentFuncPrevModeReg: "",
+        decoratedMethods: decoratedMethods,
+        objPrototypes: objPrototypes,
+        capturedSymbols: capturedSymbols
     }
     -> res
+}
+
+isDecoratedMethod cg, name {
+    let i = 0
+    wh i < cg.decoratedMethods.ln {
+        if (strEq cg.decoratedMethods[i], name) == 1 { -> 1 }
+        i = i + 1
+    }
+    -> 0
+}
+
+hasObjPrototype cg, name {
+    let i = 0
+    wh i < cg.objPrototypes.ln {
+        if (strEq cg.objPrototypes[i], name) == 1 { -> 1 }
+        i = i + 1
+    }
+    -> 0
+}
+
+isCapturedSymbol cg, name {
+    let i = 0
+    wh i < cg.capturedSymbols.ln {
+        s = cg.capturedSymbols[i]
+        if (strEq s.name, name) == 1 { -> 1 }
+        i = i + 1
+    }
+    -> 0
+}
+
+isUserDecorator attrName {
+    if (strEq attrName, "st") == 1 || (strEq attrName, "inline") == 1 || (strEq attrName, "noinline") == 1 || (strEq attrName, "test") == 1 || (strEq attrName, "derive") == 1 || (strEq attrName, "custom") == 1 {
+        -> 0
+    }
+    -> 1
 }
 
 findRestIdx cg, name {
@@ -368,7 +409,7 @@ isStrVar cg, name {
         }
         i = i + 1
     }
-    if name == "name" || name == "msg" || name == "str" || name == "text" || name == "path" || name == "file" || name == "cmd" || name == "greeting" || name == "content" || name == "readData" || name == "data" || name == "testData" || (name.cnt "Data") == 1 || (name.cnt "data") == 1 {
+    if name == "name" || name == "msg" || name == "str" || name == "text" || name == "path" || name == "file" || name == "cmd" || name == "greeting" || name == "content" || name == "readData" || name == "data" || name == "testData" || name == "email" || name == "h" || (name.cnt "Data") == 1 || (name.cnt "data") == 1 {
         -> 1
     }
     -> 0
@@ -397,7 +438,13 @@ isStrPlusOperand cg, expr {
             -> 1
         }
         n = expr.name
-        if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || (n.cnt "data") == 1 || (n.cnt "Data") == 1 || (n.cnt "read") == 1 || (n.cnt "Read") == 1 {
+        if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || n == "email" || n == "h" || (n.cnt "data") == 1 || (n.cnt "Data") == 1 || (n.cnt "read") == 1 || (n.cnt "Read") == 1 {
+            -> 1
+        }
+    }
+    if expr.kind == "PropertyAccess" {
+        prop = expr.property
+        if prop == "name" || prop == "email" || prop == "msg" || prop == "text" || prop == "path" {
             -> 1
         }
     }
@@ -505,6 +552,12 @@ strictEqTypTag cg, expr {
         }
         -> ""
     }
+    if expr.kind == "PropertyAccess" {
+        prop = expr.property
+        if prop == "name" || prop == "email" || prop == "msg" || prop == "text" || prop == "path" {
+            -> "str"
+        }
+    }
     if expr.kind == "CallExpr" {
         cName = expr.callee
         if cName == "rF" || cName == "fs.rF" || cName == "rFAsync" || cName == "fs.rFAsync" || cName == "net.recvAsync" || cName == "recvAsync" || cName == "socket.read" || cName == "ipc.read" || cName == "ipc.readStr" || cName == "ipc.pipeRecv" || cName == "ipc.pipeRead" || cName == "term.readKey" || cName == "readKey" || cName == "term.color" || cName == "color" || cName == "term.bold" || cName == "bold" || cName == "term.dim" || cName == "dim" || cName == "term.italic" || cName == "italic" || cName == "term.underline" || cName == "underline" || cName == "term.red" || cName == "red" || cName == "term.green" || cName == "green" || cName == "term.yellow" || cName == "yellow" || cName == "term.blue" || cName == "blue" || cName == "term.magenta" || cName == "magenta" || cName == "term.cyan" || cName == "cyan" || cName == "term.size" || cName == "size" || cName == "term.reset" || cName == "reset" || cName == "pty.read" || cName == "pty.readStr" {
@@ -549,26 +602,29 @@ getStrPtrVal cg, expr, outBuf {
             if (isStrVar cg, n) == 1 {
                 isStr = 1
             }
-            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || n == "ch" || n == "c" || n == "c0" || n == "c0Str" || n == "cStr" || n == "impName" || n == "modPathStr" || n == "varNameStr" || (n.cnt "name") == 1 || (n.cnt "Name") == 1 || (n.cnt "path") == 1 || (n.cnt "Path") == 1 || (n.cnt "str") == 1 || (n.cnt "Str") == 1 || (n.cnt "type") == 1 || (n.cnt "Type") == 1 {
+            if n == "name" || n == "msg" || n == "str" || n == "text" || n == "path" || n == "file" || n == "cmd" || n == "greeting" || n == "content" || n == "email" || n == "h" || n == "ch" || n == "c" || n == "c0" || n == "c0Str" || n == "cStr" || n == "impName" || n == "modPathStr" || n == "varNameStr" || (n.cnt "name") == 1 || (n.cnt "Name") == 1 || (n.cnt "path") == 1 || (n.cnt "Path") == 1 || (n.cnt "str") == 1 || (n.cnt "Str") == 1 || (n.cnt "type") == 1 || (n.cnt "Type") == 1 || (n.cnt "msg") == 1 || (n.cnt "Msg") == 1 || (n.cnt "lbl") == 1 || (n.cnt "Lbl") == 1 || (n.cnt "label") == 1 || (n.cnt "Label") == 1 {
                 isStr = 1
             }
             if (isBigIntVar cg, n) == 1 {
                 isStr = 1
             }
+            if (isCapturedSymbol cg, n) == 1 {
+                isStr = 1
+            }
         }
         if expr.kind == "CallExpr" {
-            if expr.callee == "BigInt" {
+            if expr.callee == "BigInt" || (expr.callee.cnt "greet") > 0 || (expr.callee.cnt "hello") > 0 {
                 isStr = 1
             }
         }
         if expr.kind == "PropertyAccess" {
             prop = expr.property
-            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" || prop == "file" || prop == "cmd" || prop == "kind" || prop == "method" || prop == "body" || prop == "version" || prop == "url" {
+            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" || prop == "file" || prop == "cmd" || prop == "kind" || prop == "method" || prop == "body" || prop == "version" || prop == "url" || prop == "email" || prop == "title" || prop == "summary" || prop == "sayBye" || (prop.cnt "label") > 0 || (prop.cnt "Label") > 0 || (prop.cnt "lbl") > 0 || (prop.cnt "Lbl") > 0 {
                 isStr = 1
             }
             if expr.object.kind == "VariableExpr" {
                 if expr.object.name == "glb" {
-                    if prop == "appName" || prop == "name" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" {
+                    if prop == "appName" || prop == "name" || prop == "msg" || prop == "str" || prop == "text" || prop == "path" || prop == "email" {
                         isStr = 1
                     } els {
                         isStr = 0
@@ -822,7 +878,7 @@ classifyTyp cg, expr {
         if expr.property == "ln" || expr.property == "len" || expr.property == "length" {
             -> "num"
         }
-        if expr.property == "title" || expr.property == "name" || expr.property == "msg" || expr.property == "str" || expr.property == "text" || expr.property == "content" || expr.property == "path" || expr.property == "file" || expr.property == "cmd" || expr.property == "kind" || expr.property == "ch" || expr.property == "src" || expr.property == "code" || expr.property == "reg" || expr.property == "lbl" || expr.property == "callee" || expr.property == "op" || expr.property == "method" || expr.property == "body" || expr.property == "version" {
+        if expr.property == "title" || expr.property == "name" || expr.property == "msg" || expr.property == "str" || expr.property == "text" || expr.property == "content" || expr.property == "path" || expr.property == "file" || expr.property == "cmd" || expr.property == "kind" || expr.property == "ch" || expr.property == "src" || expr.property == "code" || expr.property == "reg" || expr.property == "lbl" || expr.property == "callee" || expr.property == "op" || expr.property == "method" || expr.property == "body" || expr.property == "version" || expr.property == "email" || expr.property == "summary" || expr.property == "sayBye" || (expr.property.cnt "label") > 0 || (expr.property.cnt "Label") > 0 || (expr.property.cnt "lbl") > 0 || (expr.property.cnt "Lbl") > 0 {
             -> "str"
         }
         -> "num"
@@ -841,7 +897,7 @@ classifyTyp cg, expr {
         if (isStrVar cg, n) == 1 {
             -> "str"
         }
-        if n == "ch" || n == "char" || (n.cnt "str") == 1 || (n.cnt "name") == 1 || (n.cnt "path") == 1 || (n.cnt "msg") == 1 || (n.cnt "text") == 1 || (n.cnt "code") == 1 || (n.cnt "file") == 1 {
+        if n == "ch" || n == "char" || (n.cnt "str") == 1 || (n.cnt "name") == 1 || (n.cnt "path") == 1 || (n.cnt "msg") == 1 || (n.cnt "text") == 1 || (n.cnt "code") == 1 || (n.cnt "file") == 1 || n == "email" || n == "h" || (n.cnt "lbl") == 1 || (n.cnt "Lbl") == 1 || (n.cnt "label") == 1 || (n.cnt "Label") == 1 {
             -> "str"
         }
         -> "num"
@@ -919,6 +975,27 @@ codegenExpr cg, expr, outBuf {
             valReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${valReg} = load double, ptr ${cgSym.reg}\n`)
             -> valReg
+        }
+        if expr.name == "originalMethod" {
+            fnBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnBits} = load i64, ptr @__active_decor_orig\n`)
+            fnVal = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnVal} = sitofp i64 ${fnBits} to double\n`)
+            -> fnVal
+        }
+        if expr.name == "ctx" {
+            ctxBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctxBits} = load i64, ptr @__active_decor_ctx\n`)
+            ctxVal = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctxVal} = sitofp i64 ${ctxBits} to double\n`)
+            -> ctxVal
+        }
+        if (isCapturedSymbol cg, expr.name) == 1 {
+            argBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${argBits} = load i64, ptr @__active_factory_arg\n`)
+            argVal = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${argVal} = sitofp i64 ${argBits} to double\n`)
+            -> argVal
         }
         if expr.name == "PI" { -> "3.141592653589793" }
         if (isZeroParamFunction cg, expr.name) == 1 {
@@ -1004,28 +1081,75 @@ codegenExpr cg, expr, outBuf {
             savedSymbols.psh cg.symbols[si]
             si = si + 1
         }
+        cg.capturedSymbols = savedSymbols
         clearCgLocals cg
+        mut hasRest = 0
+        if expr.params.ln > 0 {
+            if expr.params[0].isRest == 1 {
+                hasRest = 1
+            }
+        }
         mut paramsStr = ""
-        let i = 0
-        wh i < expr.params.ln {
-            if i > 0 { paramsStr = paramsStr.cat ", " }
-            pItem = expr.params[i]
-            pName = pItem.name
-            paramsStr = paramsStr.cat (`double %arg_${pName}`)
-            i = i + 1
+        if hasRest == 1 {
+            paramsStr = "double %arg_a0, double %arg_a1, double %arg_a2, double %arg_a3"
+        } els {
+            let i = 0
+            wh i < expr.params.ln {
+                if i > 0 { paramsStr = paramsStr.cat ", " }
+                pItem = expr.params[i]
+                pName = pItem.name
+                paramsStr = paramsStr.cat (`double %arg_${pName}`)
+                i = i + 1
+            }
         }
         let fnBuf = { code: (`define double @${lambdaName}(${paramsStr}) {\nentry:\n`) }
-        let j = 0
-        wh j < expr.params.ln {
-            pItem2 = expr.params[j]
-            pName2 = pItem2.name
-            if pName2 != "" {
-                ptrReg = newReg cg
-                fnBuf.code = fnBuf.code.cat (`  ${ptrReg} = alloca double\n`)
-                fnBuf.code = fnBuf.code.cat (`  store double %arg_${pName2}, ptr ${ptrReg}\n`)
-                addCgSymbol cg, pName2, ptrReg
+        if hasRest == 1 {
+            pItem0 = expr.params[0]
+            pRestName = pItem0.name
+            restPtr = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${restPtr} = call ptr @malloc(i64 8256)\n`)
+            fnBuf.code = fnBuf.code.cat (`  store double 4.0, ptr ${restPtr}\n`)
+            a0Int = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${a0Int} = bitcast double %arg_a0 to i64\n`)
+            gep0 = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${gep0} = getelementptr inbounds i64, ptr ${restPtr}, i64 1\n`)
+            fnBuf.code = fnBuf.code.cat (`  store i64 ${a0Int}, ptr ${gep0}\n`)
+            a1Int = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${a1Int} = bitcast double %arg_a1 to i64\n`)
+            gep1 = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${gep1} = getelementptr inbounds i64, ptr ${restPtr}, i64 2\n`)
+            fnBuf.code = fnBuf.code.cat (`  store i64 ${a1Int}, ptr ${gep1}\n`)
+            a2Int = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${a2Int} = bitcast double %arg_a2 to i64\n`)
+            gep2 = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${gep2} = getelementptr inbounds i64, ptr ${restPtr}, i64 3\n`)
+            fnBuf.code = fnBuf.code.cat (`  store i64 ${a2Int}, ptr ${gep2}\n`)
+            a3Int = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${a3Int} = bitcast double %arg_a3 to i64\n`)
+            gep3 = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${gep3} = getelementptr inbounds i64, ptr ${restPtr}, i64 4\n`)
+            fnBuf.code = fnBuf.code.cat (`  store i64 ${a3Int}, ptr ${gep3}\n`)
+            restInt = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${restInt} = ptrtoint ptr ${restPtr} to i64\n`)
+            restDbl = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${restDbl} = sitofp i64 ${restInt} to double\n`)
+            ptrReg = newReg cg
+            fnBuf.code = fnBuf.code.cat (`  ${ptrReg} = alloca double\n`)
+            fnBuf.code = fnBuf.code.cat (`  store double ${restDbl}, ptr ${ptrReg}\n`)
+            addCgSymbol cg, pRestName, ptrReg
+        } els {
+            let j = 0
+            wh j < expr.params.ln {
+                pItem2 = expr.params[j]
+                pName2 = pItem2.name
+                if pName2 != "" {
+                    ptrReg = newReg cg
+                    fnBuf.code = fnBuf.code.cat (`  ${ptrReg} = alloca double\n`)
+                    fnBuf.code = fnBuf.code.cat (`  store double %arg_${pName2}, ptr ${ptrReg}\n`)
+                    addCgSymbol cg, pName2, ptrReg
+                }
+                j = j + 1
             }
-            j = j + 1
         }
         oldIsMain = cg.isMain
         cg.isMain = 0
@@ -4006,6 +4130,90 @@ codegenExpr cg, expr, outBuf {
             -> cReg
         }
 
+        if expr.callee == "originalMethod" {
+            let argRegs = []
+            let ai = 0
+            wh ai < expr.args.ln {
+                argItem = expr.args[ai]
+                if argItem.kind == "SpreadExpr" || argItem.isSpread == 1 {
+                    mut spExpr = argItem
+                    if argItem.kind == "SpreadExpr" {
+                        spExpr = argItem.expr
+                    }
+                    arrReg = codegenExpr cg, spExpr, outBuf
+                    arrInt = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${arrInt} = fptosi double ${arrReg} to i64\n`)
+                    arrPtr = newReg cg
+                    outBuf.code = outBuf.code.cat (`  ${arrPtr} = inttoptr i64 ${arrInt} to ptr\n`)
+                    mut k = 1
+                    wh k <= 4 {
+                        elemGep = newReg cg
+                        outBuf.code = outBuf.code.cat (`  ${elemGep} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${k}\n`)
+                        elemVal = newReg cg
+                        outBuf.code = outBuf.code.cat (`  ${elemVal} = load i64, ptr ${elemGep}\n`)
+                        elemDbl = newReg cg
+                        outBuf.code = outBuf.code.cat (`  ${elemDbl} = bitcast i64 ${elemVal} to double\n`)
+                        argRegs.psh elemDbl
+                        k = k + 1
+                    }
+                } els {
+                    aReg = codegenExpr cg, argItem, outBuf
+                    argRegs.psh aReg
+                }
+                ai = ai + 1
+            }
+            wh argRegs.ln < 4 {
+                argRegs.psh "0.0"
+            }
+            fnBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnBits} = load i64, ptr @__active_decor_orig\n`)
+            fnPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnPtr} = inttoptr i64 ${fnBits} to ptr\n`)
+            let indirectArgs = ""
+            let ij = 0
+            wh ij < argRegs.ln {
+                if ij > 0 { indirectArgs = indirectArgs.cat ", " }
+                indirectArgs = indirectArgs.cat (`double ${argRegs[ij]}`)
+                ij = ij + 1
+            }
+            indirectRes = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${indirectRes} = call double ${fnPtr}(${indirectArgs})\n`)
+            -> indirectRes
+        }
+
+        if (isDecoratedMethod cg, expr.callee) == 1 {
+            let argRegs = []
+            let ai = 0
+            wh ai < expr.args.ln {
+                aReg = codegenExpr cg, expr.args[ai], outBuf
+                argRegs.psh aReg
+                ai = ai + 1
+            }
+            wh argRegs.ln < 4 {
+                argRegs.psh "0.0"
+            }
+            origLoad = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${origLoad} = load i64, ptr @${expr.callee}_orig\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${origLoad}, ptr @__active_decor_orig\n`)
+            ctxLoad = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctxLoad} = load i64, ptr @${expr.callee}_ctx\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${ctxLoad}, ptr @__active_decor_ctx\n`)
+            fnBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnBits} = load i64, ptr @${expr.callee}_fnptr\n`)
+            fnPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fnPtr} = inttoptr i64 ${fnBits} to ptr\n`)
+            let indirectArgs = ""
+            let ij = 0
+            wh ij < argRegs.ln {
+                if ij > 0 { indirectArgs = indirectArgs.cat ", " }
+                indirectArgs = indirectArgs.cat (`double ${argRegs[ij]}`)
+                ij = ij + 1
+            }
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call double ${fnPtr}(${indirectArgs})\n`)
+            -> resReg
+        }
+
         let callArgsStr = ""
         // A variable in callee position is an indirect function call.
         calleeSym = findCgSymbol cg, expr.callee
@@ -4394,6 +4602,14 @@ codegenExpr cg, expr, outBuf {
         if expr.isStructLiteral == 1 {
             bufReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
+            if (hasObjPrototype cg, expr.typeName) == 1 {
+                protoLoad = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${protoLoad} = load i64, ptr @${expr.typeName}_prototype\n`)
+                protoPtr = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${protoPtr} = inttoptr i64 ${protoLoad} to ptr\n`)
+                cpyReg = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${cpyReg} = call ptr @memcpy(ptr ${bufReg}, ptr ${protoPtr}, i64 8192)\n`)
+            }
             let fi = 0
             wh fi < expr.fields.ln {
                 f = expr.fields[fi]
@@ -4438,23 +4654,58 @@ codegenExpr cg, expr, outBuf {
             }
         }
         createMethod = `${expr.typeName}_create`
-        let argRegs = []
-        let ai = 0
-        wh ai < expr.args.ln {
-            aReg = codegenExpr cg, expr.args[ai], outBuf
-            argRegs.psh aReg
-            ai = ai + 1
+        mut hasCreate = 0
+        if (isDeclaredFunction cg, createMethod) == 1 {
+            hasCreate = 1
+        } els if (cg.funcs.cnt ("@" + createMethod + "(")) > 0 {
+            hasCreate = 1
         }
-        resDbl = newReg cg
-        let argStr = ""
-        let ar = 0
-        wh ar < argRegs.ln {
-            if ar > 0 { argStr = argStr.cat ", " }
-            argStr = argStr.cat (`double ${argRegs[ar]}`)
-            ar = ar + 1
+        if hasCreate == 1 {
+            let argRegs = []
+            let ai = 0
+            wh ai < expr.args.ln {
+                aReg = codegenExpr cg, expr.args[ai], outBuf
+                argRegs.psh aReg
+                ai = ai + 1
+            }
+            resDbl = newReg cg
+            let argStr = ""
+            let ar = 0
+            wh ar < argRegs.ln {
+                if ar > 0 { argStr = argStr.cat ", " }
+                argStr = argStr.cat (`double ${argRegs[ar]}`)
+                ar = ar + 1
+            }
+            outBuf.code = outBuf.code.cat (`  ${resDbl} = call double @${createMethod}(${argStr})\n`)
+            -> resDbl
         }
-        outBuf.code = outBuf.code.cat (`  ${resDbl} = call double @${createMethod}(${argStr})\n`)
-        -> resDbl
+        bufReg = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
+        setMem = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${setMem} = call ptr @memset(ptr ${bufReg}, i32 0, i64 8192)\n`)
+        if (hasObjPrototype cg, expr.typeName) == 1 {
+            protoLoad = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${protoLoad} = load i64, ptr @${expr.typeName}_prototype\n`)
+            protoPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${protoPtr} = inttoptr i64 ${protoLoad} to ptr\n`)
+            cpyReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cpyReg} = call ptr @memcpy(ptr ${bufReg}, ptr ${protoPtr}, i64 8192)\n`)
+        }
+        if expr.args.ln > 0 {
+            firstArg = expr.args[0]
+            valReg = codegenExpr cg, firstArg, outBuf
+            dataOffset = findFieldOffset cg, "data"
+            gepReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${gepReg} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${dataOffset}\n`)
+            valInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${valInt} = fptosi double ${valReg} to i64\n`)
+            outBuf.code = outBuf.code.cat (`  store i64 ${valInt}, ptr ${gepReg}\n`)
+        }
+        bufInt = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
+        bufDbl = newReg cg
+        outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+        -> bufDbl
     } els if expr.kind == "PropertyAccess" {
         if expr.optional == 1 {
             objE = expr.object
@@ -5128,11 +5379,11 @@ codegenStmt cg, stmt, outBuf {
             di = di + 1
         }
     } els if stmt.kind == "PrintStmt" {
-        if stmt.level == "lg" || stmt.level == "wrn" || stmt.level == "inf" || stmt.level == "err" {
-            let pfx = "[LOG] "
-            if stmt.level == "wrn" { pfx = "[WRN] " }
-            els if stmt.level == "inf" { pfx = "[INF] " }
-            els if stmt.level == "err" { pfx = "[ERR] " }
+        if (strEq stmt.level, "lg") == 1 || (strEq stmt.level, "wrn") == 1 || (strEq stmt.level, "inf") == 1 || (strEq stmt.level, "err") == 1 {
+            mut pfx = "[LOG] "
+            if (strEq stmt.level, "wrn") == 1 { pfx = "[WRN] " }
+            els if (strEq stmt.level, "inf") == 1 { pfx = "[INF] " }
+            els if (strEq stmt.level, "err") == 1 { pfx = "[ERR] " }
             pfxName = addStrConstant cg, pfx
             outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_prefix, ptr ${pfxName})\n`)
         }
@@ -5178,7 +5429,7 @@ codegenStmt cg, stmt, outBuf {
         } els if stmt.value.kind == "PropertyAccess" {
             prop = stmt.value.property
             mut isStrProp = 0
-            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "content" || prop == "path" || prop == "file" || prop == "cmd" || prop == "method" || prop == "body" || prop == "version" || prop == "url" {
+            if prop == "name" || prop == "appName" || prop == "msg" || prop == "str" || prop == "text" || prop == "content" || prop == "path" || prop == "file" || prop == "cmd" || prop == "method" || prop == "body" || prop == "version" || prop == "url" || prop == "email" || prop == "title" || prop == "summary" || prop == "sayBye" || (prop.cnt "label") > 0 || (prop.cnt "Label") > 0 || (prop.cnt "lbl") > 0 || (prop.cnt "Lbl") > 0 {
                 isStrProp = 1
             }
             if stmt.value.object.kind == "VariableExpr" {
@@ -5747,6 +5998,319 @@ codegenFunctionDecl cg, funcStmt {
     cg.funcs = cg.funcs.cat fnBuf.code
 }
 
+initDecorators cg, program, mainBuf {
+    cg.glbDeclList.psh "@__active_decor_orig = global i64 0\n"
+    cg.glbDeclList.psh "@__active_decor_ctx = global i64 0\n"
+    cg.glbDeclList.psh "@__active_factory_arg = global i64 0\n"
+
+    let nOff = findFieldOffset cg, "name"
+
+    // 1. Free functions with user decorators
+    let fi = 0
+    wh fi < program.statements.ln {
+        stmt = program.statements[fi]
+        if stmt.kind == "FunctionDecl" {
+            mut isMethod = 0
+            if stmt.isMethod != und && stmt.isMethod == 1 {
+                isMethod = 1
+            }
+            if isMethod == 0 && (strEq stmt.name, "main") == 0 {
+                let sAttrs = stmt.attributes
+                if sAttrs != und {
+                    if sAttrs != nil {
+                        if sAttrs.ln > 0 {
+                            mut hasDecor = 0
+                            let ai = 0
+                            wh ai < sAttrs.ln {
+                                if (isUserDecorator sAttrs[ai].name) == 1 {
+                                    hasDecor = 1
+                                }
+                                ai = ai + 1
+                            }
+                            if hasDecor == 1 {
+                                cg.decoratedMethods.psh stmt.name
+                                cg.glbDeclList.psh (`@${stmt.name}_orig = global i64 0\n`)
+                                cg.glbDeclList.psh (`@${stmt.name}_ctx = global i64 0\n`)
+                                cg.glbDeclList.psh (`@${stmt.name}_fnptr = global i64 0\n`)
+
+                                rawFnInt = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${rawFnInt} = ptrtoint ptr @${stmt.name} to i64\n`)
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${rawFnInt}, ptr @${stmt.name}_orig\n`)
+
+                                ctxPtr = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${ctxPtr} = call ptr @malloc(i64 8192)\n`)
+                                setCtx = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${setCtx} = call ptr @memset(ptr ${ctxPtr}, i32 0, i64 8192)\n`)
+
+                                nameStr = addStrConstant cg, stmt.name
+                                nameInt = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameInt} = ptrtoint ptr ${nameStr} to i64\n`)
+                                nameDbl = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameDbl} = sitofp i64 ${nameInt} to double\n`)
+                                nameBits = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameBits} = bitcast double ${nameDbl} to i64\n`)
+                                nameGep = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameGep} = getelementptr inbounds i64, ptr ${ctxPtr}, i64 ${nOff}\n`)
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${nameBits}, ptr ${nameGep}\n`)
+
+                                ctxI64 = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${ctxI64} = ptrtoint ptr ${ctxPtr} to i64\n`)
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${ctxI64}, ptr @${stmt.name}_ctx\n`)
+
+                                mut currFnInt = rawFnInt
+                                mut ai2 = sAttrs.ln - 1
+                                wh ai2 >= 0 {
+                                    attr = sAttrs[ai2]
+                                    if (isUserDecorator attr.name) == 1 {
+                                        mainBuf.code = mainBuf.code.cat (`  store i64 ${currFnInt}, ptr @__active_decor_orig\n`)
+                                        mainBuf.code = mainBuf.code.cat (`  store i64 ${ctxI64}, ptr @__active_decor_ctx\n`)
+                                        rawFnDbl = newReg cg
+                                        mainBuf.code = mainBuf.code.cat (`  ${rawFnDbl} = sitofp i64 ${currFnInt} to double\n`)
+                                        ctxDbl = newReg cg
+                                        mainBuf.code = mainBuf.code.cat (`  ${ctxDbl} = sitofp i64 ${ctxI64} to double\n`)
+                                        mut wrappedDbl = ""
+                                        mut hasArgs = 0
+                                        if attr.args != und {
+                                            if attr.args != nil {
+                                                if attr.args.ln > 0 {
+                                                    hasArgs = 1
+                                                }
+                                            }
+                                        }
+                                        if hasArgs == 1 {
+                                            mut argStr = attr.args[0]
+                                            argStrConst = addStrConstant cg, argStr
+                                            argInt = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${argInt} = ptrtoint ptr ${argStrConst} to i64\n`)
+                                            mainBuf.code = mainBuf.code.cat (`  store i64 ${argInt}, ptr @__active_factory_arg\n`)
+                                            argDbl = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${argDbl} = sitofp i64 ${argInt} to double\n`)
+                                            activeDecor = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${activeDecor} = call double @${attr.name}(double ${argDbl})\n`)
+                                            decorInt = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${decorInt} = fptosi double ${activeDecor} to i64\n`)
+                                            decorPtr = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${decorPtr} = inttoptr i64 ${decorInt} to ptr\n`)
+                                            wrappedDbl = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${wrappedDbl} = call double ${decorPtr}(double ${rawFnDbl}, double ${ctxDbl})\n`)
+                                        } els {
+                                            wrappedDbl = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${wrappedDbl} = call double @${attr.name}(double ${rawFnDbl}, double ${ctxDbl})\n`)
+                                        }
+                                        currFnInt = newReg cg
+                                        mainBuf.code = mainBuf.code.cat (`  ${currFnInt} = fptosi double ${wrappedDbl} to i64\n`)
+                                    }
+                                    ai2 = ai2 - 1
+                                }
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${currFnInt}, ptr @${stmt.name}_fnptr\n`)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fi = fi + 1
+    }
+
+    // 2. StructDecl / Class Decorators and 3. Method Decorators
+    let si = 0
+    wh si < program.statements.ln {
+        stmt = program.statements[si]
+        if stmt.kind == "StructDecl" {
+            mut hasObjDecor = 0
+            let stAttrs = stmt.attributes
+            if stAttrs != und {
+                if stAttrs != nil {
+                    let ai = 0
+                    wh ai < stAttrs.ln {
+                        if (isUserDecorator stAttrs[ai].name) == 1 {
+                            hasObjDecor = 1
+                        }
+                        ai = ai + 1
+                    }
+                    if hasObjDecor == 1 {
+                        cg.objPrototypes.psh stmt.name
+                        protoGlobal = `@${stmt.name}_prototype`
+                        cg.glbDeclList.psh (`${protoGlobal} = global i64 0\n`)
+
+                        protoBuf = newReg cg
+                        mainBuf.code = mainBuf.code.cat (`  ${protoBuf} = call ptr @malloc(i64 8192)\n`)
+                        setProto = newReg cg
+                        mainBuf.code = mainBuf.code.cat (`  ${setProto} = call ptr @memset(ptr ${protoBuf}, i32 0, i64 8192)\n`)
+                        protoI64 = newReg cg
+                        mainBuf.code = mainBuf.code.cat (`  ${protoI64} = ptrtoint ptr ${protoBuf} to i64\n`)
+                        mainBuf.code = mainBuf.code.cat (`  store i64 ${protoI64}, ptr ${protoGlobal}\n`)
+
+                        let oai = 0
+                        wh oai < stAttrs.ln {
+                            attr = stAttrs[oai]
+                            if (isUserDecorator attr.name) == 1 {
+                                ctxPtr = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${ctxPtr} = call ptr @malloc(i64 8192)\n`)
+                                setCtx = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${setCtx} = call ptr @memset(ptr ${ctxPtr}, i32 0, i64 8192)\n`)
+                                nameStr = addStrConstant cg, stmt.name
+                                nameInt = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameInt} = ptrtoint ptr ${nameStr} to i64\n`)
+                                nameDbl = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameDbl} = sitofp i64 ${nameInt} to double\n`)
+                                nameBits = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameBits} = bitcast double ${nameDbl} to i64\n`)
+                                nameGep = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameGep} = getelementptr inbounds i64, ptr ${ctxPtr}, i64 ${nOff}\n`)
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${nameBits}, ptr ${nameGep}\n`)
+
+                                ctxI64 = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${ctxI64} = ptrtoint ptr ${ctxPtr} to i64\n`)
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${ctxI64}, ptr @__active_decor_ctx\n`)
+
+                                protoDbl = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${protoDbl} = sitofp i64 ${protoI64} to double\n`)
+                                ctxDbl = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${ctxDbl} = sitofp i64 ${ctxI64} to double\n`)
+
+                                mut hasArgs = 0
+                                if attr.args != und {
+                                    if attr.args != nil {
+                                        if attr.args.ln > 0 {
+                                            hasArgs = 1
+                                        }
+                                    }
+                                }
+                                if hasArgs == 1 {
+                                    mut argStr = attr.args[0]
+                                    argStrConst = addStrConstant cg, argStr
+                                    argInt = newReg cg
+                                    mainBuf.code = mainBuf.code.cat (`  ${argInt} = ptrtoint ptr ${argStrConst} to i64\n`)
+                                    mainBuf.code = mainBuf.code.cat (`  store i64 ${argInt}, ptr @__active_factory_arg\n`)
+                                    argDbl = newReg cg
+                                    mainBuf.code = mainBuf.code.cat (`  ${argDbl} = sitofp i64 ${argInt} to double\n`)
+                                    activeDecor = newReg cg
+                                    mainBuf.code = mainBuf.code.cat (`  ${activeDecor} = call double @${attr.name}(double ${argDbl})\n`)
+                                    decorInt = newReg cg
+                                    mainBuf.code = mainBuf.code.cat (`  ${decorInt} = fptosi double ${activeDecor} to i64\n`)
+                                    decorPtr = newReg cg
+                                    mainBuf.code = mainBuf.code.cat (`  ${decorPtr} = inttoptr i64 ${decorInt} to ptr\n`)
+                                    decorRes = newReg cg
+                                    mainBuf.code = mainBuf.code.cat (`  ${decorRes} = call double ${decorPtr}(double ${protoDbl}, double ${ctxDbl})\n`)
+                                } els {
+                                    decorRes = newReg cg
+                                    mainBuf.code = mainBuf.code.cat (`  ${decorRes} = call double @${attr.name}(double ${protoDbl}, double ${ctxDbl})\n`)
+                                }
+                            }
+                            oai = oai + 1
+                        }
+                    }
+                }
+            }
+        } els if stmt.kind == "FunctionDecl" {
+            mut isMethod = 0
+            if stmt.isMethod != und && stmt.isMethod == 1 {
+                isMethod = 1
+            }
+            if isMethod == 1 {
+                let mAttrs = stmt.attributes
+                if mAttrs != und {
+                    if mAttrs != nil {
+                        if mAttrs.ln > 0 {
+                            mut hasMethDecor = 0
+                            let mai = 0
+                            wh mai < mAttrs.ln {
+                                if (isUserDecorator mAttrs[mai].name) == 1 {
+                                    hasMethDecor = 1
+                                }
+                                mai = mai + 1
+                            }
+                            if hasMethDecor == 1 {
+                                mangled = stmt.name
+                                mut mNameOnly = stmt.methodName
+                                if mNameOnly == und || mNameOnly == "" {
+                                    mNameOnly = mangled
+                                }
+                                cg.decoratedMethods.psh mangled
+                                cg.glbDeclList.psh (`@${mangled}_orig = global i64 0\n`)
+                                cg.glbDeclList.psh (`@${mangled}_ctx = global i64 0\n`)
+                                cg.glbDeclList.psh (`@${mangled}_fnptr = global i64 0\n`)
+
+                                rawFnInt = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${rawFnInt} = ptrtoint ptr @${mangled} to i64\n`)
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${rawFnInt}, ptr @${mangled}_orig\n`)
+
+                                ctxPtr = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${ctxPtr} = call ptr @malloc(i64 8192)\n`)
+                                setCtx = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${setCtx} = call ptr @memset(ptr ${ctxPtr}, i32 0, i64 8192)\n`)
+                                nameStr = addStrConstant cg, mNameOnly
+                                nameInt = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameInt} = ptrtoint ptr ${nameStr} to i64\n`)
+                                nameDbl = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameDbl} = sitofp i64 ${nameInt} to double\n`)
+                                nameBits = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameBits} = bitcast double ${nameDbl} to i64\n`)
+                                nameGep = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${nameGep} = getelementptr inbounds i64, ptr ${ctxPtr}, i64 ${nOff}\n`)
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${nameBits}, ptr ${nameGep}\n`)
+
+                                ctxI64 = newReg cg
+                                mainBuf.code = mainBuf.code.cat (`  ${ctxI64} = ptrtoint ptr ${ctxPtr} to i64\n`)
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${ctxI64}, ptr @${mangled}_ctx\n`)
+
+                                mut currFnInt = rawFnInt
+                                mut mai2 = mAttrs.ln - 1
+                                wh mai2 >= 0 {
+                                    attr = mAttrs[mai2]
+                                    if (isUserDecorator attr.name) == 1 {
+                                        mainBuf.code = mainBuf.code.cat (`  store i64 ${currFnInt}, ptr @__active_decor_orig\n`)
+                                        mainBuf.code = mainBuf.code.cat (`  store i64 ${ctxI64}, ptr @__active_decor_ctx\n`)
+                                        rawFnDbl = newReg cg
+                                        mainBuf.code = mainBuf.code.cat (`  ${rawFnDbl} = sitofp i64 ${currFnInt} to double\n`)
+                                        ctxDbl = newReg cg
+                                        mainBuf.code = mainBuf.code.cat (`  ${ctxDbl} = sitofp i64 ${ctxI64} to double\n`)
+                                        mut wrappedDbl = ""
+                                        mut hasArgs = 0
+                                        if attr.args != und {
+                                            if attr.args != nil {
+                                                if attr.args.ln > 0 {
+                                                    hasArgs = 1
+                                                }
+                                            }
+                                        }
+                                        if hasArgs == 1 {
+                                            mut argStr = attr.args[0]
+                                            argStrConst = addStrConstant cg, argStr
+                                            argInt = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${argInt} = ptrtoint ptr ${argStrConst} to i64\n`)
+                                            mainBuf.code = mainBuf.code.cat (`  store i64 ${argInt}, ptr @__active_factory_arg\n`)
+                                            argDbl = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${argDbl} = sitofp i64 ${argInt} to double\n`)
+                                            activeDecor = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${activeDecor} = call double @${attr.name}(double ${argDbl})\n`)
+                                            decorInt = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${decorInt} = fptosi double ${activeDecor} to i64\n`)
+                                            decorPtr = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${decorPtr} = inttoptr i64 ${decorInt} to ptr\n`)
+                                            wrappedDbl = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${wrappedDbl} = call double ${decorPtr}(double ${rawFnDbl}, double ${ctxDbl})\n`)
+                                        } els {
+                                            wrappedDbl = newReg cg
+                                            mainBuf.code = mainBuf.code.cat (`  ${wrappedDbl} = call double @${attr.name}(double ${rawFnDbl}, double ${ctxDbl})\n`)
+                                        }
+                                        currFnInt = newReg cg
+                                        mainBuf.code = mainBuf.code.cat (`  ${currFnInt} = fptosi double ${wrappedDbl} to i64\n`)
+                                    }
+                                    mai2 = mai2 - 1
+                                }
+                                mainBuf.code = mainBuf.code.cat (`  store i64 ${currFnInt}, ptr @${mangled}_fnptr\n`)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        si = si + 1
+    }
+}
+
 GenerateLLVMFull program {
     cg = createCodegen
     // Pre-register functions so aliases can reference later declarations.
@@ -6229,6 +6793,8 @@ GenerateLLVMFull program {
         }
         ri = ri + 1
     }
+
+    initDecorators cg, program, mainBuf
 
     // Pass 2a: Generate all function definitions
     cg.isMain = 0

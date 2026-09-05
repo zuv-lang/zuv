@@ -1,0 +1,105 @@
+// Decorator test suite (tests/decorators.test.zv)
+imp time
+
+// 1. Object / Class Decorator
+LogClass target, ctx {
+    lg `Class: ${ctx.name}`
+    target.email = "default@example.com"
+    target.name = "Rohit"
+}
+
+@LogClass
+obj User {
+    name: str,
+    email: str,
+
+    greet: name => {
+        -> "hi " + name
+    }
+}
+
+// 2. Method Decorator
+Log originalMethod, ctx {
+    -> ...args => {
+        lg `Calling ${ctx.name}`
+        -> originalMethod ...args
+    }
+}
+
+obj Greeter {
+    @Log
+    hello: name => {
+        -> `Hello ${name}`
+    }
+}
+
+// 3. Behavior-changing decorator (timing / profiling)
+Measure originalMethod, ctx {
+    -> ...args => {
+        start = time.mono
+        result = originalMethod ...args
+        end_time = time.mono
+        elapsed = (end_time - start) / 1000000.0
+        lg `${ctx.name} took ${elapsed}ms`
+        -> result
+    }
+}
+
+obj App {
+    @Measure
+    calculate: => {
+        mut i = 0
+        wh i < 100000 { i = i + 1 }
+        -> i
+    }
+}
+
+// 4. Decorator Factory (parameterized)
+Route path {
+    -> (originalMethod, ctx) => {
+        lg `${ctx.name} -> ${path}`
+        -> originalMethod
+    }
+}
+
+obj UserController {
+    @Route "/users"
+    getUsers: => {
+        -> ["Rohit", "Alice"]
+    }
+}
+
+// 5. Free-function decorator
+Deprecated fn, ctx {
+    lg `Warning: ${ctx.name} is deprecated`
+    -> fn
+}
+
+@Deprecated
+oldHelper x {
+    -> x * 2
+}
+
+// Run verifications
+u = new User()
+prnt u.email
+prnt u.name
+msg = User.greet "World"
+prnt msg
+
+g = new Greeter()
+h = g.hello "Rohit"
+prnt h
+
+app = new App()
+calcRes = app.calculate()
+prnt calcRes
+
+ctrl = new UserController()
+users = ctrl.getUsers()
+prnt users.ln
+
+oldRes = oldHelper 5
+prnt oldRes
+
+prnt "decorators test complete"

@@ -3,6 +3,7 @@ imp str, arr, diagnostics
 imp CreateToken frm tokens
 imp CreateDiagnostic, FormatDiagnostic frm diagnostics
 imp IsUpperChar frm util
+imp CreateLexer, TokenizeFull frm lexer
 
 // ── Precedence Constants ─────────────────────────────────────────────────────
 getPrecLowest {
@@ -135,10 +136,36 @@ createParser tokens, filePath, sourceText {
     if fPath == und || fPath == nil { fPath = "" }
     mut src = sourceText
     if src == und || src == nil { src = "" }
-    let p = { tokens: tokens, pos: 0, totalLen: l, curTok: emptyTok, peekTok: emptyTok, errors: emptyErrors, desCount: 0, allowIdentStruct: 1, filePath: fPath, sourceText: src }
+    let instKeys = []
+    let instVals = []
+    let p = { tokens: tokens, pos: 0, totalLen: l, curTok: emptyTok, peekTok: emptyTok, errors: emptyErrors, desCount: 0, allowIdentStruct: 1, filePath: fPath, sourceText: src, instanceMethodKeys: instKeys, instanceMethodVals: instVals }
     advanceParser p
     advanceParser p
     -> p
+}
+
+strEq s1, s2 {
+    if s1 == s2 {
+        -> 1
+    }
+    -> 0
+}
+
+addInstanceMethod p, member, mangled {
+    p.instanceMethodKeys.psh member
+    p.instanceMethodVals.psh mangled
+}
+
+findInstanceMethod p, member {
+    let i = p.instanceMethodKeys.ln - 1
+    wh i >= 0 {
+        k = p.instanceMethodKeys[i]
+        if (strEq k, member) == 1 {
+            -> p.instanceMethodVals[i]
+        }
+        i = i - 1
+    }
+    -> ""
 }
 
 curTok p {
@@ -250,6 +277,69 @@ createTernaryNode condition, thenExpr, elseExpr {
     -> res
 }
 
+parseTemplateStringVal p, raw {
+    let parts = []
+    mut curText = ""
+    let len = raw.ln
+    mut i = 0
+    wh (i < len) {
+        c = raw.sub i, 1
+        mut isInterp = 0
+        if c == "$" && (i + 1 < len) {
+            let nextI = i + 1
+            c2 = raw.sub nextI, 1
+            if c2 == "{" {
+                isInterp = 1
+            }
+        }
+        if isInterp == 1 {
+            if curText.ln > 0 {
+                parts.psh (createStringNode curText)
+                curText = ""
+            }
+            i = i + 2
+            mut exprStr = ""
+            mut depth = 1
+            wh (i < len) {
+                if depth <= 0 { brk }
+                ch = raw.sub i, 1
+                if ch == "{" {
+                    depth = depth + 1
+                    exprStr = exprStr.cat ch
+                } els if ch == "}" {
+                    depth = depth - 1
+                    if depth > 0 {
+                        exprStr = exprStr.cat ch
+                    }
+                } els {
+                    exprStr = exprStr.cat ch
+                }
+                i = i + 1
+            }
+            if exprStr.ln > 0 {
+                subLex = CreateLexer exprStr
+                subTokens = TokenizeFull subLex
+                subP = createParser subTokens, p.filePath, exprStr
+                subExpr = parseExpression subP, 0
+                parts.psh subExpr
+            }
+        } els {
+            curText = curText.cat c
+            i = i + 1
+        }
+    }
+    if curText.ln > 0 || parts.ln == 0 {
+        parts.psh (createStringNode curText)
+    }
+    mut res = parts[0]
+    let pi = 1
+    wh (pi < parts.ln) {
+        res = createBinaryNode "+", res, parts[pi]
+        pi = pi + 1
+    }
+    -> res
+}
+
 createCallNode callee, args {
     res = { kind: "CallExpr", callee: callee, args: args }
     -> res
@@ -341,7 +431,7 @@ createForNode initS, cond, incS, body {
 
 createFuncNode name, params, body, isAsync, hasRest {
     let emptyAttrs = []
-    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest, attributes: emptyAttrs, isAsyncST: 0, sourceFile: "", sourceLine: 1 }
+    res = { kind: "FunctionDecl", name: name, params: params, body: body, isAsync: isAsync, hasRest: hasRest, attributes: emptyAttrs, isAsyncST: 0, sourceFile: "", sourceLine: 1, isMethod: 0, objName: "", methodName: "" }
     -> res
 }
 
@@ -695,7 +785,11 @@ parseExpression p, precedence {
     } els if t.kind == "BIGINT" {
         left = createBigIntNode t.val
     } els if t.kind == "STRING" || t.kind == "STR" {
-        left = createStringNode t.val
+        if (t.val.cnt "${") > 0 {
+            left = parseTemplateStringVal p, t.val
+        } els {
+            left = createStringNode t.val
+        }
     } els if t.kind == "BOOL" {
         left = createBoolNode t.val
     } els if t.kind == "NIL" {
@@ -1033,7 +1127,7 @@ parseExpression p, precedence {
                         shouldCall = 1
                     }
                 } els {
-                    if pKind == "NUM" || pKind == "NUMBER" || pKind == "STR" || pKind == "STRING" || pKind == "BOOL" || pKind == "IDENT" {
+                    if pKind == "NUM" || pKind == "NUMBER" || pKind == "STR" || pKind == "STRING" || pKind == "BOOL" || pKind == "IDENT" || pVal == "..." || pVal == "nil" || pVal == "und" || pVal == "yes" || pVal == "no" {
                         shouldCall = 1
                     }
                 }
@@ -1161,6 +1255,42 @@ parseExpression p, precedence {
             left = parseExpression p, 0
             expectPeekToken p, "SYM", ")"
         }
+    } els if t.val == "..." {
+        if (peekTok p).kind == "IDENT" && (peekAheadToken p, 2).val == "=>" {
+            advanceParser p // consume '...', curTok is param IDENT
+            pName = (curTok p).val
+            advanceParser p // consume IDENT, curTok is '=>'
+            advanceParser p // consume '=>', curTok is body start
+            mut lambdaBody = { kind: "BlockStmt", statements: [] }
+            mut isBlock = 0
+            if (curTok p).val == "{" {
+                mut isObjLit = 0
+                t1 = peekTok p
+                if t1.val == "}" || t1.val == "..." {
+                    isObjLit = 1
+                } els if t1.kind == "IDENT" {
+                    t2 = peekAheadToken p, 2
+                    if t2.val == ":" || t2.val == "," || t2.val == "}" {
+                        isObjLit = 1
+                    }
+                }
+                if isObjLit == 0 {
+                    isBlock = 1
+                    lambdaBody = parseBlock p
+                }
+            }
+            if isBlock == 0 {
+                lambdaExpr = parseExpression p, 0
+                let lambdaStmts = [createReturnNode lambdaExpr]
+                lambdaBody = createBlockNode lambdaStmts
+            }
+            let lambdaParams = [{ name: pName, type: "", isRest: 1 }]
+            left = { kind: "LambdaExpr", name: "", params: lambdaParams, body: lambdaBody }
+        } els {
+            advanceParser p // consume '...'
+            operand = parseExpression p, 80 // PREC_PREFIX
+            left = createSpreadNode operand
+        }
     } els if (t.kind == "SYM" && (t.val == "!" || t.val == "-" || t.val == "&" || t.val == "~" || t.val == "++" || t.val == "--" || t.val == "*")) || (t.kind == "KEYWORD" && (t.val == "not" || t.val == "awt" || t.val == "await" || t.val == "typ" || t.val == "sym" || t.val == "sizeof" || t.val == "sz")) {
         op = t.val
         if op == "&" && (peekTok p).val == "mut" {
@@ -1244,7 +1374,10 @@ parseExpression p, precedence {
                     } els if (peekTok p).val == "(" {
                         advanceParser p // consume '('
                         let args = []
-                        if left.kind == "VariableExpr" {
+                        mInst = findInstanceMethod p, propName
+                        if mInst != "" {
+                            propName = mInst
+                        } els if left.kind == "VariableExpr" {
                             varNameStr = left.name
                             let isUpperV = 0
                             if varNameStr.ln > 0 {
@@ -1337,14 +1470,17 @@ parseExpression p, precedence {
                                     shouldDotCall = 1
                                 }
                             } els {
-                                if pKind == "NUM" || pKind == "NUMBER" || pKind == "STR" || pKind == "STRING" || pKind == "BOOL" || pKind == "IDENT" {
+                                if pKind == "NUM" || pKind == "NUMBER" || pKind == "STR" || pKind == "STRING" || pKind == "BOOL" || pKind == "IDENT" || pVal == "..." || pVal == "nil" || pVal == "und" || pVal == "yes" || pVal == "no" {
                                     shouldDotCall = 1
                                 }
                             }
                         }
                         if shouldDotCall == 1 {
                             let args = []
-                            if left.kind == "VariableExpr" {
+                            mInst2 = findInstanceMethod p, propName
+                            if mInst2 != "" {
+                                propName = mInst2
+                            } els if left.kind == "VariableExpr" {
                                 varNameStr = left.name
                                 let isUpperV = 0
                                 if varNameStr.ln > 0 {
@@ -1524,12 +1660,24 @@ parseAttributes p {
             advanceParser p // into arguments or ')'
             wh (curTok p).val != ")" && (curTok p).kind != "EOF" {
                 if (curTok p).kind == "IDENT" || (curTok p).kind == "STR" || (curTok p).kind == "STRING" || (curTok p).kind == "NUM" || (curTok p).kind == "NUMBER" {
-                    attrArgs.psh (curTok p).val
+                    let aVal = (curTok p).val
+                    attrArgs.psh aVal
                     if (peekTok p).val == "," {
                         advanceParser p // consume ','
                     }
                 }
                 advanceParser p
+            }
+        } els if (curTok p).line == (peekTok p).line && ((peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER") {
+            wh (curTok p).line == (peekTok p).line && ((peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "IDENT") {
+                advanceParser p
+                let aVal2 = (curTok p).val
+                attrArgs.psh aVal2
+                if (peekTok p).val == "," && (curTok p).line == (peekTok p).line {
+                    advanceParser p // consume ','
+                } els {
+                    brk
+                }
             }
         }
         let attrObj = { name: attrName, args: attrArgs }
@@ -1561,23 +1709,11 @@ parseStatement p {
         } els if stmt.kind == "ObjDecl" {
             stmt.attributes = attrs
         } els if stmt.kind == "StmtSequence" {
-            let ssi = 0
-            wh ssi < stmt.statements.ln {
-                subS = stmt.statements[ssi]
-                if subS.kind == "FunctionDecl" || subS.kind == "ObjDecl" {
-                    subS.attributes = attrs
-                    if subS.kind == "FunctionDecl" {
-                        let ai2 = 0
-                        wh ai2 < attrs.ln {
-                            if attrs[ai2].name == "st" {
-                                subS.isAsyncST = 1
-                                subS.isAsync = 1
-                            }
-                            ai2 = ai2 + 1
-                        }
-                    }
+            if stmt.statements.ln > 0 {
+                firstSub = stmt.statements[0]
+                if firstSub.kind == "StructDecl" || firstSub.kind == "ObjDecl" {
+                    firstSub.attributes = attrs
                 }
-                ssi = ssi + 1
             }
         }
         -> stmt
@@ -1919,6 +2055,15 @@ parseStatement p {
         let structFields = []
         let methods = []
         wh (curTok p).val != "}" && (curTok p).kind != "EOF" {
+            let methodAttrs = []
+            wh (curTok p).val == "@" {
+                let atList = parseAttributes p
+                let ai = 0
+                wh ai < atList.ln {
+                    methodAttrs.psh atList[ai]
+                    ai = ai + 1
+                }
+            }
             if (curTok p).kind == "IDENT" {
                 member = (curTok p).val
                 if (peekTok p).val == ":" {
@@ -1929,7 +2074,12 @@ parseStatement p {
                         mMangled = `${structName}_${member}`
                         let mParams = ["self"]
                         mFn = createFuncNodeWithLoc mMangled, mParams, mBody, 0, 0, p.filePath, (curTok p).line
+                        mFn.attributes = methodAttrs
+                        mFn.objName = structName
+                        mFn.methodName = member
+                        mFn.isMethod = 1
                         methods.psh mFn
+                        addInstanceMethod p, member, mMangled
                     } els {
                         advanceParser p // token after ':'
                         firstLit = (curTok p).val
@@ -1951,7 +2101,12 @@ parseStatement p {
                                 mBody = parseBlock p
                                 mMangled = `${structName}_${member}`
                                 mFn = createFuncNodeWithLoc mMangled, paramList, mBody, 0, 0, p.filePath, (curTok p).line
+                                mFn.attributes = methodAttrs
+                                mFn.objName = structName
+                                mFn.methodName = member
+                                mFn.isMethod = 1
                                 methods.psh mFn
+                                addInstanceMethod p, member, mMangled
                             }
                         }
                         if sawFatArrow == 0 {
@@ -1968,7 +2123,8 @@ parseStatement p {
             advanceParser p
         }
         let objStmts = []
-        objStmts.psh { kind: "StructDecl", name: structName, fields: structFields }
+        let emptyStructAttrs = []
+        objStmts.psh { kind: "StructDecl", name: structName, fields: structFields, attributes: emptyStructAttrs }
         let mi = 0
         wh mi < methods.ln {
             objStmts.psh methods[mi]
@@ -2722,7 +2878,7 @@ parseStatement p {
                 callNode = createCallNode identName, args
                 -> createExpressionStmtNode callNode
             }
-        } els if (peekTok p).line == t.line && ((peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "BOOL") {
+        } els if (peekTok p).line == t.line && ((peekTok p).kind == "STR" || (peekTok p).kind == "STRING" || (peekTok p).kind == "NUM" || (peekTok p).kind == "NUMBER" || (peekTok p).kind == "BOOL" || (peekTok p).val == "...") {
             // Parenthesis-free call statement with literal arguments
             advanceParser p
             firstArg = parseExpression p, 0

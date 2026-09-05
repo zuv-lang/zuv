@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🏷️ User-Defined Decorators & Attributes
+- Added user-defined decorators: apply any custom function to objects, methods, and standalone functions via `@identifier`.
+- Added parameterized decorator factories: functions returning active decorator closures (`@identifier(...)`).
+- Added runtime reflection context: `{ name }` metadata object automatically passed to decorator functions.
+- Fixed arrow method receiver (`self`) in zero-param methods preventing `0xC0000005` crash.
+- Fixed string return type formatting for property/method accesses in print statements.
+- Added test suite in `tests/decorators.test.zv`.
+
 ### 💻 Raw Terminal Controls, ANSI Virtual Console & PTY Engine (`term`, `pty`)
 - Added terminal raw mode: `term.makeRaw()`, `term.restore()`, `term.isRaw()`.
 - Added non-blocking key reader & window size: `term.hasKey()`, `term.readKey()`, `term.width()`, `term.height()`, `term.size()`.
