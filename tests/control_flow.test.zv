@@ -99,4 +99,48 @@ if (a == 1) {
     prnt "nested deep outer BAD"
 }
 
+// ── braceless single-statement if & els ─────────────────────────────────────
+let checkVal = 15
+
+// 1. Single-line if
+if checkVal > 10 prnt "single-line if ok"
+
+// 2. Multi-line braceless if
+if checkVal > 10
+    prnt "multi-line braceless if ok"
+
+// 3. Single-line if ... els ...
+if checkVal < 0 prnt "single-line els BAD" els prnt "single-line els ok"
+
+// 4. Multi-line braceless if ... els ...
+if checkVal < 0
+    prnt "multi-line els BAD"
+els
+    prnt "multi-line els ok"
+
+// 5. Multi-line braceless if ... els if ... els ...
+if checkVal == 1
+    prnt "chain BAD 1"
+els if checkVal == 15
+    prnt "braceless els-if chain ok"
+els
+    prnt "chain BAD 2"
+
+// 6. False condition must not swallow subsequent statement
+let gate = 5
+if gate > 10
+    prnt "gate BAD"
+prnt "gate statement after braceless if ok"
+
+// 7. Single-line wh loop
+mut whCount = 0
+wh whCount < 3 whCount = whCount + 1
+if whCount == 3 prnt "single-line wh ok"
+
+// 8. Multi-line braceless wh loop
+mut whMulti = 0
+wh whMulti < 3
+    whMulti = whMulti + 1
+if whMulti == 3 prnt "multi-line braceless wh ok"
+
 prnt "control_flow test complete"

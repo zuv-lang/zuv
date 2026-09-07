@@ -1,22 +1,59 @@
 // Native Standard Library std/time Unit Test Suite
-// Verifies imp time with shortform functions (nw, sl)
+// Verifies epoch ms (nw/time.now), epoch sec (unx/time.unix), monotonic clock (mono/time.mono), and sleep (sl/time.sleep)
 
 imp time
 
-lg "--- Testing std/time Shortforms (nw, sl) ---"
+lg "--- Testing std/time High-Precision Clocks & Monotonic Timers ---"
 
-// 1. Current clock ticks (nw)
-start_time = nw
-lg "Start time tick via 'nw':"
-lg start_time
+// 1. Current Epoch Milliseconds (nw, time.now)
+start_ms = nw
+lg "Current Unix epoch ms (nw):"
+lg start_ms
 
-// 2. Sleep milliseconds (sl ms)
+now_prop = time.now
+lg "Current Unix epoch ms (time.now):"
+lg now_prop
+
+// 2. POSIX Epoch Seconds (unx, time.unix)
+epoch_sec = unx
+lg "Current Unix epoch seconds (unx):"
+lg epoch_sec
+
+unix_prop = time.unix
+lg "Current Unix epoch seconds (time.unix):"
+lg unix_prop
+
+// 3. High-Resolution Monotonic Clock (mono, time.mono)
+mono_start = mono
+lg "High-res monotonic timestamp start (mono):"
+lg mono_start
+
+mono_prop = time.mono
+lg "High-res monotonic timestamp (time.mono):"
+lg mono_prop
+
+// 4. Sleep Delay (sl 25 / time.sleep 25)
 sl 25
-lg "Slept for 25ms via 'sl 25'"
+lg "Slept 25ms via 'sl 25'"
 
-// 3. End clock ticks (nw)
-end_time = nw
-lg "End time tick via 'nw':"
-lg end_time
+mono_end = mono
+lg "High-res monotonic timestamp end (mono):"
+lg mono_end
 
-lg "std/time Shortform Tests Completed!"
+end_ms = nw
+lg "End Unix epoch ms (nw):"
+lg end_ms
+
+// 5. Delta verification
+elapsed_mono = mono_end - mono_start
+lg "Elapsed monotonic nanoseconds:"
+lg elapsed_mono
+
+elapsed_ms = end_ms - start_ms
+lg "Elapsed epoch milliseconds:"
+lg elapsed_ms
+
+time.sleep 10
+lg "Slept 10ms via 'time.sleep 10'"
+
+lg "std/time High-Precision Clock Tests Completed Successfully!"

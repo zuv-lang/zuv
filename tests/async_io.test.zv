@@ -1,0 +1,17 @@
+// Test Non-Blocking Async File Operations (Task 31)
+
+testPath = "build/async_test.tmp"
+testData = "Hello from async file I/O in Zuv!"
+
+prmWrite = fs.wFAsync(testPath, testData)
+bytesWritten = awt prmWrite
+lg "bytesWritten:"
+lg bytesWritten
+
+prmRead = fs.rFAsync(testPath)
+readData = awt prmRead
+lg "readData:"
+lg readData
+
+fs.rm testPath
+prnt "async file io ok"

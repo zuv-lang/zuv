@@ -1,0 +1,37 @@
+// Test Prm combinators: all, race, allSettled
+
+prom1 = new Prm res, rej => {
+        res 250
+}
+
+prom2 = new Prm res, rej =>
+        res 250
+
+prom3 = new Prm res, rej =>
+        x = 250
+        res 250
+
+// 1. Prm.all
+both = awt Prm.all [prom1, prom2, prom3]
+lg "both[0]:"
+lg both[0]
+lg "both[1]:"
+lg both[1]
+lg "both[2]:"
+lg both[2]
+
+// 2. Prm.race
+
+winner = awt Prm.race [prom1, prom2, prom3]
+lg "race winner:"
+lg winner
+
+// 3. Prm.allSettled
+
+settled = awt Prm.allSettled [prom1, prom2, prom3]
+lg "settled[0]:"
+lg settled[0]
+lg "settled[1]:"
+lg settled[1]
+lg "settled[2]:"
+lg settled[2]

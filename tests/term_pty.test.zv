@@ -1,0 +1,64 @@
+// Test Suite for Raw Terminal Controls, ANSI Virtual Console & PTY Engine (`term`, `pty`)
+imp term frm "term"
+imp pty frm "pty"
+imp time frm "time"
+
+prnt "Testing term mode switching..."
+let initialRaw = term.isRaw()
+prnt initialRaw
+
+term.makeRaw()
+let afterMakeRaw = term.isRaw()
+prnt afterMakeRaw
+
+term.restore()
+let afterRestore = term.isRaw()
+prnt afterRestore
+
+prnt "Testing term dimensions & size..."
+let w = term.width()
+let h = term.height()
+let termSize = term.size()
+prnt w
+prnt h
+prnt termSize
+
+prnt "Testing non-blocking key reader..."
+let hk = term.hasKey()
+prnt hk
+let k = term.readKey(0)
+prnt k
+
+prnt "Testing ANSI color and styling..."
+let cOk = term.color "green", "SUCCESS"
+prnt cOk
+let bld = term.bold "BOLD_TEXT"
+prnt bld
+let rTxt = term.red "RED_TEXT"
+prnt rTxt
+let gTxt = term.green "GREEN_TEXT"
+prnt gTxt
+let yTxt = term.yellow "YELLOW_TEXT"
+prnt yTxt
+let bTxt = term.blue "BLUE_TEXT"
+prnt bTxt
+let cTxt = term.cyan "CYAN_TEXT"
+prnt cTxt
+let rst = term.reset()
+prnt rst
+
+prnt "Testing PTY open, resize, and close..."
+let p = pty.open 80, 24
+prnt p
+pty.resize p, 100, 30
+pty.close p
+prnt "PTY closed successfully."
+
+prnt "Testing PTY process spawning..."
+let sp = pty.spawn "cmd.exe /c echo pty_spawn_ok", 80, 24
+prnt sp
+time.sleep 100
+let out = pty.read sp, 4096
+prnt out
+pty.close sp
+prnt "PTY process spawn test complete."

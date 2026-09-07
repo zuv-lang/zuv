@@ -1,0 +1,101 @@
+// Test first-class Prm function created with new Prm, used in Single-Threaded and Multi-Threaded modes
+
+// ─── Promise function created with new Prm ───
+
+prom1 = new Prm res, rej => {
+
+        res 250
+}
+
+prom2 = new Prm res, rej =>
+        res 250
+
+prom3 = new Prm res, rej =>
+        x = 250
+        res 250
+
+prom4 = new Prm resp, rej => {
+        rej false
+}
+
+// ─── 1. Default Mode (Top-Level Multi-Threaded Pool) ───
+// Directly calling and awaiting the promise function at top-level
+
+resDefault = awt prom1
+lg "1. Default Top-Level Mode (new Prm):"
+lg resDefault
+
+
+lg "2. Default Top-Level Mode (new Prm):"
+
+try {
+    lg "executing prom4:"
+    x= awt prom4
+    lg x
+} cth e {
+    lg "catching e:"
+    lg e
+}
+
+
+
+// ─── 2. Single-Threaded Usage (@st / ascST) ───
+// Using the promise function inside an @st function
+// Context inheritance causes new Prm to execute on the Single-Threaded local event loop
+@st
+asc handleInSingleThreaded {
+    res = awt prom1
+
+    lg "3. handleInSingleThreaded"
+    lg res
+}
+handleInSingleThreaded
+ascST handleInSingleThreaded2 {
+    res = awt prom1
+    lg "4. handleInSingleThreaded2"
+    lg res
+}
+handleInSingleThreaded2
+
+// ─── 3. Multi-Threaded Usage (asc) ───
+// Using the promise function inside an asc function
+// Context inheritance causes new Prm to execute across the Multi-Threaded work-stealing pool
+asc handleInMultiThreaded {
+   
+    res = awt prom1
+    lg "5. handleInMultiThreaded"
+    lg res
+}
+handleInMultiThreaded
+asc handleInMultiThreaded2 {
+   
+    res = awt prom1
+    lg "6. handleInMultiThreaded2"
+    lg res
+    ->res
+}
+
+handleInMultiThreaded2
+
+
+
+asc handleInMultiThreaded3 =>
+   
+    res = awt prom1
+    lg "7. handleInMultiThreaded3"
+    lg res
+    -> true
+
+
+handleInMultiThreaded3
+
+asc handleInMultiThreaded4 =>
+   
+    res = awt prom1
+    lg "8. handleInMultiThreaded4"
+    lg res
+    -> res
+
+
+x = handleInMultiThreaded4
+lg x

@@ -5,7 +5,7 @@ imp CreateLexer, TokenizeFull frm lexer
 imp ParseProgramFull frm parser
 imp CreateDiagnostic, FormatDiagnostic frm diagnostics
 
-main cmd, fileArg, arg3, arg4, arg5, arg6 {
+main cmd, fileArg, arg3, arg4, arg5, arg6, arg7, arg8 {
     let targetFile = fileArg
     if targetFile == "" {
         if fE "src/main.zv" {
@@ -18,11 +18,13 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
     let isRelease = 0
     let emitLlvm = 0
     mut isCdylib = 0
+    mut isQuiet = 0
     mut outExe = "output.exe"
     mut targetAlias = ""
     mut targetTriple = ""
+    mut sanitizeModeStr = ""
 
-    let args = [arg3, arg4, arg5, arg6]
+    let args = [arg3, arg4, arg5, arg6, arg7, arg8]
     let ai = 0
     wh ai < args.ln {
         a = args[ai]
@@ -35,6 +37,9 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
         if a == "--emit-llvm" || a == "-S" {
             emitLlvm = 1
         }
+        if a == "--quiet" || a == "-q" {
+            isQuiet = 1
+        }
         if a == "-o" && ai + 1 < args.ln {
             ai = ai + 1
             outExe = args[ai]
@@ -42,6 +47,15 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
         if (a == "--target" || a == "-t") && ai + 1 < args.ln {
             ai = ai + 1
             targetAlias = args[ai]
+        }
+        if a == "--sanitize=address" || a == "-fsanitize=address" {
+            sanitizeModeStr = "address"
+        }
+        if a == "--sanitize=undefined" || a == "-fsanitize=undefined" {
+            sanitizeModeStr = "undefined"
+        }
+        if a == "--sanitize=all" || a == "--sanitize=address,undefined" || a == "-fsanitize=address,undefined" {
+            sanitizeModeStr = "all"
         }
         ai = ai + 1
     }
@@ -74,13 +88,16 @@ main cmd, fileArg, arg3, arg4, arg5, arg6 {
         HandleCheckAll
     } els {
         if cmd == "check" {
-            HandleCheck targetFile
+            r = HandleCheck targetFile
+            if r == 0 { -> 1 }
         } els {
             if cmd == "build" {
-                HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple
+                r = HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple, isQuiet, sanitizeModeStr
+                if r == 0 { -> 1 }
             } els {
                 if cmd == "run" {
-                    HandleRun targetFile
+                    r = HandleRun targetFile, sanitizeModeStr
+                    if r != 0 { -> r }
                 } els {
                     if cmd == "fmt" {
                         HandleFmt targetFile

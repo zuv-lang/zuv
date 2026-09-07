@@ -8,9 +8,22 @@
 [![Pure Self-Hosting](https://img.shields.io/badge/Self--Hosting-Zuv-success.svg?style=for-the-badge)](src/)
 
 <br/>
+> ⚠️ **BETA SOFTWARE - NOT READY FOR PRODUCTION USE**
+> 
+> This project is currently in active development and is **NOT READY FOR PRODUCTION USE**.
+> 
+> - 🚧 Features are incomplete and under active development
+> - 🔄 APIs may change without notice
+> - 🐛 Expect bugs and stability issues
+> - 📋 May output wrong test results
+> - 🎯 Will exit beta stage as soon as .zv compiler can compile itself
+>  
+> **Please do not use this in production projects. This is for development and testing purposes only.**
+
 
 **Zuv** is a modern, high-performance, statically-typed compiled programming language built on top of LLVM. It is designed around a single revolutionary motive: **strip away unnecessary syntax and ceremony so developers can express logic as quickly and naturally as sending a text message on social media.**
 
+Created by **Rohit Kumar**
 </div>
 
 ---
@@ -342,6 +355,10 @@ We welcome contributions from developers worldwide! Please review our [Contribut
 - 💡 **[Contributing Guide](CONTRIBUTING.md)** - How to get involved.
 - 🛡️ **[Code of Conduct](CODE_OF_CONDUCT.md)** - Our community standards.
 - 🧰 **[Zuv Developer Tools & LSP](https://github.com/zuv-lang/zuv-tools)** - VS Code extension and language server.
+
+---
+
+ Made with ❤️ on Earth
 
 ---
 

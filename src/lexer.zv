@@ -101,15 +101,16 @@ isLexerKeyword word {
         -> 1
     }
     if word == "err" || word == "if" || word == "and" || word == "or" ||
-       word == "not" || word == "mut" || word == "let" || word == "asc" || word == "awt" {
+       word == "not" || word == "mut" || word == "let" || word == "asc" || word == "ascST" || word == "asyncST" || word == "awt" {
         -> 1
     }
     if word == "typ" || word == "sym" || word == "enum" || word == "as" ||
-       word == "obj" || word == "num" || word == "bool" || word == "str" {
+       word == "obj" || word == "num" || word == "bool" || word == "str" ||
+       word == "sizeof" || word == "sz" {
         -> 1
     }
-    if word == "extern" || word == "ffi" || word == "main" || word == "pub" ||
-       word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" || word == "unsafe" {
+    if word == "extern" || word == "main" || word == "pub" ||
+       word == "try" || word == "cth" || word == "fin" || word == "thr" || word == "new" || word == "unsafe" || word == "panic" {
         -> 1
     }
     -> 0

@@ -5,6 +5,102 @@ All notable changes to the **Zuv** programming language and self-hosting compile
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.12.0] - 2026-09-07
+
+### 🔀 Braceless Single-Statement Control Flow (`if`, `els`, `wh`)
+- Added support for single-statement `if` without curly braces across single-line (`if x > 10 lg "msg"`) and multi-line formats (`if x > 10 \n lg "msg"`).
+- Added support for single-statement `els` and chained `els if` without curly braces (`els lg "fallback"`).
+- Added support for single-statement `wh` loops without curly braces (`wh i < 5 \n i = i + 1`).
+- Preserved proper statement termination, preventing non-braced condition branches from swallowing subsequent outer statements.
+- Added comprehensive test coverage in `tests/control_flow.test.zv`.
+
+### 🛡️ Hardware-Assisted Memory & UB Sanitizers (`--sanitize`)
+- Added zero-dependency standalone sanitizer runtime generated directly as portable LLVM IR (no `clang_rt.asan_dynamic-x86_64.dll` required).
+- Added Address Sanitizer (`--sanitize=address` / `-fsanitize=address`): heap boundary checks, use-after-free, double-free, and process exit memory leak detection.
+- Added Undefined Behavior Sanitizer (`--sanitize=undefined` / `-fsanitize=undefined`): array and string index bounds checks, division-by-zero checks, and null pointer dereference checks.
+- Added dual sanitizer mode (`--sanitize=all` / `--sanitize=address,undefined`).
+- Added CLI flag support in self-host compiler (`zuv_selfhost.exe build ... --sanitize=...`).
+- Added comprehensive test suite in `tests/sanitize.test.zv`.
+
+### 🏷️ User-Defined Decorators & Attributes
+- Added user-defined decorators: apply any custom function to objects, methods, and standalone functions via `@identifier`.
+- Added parameterized decorator factories: functions returning active decorator closures (`@identifier(...)`).
+- Added runtime reflection context: `{ name }` metadata object automatically passed to decorator functions.
+- Fixed arrow method receiver (`self`) in zero-param methods preventing `0xC0000005` crash.
+- Fixed string return type formatting for property/method accesses in print statements.
+- Added test suite in `tests/decorators.test.zv`.
+
+### 💻 Raw Terminal Controls, ANSI Virtual Console & PTY Engine (`term`, `pty`)
+- Added terminal raw mode: `term.makeRaw()`, `term.restore()`, `term.isRaw()`.
+- Added non-blocking key reader & window size: `term.hasKey()`, `term.readKey()`, `term.width()`, `term.height()`, `term.size()`.
+- Added ANSI console & styling: `term.cursorTo`, `term.clear`, `term.enterAltScreen`, `term.color`, `term.bold`, `term.red`, etc.
+- Added PTY engine: `pty.open`, `pty.spawn`, `pty.read`, `pty.write`, `pty.resize`, `pty.close`.
+- Added test suite in `tests/term_pty.test.zv`.
+
+### 🖧 Inter-Process Communication (IPC) & Shared Memory (`ipc`, `mmap`, `Named Pipes`)
+- Added Windows named pipe streaming: `net.listen("pipe", name)` and `net.conn("pipe", name)`.
+- Added file & shared memory mapping: `mmap`, `munmap`, `ipc.shm`, `ipc.openShm`.
+- Added shared memory operations: `ipc.write`, `ipc.read`, `ipc.readStr`, `ipc.flush`, `ipc.unmap`.
+- Added synchronization: named mutexes (`ipc.mutex`, `ipc.lock`, `ipc.unlock`), semaphores (`ipc.sem`, `ipc.semWait`, `ipc.semPost`), and events (`ipc.event`, `ipc.eventSet`, `ipc.eventReset`, `ipc.eventWait`, `ipc.close`).
+- Added test suite in `tests/ipc.test.zv`.
+
+### 🚨 OS Signal Handling & Process Traps (`os/signal`, `signal.on`)
+- Added native OS signal interception (`CTRL_C`, `CTRL_BREAK`, `CLOSE`, `SHUTDOWN`).
+- Added event-driven signal listeners: `signal.on(sig, handler)`.
+- Added channel-based signal notifications: `signal.notify(sig)`.
+- Added manual software signaling: `signal.raise(sig)` by name or code.
+- Added signal disposition control: `signal.ignore(sig)` and `signal.reset(sig)`.
+- Added test suite in `tests/os_signal.test.zv`.
+
+### 💥 Stack Unwinding, Panics, Backtraces & Embedded PC Table (`panic` / `debug.*` / Windows VEH)
+- Added native `panic <expr>` statement with source context, exit code 101, and backtrace via `ZUV_BACKTRACE=1`.
+- Added embedded PC function descriptor table (`@zuv_fn_descs`) with binary-search runtime symbol resolution.
+- Added in-process stack unwinding via `RtlCaptureStackBackTrace` for up to 32 frames.
+- Added `debug` module: `debug.backtrace()`, `debug.dumpStack()`, and `debug.panic(msg)`.
+- Added Windows Vectored Exception Handler catching hardware faults (`0xC0000005`, `0xC0000094`, `0xC00000FD`).
+- Added test suites: `tests/std_debug.test.zv` and `tests/panic_backtrace.test.zv`.
+
+### 🔄 Native Async Event Loop, Dual Scheduler & JS-like Promises (`Promise`, `Prm`, `netpoll`, `asc` / `ascST` / `awt`)
+- Added first-class `Prm` / `Promise` primitive with constructor `new Prm res, rej => { ... }` and modern callback-free `awt` keyword.
+- Added promise combinators: `Prm.all([p1, p2])`, `Prm.race([p1, p2])`, and `Prm.allSettled([p1, p2])` with null/empty array guards and lossless float/pointer bitcasting.
+- Added dual async execution scheduler: multi-threaded work-stealing pool (`asc`) vs single-threaded local event loop (`ascST` / `@st`).
+- Added thread-local context isolation and inheritance: `@zuv_async_context_mode` and `@zuv_active_prm` as `thread_local global`.
+- Added non-blocking async file and socket operations: `fs.rFAsync`, `fs.wFAsync`, `net.recvAsync`, and `net.sendAsync`.
+- Added test suites: `tests/async_prm.test.zv`, `tests/async_combinators.test.zv`, and `tests/async_io.test.zv`.
+
+### 🌐 Native Networking, Sockets, DNS & HTTP Engine (`net` / `dns` / `http` / `ws`)
+- Added socket creation, options, and streaming: `net.sock`, `net.tcpSock`, `net.udpSock`, `net.setTimeout`, `net.setNonBlocking`, `net.snd`, `net.rcv`, `net.cls`.
+- Added TCP server/client helpers: `net.tcpSrv(port)`, `net.tcpCli(host, port)`.
+- Added DNS resolution: `dns.lookup(host)`, `dns.reverseLookup(ip)`.
+- Added HTTP engine: `http.fmtRes`, `http.parseReq` (`method`, `path`, `body`, `version`), `http.get`, `http.post`.
+- Added WebSocket helpers: `ws.conn`, `ws.send`, `ws.recv`.
+- Added test suite in `tests/net_socket.test.zv`.
+
+### 🔌 Dynamic FFI & Runtime Symbol Resolution (`ffi` / `extern`)
+- Added dynamic library loading: `ffi.ld(path)`, `ffi.load(path)`, `ldLib(path)`.
+- Added dynamic symbol lookup: `ffi.sym(lib, sym)`, `ffi.getSym`, `getSym`.
+- Added dynamic library unloading: `ffi.cls(lib)`, `ffi.close(lib)`, `clsLib(lib)`.
+- Added dynamic function call: `ffi.call(fnPtr, ...args)` and `call(fnPtr, ...args)`.
+- Disambiguated `ffi` in lexer and parser for both `ffi "lib"` declarations and `ffi.*` method calls.
+- Added test suite in `tests/c_ffi_lib.test.zv`.
+
+### 🛡️ Low-Level Memory & Unsafe Buffer Primitives (`mem` / `unsafe`)
+- Added heap reallocation: `realloc(ptr, size)` and `mem.realloc(ptr, size)`.
+- Added memory buffer copy: `memcpy(dst, src, len)`, `mem.cp(dst, src, len)`, `mem.copy(dst, src, len)`.
+- Added memory byte fill: `memset(dst, val, len)` and `mem.set(dst, val, len)`.
+- Added type layout size queries: `sz <type>`, `sizeof <type>`, `sizeof User`, `sz(ptr)`.
+- Added `mem` module namespace (`mem.alloc`, `mem.free`, `mem.realloc`, `mem.cp`, `mem.set`).
+- Added comprehensive unit test in `tests/std_mem.test.zv`.
+
+### ⏱️ High-Precision Clocks & Monotonic Timers (`time` / `zuv.time`)
+- Added current epoch millisecond timestamp: `nw()`, `time.now`, `time.nw`.
+- Added POSIX epoch seconds: `unx()`, `unix()`, `time.unix`, `time.unx`.
+- Added high-resolution monotonic performance counter: `mono()`, `time.mono`.
+- Added thread sleep delay: `sl(ms)`, `time.sleep(ms)`, `time.sl(ms)`.
+- Added comprehensive unit test in `tests/std_time.test.zv`.
+
 ## [0.11.0] - 2026-09-02
 
 ### 🧵 Threads, Concurrency & Process Control (`thrd` / `zuv.thrd`)
