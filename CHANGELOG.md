@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-07
+
 ### 🔀 Braceless Single-Statement Control Flow (`if`, `els`, `wh`)
 - Added support for single-statement `if` without curly braces across single-line (`if x > 10 lg "msg"`) and multi-line formats (`if x > 10 \n lg "msg"`).
 - Added support for single-statement `els` and chained `els if` without curly braces (`els lg "fallback"`).
