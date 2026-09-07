@@ -1,5 +1,7 @@
 # Contributing to Zuv 🚀
 
+> ⚠️ **Contribution is paused till .zv compiler can compile itself**
+
 Thank you for your interest in contributing to **Zuv**! We are building a modern, fast, compiled programming language optimized for minimal typing, maximum expressiveness, and zero-overhead memory safety.
 
 ---
