@@ -23,6 +23,7 @@
 
 **Zuv** is a modern, high-performance, statically-typed compiled programming language built on top of LLVM. It is designed around a single revolutionary motive: **strip away unnecessary syntax and ceremony so developers can express logic as quickly and naturally as sending a text message on social media.**
 
+Created by **Rohit Kumar**
 </div>
 
 ---
@@ -354,6 +355,10 @@ We welcome contributions from developers worldwide! Please review our [Contribut
 - 💡 **[Contributing Guide](CONTRIBUTING.md)** - How to get involved.
 - 🛡️ **[Code of Conduct](CODE_OF_CONDUCT.md)** - Our community standards.
 - 🧰 **[Zuv Developer Tools & LSP](https://github.com/zuv-lang/zuv-tools)** - VS Code extension and language server.
+
+---
+
+ Made with ❤️ on Earth
 
 ---
 
