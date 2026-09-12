@@ -1,7 +1,7 @@
 // Diagnostics module for Zuv Self-Hosting Compiler (src/diagnostics.zv)
 imp str, arr, fs
 
-getLineFromSource sourceText, targetLine {
+getLineFromSource sourceText: str, targetLine: num {
     if sourceText == und || sourceText == nil || sourceText == "" { -> "" }
     if targetLine <= 0 { -> "" }
     mut curLine = 1
@@ -41,7 +41,7 @@ getLineFromSource sourceText, targetLine {
     -> ""
 }
 
-CreateDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr {
+CreateDiagnostic codeStr: str, msgStr: str, pathStr: str, lineNum: num, colNum: num, lenNum: num, labelStr: str, helpStr: str {
     d = {
         code: codeStr,
         message: msgStr,
@@ -55,7 +55,7 @@ CreateDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, he
     -> d
 }
 
-FormatDiagnostic codeStr, msgStr, pathStr, lineNum, colNum, lenNum, labelStr, helpStr, sourceText {
+FormatDiagnostic codeStr: str, msgStr: str, pathStr: str, lineNum: num, colNum: num, lenNum: num, labelStr: str, helpStr: str, sourceText: str {
     mut fPath = pathStr
     if fPath == "" || fPath == und || fPath == nil { fPath = "<input>" }
     mut res = "error[" + codeStr + "]: " + msgStr + "\n"

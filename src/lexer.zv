@@ -1,8 +1,9 @@
 // Full Lexer Scanner Engine for Zuv Self-Hosting Compiler (src/lexer.zv)
 imp str, arr
 imp CreateToken frm tokens
+imp StrEq frm util
 
-CreateLexer code {
+CreateLexer code: str {
     l = code.ln
     let lexer = { src: code, pos: 0, totalLen: l, line: 1, col: 0, ch: "" }
     readLexerChar lexer
@@ -37,7 +38,7 @@ skipLexerWhitespace lexer {
     }
 }
 
-isLexerDigit ch {
+isLexerDigit ch: str {
     if ch == "0" || ch == "1" || ch == "2" || ch == "3" || ch == "4" ||
        ch == "5" || ch == "6" || ch == "7" || ch == "8" || ch == "9" {
         -> 1
@@ -45,7 +46,7 @@ isLexerDigit ch {
     -> 0
 }
 
-isLexerHexDigit ch {
+isLexerHexDigit ch: str {
     if (isLexerDigit ch) == 1 {
         -> 1
     }
@@ -56,14 +57,14 @@ isLexerHexDigit ch {
     -> 0
 }
 
-isLexerBinDigit ch {
+isLexerBinDigit ch: str {
     if ch == "0" || ch == "1" {
         -> 1
     }
     -> 0
 }
 
-isLexerOctDigit ch {
+isLexerOctDigit ch: str {
     if ch == "0" || ch == "1" || ch == "2" || ch == "3" ||
        ch == "4" || ch == "5" || ch == "6" || ch == "7" {
         -> 1
@@ -71,7 +72,7 @@ isLexerOctDigit ch {
     -> 0
 }
 
-isLexerLetter ch {
+isLexerLetter ch: str {
     if ch == "a" || ch == "b" || ch == "c" || ch == "d" || ch == "e" ||
        ch == "f" || ch == "g" || ch == "h" || ch == "i" || ch == "j" ||
        ch == "k" || ch == "l" || ch == "m" || ch == "n" || ch == "o" ||
@@ -91,7 +92,7 @@ isLexerLetter ch {
     -> 0
 }
 
-isLexerKeyword word {
+isLexerKeyword word: str {
     if word == "imp" || word == "frm" || word == "wrk" || word == "prnt" ||
        word == "lg" || word == "wrn" || word == "inf" || word == "nan" || word == "Infinity" || word == "ret" {
         -> 1
@@ -116,27 +117,27 @@ isLexerKeyword word {
     -> 0
 }
 
-isLexerBoolLit word {
+isLexerBoolLit word: str {
     if word == "true" || word == "false" || word == "yes" || word == "no" {
         -> 1
     }
     -> 0
 }
 
-isLexerNilLit word {
+isLexerNilLit word: str {
     if word == "nil" || word == "und" {
         -> 1
     }
     -> 0
 }
 
-readLexerString lexer, quoteChar {
+readLexerString lexer, quoteChar: str {
     startLine = lexer.line
     startCol = lexer.col
     readLexerChar lexer
 
     let strVal = ""
-    wh lexer.ch != quoteChar && lexer.ch != "" {
+    wh (StrEq lexer.ch, quoteChar) == 0 && (StrEq lexer.ch, "") == 0 {
         if lexer.ch == "\n" {
             lexer.line = lexer.line + 1
             lexer.col = 0
@@ -158,7 +159,7 @@ readLexerString lexer, quoteChar {
         readLexerChar lexer
     }
 
-    if lexer.ch == quoteChar {
+    if (StrEq lexer.ch, quoteChar) == 1 {
         readLexerChar lexer
     }
 

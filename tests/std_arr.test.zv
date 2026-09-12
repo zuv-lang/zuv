@@ -7,6 +7,16 @@ lg "--- Testing std/arr Shortforms (.ln, .psh, .pp) ---"
 
 mut numbers = [10, 20, 30]
 
+// 0. Array Index ([0], [1], [2])
+i0 = numbers[0]
+i1 = numbers[1]
+i2 = numbers[2]
+
+lg "Array elements via indexing:"
+lg i0
+lg i1
+lg i2
+
 // 1. Array Length (.ln / ln)
 l1 = numbers.ln
 lg "Initial length via 'numbers.ln':"
@@ -36,5 +46,88 @@ lg p2
 l4 = numbers.ln
 lg "Final length via 'numbers.ln':"
 lg l4
+
+// 4. Text Array Test
+let text_items = ["kind", "val", "line"]
+lg "Text array test:"
+lg text_items[0]
+lg text_items[1]
+lg text_items[2]
+lg text_items.ln
+
+// 5. Object Array Test
+people = [{ name: "Alice", age: 30 }, { name: "Bob", age: 25 }]
+lg "Object array test:"
+lg people[0].name
+lg people[0].age
+lg people[1].name
+lg people[1].age
+
+fields = [
+    "kind", "val", "line", "col", "name", "value", "left", "right", "op",
+    "callee", "args", "elements", "array", "index", "object",
+    "property", "typeName", "fields", "init", "condition",
+    "increment", "body", "statements", "params", "isAsync",
+    "isMut", "elseBranch", "thenBranch", "level", "symbols",
+    "paths", "fromPath", "target", "okVar", "okBody", "errVar", "errBody",
+    "src", "pos", "totalLen", "ch", "tokens", "curTok", "peekTok", "errors",
+    "regCount", "labelCount", "strCount", "strConstants", "fieldNames",
+    "breakLabels", "continueLabels", "funcs", "mainBody", "isMain",
+    "destructKind", "bindNames", "source",
+    "externDecls", "glbDeclList",
+    "enums", "enumKeys", "enumVals", "enumArms",
+    "variants", "key", "disc", "pattern",
+    "symKeys", "symIds", "nextSymId",
+    "bigintNames", "strNames",
+    "restNames", "restIdxs",
+    "__keys", "__vals",
+    "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames",
+    "funcNames", "funcDescsStr", "funcCount",
+    "currentFuncPrmReg", "currentFuncPrevModeReg",
+    "isStructLiteral", "isSpread", "sourceFile", "sourceLine", "isMethod",
+    "macros", "bodyTokens", "filePath", "sourceText", "desCount", "allowIdentStruct",
+    "method", "path", "url", "version", "sanitizeAddress", "sanitizeUndefined", "sanitizeMode"
+]
+
+lg fields[0]
+lg fields[1]
+lg fields[2]
+
+// Known name-based restriction coverage for index/string inference.
+errors = ["parse", "syntax", "type"]
+symbols = ["x", "y", "z"]
+paths = ["src/main.zv", "tests/std_arr.test.zv", "build/output.exe"]
+items = ["alpha", "beta", "gamma"]
+lines = ["line1", "line2", "line3"]
+tokens = ["let", "fn", "if"]
+toks = ["id", "num", "str"]
+tests = ["unit", "integration", "smoke"]
+
+list = ["first", "second", "third"]
+statements = ["stmt1", "stmt2", "stmt3"]
+stmts = ["s1", "s2", "s3"]
+methods = ["run", "build", "test"]
+params = ["arg1", "arg2", "arg3"]
+elements = ["e1", "e2", "e3"]
+scopes = ["global", "local", "block"]
+vars = ["v1", "v2", "v3"]
+
+lg "Restriction-name array samples:"
+lg errors[0]
+lg symbols[0]
+lg paths[0]
+lg items[0]
+lg lines[0]
+lg tokens[0]
+lg toks[0]
+lg tests[0]
+lg list[0]
+lg statements[0]
+lg stmts[0]
+lg methods[0]
+lg params[0]
+lg elements[0]
+lg scopes[0]
+lg vars[0]
 
 lg "std/arr Shortform Tests Completed!"

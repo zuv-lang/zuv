@@ -1,6 +1,6 @@
 // Utility functions module for Zuv Self-Hosting Compiler (src/util.zv)
 
-IsUpperChar ch {
+IsUpperChar ch: str {
     if ch == "A" || ch == "B" || ch == "C" || ch == "D" || ch == "E" || ch == "F" ||
        ch == "G" || ch == "H" || ch == "I" || ch == "J" || ch == "K" || ch == "L" ||
        ch == "M" || ch == "N" || ch == "O" || ch == "P" || ch == "Q" || ch == "R" ||
@@ -11,7 +11,7 @@ IsUpperChar ch {
     -> 0
 }
 
-IsLowerChar ch {
+IsLowerChar ch: str {
     if ch == "a" || ch == "b" || ch == "c" || ch == "d" || ch == "e" || ch == "f" ||
        ch == "g" || ch == "h" || ch == "i" || ch == "j" || ch == "k" || ch == "l" ||
        ch == "m" || ch == "n" || ch == "o" || ch == "p" || ch == "q" || ch == "r" ||
@@ -22,7 +22,7 @@ IsLowerChar ch {
     -> 0
 }
 
-IsDigitChar ch {
+IsDigitChar ch: str {
     if ch == "0" || ch == "1" || ch == "2" || ch == "3" || ch == "4" ||
        ch == "5" || ch == "6" || ch == "7" || ch == "8" || ch == "9" {
         -> 1
@@ -30,9 +30,17 @@ IsDigitChar ch {
     -> 0
 }
 
-IsLetterChar ch {
+IsLetterChar ch: str {
     if (IsUpperChar ch) == 1 || (IsLowerChar ch) == 1 || ch == "_" {
         -> 1
     }
     -> 0
 }
+
+StrEq s1: str, s2: str {
+    if s1 == s2 {
+        -> 1
+    }
+    -> 0
+}
+

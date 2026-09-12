@@ -1,0 +1,108 @@
+// Task 4 Test: Length Representation ? Native 64-Bit Integer (i64 / usize)
+// Verifies native i64 for .ln, .cap, indexing, push, pop, loops without conversions
+
+imp arr
+imp str
+
+let a0 = []
+if a0.ln != 0 {
+    panic "a0.ln should be 0"
+}
+if a0.cap != 0 {
+    panic "a0.cap should be 0"
+}
+
+let a1 = [10, 20, 30]
+if a1.ln != 3 {
+    panic "a1.ln should be 3"
+}
+if a1.cap != 3 {
+    panic "a1.cap should be 3"
+}
+
+if a1[0] != 10 {
+    panic "a1[0] should be 10"
+}
+if a1[1] != 20 {
+    panic "a1[1] should be 20"
+}
+if a1[2] != 30 {
+    panic "a1[2] should be 30"
+}
+
+// Indexing with expressions involving .ln
+let lastElem = a1[a1.ln - 1]
+if lastElem != 30 {
+    panic "a1[a1.ln - 1] should be 30"
+}
+
+let midElem = a1[a1.ln - 2]
+if midElem != 20 {
+    panic "a1[a1.ln - 2] should be 20"
+}
+
+// Push and verify length and capacity growth
+a1.psh 40
+if a1.ln != 4 {
+    panic "a1.ln after push should be 4"
+}
+
+a1.psh 50
+if a1.ln != 5 {
+    panic "a1.ln after second push should be 5"
+}
+
+if a1[4] != 50 {
+    panic "a1[4] should be 50"
+}
+
+// Pop and verify length
+let popped = a1.pp
+if popped != 50 {
+    panic "popped should be 50"
+}
+if a1.ln != 4 {
+    panic "a1.ln after pop should be 4"
+}
+
+// String length with native i64
+let strVal = "hello world"
+if strVal.ln != 11 {
+    panic "strVal.ln should be 11"
+}
+
+let emptyStr = ""
+if emptyStr.ln != 0 {
+    panic "emptyStr.ln should be 0"
+}
+
+// Function calls ln() and cap()
+let lenCall = ln a1
+if lenCall != 4 {
+    panic "ln a1 should be 4"
+}
+
+let capCall = cap a1
+if capCall < 4 {
+    panic "cap a1 should be >= 4"
+}
+
+// For-of loop
+let sum = 0
+fr val of [1, 2, 3, 4] {
+    sum = sum + val
+}
+if sum != 10 {
+    panic "for-of sum should be 10"
+}
+
+// For-in loop on array
+let idxSum = 0
+fr idx, val in [100, 200, 300] {
+    idxSum = idxSum + idx
+}
+if idxSum != 3 {
+    panic "for-in idxSum should be 3 (0+1+2)"
+}
+
+prnt "TASK 4: Native 64-bit integer length representation passed!"

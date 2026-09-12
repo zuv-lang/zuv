@@ -27,7 +27,7 @@ extern "LLVMTarget.lib" LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename:
 extern "LLVMTarget.lib" LLVMDisposeTargetMachine tm: ptr -> void
 extern "LLVMCore.lib" LLVMDisposeModule mod: ptr -> void
 
-emitDirectObjectFile ir, outputObjPath, isRelease, targetTriple {
+emitDirectObjectFile ir: str, outputObjPath: str, isRelease: num, targetTriple: str -> num {
     LLVMInitializeX86TargetInfo
     LLVMInitializeX86Target
     LLVMInitializeX86TargetMC
@@ -47,6 +47,7 @@ emitDirectObjectFile ir, outputObjPath, isRelease, targetTriple {
     }
 
     fullIr = `target triple = "${resolvedTriple}"\n${ir}`
+    wF "debug_ir.ll", fullIr
     unsafe {
         ctx = LLVMContextCreate
         memBuf = LLVMCreateMemoryBufferWithMemoryRange fullIr, fullIr.ln, "zuv_ir", 0
@@ -107,7 +108,9 @@ emitDirectObjectFile ir, outputObjPath, isRelease, targetTriple {
     }
 }
 
-strEndsWith text, suffix {
+strEndsWith text: str, suffix: str -> num {
+    if text == und || text == nil || text == "" { -> 0 }
+    if suffix == und || suffix == nil || suffix == "" { -> 0 }
     let tLen = text.ln
     let sLen = suffix.ln
     if sLen > tLen { -> 0 }
@@ -117,7 +120,7 @@ strEndsWith text, suffix {
     -> 0
 }
 
-linkDirectObjectFile objPath, outExePath, isCdylib, customLibs {
+linkDirectObjectFile objPath: str, outExePath: str, isCdylib: num, customLibs: str -> num {
     let lldBin = "lld-link"
     if fE "D:/LLVM/bin/lld-link.exe" {
         lldBin = "D:/LLVM/bin/lld-link.exe"
@@ -148,7 +151,7 @@ linkDirectObjectFile objPath, outExePath, isCdylib, customLibs {
     -> res
 }
 
-HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple, isQuiet, sanitizeModeStr {
+HandleBuild targetFile: str, isRelease: num, emitLlvm: num, outExe: str, isCdylib: num, targetTriple: str, isQuiet: num, sanitizeModeStr: str {
     if fE targetFile {
         code = rF targetFile
         if isQuiet == 0 {
@@ -352,7 +355,7 @@ HandleBuild targetFile, isRelease, emitLlvm, outExe, isCdylib, targetTriple, isQ
 }
 
 
-HandleCheck targetFile {
+HandleCheck targetFile: str {
     if fE targetFile {
         code = rF targetFile
         lex = CreateLexer code
@@ -362,8 +365,7 @@ HandleCheck targetFile {
             prnt (` FAIL ${targetFile} (Parser Errors)`)
             let pe = 0
             wh pe < prog.errors.ln {
-                errMsg = prog.errors[pe]
-                prnt errMsg
+                prnt (`${prog.errors[pe]}`)
                 pe = pe + 1
             }
             -> 0
@@ -376,8 +378,7 @@ HandleCheck targetFile {
             prnt (` FAIL ${targetFile} (Semantic / Safety Check Failed)`)
             let se = 0
             wh se < prog.errors.ln {
-                errMsg2 = prog.errors[se]
-                prnt errMsg2
+                prnt (`${prog.errors[se]}`)
                 se = se + 1
             }
             -> 0
@@ -388,7 +389,7 @@ HandleCheck targetFile {
     }
 }
 
-HandleRun targetFile, sanitizeModeStr {
+HandleRun targetFile: str, sanitizeModeStr: str {
     res = HandleBuild targetFile, 0, 0, "output.exe", 0, "", 0, sanitizeModeStr
     if res == 1 {
         prnt (`[zuv run] Executing output.exe for ${targetFile}`)
@@ -397,7 +398,7 @@ HandleRun targetFile, sanitizeModeStr {
     -> res
 }
 
-HandleFmt targetFile {
+HandleFmt targetFile: str {
     if fE targetFile {
         code = rF targetFile
         prnt (`[zuv fmt] Formatted ${targetFile} successfully.`)

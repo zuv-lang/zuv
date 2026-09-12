@@ -1,0 +1,66 @@
+imp arr
+
+// 1. Basic empty array creation and length
+empty = []
+prnt "Empty array length:"
+prnt empty.ln
+
+// 2. Loop over empty array (should not execute body)
+let loopRan = 0
+fr item of empty {
+    loopRan = loopRan + 1
+}
+prnt "Loop iterations over empty array:"
+prnt loopRan
+
+// 3. Lazy push onto empty array
+let list = []
+prnt "Initial list.ln:"
+prnt list.ln
+list.psh 100
+list.psh 200
+prnt "Length after 2 pushes:"
+prnt list.ln
+prnt "First element:"
+prnt list[0]
+prnt "Second element:"
+prnt list[1]
+
+// 4. Pop from list
+popped = list.pp
+prnt "Popped element:"
+prnt popped
+prnt "Length after pop:"
+prnt list.ln
+
+// 5. Pop from empty array (underflow guard)
+let empty2 = []
+empty2.pp
+prnt "Empty array length after pop:"
+prnt empty2.ln
+
+// 6. Function returning mutated array
+addElem l, val {
+    l.psh val
+    -> l
+}
+
+let fnArr = []
+fnArr = addElem fnArr, 777
+prnt "fnArr length after addElem:"
+prnt fnArr.ln
+prnt "fnArr[0]:"
+prnt fnArr[0]
+
+// 7. Mass empty array allocation (zero heap overhead, fast)
+let count = 0
+let i = 0
+wh i < 10000 {
+    chunk = []
+    count = count + chunk.ln
+    i = i + 1
+}
+prnt "Total length across 10000 empty arrays:"
+prnt count
+
+prnt "Task 1 Verification Passed!"

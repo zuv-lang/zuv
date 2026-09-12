@@ -79,4 +79,22 @@ lg char0
 lg "Bracket indexing greeting[1]:"
 lg char1
 
+// String-like name heuristics / restrictions
+file_name = "demo.zv"
+source_path = "/tmp/demo.zv"
+error_msg = "usage: demo"
+code_text = "print(\"hi\")"
+value_text = "42"
+char_value = "x"
+name_value = "zuv"
+
+lg "String-like variable names via bracket indexing:"
+lg file_name[0]
+lg source_path[0]
+lg error_msg[0]
+lg code_text[0]
+lg value_text[0]
+lg char_value[0]
+lg name_value[0]
+
 lg "std/str Shortform Tests Completed!"

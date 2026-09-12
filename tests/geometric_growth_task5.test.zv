@@ -1,0 +1,221 @@
+// Task 5 Test: Growth Mechanism — Geometric Doubling (2x) via @realloc
+// Verifies amortized O(1) dynamic array growth, capacity doubling, and container writeback
+
+imp arr
+imp str
+
+// 1. Empty Array Initialization and First Push
+let a = []
+if a.ln != 0 {
+    panic "a.ln should be 0"
+}
+if a.cap != 0 {
+    panic "a.cap should be 0"
+}
+
+a.psh 100
+if a.ln != 1 {
+    panic "a.ln after 1st push should be 1"
+}
+if a.cap != 4 {
+    panic "a.cap after 1st push should be 4"
+}
+if a[0] != 100 {
+    panic "a[0] should be 100"
+}
+
+// 2. Capacity Transitions: 4 -> 8 -> 16
+a.psh 200
+a.psh 300
+a.psh 400
+if a.ln != 4 {
+    panic "a.ln should be 4"
+}
+if a.cap != 4 {
+    panic "a.cap should still be 4"
+}
+
+// 5th push triggers geometric doubling to 8
+a.psh 500
+if a.ln != 5 {
+    panic "a.ln should be 5"
+}
+if a.cap != 8 {
+    panic "a.cap should double to 8"
+}
+
+// Fill up to 8
+a.psh 600
+a.psh 700
+a.psh 800
+if a.ln != 8 {
+    panic "a.ln should be 8"
+}
+if a.cap != 8 {
+    panic "a.cap should still be 8"
+}
+
+// 9th push triggers geometric doubling to 16
+a.psh 900
+if a.ln != 9 {
+    panic "a.ln should be 9"
+}
+if a.cap != 16 {
+    panic "a.cap should double to 16"
+}
+
+// Check data integrity after reallocations
+if a[0] != 100 {
+    panic "a[0] corrupted after growth"
+}
+if a[3] != 400 {
+    panic "a[3] corrupted after growth"
+}
+if a[4] != 500 {
+    panic "a[4] corrupted after growth"
+}
+if a[7] != 800 {
+    panic "a[7] corrupted after growth"
+}
+if a[8] != 900 {
+    panic "a[8] corrupted after growth"
+}
+
+// 3. Non-Power-of-2 Base Growth: 3 -> 6 -> 12
+let b = [10, 20, 30]
+if b.ln != 3 {
+    panic "b.ln should be 3"
+}
+if b.cap != 3 {
+    panic "b.cap should be 3"
+}
+
+b.psh 40
+if b.ln != 4 {
+    panic "b.ln should be 4"
+}
+if b.cap != 6 {
+    panic "b.cap should double to 6 (3 * 2)"
+}
+
+b.psh 50
+b.psh 60
+if b.ln != 6 {
+    panic "b.ln should be 6"
+}
+if b.cap != 6 {
+    panic "b.cap should be 6"
+}
+
+b.psh 70
+if b.ln != 7 {
+    panic "b.ln should be 7"
+}
+if b.cap != 12 {
+    panic "b.cap should double to 12 (6 * 2)"
+}
+
+if b[0] != 10 || b[1] != 20 || b[2] != 30 || b[3] != 40 || b[4] != 50 || b[5] != 60 || b[6] != 70 {
+    panic "b elements corrupted after non-power-of-2 growth"
+}
+
+// 4. Large-Scale Stress Test (5,000 Elements)
+let big = []
+let i = 0
+wh i < 5000 {
+    big.psh i
+    i = i + 1
+}
+
+if big.ln != 5000 {
+    panic "big.ln should be 5000"
+}
+if big.cap != 8192 {
+    panic "big.cap should be 8192"
+}
+
+// Validate boundary and milestone elements
+if big[0] != 0 {
+    panic "big[0] should be 0"
+}
+if big[1] != 1 {
+    panic "big[1] should be 1"
+}
+if big[1023] != 1023 {
+    panic "big[1023] should be 1023"
+}
+if big[1024] != 1024 {
+    panic "big[1024] should be 1024"
+}
+if big[2048] != 2048 {
+    panic "big[2048] should be 2048"
+}
+if big[4095] != 4095 {
+    panic "big[4095] should be 4095"
+}
+if big[4999] != 4999 {
+    panic "big[4999] should be 4999"
+}
+
+// 5. Parent Container Writeback: Object Property Array
+let container = { items: [] }
+let k = 0
+wh k < 100 {
+    container.items.psh (k * 10)
+    k = k + 1
+}
+
+if container.items.ln != 100 {
+    panic "container.items.ln should be 100"
+}
+if container.items[0] != 0 {
+    panic "container.items[0] should be 0"
+}
+if container.items[50] != 500 {
+    panic "container.items[50] should be 500"
+}
+if container.items[99] != 990 {
+    panic "container.items[99] should be 990"
+}
+
+// 6. Nested Array Writeback
+let matrix = [[]]
+let m = 0
+wh m < 50 {
+    matrix[0].psh (m + 100)
+    m = m + 1
+}
+
+if matrix[0].ln != 50 {
+    panic "matrix[0].ln should be 50"
+}
+if matrix[0][0] != 100 {
+    panic "matrix[0][0] should be 100"
+}
+if matrix[0][25] != 125 {
+    panic "matrix[0][25] should be 125"
+}
+if matrix[0][49] != 149 {
+    panic "matrix[0][49] should be 149"
+}
+
+// 7. Dynamic Growth in Array Spread Expression
+let baseArr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+let spreadArr = [...baseArr, ...baseArr]
+if spreadArr.ln != 40 {
+    panic "spreadArr.ln should be 40"
+}
+if spreadArr[0] != 1 {
+    panic "spreadArr[0] should be 1"
+}
+if spreadArr[19] != 20 {
+    panic "spreadArr[19] should be 20"
+}
+if spreadArr[20] != 1 {
+    panic "spreadArr[20] should be 1"
+}
+if spreadArr[39] != 20 {
+    panic "spreadArr[39] should be 20"
+}
+
+prnt "TASK 5: Geometric doubling (2x) via @realloc and container writeback passed!"

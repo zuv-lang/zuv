@@ -1,11 +1,20 @@
 // Zuv Self-Hosting Compiler Main Entry Point (src/main.zv)
-imp str, arr, fs, time
+imp str, arr, fs, time, os
 imp HandleBuild, HandleCheck, HandleCheckAll, HandleTest, HandleRun, HandleFmt frm cli
 imp CreateLexer, TokenizeFull frm lexer
 imp ParseProgramFull frm parser
 imp CreateDiagnostic, FormatDiagnostic frm diagnostics
 
-main cmd, fileArg, arg3, arg4, arg5, arg6, arg7, arg8 {
+main {
+    let pArgs = os.args
+    mut cmd = ""
+    if pArgs.ln > 1 {
+        cmd = pArgs[1]
+    }
+    mut fileArg = ""
+    if pArgs.ln > 2 {
+        fileArg = pArgs[2]
+    }
     let targetFile = fileArg
     if targetFile == "" {
         if fE "src/main.zv" {
@@ -17,14 +26,19 @@ main cmd, fileArg, arg3, arg4, arg5, arg6, arg7, arg8 {
 
     let isRelease = 0
     let emitLlvm = 0
-    mut isCdylib = 0
-    mut isQuiet = 0
-    mut outExe = "output.exe"
-    mut targetAlias = ""
-    mut targetTriple = ""
-    mut sanitizeModeStr = ""
+    let isCdylib = 0
+    let isQuiet = 0
+    let outExe = "output.exe"
+    let targetAlias = ""
+    let targetTriple = ""
+    let sanitizeModeStr = ""
 
-    let args = [arg3, arg4, arg5, arg6, arg7, arg8]
+    let args = []
+    let ai0 = 3
+    wh ai0 < pArgs.ln {
+        args.psh pArgs[ai0]
+        ai0 = ai0 + 1
+    }
     let ai = 0
     wh ai < args.ln {
         a = args[ai]

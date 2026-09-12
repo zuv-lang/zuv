@@ -12,12 +12,13 @@ createScope {
 createChecker {
     let scopes = []
     let errors = []
+    let funcList = []
     globalScope = createScope
     scopes.psh globalScope
     // Built-in project-wide global object (immutable binding; properties are writable)
     glbVar = { name: "glb", isMut: 0, isMoved: 0, immBorrows: 0, mutBorrows: 0 }
     globalScope.vars.psh glbVar
-    res = { scopes: scopes, errors: errors, inUnsafe: 0, filePath: "", sourceText: "" }
+    res = { scopes: scopes, errors: errors, inUnsafe: 0, filePath: "", sourceText: "", funcList: funcList }
     -> res
 }
 
@@ -67,7 +68,7 @@ findVarInCurrentScope checker, name {
     -> emptyVar
 }
 
-declareVar checker, name, isMut, line, col {
+declareVar checker, name, isMut, line?, col? {
     existingInCurrent = findVarInCurrentScope checker, name
     if isMut == 1 {
         if existingInCurrent.name != "" {
@@ -175,6 +176,28 @@ checkExpr checker, expr {
                 checker.errors.psh `error[E0205]: Call to low-level memory function '${c}' requires unsafe block`
             }
         }
+        mut fi = 0
+        wh fi < checker.funcList.ln {
+            fSig = checker.funcList[fi]
+            if fSig.name == expr.callee {
+                if expr.args.ln < fSig.minArgs {
+                    mut dLine = expr.line
+                    mut dCol = expr.col
+                    if dLine == und || dLine == nil || dLine <= 0 { dLine = 1 }
+                    if dCol == und || dCol == nil || dCol <= 0 { dCol = 1 }
+                    errArity = FormatDiagnostic "E0303", `Function '${expr.callee}' takes at least ${fSig.minArgs} arguments, but ${expr.args.ln} were supplied`, checker.filePath, dLine, dCol, expr.callee.ln, "missing required arguments", `provide all required arguments for '${expr.callee}'`, checker.sourceText
+                    checker.errors.psh errArity
+                } els if expr.args.ln > fSig.maxArgs && fSig.hasRest == 0 {
+                    mut dLine2 = expr.line
+                    mut dCol2 = expr.col
+                    if dLine2 == und || dLine2 == nil || dLine2 <= 0 { dLine2 = 1 }
+                    if dCol2 == und || dCol2 == nil || dCol2 <= 0 { dCol2 = 1 }
+                    errArity2 = FormatDiagnostic "E0303", `Function '${expr.callee}' takes at most ${fSig.maxArgs} arguments, but ${expr.args.ln} were supplied`, checker.filePath, dLine2, dCol2, expr.callee.ln, "unexpected argument", "remove the extra arguments", checker.sourceText
+                    checker.errors.psh errArity2
+                }
+            }
+            fi = fi + 1
+        }
         let i = 0
         wh i < expr.args.ln {
             arg = expr.args[i]
@@ -251,6 +274,67 @@ checkStatement checker, stmt {
         }
     } els if stmt.kind == "FunctionDecl" {
         declareVar checker, stmt.name, 0
+        mut hasRest = 0
+        if stmt.hasRest == 1 { hasRest = 1 }
+        mut req = 0
+        mut pi = 0
+        wh pi < stmt.params.ln {
+            mut isOpt = 0
+            if stmt.paramOptional.ln > pi {
+                if stmt.paramOptional[pi] == 1 {
+                    isOpt = 1
+                }
+            }
+            if isOpt == 0 {
+                req = pi + 1
+            }
+            pi = pi + 1
+        }
+        mut maxA = stmt.params.ln
+        if hasRest == 1 {
+            maxA = 999999
+        }
+        fnSig = { name: stmt.name, minArgs: req, maxArgs: maxA, hasRest: hasRest }
+        checker.funcList.psh fnSig
+        mut ci = 0
+        wh ci < stmt.params.ln {
+            pNameI = stmt.params[ci]
+            if pNameI != "self" {
+                mut isOptI = 0
+                if stmt.paramOptional.ln > ci {
+                    if stmt.paramOptional[ci] == 1 {
+                        isOptI = 1
+                    }
+                }
+                if isOptI == 1 {
+                    mut cj = ci + 1
+                    wh cj < stmt.params.ln {
+                        pNameJ = stmt.params[cj]
+                        mut isOptJ = 0
+                        if stmt.paramOptional.ln > cj {
+                            if stmt.paramOptional[cj] == 1 {
+                                isOptJ = 1
+                            }
+                        }
+                        if isOptJ == 0 {
+                            mut errLine = stmt.line
+                            mut errCol = 1
+                            if stmt.paramLines.ln > ci {
+                                errLine = stmt.paramLines[ci]
+                            }
+                            if stmt.paramCols.ln > ci {
+                                errCol = stmt.paramCols[ci]
+                            }
+                            errOpt = FormatDiagnostic "E0304", `Parameter '${pNameI}' cannot be optional: optional parameters cannot precede required parameter '${pNameJ}'`, checker.filePath, errLine, errCol, pNameI.ln, "optional parameter cannot precede required parameter", "only the last parameter or last parameters can be optional", checker.sourceText
+                            checker.errors.psh errOpt
+                            cj = stmt.params.ln
+                        }
+                        cj = cj + 1
+                    }
+                }
+            }
+            ci = ci + 1
+        }
         pushCheckerScope checker
         let i = 0
         wh i < stmt.params.ln {

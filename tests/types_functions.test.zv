@@ -1,0 +1,192 @@
+let numbers: num[] = [1, 2, 3]
+let names: str[] = ["A", "B"]
+
+obj Person {
+    name: str,
+    age: num
+}
+
+type Named = {
+    name: str;
+};
+
+type Aged = {
+    age: num;
+};
+
+type Agedi32 = {
+    age: i32;
+};
+
+type Agedi64 = {
+    age: i64;
+};
+
+type User = Named & Aged;
+type Userwithagei32 = Named & Agedi32;
+type Userwithagei64 = Named & Agedi64;
+
+type UserWithId = Named & Aged & {
+    id: num;
+};
+
+let user : User = {
+    name: "Rohit",
+    age: 25
+}
+
+print_user user: User, type: str {
+    lg `~~~~~~~~~~~~~`
+    lg type
+    lg user.name
+    lg user.age
+    lg `~~~~~~~~~~~~~`
+}
+
+print_user_default  user: User, type: str='default' {
+    lg `~~~~~~~~~~~~~`
+    lg type
+    lg user.name
+    lg user.age
+    lg `~~~~~~~~~~~~~`
+}
+
+print_user_optional user: User, type?: str {
+    lg `~~~~~~~~~~~~~`
+    lg type ? type: 'no type'
+    lg user.name
+    lg user.age
+    lg `~~~~~~~~~~~~~`
+}
+
+print_user_optional_without_type user, type? {
+    lg `~~~~~~~~~~~~~`
+    lg type ? type: 'no type'
+    lg user.name
+    lg user.age
+    lg `~~~~~~~~~~~~~`
+}
+
+print_user_optional_with_default user, type ='default' {
+    lg `~~~~~~~~~~~~~`
+    lg type ? type: 'no type'
+    lg user.name
+    lg user.age
+    lg `~~~~~~~~~~~~~`
+}
+
+
+
+// parenthises are optional in function calls
+create_user_i32_paren(name: str, age: i32): Userwithagei32 {
+    -> { name, age }
+}
+
+create_user_i64_paren(name: str, age: i64): Userwithagei64 {
+    -> { name, age }
+}
+
+create_user_num_paren(name: str, age: num): User {
+    -> { name, age }
+}
+
+// parenthises free
+create_user_i32 name: str, age: i32 -> Userwithagei32 {
+    -> { name, age }
+}
+
+create_user_i64 name: str, age: i64 -> Userwithagei64 {
+    -> { name, age }
+}
+
+create_user_num name: str, age: num -> User {
+    -> { name, age }
+}
+
+// create_user_num name: str, age: i64 -> User {
+//     -> { name, age }
+// }
+
+let users: User[] = [
+    { name: "Rohit", age: 25 }
+]
+
+dd(a: num, b: num): num {
+    -> a + b;
+}
+
+dd_bool(a: num, b: num): bool {
+    -> true
+}
+
+dd_str(a: num, b: num): str {
+    -> 'somestring'
+}
+
+greet(name: str): void {
+    lg name
+}
+
+lg numbers[0]
+lg names[0]
+print_user user, 'user'
+print_user_optional user
+print_user_default user
+print_user_optional_without_type user
+print_user_optional_with_default user
+unum = create_user_num "ZuvLang", 30
+ui32 = create_user_i32 "ZuvLang", 30
+ui64 = create_user_i64 "ZuvLang", 30
+
+print_user unum, 'num'
+print_user ui32, 'ui32'
+print_user ui64, 'ui64'
+unump = create_user_num_paren "ZuvLang", 30
+ui32p = create_user_i32_paren "ZuvLang", 30
+ui64p = create_user_i64_paren "ZuvLang", 30
+print_user unump, 'nump'
+print_user ui32p, 'ui32p'
+print_user ui64p, 'ui64p'
+
+u3 = new User { name: "Alice", age: 20 }
+print_user u3, 'new'
+lg users[0].name
+sum = dd(10, 20)
+lg sum
+b = dd_bool(1, 2)
+s = dd_str(1, 2)
+lg s
+greet("Done")
+
+printoptional user: User, no: num, type: str {
+    lg `~~~~~~~~~~~~~`
+    lg no
+    lg type
+    lg user.name
+    lg user.age
+    lg `~~~~~~~~~~~~~`
+}
+
+printoptional unump, 1, 'nump'
+
+printoptional2 user: User, no: num, type: str {
+    lg `~~~~~~~~~~~~~`
+    lg no
+    lg type
+    lg user.age
+    lg `~~~~~~~~~~~~~`
+}
+
+printoptional2 unump, 2, 'nump'
+
+printoptional3 user: User, no?: num, type?: str {
+    lg `~~~~~~~~~~~~~`
+    lg no ? no: 0
+    lg type ? type: 'no type'
+    lg user.age
+    lg `~~~~~~~~~~~~~`
+}
+
+printoptional3 unump, 3, 'nump'
+
+
