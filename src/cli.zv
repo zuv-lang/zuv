@@ -4,6 +4,7 @@ imp CreateLexer, TokenizeFull frm lexer
 imp ParseProgramFull frm parser
 imp CheckProgram frm checker
 imp GenerateLLVMFull frm codegen
+imp StrEq frm util
 
 extern "LLVMCore.lib" LLVMInitializeX86TargetInfo -> void
 extern "LLVMCore.lib" LLVMInitializeX86Target -> void
@@ -116,7 +117,7 @@ strEndsWith text: str, suffix: str -> num {
     if sLen > tLen { -> 0 }
     let startIdx = tLen - sLen
     let sub = text.slc startIdx, tLen
-    if (strEq sub, suffix) == 1 { -> 1 }
+    if (StrEq sub, suffix) == 1 { -> 1 }
     -> 0
 }
 
@@ -278,7 +279,7 @@ HandleBuild targetFile: str, isRelease: num, emitLlvm: num, outExe: str, isCdyli
                 wh li < prog.statements.ln {
                     s = prog.statements[li]
                     if s.kind == "ExternDecl" {
-                        if s.libName != "" && (strEq s.libName, "c") == 0 && (strEq s.libName, "C") == 0 && (strEq s.libName, "libc") == 0 && (strEq s.libName, "LIBC") == 0 {
+                        if s.libName != "" && (StrEq s.libName, "c") == 0 && (StrEq s.libName, "C") == 0 && (StrEq s.libName, "libc") == 0 && (StrEq s.libName, "LIBC") == 0 {
                             mut cleanLib = s.libName
                             if (strEndsWith cleanLib, ".dll") == 1 || (strEndsWith cleanLib, ".DLL") == 1 {
                                 cleanLib = cleanLib.slc 0, (cleanLib.ln - 4)
@@ -294,7 +295,7 @@ HandleBuild targetFile: str, isRelease: num, emitLlvm: num, outExe: str, isCdyli
                         wh subLi < s.statements.ln {
                             subS = s.statements[subLi]
                             if subS.kind == "ExternDecl" {
-                                if subS.libName != "" && (strEq subS.libName, "c") == 0 && (strEq subS.libName, "C") == 0 && (strEq subS.libName, "libc") == 0 && (strEq subS.libName, "LIBC") == 0 {
+                                if subS.libName != "" && (StrEq subS.libName, "c") == 0 && (StrEq subS.libName, "C") == 0 && (StrEq subS.libName, "libc") == 0 && (StrEq subS.libName, "LIBC") == 0 {
                                     mut cleanSubLib = subS.libName
                                     if (strEndsWith cleanSubLib, ".dll") == 1 || (strEndsWith cleanSubLib, ".DLL") == 1 {
                                         cleanSubLib = cleanSubLib.slc 0, (cleanSubLib.ln - 4)
