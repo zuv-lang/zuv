@@ -8,12 +8,12 @@ imp CreateDiagnostic, FormatDiagnostic frm diagnostics
 main {
     let pArgs = os.args
     mut cmd = ""
-    if pArgs.ln > 1 {
-        cmd = pArgs[1]
+    if pArgs.ln > 2 {
+        cmd = pArgs[2]
     }
     mut fileArg = ""
-    if pArgs.ln > 2 {
-        fileArg = pArgs[2]
+    if pArgs.ln > 3 {
+        fileArg = pArgs[3]
     }
     let targetFile = fileArg
     if targetFile == "" {
@@ -34,7 +34,7 @@ main {
     let sanitizeModeStr = ""
 
     let args = []
-    let ai0 = 3
+    let ai0 = 4
     wh ai0 < pArgs.ln {
         args.psh pArgs[ai0]
         ai0 = ai0 + 1

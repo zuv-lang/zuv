@@ -1,7 +1,12 @@
 // Task 6: Overflow Behavior — Safe Dynamic Expansion & Bounds Guard
 
-if args.ln > 1 {
-    let mode = args[1]
+mut mode = ""
+if args.ln > 2 {
+    mode = args[2]
+} els if args.ln > 1 && args[1] != "tests/bounds_guard_task6.test.zv" && args[1] != "main.zv" {
+    mode = args[1]
+}
+if mode != "" {
     if mode == "oob_read" {
         let a = [10, 20, 30]
         let x = a[10]
