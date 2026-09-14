@@ -1078,6 +1078,7 @@ classifyTyp cg, expr -> str {
            prop == "title" || prop == "key" || prop == "str" || prop == "tag" ||
            prop == "cwd" || prop == "arch" || prop == "endian" || prop == "eol" ||
            prop == "home" || prop == "tmpDir" || prop == "host" || prop == "uInfo" ||
+           prop == "typ" || prop == "type" || prop == "rel" || prop == "devNull" ||
            prop == "mtime" || prop == "ctime" || prop == "birthtime" {
             -> "str"
         }
@@ -1109,7 +1110,8 @@ classifyTyp cg, expr -> str {
         if (isBoolVar cg, n) == 1 {
             -> "bool"
         }
-        if n == "mkTmp" || n == "mktemp" || n == "fs.mkTmp" || n == "fs.mktemp" {
+        if n == "mkTmp" || n == "mktemp" || n == "fs.mkTmp" || n == "fs.mktemp" ||
+           n == "cwd" || n == "os.cwd" || n == "plt" {
             -> "str"
         }
         if (isBigIntVar cg, n) == 1 {
@@ -7805,7 +7807,7 @@ GenerateLLVMFull program, sanitizeModeStr : str -> str {
     header = header.cat "@str_env_userprofile = private unnamed_addr constant [12 x i8] c\"USERPROFILE\\00\"\n"
     header = header.cat "@str_env_username = private unnamed_addr constant [9 x i8] c\"USERNAME\\00\"\n"
     header = header.cat "@str_env_computername = private unnamed_addr constant [13 x i8] c\"COMPUTERNAME\\00\"\n"
-    header = header.cat "define void @zuv_init_args(i32 %argc, ptr %argv) {\nentry:\n  %argc64 = sext i32 %argc to i64\n  %szElements = add i64 %argc64, 2\n  %bytes = mul i64 %szElements, 8\n  %raw = call ptr @malloc(i64 %bytes)\n  store i64 %argc64, ptr %raw\n  %arr = getelementptr inbounds i64, ptr %raw, i64 1\n  store i64 %argc64, ptr %arr\n  %iAlloc = alloca i64\n  store i64 0, ptr %iAlloc\n  br label %loop_cond\n\nloop_cond:\n  %curI = load i64, ptr %iAlloc\n  %cmp = icmp slt i64 %curI, %argc64\n  br i1 %cmp, label %loop_body, label %loop_end\n\nloop_body:\n  %gepArgv = getelementptr inbounds ptr, ptr %argv, i64 %curI\n  %argStr = load ptr, ptr %gepArgv, align 8\n  %strLen = call i64 @strlen(ptr %argStr)\n  %strLenPlus1 = add i64 %strLen, 1\n  %newStr = call ptr @malloc(i64 %strLenPlus1)\n  %cpy = call ptr @memcpy(ptr %newStr, ptr %argStr, i64 %strLenPlus1)\n  %strInt = ptrtoint ptr %newStr to i64\n  %slotIdx = add i64 %curI, 1\n  %gepSlot = getelementptr inbounds i64, ptr %arr, i64 %slotIdx\n  store i64 %strInt, ptr %gepSlot\n  %nextI = add i64 %curI, 1\n  store i64 %nextI, ptr %iAlloc\n  br label %loop_cond\n\nloop_end:\n  %arrInt = ptrtoint ptr %arr to i64\n  store i64 %arrInt, ptr @zuv_global_args\n  ret void\n}\n\n"
+    header = header.cat "define void @zuv_init_args(i32 %argc, ptr %argv) {\nentry:\n  %argc64 = sext i32 %argc to i64\n  %szElements = add i64 %argc64, 2\n  %bytes = mul i64 %szElements, 8\n  %raw = call ptr @malloc(i64 %bytes)\n  store i64 %argc64, ptr %raw\n  %arr = getelementptr inbounds i64, ptr %raw, i64 1\n  store i64 %argc64, ptr %arr\n  %iAlloc = alloca i64\n  store i64 0, ptr %iAlloc\n  br label %loop_cond\n\nloop_cond:\n  %curI = load i64, ptr %iAlloc\n  %cmp = icmp slt i64 %curI, %argc64\n  br i1 %cmp, label %loop_body, label %loop_end\n\nloop_body:\n  %gepArgv = getelementptr inbounds ptr, ptr %argv, i64 %curI\n  %argStr = load ptr, ptr %gepArgv, align 8\n  %strLen = call i64 @strlen(ptr %argStr)\n  %strLenPlus1 = add i64 %strLen, 1\n  %newStr = call ptr @malloc(i64 %strLenPlus1)\n  %cpy = call ptr @memcpy(ptr %newStr, ptr %argStr, i64 %strLenPlus1)\n  %strInt = ptrtoint ptr %newStr to i64\n  %strDbl = sitofp i64 %strInt to double\n  %strBits = bitcast double %strDbl to i64\n  %slotIdx = add i64 %curI, 1\n  %gepSlot = getelementptr inbounds i64, ptr %arr, i64 %slotIdx\n  store i64 %strBits, ptr %gepSlot\n  %nextI = add i64 %curI, 1\n  store i64 %nextI, ptr %iAlloc\n  br label %loop_cond\n\nloop_end:\n  %arrInt = ptrtoint ptr %arr to i64\n  store i64 %arrInt, ptr @zuv_global_args\n  ret void\n}\n\n"
     header = header.cat "define ptr @zuv_os_env(ptr %name) {\nentry:\n  %res = call ptr @getenv(ptr %name)\n  %isNull = icmp eq ptr %res, null\n  br i1 %isNull, label %ret_empty, label %ret_val\n\nret_empty:\n  %emp = call ptr @malloc(i64 1)\n  store i8 0, ptr %emp\n  ret ptr %emp\n\nret_val:\n  %len = call i64 @strlen(ptr %res)\n  %len1 = add i64 %len, 1\n  %buf = call ptr @malloc(i64 %len1)\n  %cpy = call ptr @memcpy(ptr %buf, ptr %res, i64 %len1)\n  ret ptr %buf\n}\n\n"
     header = header.cat "define i32 @zuv_os_setenv(ptr %key, ptr %val) {\nentry:\n  %res = call i32 @_putenv_s(ptr %key, ptr %val)\n  ret i32 %res\n}\n\n"
     header = header.cat "define ptr @zuv_os_cwd() {\nentry:\n  %buf = call ptr @malloc(i64 1024)\n  %res = call ptr @_getcwd(ptr %buf, i32 1024)\n  %isNull = icmp eq ptr %res, null\n  br i1 %isNull, label %ret_emp, label %ret_buf\n\nret_emp:\n  %emp = call ptr @malloc(i64 1)\n  store i8 0, ptr %emp\n  ret ptr %emp\n\nret_buf:\n  ret ptr %buf\n}\n\n"
