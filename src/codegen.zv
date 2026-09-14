@@ -20,7 +20,7 @@ createCodegen {
         "enums", "enumKeys", "enumVals", "enumArms",
         "variants", "key", "disc", "pattern",
         "symKeys", "symIds", "nextSymId",
-        "bigintNames", "strNames",
+        "bigintNames", "strNames", "boolNames",
         "restNames", "restIdxs",
         "__keys", "__vals",
         "tryBody", "catchName", "catchBody", "finallyBody", "tryFrames",
@@ -43,6 +43,7 @@ createCodegen {
     let symIds = []
     let bigintNames = []
     let strNames = []
+    let boolNames = []
     let strArrNames = ["args", "os.args"]
     let funcReturnNames = []
     let funcReturnTypes = []
@@ -74,6 +75,7 @@ createCodegen {
         symIds: symIds,
         bigintNames: bigintNames,
         strNames: strNames,
+        boolNames: boolNames,
         strArrNames: strArrNames,
         funcReturnNames: funcReturnNames,
         funcReturnTypes: funcReturnTypes,
@@ -442,6 +444,33 @@ isStrVar cg, name {
     let i = 0
     wh i < cg.strNames.ln {
         if (StrEq cg.strNames[i], name) == 1 {
+            -> 1
+        }
+        i = i + 1
+    }
+    -> 0
+}
+
+markBoolVar cg, name {
+    cg.boolNames.psh name
+}
+
+unmarkBoolVar cg, name {
+    let kept = []
+    let i = 0
+    wh i < cg.boolNames.ln {
+        if (StrEq cg.boolNames[i], name) == 0 {
+            kept.psh cg.boolNames[i]
+        }
+        i = i + 1
+    }
+    cg.boolNames = kept
+}
+
+isBoolVar cg, name {
+    let i = 0
+    wh i < cg.boolNames.ln {
+        if (StrEq cg.boolNames[i], name) == 1 {
             -> 1
         }
         i = i + 1
@@ -948,7 +977,7 @@ classifyTyp cg, expr -> str {
                 -> "str"
             }
         }
-        if expr.op == "==" || expr.op == "!=" || expr.op == "<" || expr.op == ">" || expr.op == "<=" || expr.op == ">=" || expr.op == "and" || expr.op == "or" {
+        if expr.op == "==" || expr.op == "!=" || expr.op == "<" || expr.op == ">" || expr.op == "<=" || expr.op == ">=" || expr.op == "and" || expr.op == "or" || expr.op == "&&" || expr.op == "||" {
             -> "bool"
         }
         if expr.op == "=" {
@@ -998,8 +1027,26 @@ classifyTyp cg, expr -> str {
         if expr.callee == "BigInt" {
             -> "bigint"
         }
-        if expr.callee == "isNan" || expr.callee == "isnan" || expr.callee == "isFin" || expr.callee == "isfinite" || expr.callee == "isFinite" {
+        if expr.callee == "isNan" || expr.callee == "isnan" || expr.callee == "isFin" || expr.callee == "isfinite" || expr.callee == "isFinite" ||
+           expr.callee == "fE" || expr.callee == "exists" || expr.callee == "fs.exists" || expr.callee == "fs.fE" ||
+           expr.callee == "wF" || expr.callee == "fs.wF" ||
+           expr.callee == "appF" || expr.callee == "append" || expr.callee == "fs.append" || expr.callee == "fs.appF" ||
+           expr.callee == "cpF" || expr.callee == "cp" || expr.callee == "copy" || expr.callee == "fs.copy" || expr.callee == "fs.cpF" ||
+           expr.callee == "mvF" || expr.callee == "rename" || expr.callee == "fs.rename" || expr.callee == "fs.mvF" ||
+           expr.callee == "acc" || expr.callee == "access" || expr.callee == "fs.access" || expr.callee == "fs.acc" ||
+           expr.callee == "mkD" || expr.callee == "mkdir" || expr.callee == "fs.mkdir" || expr.callee == "fs.mkD" ||
+           expr.callee == "cls" || expr.callee == "close" || expr.callee == "fs.close" || expr.callee == "fs.cls" ||
+           expr.callee == "truncF" || expr.callee == "truncate" || expr.callee == "fs.truncate" || expr.callee == "fs.truncF" ||
+           expr.callee == "utime" || expr.callee == "utimes" || expr.callee == "fs.utimes" || expr.callee == "fs.utime" ||
+           expr.callee == "chmod" || expr.callee == "fs.chmod" ||
+           expr.callee == "wtch" || expr.callee == "watch" || expr.callee == "fs.watch" || expr.callee == "fs.wtch" ||
+           expr.callee == "cnt" || expr.callee == "contains" || expr.callee == "str.contains" ||
+           expr.callee == "eq" || expr.callee == "streq" || expr.callee == "str.eq" ||
+           expr.callee == "isFile" || expr.callee == "isDirectory" {
             -> "bool"
+        }
+        if expr.callee == "stat" || expr.callee == "statF" || expr.callee == "fs.stat" || expr.callee == "fs.statF" {
+            -> "obj"
         }
         if expr.callee == "rF" || expr.callee == "sub" || expr.callee == "substr" || expr.callee == "slc" || expr.callee == "slice" || expr.callee == "cat" || expr.callee == "concat" || expr.callee == "chr" || expr.callee == "charAt" || expr.callee == "addStrConstant" || expr.callee == "newReg" || expr.callee == "newLbl" || expr.callee == "realP" || expr.callee == "realpath" || expr.callee == "fs.realpath" || expr.callee == "fs.realP" || expr.callee == "mkTmp" || expr.callee == "mktemp" || expr.callee == "fs.mktemp" || expr.callee == "fs.mkTmp" || expr.callee == "rAt" || expr.callee == "readAt" || expr.callee == "fs.readAt" || expr.callee == "fs.rAt" || expr.callee == "rLink" || expr.callee == "readlink" || expr.callee == "fs.readlink" || expr.callee == "fs.rLink" || expr.callee == "env" || expr.callee == "os.env" || expr.callee == "os.getEnv" || expr.callee == "os.env.get" || expr.callee == "cwd" || expr.callee == "os.cwd" ||
            expr.callee == "net.rcv" || expr.callee == "net.recv" || expr.callee == "rcv" || expr.callee == "recv" || expr.callee == "net.rcvFrm" || expr.callee == "rcvFrm" || expr.callee == "dns.lookup" || expr.callee == "dns.resolve" || expr.callee == "dns.reverseLookup" || expr.callee == "http.get" || expr.callee == "http.post" || expr.callee == "http.fmtRes" || expr.callee == "ws.recv" ||
@@ -1059,6 +1106,12 @@ classifyTyp cg, expr -> str {
     }
     if expr.kind == "VariableExpr" {
         n = expr.name
+        if (isBoolVar cg, n) == 1 {
+            -> "bool"
+        }
+        if n == "mkTmp" || n == "mktemp" || n == "fs.mkTmp" || n == "fs.mktemp" {
+            -> "str"
+        }
         if (isBigIntVar cg, n) == 1 {
             -> "bigint"
         }
@@ -1224,6 +1277,15 @@ codegenExpr cg, expr, outBuf -> str {
             resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_time_now()\n`)
             -> resReg
+        }
+        if expr.name == "mkTmp" || expr.name == "mktemp" || expr.name == "fs.mkTmp" || expr.name == "fs.mktemp" {
+            resReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call ptr @zuv_temp_file(ptr @zuv_tmp_pfx)\n`)
+            intReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${intReg} = ptrtoint ptr ${resReg} to i64\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            -> dblReg
         }
         if expr.name == "unx" || expr.name == "unix" || expr.name == "time.unx" || expr.name == "time.unix" {
             resReg = newReg cg
@@ -1427,6 +1489,9 @@ codegenExpr cg, expr, outBuf -> str {
                     outBuf.code = outBuf.code.cat (`  store double ${rightReg}, ptr ${cgSym.reg}\n`)
                 }
                 // Propagate string-ness and string-array-ness from RHS
+                if (classifyTyp cg, expr.right) == "bool" || expr.right.kind == "BoolExpr" {
+                    markBoolVar cg, expr.left.name
+                }
                 if (classifyTyp cg, expr.right) == "str" {
                     markStrVar cg, expr.left.name
                 }
@@ -1436,6 +1501,9 @@ codegenExpr cg, expr, outBuf -> str {
                         unmarkStrVar cg, expr.left.name
                     } els if (isStrVar cg, rn) == 1 {
                         markStrVar cg, expr.left.name
+                    }
+                    if (isBoolVar cg, rn) == 1 {
+                        markBoolVar cg, expr.left.name
                     }
                     if (isStrArrVar cg, rn) == 1 {
                         markStrArrVar cg, expr.left.name
@@ -2069,19 +2137,19 @@ codegenExpr cg, expr, outBuf -> str {
             closeReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${closeReg} = call i32 @fclose(ptr ${fpReg})\n`)
             -> "1.0"
-        } els if expr.callee == "fE" && expr.args.ln == 1 {
+        } els if (expr.callee == "fE" || expr.callee == "exists" || expr.callee == "fs.exists" || expr.callee == "fs.fE") && expr.args.ln == 1 {
             pathReg = codegenExpr cg, expr.args[0], outBuf
             pathInt = newReg cg
             outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
             pathPtr = newReg cg
             outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
-            fpReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${fpReg} = call ptr @fopen(ptr ${pathPtr}, ptr @mode_r)\n`)
-            cmpReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp ne ptr ${fpReg}, null\n`)
             resReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${resReg} = uitofp i1 ${cmpReg} to double\n`)
-            -> resReg
+            outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_access(ptr ${pathPtr}, i32 0)\n`)
+            cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp eq i32 ${resReg}, 0\n`)
+            dblReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
+            -> dblReg
         } els if expr.callee == "rF" && expr.args.ln == 1 {
             pathReg = codegenExpr cg, expr.args[0], outBuf
             pathInt = newReg cg
@@ -6483,6 +6551,12 @@ codegenStmt cg, stmt, outBuf {
                 markStrArrVar cg, stmt.name
             }
         }
+        if (classifyTyp cg, stmt.value) == "bool" || stmt.value.kind == "BoolExpr" {
+            markBoolVar cg, stmt.name
+        }
+        if stmt.value.kind == "VariableExpr" && (isBoolVar cg, stmt.value.name) == 1 {
+            markBoolVar cg, stmt.name
+        }
         if (classifyTyp cg, stmt.value) == "str" {
             markStrVar cg, stmt.name
         }
@@ -6578,6 +6652,13 @@ codegenStmt cg, stmt, outBuf {
             if printStrAdd == 1 {
                 sPtr = getStrPtrVal cg, stmt.value, outBuf
                 outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sPtr})\n`)
+            } els if (classifyTyp cg, stmt.value) == "bool" {
+                valReg = codegenExpr cg, stmt.value, outBuf
+                condI1 = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${condI1} = fcmp une double ${valReg}, 0.0\n`)
+                boolStrPtr = newReg cg
+                outBuf.code = outBuf.code.cat (`  ${boolStrPtr} = select i1 ${condI1}, ptr @str_true, ptr @str_false\n`)
+                outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${boolStrPtr})\n`)
             } els {
                 valReg = codegenExpr cg, stmt.value, outBuf
                 outBuf.code = outBuf.code.cat (`  call void @zuv_print_num(double ${valReg})\n`)

@@ -52,12 +52,12 @@ lg "5h. CtimeMs is positive :"
 lg st.ctimeMs
 lg "5i. BirthtimeMs is positive :"
 lg st.birthtimeMs
-lg "5j. Mtime length is 24 :"
-lg st.mtime.ln
-lg "5k. Ctime length is 24 :"
-lg st.ctime.ln
-lg "5l. Birthtime length is 24 :"
-lg st.birthtime.ln
+lg "5j. Mtime length is :"
+lg st.mtime
+lg "5k. Ctime length is :"
+lg st.ctime
+lg "5l. Birthtime length is :"
+lg st.birthtime
 
 // 6. Copy file (cpF src, dst)
 cp_res = cpF test_file, copy_file
