@@ -28,7 +28,8 @@ createCodegen {
         "currentFuncPrmReg", "currentFuncPrevModeReg",
         "isStructLiteral", "isSpread", "sourceFile", "sourceLine", "isMethod",
         "macros", "bodyTokens", "filePath", "sourceText", "desCount", "allowIdentStruct",
-        "method", "path", "url", "version", "sanitizeAddress", "sanitizeUndefined", "sanitizeMode"
+        "method", "path", "url", "version", "sanitizeAddress", "sanitizeUndefined", "sanitizeMode",
+        "size", "isFile", "isDirectory", "mtime", "mtimeMs", "ctime", "ctimeMs", "birthtime", "birthtimeMs", "mode", "ino", "dev"
     ]
     let brkStack = []
     let contStack = []
@@ -1029,8 +1030,12 @@ classifyTyp cg, expr -> str {
            prop == "label" || prop == "help" || prop == "targetType" || prop == "text" ||
            prop == "title" || prop == "key" || prop == "str" || prop == "tag" ||
            prop == "cwd" || prop == "arch" || prop == "endian" || prop == "eol" ||
-           prop == "home" || prop == "tmpDir" || prop == "host" || prop == "uInfo" {
+           prop == "home" || prop == "tmpDir" || prop == "host" || prop == "uInfo" ||
+           prop == "mtime" || prop == "ctime" || prop == "birthtime" {
             -> "str"
+        }
+        if prop == "isFile" || prop == "isDirectory" {
+            -> "bool"
         }
         -> "num"
     }
@@ -2153,10 +2158,10 @@ codegenExpr cg, expr, outBuf -> str {
             outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
             let resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_mkdir(ptr ${pathPtr})\n`)
-            let intReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp eq i32 ${resReg}, 0\n`)
             let dblReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
             -> dblReg
         } els if (expr.callee == "mvF" || expr.callee == "rename" || expr.callee == "fs.rename" || expr.callee == "fs.mvF") && expr.args.ln == 2 {
             let oldReg = codegenExpr cg, expr.args[0], outBuf
@@ -2171,10 +2176,10 @@ codegenExpr cg, expr, outBuf -> str {
             outBuf.code = outBuf.code.cat (`  ${newPtr} = inttoptr i64 ${newInt} to ptr\n`)
             let resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @rename(ptr ${oldPtr}, ptr ${newPtr})\n`)
-            let intReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp eq i32 ${resReg}, 0\n`)
             let dblReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
             -> dblReg
         } els if (expr.callee == "cpF" || expr.callee == "cp" || expr.callee == "copy" || expr.callee == "fs.copy" || expr.callee == "fs.cpF") && expr.args.ln == 2 {
             let srcReg = codegenExpr cg, expr.args[0], outBuf
@@ -2189,10 +2194,10 @@ codegenExpr cg, expr, outBuf -> str {
             outBuf.code = outBuf.code.cat (`  ${dstPtr} = inttoptr i64 ${dstInt} to ptr\n`)
             let resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @CopyFileA(ptr ${srcPtr}, ptr ${dstPtr}, i32 0)\n`)
-            let intReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp ne i32 ${resReg}, 0\n`)
             let dblReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
             -> dblReg
         } els if (expr.callee == "statF" || expr.callee == "stat" || expr.callee == "fs.stat" || expr.callee == "fs.statF") && expr.args.ln == 1 {
             let pathReg = codegenExpr cg, expr.args[0], outBuf
@@ -2200,9 +2205,461 @@ codegenExpr cg, expr, outBuf -> str {
             outBuf.code = outBuf.code.cat (`  ${pathInt} = fptosi double ${pathReg} to i64\n`)
             let pathPtr = newReg cg
             outBuf.code = outBuf.code.cat (`  ${pathPtr} = inttoptr i64 ${pathInt} to ptr\n`)
-            let resReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${resReg} = call double @zuv_stat_size(ptr ${pathPtr})\n`)
-            -> resReg
+
+            let infoBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${infoBuf} = alloca [52 x i8]\n`)
+            let infoPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${infoPtr} = getelementptr inbounds i8, ptr ${infoBuf}, i64 0\n`)
+            outBuf.code = outBuf.code.cat (`  call void @memset(ptr ${infoPtr}, i32 0, i64 52)\n`)
+
+            let dwAttrAlloca = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dwAttrAlloca} = alloca i32\n  store i32 0, ptr ${dwAttrAlloca}\n`)
+            let devAlloca = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${devAlloca} = alloca i64\n  store i64 0, ptr ${devAlloca}\n`)
+            let inoAlloca = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoAlloca} = alloca i64\n  store i64 0, ptr ${inoAlloca}\n`)
+            let szAlloca = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szAlloca} = alloca i64\n  store i64 0, ptr ${szAlloca}\n`)
+            let mtimeAlloca = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeAlloca} = alloca i64\n  store i64 0, ptr ${mtimeAlloca}\n`)
+            let ctimeAlloca = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeAlloca} = alloca i64\n  store i64 0, ptr ${ctimeAlloca}\n`)
+            let birthtimeAlloca = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${birthtimeAlloca} = alloca i64\n  store i64 0, ptr ${birthtimeAlloca}\n`)
+
+            let hFile = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hFile} = call ptr @CreateFileA(ptr ${pathPtr}, i32 128, i32 7, ptr null, i32 3, i32 33554432, ptr null)\n`)
+            let hInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInt} = ptrtoint ptr ${hFile} to i64\n`)
+            let hInvCmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hInvCmp} = icmp ne i64 ${hInt}, -1\n`)
+            let hNullCmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hNullCmp} = icmp ne i64 ${hInt}, 0\n`)
+            let hValid = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hValid} = and i1 ${hInvCmp}, ${hNullCmp}\n`)
+
+            let hOkLabel = newLbl cg, "st_h_ok"
+            let hFbLabel = newLbl cg, "st_h_fb"
+            let hDoneLabel = newLbl cg, "st_h_done"
+            outBuf.code = outBuf.code.cat (`  br i1 ${hValid}, label %${hOkLabel}, label %${hFbLabel}\n`)
+
+            outBuf.code = outBuf.code.cat (`\n${hOkLabel}:\n`)
+            let getInfoRes = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${getInfoRes} = call i32 @GetFileInformationByHandle(ptr ${hFile}, ptr ${infoPtr})\n`)
+            let clRes = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${clRes} = call i32 @CloseHandle(ptr ${hFile})\n`)
+            let hAttrReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${hAttrReg} = load i32, ptr ${infoPtr}\n  store i32 ${hAttrReg}, ptr ${dwAttrAlloca}\n`)
+            let devPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${devPtr} = getelementptr inbounds i8, ptr ${infoPtr}, i64 28\n`)
+            let dev32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dev32} = load i32, ptr ${devPtr}\n`)
+            let dev64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${dev64} = zext i32 ${dev32} to i64\n  store i64 ${dev64}, ptr ${devAlloca}\n`)
+            let inoHiPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoHiPtr} = getelementptr inbounds i8, ptr ${infoPtr}, i64 44\n`)
+            let inoHi32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoHi32} = load i32, ptr ${inoHiPtr}\n`)
+            let inoLoPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoLoPtr} = getelementptr inbounds i8, ptr ${infoPtr}, i64 48\n`)
+            let inoLo32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoLo32} = load i32, ptr ${inoLoPtr}\n`)
+            let inoHi64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoHi64} = zext i32 ${inoHi32} to i64\n`)
+            let inoLo64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoLo64} = zext i32 ${inoLo32} to i64\n`)
+            let inoShift = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoShift} = shl i64 ${inoHi64}, 32\n`)
+            let inoComb = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoComb} = or i64 ${inoShift}, ${inoLo64}\n  store i64 ${inoComb}, ptr ${inoAlloca}\n`)
+            let szHiPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szHiPtr} = getelementptr inbounds i8, ptr ${infoPtr}, i64 32\n`)
+            let szHi32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szHi32} = load i32, ptr ${szHiPtr}\n`)
+            let szLoPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szLoPtr} = getelementptr inbounds i8, ptr ${infoPtr}, i64 36\n`)
+            let szLo32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szLo32} = load i32, ptr ${szLoPtr}\n`)
+            let szHi64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szHi64} = zext i32 ${szHi32} to i64\n`)
+            let szLo64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szLo64} = zext i32 ${szLo32} to i64\n`)
+            let szShift = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szShift} = shl i64 ${szHi64}, 32\n`)
+            let szComb = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szComb} = or i64 ${szShift}, ${szLo64}\n  store i64 ${szComb}, ptr ${szAlloca}\n`)
+            let btimePtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimePtr} = getelementptr inbounds i8, ptr ${infoPtr}, i64 4\n`)
+            let btime64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btime64} = load i64, ptr ${btimePtr}\n  store i64 ${btime64}, ptr ${birthtimeAlloca}\n`)
+            let mtimePtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimePtr} = getelementptr inbounds i8, ptr ${infoPtr}, i64 20\n`)
+            let mtime64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtime64} = load i64, ptr ${mtimePtr}\n  store i64 ${mtime64}, ptr ${mtimeAlloca}\n  store i64 ${mtime64}, ptr ${ctimeAlloca}\n`)
+            outBuf.code = outBuf.code.cat (`  br label %${hDoneLabel}\n`)
+
+            outBuf.code = outBuf.code.cat (`\n${hFbLabel}:\n`)
+            let fbBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbBuf} = alloca [36 x i8]\n`)
+            let fbPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbPtr} = getelementptr inbounds i8, ptr ${fbBuf}, i64 0\n`)
+            outBuf.code = outBuf.code.cat (`  call void @memset(ptr ${fbPtr}, i32 0, i64 36)\n`)
+            let getAttrRes = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${getAttrRes} = call i32 @GetFileAttributesExA(ptr ${pathPtr}, i32 0, ptr ${fbPtr})\n`)
+            let fbAttr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbAttr} = load i32, ptr ${fbPtr}\n  store i32 ${fbAttr}, ptr ${dwAttrAlloca}\n`)
+            let fbSzHiPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbSzHiPtr} = getelementptr inbounds i8, ptr ${fbPtr}, i64 28\n`)
+            let fbSzHi32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbSzHi32} = load i32, ptr ${fbSzHiPtr}\n`)
+            let fbSzLoPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbSzLoPtr} = getelementptr inbounds i8, ptr ${fbPtr}, i64 32\n`)
+            let fbSzLo32 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbSzLo32} = load i32, ptr ${fbSzLoPtr}\n`)
+            let fbSzHi64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbSzHi64} = zext i32 ${fbSzHi32} to i64\n`)
+            let fbSzLo64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbSzLo64} = zext i32 ${fbSzLo32} to i64\n`)
+            let fbSzShift = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbSzShift} = shl i64 ${fbSzHi64}, 32\n`)
+            let fbSzComb = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbSzComb} = or i64 ${fbSzShift}, ${fbSzLo64}\n  store i64 ${fbSzComb}, ptr ${szAlloca}\n`)
+            let fbBtimePtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbBtimePtr} = getelementptr inbounds i8, ptr ${fbPtr}, i64 4\n`)
+            let fbBtime64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbBtime64} = load i64, ptr ${fbBtimePtr}\n  store i64 ${fbBtime64}, ptr ${birthtimeAlloca}\n`)
+            let fbMtimePtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbMtimePtr} = getelementptr inbounds i8, ptr ${fbPtr}, i64 20\n`)
+            let fbMtime64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fbMtime64} = load i64, ptr ${fbMtimePtr}\n  store i64 ${fbMtime64}, ptr ${mtimeAlloca}\n  store i64 ${fbMtime64}, ptr ${ctimeAlloca}\n`)
+            outBuf.code = outBuf.code.cat (`  br label %${hDoneLabel}\n`)
+
+            outBuf.code = outBuf.code.cat (`\n${hDoneLabel}:\n`)
+            let finalAttr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finalAttr} = load i32, ptr ${dwAttrAlloca}\n`)
+            let finalDev = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finalDev} = load i64, ptr ${devAlloca}\n`)
+            let finalIno = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finalIno} = load i64, ptr ${inoAlloca}\n`)
+            let finalSize = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finalSize} = load i64, ptr ${szAlloca}\n`)
+            let finalMtime = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finalMtime} = load i64, ptr ${mtimeAlloca}\n`)
+            let finalCtime = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finalCtime} = load i64, ptr ${ctimeAlloca}\n`)
+            let finalBtime = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${finalBtime} = load i64, ptr ${birthtimeAlloca}\n`)
+
+            let and16 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${and16} = and i32 ${finalAttr}, 16\n`)
+            let isDirCmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isDirCmp} = icmp ne i32 ${and16}, 0\n`)
+            let isDirDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isDirDbl} = uitofp i1 ${isDirCmp} to double\n`)
+            let isDirBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isDirBits} = bitcast double ${isDirDbl} to i64\n`)
+
+            let isFileCmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isFileCmp} = icmp eq i32 ${and16}, 0\n`)
+            let isFileDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isFileDbl} = uitofp i1 ${isFileCmp} to double\n`)
+            let isFileBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isFileBits} = bitcast double ${isFileDbl} to i64\n`)
+
+            let andRo = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${andRo} = and i32 ${finalAttr}, 1\n`)
+            let isRoCmp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${isRoCmp} = icmp ne i32 ${andRo}, 0\n`)
+            let fileMode = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fileMode} = select i1 ${isRoCmp}, i64 33060, i64 33206\n`)
+            let modeI64 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${modeI64} = select i1 ${isDirCmp}, i64 16895, i64 ${fileMode}\n`)
+
+            // mtime ISO string
+            let mtimeBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeBuf} = alloca i64\n  store i64 ${finalMtime}, ptr ${mtimeBuf}\n`)
+            let mtimeSysBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeSysBuf} = alloca [16 x i8]\n`)
+            let mtimeSysPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeSysPtr} = getelementptr inbounds i8, ptr ${mtimeSysBuf}, i64 0\n`)
+            let mtimeConv = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeConv} = call i32 @FileTimeToSystemTime(ptr ${mtimeBuf}, ptr ${mtimeSysPtr})\n`)
+            let mYrP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mYrP} = getelementptr inbounds i8, ptr ${mtimeSysPtr}, i64 0\n`)
+            let mYrS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mYrS} = load i16, ptr ${mYrP}\n`)
+            let mYr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mYr} = zext i16 ${mYrS} to i32\n`)
+            let mMoP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMoP} = getelementptr inbounds i8, ptr ${mtimeSysPtr}, i64 2\n`)
+            let mMoS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMoS} = load i16, ptr ${mMoP}\n`)
+            let mMo = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMo} = zext i16 ${mMoS} to i32\n`)
+            let mDaP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mDaP} = getelementptr inbounds i8, ptr ${mtimeSysPtr}, i64 6\n`)
+            let mDaS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mDaS} = load i16, ptr ${mDaP}\n`)
+            let mDa = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mDa} = zext i16 ${mDaS} to i32\n`)
+            let mHrP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mHrP} = getelementptr inbounds i8, ptr ${mtimeSysPtr}, i64 8\n`)
+            let mHrS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mHrS} = load i16, ptr ${mHrP}\n`)
+            let mHr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mHr} = zext i16 ${mHrS} to i32\n`)
+            let mMiP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMiP} = getelementptr inbounds i8, ptr ${mtimeSysPtr}, i64 10\n`)
+            let mMiS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMiS} = load i16, ptr ${mMiP}\n`)
+            let mMi = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMi} = zext i16 ${mMiS} to i32\n`)
+            let mSeP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mSeP} = getelementptr inbounds i8, ptr ${mtimeSysPtr}, i64 12\n`)
+            let mSeS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mSeS} = load i16, ptr ${mSeP}\n`)
+            let mSe = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mSe} = zext i16 ${mSeS} to i32\n`)
+            let mMsP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMsP} = getelementptr inbounds i8, ptr ${mtimeSysPtr}, i64 14\n`)
+            let mMsS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMsS} = load i16, ptr ${mMsP}\n`)
+            let mMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mMs} = zext i16 ${mMsS} to i32\n`)
+            let mtimeStrBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeStrBuf} = call ptr @malloc(i64 36)\n`)
+            let mSnp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mSnp} = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr ${mtimeStrBuf}, i64 36, ptr @fmt_iso_time, i32 ${mYr}, i32 ${mMo}, i32 ${mDa}, i32 ${mHr}, i32 ${mMi}, i32 ${mSe}, i32 ${mMs})\n`)
+            let mtimeStr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeStr} = ptrtoint ptr ${mtimeStrBuf} to i64\n`)
+
+            // ctime ISO string
+            let ctimeBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeBuf} = alloca i64\n  store i64 ${finalCtime}, ptr ${ctimeBuf}\n`)
+            let ctimeSysBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeSysBuf} = alloca [16 x i8]\n`)
+            let ctimeSysPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeSysPtr} = getelementptr inbounds i8, ptr ${ctimeSysBuf}, i64 0\n`)
+            let ctimeConv = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeConv} = call i32 @FileTimeToSystemTime(ptr ${ctimeBuf}, ptr ${ctimeSysPtr})\n`)
+            let cYrP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cYrP} = getelementptr inbounds i8, ptr ${ctimeSysPtr}, i64 0\n`)
+            let cYrS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cYrS} = load i16, ptr ${cYrP}\n`)
+            let cYr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cYr} = zext i16 ${cYrS} to i32\n`)
+            let cMoP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMoP} = getelementptr inbounds i8, ptr ${ctimeSysPtr}, i64 2\n`)
+            let cMoS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMoS} = load i16, ptr ${cMoP}\n`)
+            let cMo = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMo} = zext i16 ${cMoS} to i32\n`)
+            let cDaP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cDaP} = getelementptr inbounds i8, ptr ${ctimeSysPtr}, i64 6\n`)
+            let cDaS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cDaS} = load i16, ptr ${cDaP}\n`)
+            let cDa = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cDa} = zext i16 ${cDaS} to i32\n`)
+            let cHrP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cHrP} = getelementptr inbounds i8, ptr ${ctimeSysPtr}, i64 8\n`)
+            let cHrS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cHrS} = load i16, ptr ${cHrP}\n`)
+            let cHr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cHr} = zext i16 ${cHrS} to i32\n`)
+            let cMiP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMiP} = getelementptr inbounds i8, ptr ${ctimeSysPtr}, i64 10\n`)
+            let cMiS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMiS} = load i16, ptr ${cMiP}\n`)
+            let cMi = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMi} = zext i16 ${cMiS} to i32\n`)
+            let cSeP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cSeP} = getelementptr inbounds i8, ptr ${ctimeSysPtr}, i64 12\n`)
+            let cSeS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cSeS} = load i16, ptr ${cSeP}\n`)
+            let cSe = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cSe} = zext i16 ${cSeS} to i32\n`)
+            let cMsP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMsP} = getelementptr inbounds i8, ptr ${ctimeSysPtr}, i64 14\n`)
+            let cMsS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMsS} = load i16, ptr ${cMsP}\n`)
+            let cMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cMs} = zext i16 ${cMsS} to i32\n`)
+            let ctimeStrBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeStrBuf} = call ptr @malloc(i64 36)\n`)
+            let cSnp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cSnp} = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr ${ctimeStrBuf}, i64 36, ptr @fmt_iso_time, i32 ${cYr}, i32 ${cMo}, i32 ${cDa}, i32 ${cHr}, i32 ${cMi}, i32 ${cSe}, i32 ${cMs})\n`)
+            let ctimeStr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeStr} = ptrtoint ptr ${ctimeStrBuf} to i64\n`)
+
+            // birthtime ISO string
+            let btimeBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimeBuf} = alloca i64\n  store i64 ${finalBtime}, ptr ${btimeBuf}\n`)
+            let btimeSysBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimeSysBuf} = alloca [16 x i8]\n`)
+            let btimeSysPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimeSysPtr} = getelementptr inbounds i8, ptr ${btimeSysBuf}, i64 0\n`)
+            let btimeConv = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimeConv} = call i32 @FileTimeToSystemTime(ptr ${btimeBuf}, ptr ${btimeSysPtr})\n`)
+            let bYrP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bYrP} = getelementptr inbounds i8, ptr ${btimeSysPtr}, i64 0\n`)
+            let bYrS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bYrS} = load i16, ptr ${bYrP}\n`)
+            let bYr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bYr} = zext i16 ${bYrS} to i32\n`)
+            let bMoP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMoP} = getelementptr inbounds i8, ptr ${btimeSysPtr}, i64 2\n`)
+            let bMoS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMoS} = load i16, ptr ${bMoP}\n`)
+            let bMo = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMo} = zext i16 ${bMoS} to i32\n`)
+            let bDaP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bDaP} = getelementptr inbounds i8, ptr ${btimeSysPtr}, i64 6\n`)
+            let bDaS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bDaS} = load i16, ptr ${bDaP}\n`)
+            let bDa = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bDa} = zext i16 ${bDaS} to i32\n`)
+            let bHrP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bHrP} = getelementptr inbounds i8, ptr ${btimeSysPtr}, i64 8\n`)
+            let bHrS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bHrS} = load i16, ptr ${bHrP}\n`)
+            let bHr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bHr} = zext i16 ${bHrS} to i32\n`)
+            let bMiP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMiP} = getelementptr inbounds i8, ptr ${btimeSysPtr}, i64 10\n`)
+            let bMiS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMiS} = load i16, ptr ${bMiP}\n`)
+            let bMi = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMi} = zext i16 ${bMiS} to i32\n`)
+            let bSeP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bSeP} = getelementptr inbounds i8, ptr ${btimeSysPtr}, i64 12\n`)
+            let bSeS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bSeS} = load i16, ptr ${bSeP}\n`)
+            let bSe = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bSe} = zext i16 ${bSeS} to i32\n`)
+            let bMsP = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMsP} = getelementptr inbounds i8, ptr ${btimeSysPtr}, i64 14\n`)
+            let bMsS = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMsS} = load i16, ptr ${bMsP}\n`)
+            let bMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bMs} = zext i16 ${bMsS} to i32\n`)
+            let btimeStrBuf = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimeStrBuf} = call ptr @malloc(i64 36)\n`)
+            let bSnp = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bSnp} = call i32 (ptr, i64, ptr, ...) @_snprintf(ptr ${btimeStrBuf}, i64 36, ptr @fmt_iso_time, i32 ${bYr}, i32 ${bMo}, i32 ${bDa}, i32 ${bHr}, i32 ${bMi}, i32 ${bSe}, i32 ${bMs})\n`)
+            let btimeStr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimeStr} = ptrtoint ptr ${btimeStrBuf} to i64\n`)
+
+            // Millisecond calculations
+            let mSub = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mSub} = sub i64 ${finalMtime}, 116444736000000000\n`)
+            let mtimeMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeMs} = sdiv i64 ${mSub}, 10000\n`)
+            let cSub = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cSub} = sub i64 ${finalCtime}, 116444736000000000\n`)
+            let ctimeMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeMs} = sdiv i64 ${cSub}, 10000\n`)
+            let bSub = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bSub} = sub i64 ${finalBtime}, 116444736000000000\n`)
+            let birthtimeMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${birthtimeMs} = sdiv i64 ${bSub}, 10000\n`)
+
+            let bufReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufReg} = call ptr @malloc(i64 8192)\n`)
+            outBuf.code = outBuf.code.cat (`  call void @memset(ptr ${bufReg}, i32 0, i64 8192)\n`)
+
+            let szOff = findFieldOffset cg, "size"
+            let isFileOff = findFieldOffset cg, "isFile"
+            let isDirOff = findFieldOffset cg, "isDirectory"
+            let mtOff = findFieldOffset cg, "mtime"
+            let mtMsOff = findFieldOffset cg, "mtimeMs"
+            let ctOff = findFieldOffset cg, "ctime"
+            let ctMsOff = findFieldOffset cg, "ctimeMs"
+            let btOff = findFieldOffset cg, "birthtime"
+            let btMsOff = findFieldOffset cg, "birthtimeMs"
+            let modeOff = findFieldOffset cg, "mode"
+            let inoOff = findFieldOffset cg, "ino"
+            let devOff = findFieldOffset cg, "dev"
+
+            let szDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szDbl} = sitofp i64 ${finalSize} to double\n`)
+            let szBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${szBits} = bitcast double ${szDbl} to i64\n`)
+
+            let mtimeDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeDbl} = sitofp i64 ${mtimeStr} to double\n`)
+            let mtimeBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtimeBits} = bitcast double ${mtimeDbl} to i64\n`)
+
+            let mtMsDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtMsDbl} = sitofp i64 ${mtimeMs} to double\n`)
+            let mtMsBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${mtMsBits} = bitcast double ${mtMsDbl} to i64\n`)
+
+            let ctimeDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeDbl} = sitofp i64 ${ctimeStr} to double\n`)
+            let ctimeBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctimeBits} = bitcast double ${ctimeDbl} to i64\n`)
+
+            let ctMsDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctMsDbl} = sitofp i64 ${ctimeMs} to double\n`)
+            let ctMsBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${ctMsBits} = bitcast double ${ctMsDbl} to i64\n`)
+
+            let btimeDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimeDbl} = sitofp i64 ${btimeStr} to double\n`)
+            let btimeBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btimeBits} = bitcast double ${btimeDbl} to i64\n`)
+
+            let btMsDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btMsDbl} = sitofp i64 ${birthtimeMs} to double\n`)
+            let btMsBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${btMsBits} = bitcast double ${btMsDbl} to i64\n`)
+
+            let modeDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${modeDbl} = sitofp i64 ${modeI64} to double\n`)
+            let modeBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${modeBits} = bitcast double ${modeDbl} to i64\n`)
+
+            let inoDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoDbl} = uitofp i64 ${finalIno} to double\n`)
+            let inoBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${inoBits} = bitcast double ${inoDbl} to i64\n`)
+
+            let devDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${devDbl} = uitofp i64 ${finalDev} to double\n`)
+            let devBits = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${devBits} = bitcast double ${devDbl} to i64\n`)
+
+            let fldSz = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldSz} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${szOff}\n  store i64 ${szBits}, ptr ${fldSz}\n`)
+            let fldF = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldF} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${isFileOff}\n  store i64 ${isFileBits}, ptr ${fldF}\n`)
+            let fldD = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldD} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${isDirOff}\n  store i64 ${isDirBits}, ptr ${fldD}\n`)
+            let fldMt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldMt} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${mtOff}\n  store i64 ${mtimeBits}, ptr ${fldMt}\n`)
+            let fldMtMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldMtMs} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${mtMsOff}\n  store i64 ${mtMsBits}, ptr ${fldMtMs}\n`)
+            let fldCt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldCt} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${ctOff}\n  store i64 ${ctimeBits}, ptr ${fldCt}\n`)
+            let fldCtMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldCtMs} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${ctMsOff}\n  store i64 ${ctMsBits}, ptr ${fldCtMs}\n`)
+            let fldBt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldBt} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${btOff}\n  store i64 ${btimeBits}, ptr ${fldBt}\n`)
+            let fldBtMs = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldBtMs} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${btMsOff}\n  store i64 ${btMsBits}, ptr ${fldBtMs}\n`)
+            let fldMd = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldMd} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${modeOff}\n  store i64 ${modeBits}, ptr ${fldMd}\n`)
+            let fldIno = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldIno} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${inoOff}\n  store i64 ${inoBits}, ptr ${fldIno}\n`)
+            let fldDev = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${fldDev} = getelementptr inbounds i64, ptr ${bufReg}, i64 ${devOff}\n  store i64 ${devBits}, ptr ${fldDev}\n`)
+
+            let bufInt = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufInt} = ptrtoint ptr ${bufReg} to i64\n`)
+            let bufDbl = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${bufDbl} = sitofp i64 ${bufInt} to double\n`)
+            -> bufDbl
         } els if (expr.callee == "chmod" || expr.callee == "fs.chmod") && expr.args.ln == 2 {
             let pathReg = codegenExpr cg, expr.args[0], outBuf
             let modeReg = codegenExpr cg, expr.args[1], outBuf
@@ -2214,10 +2671,10 @@ codegenExpr cg, expr, outBuf -> str {
             outBuf.code = outBuf.code.cat (`  ${modeInt} = fptosi double ${modeReg} to i32\n`)
             let resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_chmod(ptr ${pathPtr}, i32 ${modeInt})\n`)
-            let intReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp eq i32 ${resReg}, 0\n`)
             let dblReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
             -> dblReg
         } els if (expr.callee == "realP" || expr.callee == "realpath" || expr.callee == "fs.realpath" || expr.callee == "fs.realP") && expr.args.ln == 1 {
             let pathReg = codegenExpr cg, expr.args[0], outBuf
@@ -2278,10 +2735,10 @@ codegenExpr cg, expr, outBuf -> str {
             outBuf.code = outBuf.code.cat (`  ${fdInt} = fptosi double ${fdReg} to i32\n`)
             let resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @_close(i32 ${fdInt})\n`)
-            let intReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp eq i32 ${resReg}, 0\n`)
             let dblReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
             -> dblReg
         } els if (expr.callee == "mkTmp" || expr.callee == "mktemp" || expr.callee == "fs.mktemp" || expr.callee == "fs.mkTmp") && (expr.args.ln == 0 || expr.args.ln == 1) {
             mut pfxPtr = "@zuv_tmp_pfx"
@@ -2423,10 +2880,10 @@ codegenExpr cg, expr, outBuf -> str {
             outBuf.code = outBuf.code.cat (`  ${lenInt} = fptosi double ${lenReg} to i64\n`)
             let resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_truncate_file(ptr ${pathPtr}, i64 ${lenInt})\n`)
-            let intReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp eq i32 ${resReg}, 0\n`)
             let dblReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
             -> dblReg
         } els if (expr.callee == "utime" || expr.callee == "utimes" || expr.callee == "fs.utimes" || expr.callee == "fs.utime") && expr.args.ln == 3 {
             let pathReg = codegenExpr cg, expr.args[0], outBuf
@@ -2442,10 +2899,10 @@ codegenExpr cg, expr, outBuf -> str {
             outBuf.code = outBuf.code.cat (`  ${mtimeInt} = fptosi double ${mtimeReg} to i64\n`)
             let resReg = newReg cg
             outBuf.code = outBuf.code.cat (`  ${resReg} = call i32 @zuv_set_utime(ptr ${pathPtr}, i64 ${atimeInt}, i64 ${mtimeInt})\n`)
-            let intReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${intReg} = sext i32 ${resReg} to i64\n`)
+            let cmpReg = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${cmpReg} = icmp eq i32 ${resReg}, 0\n`)
             let dblReg = newReg cg
-            outBuf.code = outBuf.code.cat (`  ${dblReg} = sitofp i64 ${intReg} to double\n`)
+            outBuf.code = outBuf.code.cat (`  ${dblReg} = uitofp i1 ${cmpReg} to double\n`)
             -> dblReg
         } els if (expr.callee == "opnDir" || expr.callee == "opendir" || expr.callee == "fs.opendir" || expr.callee == "fs.opnDir") && expr.args.ln == 1 {
             let dirReg = codegenExpr cg, expr.args[0], outBuf
@@ -6123,7 +6580,7 @@ codegenStmt cg, stmt, outBuf {
                 outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sPtr})\n`)
             } els {
                 valReg = codegenExpr cg, stmt.value, outBuf
-                outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${valReg})\n`)
+                outBuf.code = outBuf.code.cat (`  call void @zuv_print_num(double ${valReg})\n`)
             }
         } els if (classifyTyp cg, stmt.value) == "str" {
             sPtr = getStrPtrVal cg, stmt.value, outBuf
@@ -6131,9 +6588,16 @@ codegenStmt cg, stmt, outBuf {
         } els if stmt.value.kind == "VariableExpr" && (isStrVar cg, stmt.value.name) == 1 {
             sPtr = getStrPtrVal cg, stmt.value, outBuf
             outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${sPtr})\n`)
+        } els if (classifyTyp cg, stmt.value) == "bool" {
+            valReg = codegenExpr cg, stmt.value, outBuf
+            condI1 = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${condI1} = fcmp une double ${valReg}, 0.0\n`)
+            boolStrPtr = newReg cg
+            outBuf.code = outBuf.code.cat (`  ${boolStrPtr} = select i1 ${condI1}, ptr @str_true, ptr @str_false\n`)
+            outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_str, ptr ${boolStrPtr})\n`)
         } els {
             valReg = codegenExpr cg, stmt.value, outBuf
-            outBuf.code = outBuf.code.cat (`  call i32 (ptr, ...) @printf(ptr @fmt_num, double ${valReg})\n`)
+            outBuf.code = outBuf.code.cat (`  call void @zuv_print_num(double ${valReg})\n`)
         }
     } els if stmt.kind == "ReturnStmt" {
         if cg.tryFrames.ln > 0 {
@@ -7152,6 +7616,7 @@ GenerateLLVMFull program, sanitizeModeStr : str -> str {
     header = header.cat "declare i32 @FindNextFileA(ptr, ptr)\n"
     header = header.cat "declare i32 @FindClose(ptr)\n"
     header = header.cat "declare i32 @snprintf(ptr, i64, ptr, ...)\n"
+    header = header.cat "declare i32 @_snprintf(ptr, i64, ptr, ...)\n"
     header = header.cat "declare void @exit(i32)\n"
     header = header.cat "@zuv_exc_value = global i64 0\n"
     header = header.cat `@zuv_uncaught_msg = private unnamed_addr constant [24 x i8] c"uncaught exception: %s\\0A\\00"\n`
@@ -7191,6 +7656,10 @@ GenerateLLVMFull program, sanitizeModeStr : str -> str {
     header = header.cat "declare i32 @CreateSymbolicLinkA(ptr, ptr, i32)\n"
     header = header.cat "declare i32 @_chsize_s(i32, i64)\n"
     header = header.cat "declare i32 @_utime64(ptr, ptr)\n"
+    header = header.cat "declare i32 @GetFileAttributesExA(ptr, i32, ptr)\n"
+    header = header.cat "declare i32 @GetFileInformationByHandle(ptr, ptr)\n"
+    header = header.cat "declare i32 @FileTimeToSystemTime(ptr, ptr)\n"
+    header = header.cat "@fmt_iso_time = private unnamed_addr constant [36 x i8] c\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\\00\"\n"
     header = header.cat "declare ptr @getenv(ptr)\n"
     header = header.cat "declare i32 @_putenv_s(ptr, ptr)\n"
     header = header.cat "declare ptr @_getcwd(ptr, i32)\n"
@@ -7284,7 +7753,6 @@ GenerateLLVMFull program, sanitizeModeStr : str -> str {
     header = header.cat "declare i32 @system(ptr)\n"
     header = header.cat "define i32 @zuv_truncate_file(ptr %path, i64 %len) {\nentry:\n  %fd = call i32 (ptr, i32, ...) @_open(ptr %path, i32 2, i32 438)\n  %isNeg = icmp slt i32 %fd, 0\n  br i1 %isNeg, label %err, label %do_trunc\n\ndo_trunc:\n  %res = call i32 @_chsize_s(i32 %fd, i64 %len)\n  %cl = call i32 @_close(i32 %fd)\n  ret i32 %res\n\nerr:\n  ret i32 -1\n}\n\n"
     header = header.cat "define i32 @zuv_set_utime(ptr %path, i64 %atime, i64 %mtime) {\nentry:\n  %buf = alloca [2 x i64]\n  store i64 %atime, ptr %buf\n  %pMod = getelementptr inbounds i64, ptr %buf, i64 1\n  store i64 %mtime, ptr %pMod\n  %res = call i32 @_utime64(ptr %path, ptr %buf)\n  ret i32 %res\n}\n\n"
-    header = header.cat "define double @zuv_stat_size(ptr %path) {\nentry:\n  %fp = call ptr @fopen(ptr %path, ptr @mode_r)\n  %nullCmp = icmp eq ptr %fp, null\n  br i1 %nullCmp, label %ret_neg, label %calc_sz\n\ncalc_sz:\n  %sk = call i32 @fseek(ptr %fp, i64 0, i32 2)\n  %sz = call i64 @ftell(ptr %fp)\n  %cl = call i32 @fclose(ptr %fp)\n  %dSz = sitofp i64 %sz to double\n  ret double %dSz\n\nret_neg:\n  ret double -1.0\n}\n\n"
     header = header.cat "define ptr @zuv_real_path(ptr %path) {\nentry:\n  %buf = call ptr @malloc(i64 1024)\n  %res = call ptr @_fullpath(ptr %buf, ptr %path, i64 1024)\n  %isResNull = icmp eq ptr %res, null\n  br i1 %isResNull, label %ret_orig, label %ret_buf\n\nret_orig:\n  ret ptr %path\n\nret_buf:\n  ret ptr %buf\n}\n\n"
     header = header.cat "define ptr @zuv_temp_file(ptr %pfx) {\nentry:\n  %tmpDir = alloca [512 x i8]\n  %tmpFile = call ptr @malloc(i64 512)\n  %callPath = call i32 @GetTempPathA(i32 512, ptr %tmpDir)\n  %prefix = alloca [4 x i8]\n  store i8 122, ptr %prefix\n  %p1 = getelementptr inbounds i8, ptr %prefix, i64 1\n  store i8 117, ptr %p1\n  %p2 = getelementptr inbounds i8, ptr %prefix, i64 2\n  store i8 118, ptr %p2\n  %p3 = getelementptr inbounds i8, ptr %prefix, i64 3\n  store i8 0, ptr %p3\n  %callFn = call i32 @GetTempFileNameA(ptr %tmpDir, ptr %prefix, i32 0, ptr %tmpFile)\n  ret ptr %tmpFile\n}\n\n"
     header = header.cat "@zuv_async_context_mode = thread_local global i32 1\n"
@@ -7310,9 +7778,13 @@ GenerateLLVMFull program, sanitizeModeStr : str -> str {
     header = header.cat `@fmt_str = private unnamed_addr constant [4 x i8] c"%s\\0A\\00"\n`
     header = header.cat `@fmt_prefix = private unnamed_addr constant [3 x i8] c"%s\\00"\n`
     header = header.cat `@fmt_num = private unnamed_addr constant [4 x i8] c"%g\\0A\\00"\n`
+    header = header.cat `@fmt_int_nl = private unnamed_addr constant [6 x i8] c"%lld\\0A\\00"\n`
+    header = header.cat `@str_true = private unnamed_addr constant [5 x i8] c"true\\00"\n`
+    header = header.cat `@str_false = private unnamed_addr constant [6 x i8] c"false\\00"\n`
     header = header.cat `@fmt_g = private unnamed_addr constant [3 x i8] c"%g\\00"\n`
     header = header.cat `@fmt_bigint = private unnamed_addr constant [5 x i8] c"%lld\\00"\n`
     header = header.cat `@empty_str = private unnamed_addr constant [1 x i8] c"\\00"\n`
+    header = header.cat "define void @zuv_print_num(double %val) {\nentry:\n  %trunc = call double @llvm.trunc.f64(double %val)\n  %diff = fsub double %val, %trunc\n  %is_int = fcmp oeq double %diff, 0.0\n  %abs = call double @llvm.fabs.f64(double %val)\n  %in_range = fcmp olt double %abs, 9.0e+18\n  %use_int = and i1 %is_int, %in_range\n  br i1 %use_int, label %p_int, label %p_dbl\n\np_int:\n  %i = fptosi double %val to i64\n  %r1 = call i32 (ptr, ...) @printf(ptr @fmt_int_nl, i64 %i)\n  ret void\n\np_dbl:\n  %r2 = call i32 (ptr, ...) @printf(ptr @fmt_num, double %val)\n  ret void\n}\n\n"
     header = header.cat `@fmt_pattern = private unnamed_addr constant [5 x i8] c"%s/*\\00"\n`
     header = header.cat `@fmt_filepath = private unnamed_addr constant [6 x i8] c"%s/%s\\00"\n`
     header = header.cat `@dot_str = private unnamed_addr constant [2 x i8] c".\\00"\n`

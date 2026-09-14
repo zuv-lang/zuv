@@ -1,6 +1,6 @@
 // Comprehensive Standard Library std/fs Unit Test Suite (100% Task 23 Coverage)
 // Verifies full filesystem API:
-// wF, rF, fE, appF, mkD, mvF, cpF, statF, chmod, symL, rLink, realP, truncF, utime, acc, opn, cls, rAt, wAt, mkTmp, opnDir, wtch, rStrm, wStrm, wVec, rVec, rmF
+// wF, rF, fE, appF, mkD, mvF, cpF, stat, chmod, symL, rLink, realP, truncF, utime, acc, opn, cls, rAt, wAt, mkTmp, opnDir, wtch, rStrm, wStrm, wVec, rVec, rmF
 
 imp fs
 
@@ -32,10 +32,32 @@ content = rF test_file
 lg "4. Read content after append:"
 lg content
 
-// 5. File size (statF path)
-fsize = statF test_file
-lg "5. File size via statF:"
-lg fsize
+// 5. Stat object (stat path) - size, isFile, isDirectory, mtime, mtimeMs, ctime, ctimeMs, birthtime, birthtimeMs, mode, ino, dev
+st = stat test_file
+lg "5. Stat size:"
+lg st.size
+lg "5b. Is file (should be true):"
+lg st.isFile
+lg "5c. Is directory (should be false):"
+lg st.isDirectory
+lg "5d. Mode is regular file (should be 33206):"
+lg st.mode
+lg "5e. Ino is positive:"
+lg st.ino
+lg "5f. Dev is positive:"
+lg st.dev
+lg "5g. MtimeMs is positive:"
+lg st.mtimeMs
+lg "5h. CtimeMs is positive :"
+lg st.ctimeMs
+lg "5i. BirthtimeMs is positive :"
+lg st.birthtimeMs
+lg "5j. Mtime length is 24 :"
+lg st.mtime.ln
+lg "5k. Ctime length is 24 :"
+lg st.ctime.ln
+lg "5l. Birthtime length is 24 :"
+lg st.birthtime.ln
 
 // 6. Copy file (cpF src, dst)
 cp_res = cpF test_file, copy_file
@@ -51,9 +73,9 @@ lg "7. Rename file status:"
 lg mv_res
 old_exists = fE copy_file
 new_exists = fE renamed_file
-lg "7b. Old exists (should be 0):"
+lg "7b. Old exists (should be false):"
 lg old_exists
-lg "7c. New exists (should be 1):"
+lg "7c. New exists (should be true):"
 lg new_exists
 
 // 8. Canonical Real Path (realP path)
