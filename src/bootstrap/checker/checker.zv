@@ -1,9 +1,300 @@
 /*
  * =============================================================================
- * Zuv Bootstrap Compiler — Semantic Checker & Validator
+ * Zuv Bootstrap Compiler — Scope Management & Symbol Table
  * Path: sub_projects/zuv/src/bootstrap/checker/checker.zv
  * =============================================================================
+ *
+ * Implements lexical scope management and symbol resolution:
+ * - `obj Symbol` representing scoped variables, functions, and bindings
+ * - `obj Scope` representing a single lexical scope level with symbols
+ * - `obj Checker` managing the scope hierarchy stack (`enterScope`, `exitScope`)
+ * - Symbol definition, shadowing validation, and lexical resolution (`resolveSymbol`)
+ * - Type registry management (`registerType`, `resolveType`)
+ * - Diagnostics error logging for semantic and safety rules
  */
 
 imp str, arr
+imp Token, TokenType frm ../tokens
+imp ASTNode, NodeKind frm ../ast
+imp TypeInfo, TypeKind frm ../types
+imp Diagnostic frm ../diagnostics
 
+obj Symbol {
+    name: str,
+    typeKind: TypeKind,
+    typeName: str,
+    isBorrow: bool,
+    isInitialized: bool,
+    scopeLevel: num,
+    line: num,
+    col: num,
+
+    create: name: str, typeKind: TypeKind, typeName: str, isBorrow: bool, isInitialized: bool, scopeLevel: num, line: num, col: num :: Symbol => {
+        -> {
+            name,
+            typeKind,
+            typeName,
+            isBorrow,
+            isInitialized,
+            scopeLevel,
+            line,
+            col
+        }
+    },
+
+    createNotFound: :: Symbol => {
+        unkKind = TypeKind.Unknown
+        emptyStr: str = ""
+        unkStr: str = "unknown"
+        -> {
+            name: emptyStr,
+            typeKind: unkKind,
+            typeName: unkStr,
+            isBorrow: false,
+            isInitialized: false,
+            scopeLevel: -1,
+            line: 0,
+            col: 0
+        }
+    }
+}
+
+obj Scope {
+    level: num,
+    symbols: Symbol[],
+
+    create: level: num, symbols: Symbol[] :: Scope => {
+        -> {
+            level,
+            symbols
+        }
+    }
+}
+
+obj Checker {
+    scopes: Scope[],
+    types: TypeInfo[],
+    errors: Diagnostic[],
+    file: str,
+    source: str,
+
+    create: file: str, source: str :: Checker => {
+        rootSyms: Symbol[] = []
+
+        // Built-in standard library namespaces
+        symOs = Symbol.create "os", TypeKind.Obj, "os", false, true, 0, 0, 0
+        symFs = Symbol.create "fs", TypeKind.Obj, "fs", false, true, 0, 0, 0
+        symStr = Symbol.create "str", TypeKind.Obj, "str", false, true, 0, 0, 0
+        symArr = Symbol.create "arr", TypeKind.Obj, "arr", false, true, 0, 0, 0
+        symTime = Symbol.create "time", TypeKind.Obj, "time", false, true, 0, 0, 0
+        symNet = Symbol.create "net", TypeKind.Obj, "net", false, true, 0, 0, 0
+        symHttp = Symbol.create "http", TypeKind.Obj, "http", false, true, 0, 0, 0
+        rootSyms.psh symOs
+        rootSyms.psh symFs
+        rootSyms.psh symStr
+        rootSyms.psh symArr
+        rootSyms.psh symTime
+        rootSyms.psh symNet
+        rootSyms.psh symHttp
+
+        // Built-in runtime utility functions
+        symPrnt = Symbol.create "prnt", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
+        symLg = Symbol.create "lg", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
+        symWrn = Symbol.create "wrn", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
+        symErr = Symbol.create "err", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
+        symPanic = Symbol.create "panic", TypeKind.Func, "fn(str)->void", false, true, 0, 0, 0
+        rootSyms.psh symPrnt
+        rootSyms.psh symLg
+        rootSyms.psh symWrn
+        rootSyms.psh symErr
+        rootSyms.psh symPanic
+
+        rootScope = Scope.create 0, rootSyms
+        rootScopes: Scope[] = [rootScope]
+
+        // Primitive types registry
+        initTypes: TypeInfo[] = []
+        tNum = TypeInfo.createPrimitive TypeKind.Double, "num"
+        tDbl = TypeInfo.createPrimitive TypeKind.Double, "double"
+        tI32 = TypeInfo.createPrimitive TypeKind.I32, "i32"
+        tI64 = TypeInfo.createPrimitive TypeKind.I64, "i64"
+        tStr = TypeInfo.createPrimitive TypeKind.Str, "str"
+        tBool = TypeInfo.createPrimitive TypeKind.Bool, "bool"
+        tPtr = TypeInfo.createPrimitive TypeKind.Ptr, "ptr"
+        tVoid = TypeInfo.createPrimitive TypeKind.Void, "void"
+        tNil = TypeInfo.createPrimitive TypeKind.Nil, "nil"
+        tUnd = TypeInfo.createPrimitive TypeKind.Und, "und"
+        initTypes.psh tNum
+        initTypes.psh tDbl
+        initTypes.psh tI32
+        initTypes.psh tI64
+        initTypes.psh tStr
+        initTypes.psh tBool
+        initTypes.psh tPtr
+        initTypes.psh tVoid
+        initTypes.psh tNil
+        initTypes.psh tUnd
+
+        emptyErrors: Diagnostic[] = []
+        checkerInstance: Checker = {
+            scopes: rootScopes,
+            types: initTypes,
+            errors: emptyErrors,
+            file: file,
+            source: source
+        }
+        -> checkerInstance
+    },
+
+    registerPrimitive: name: str, kind: TypeKind :: void => {
+        primType = TypeInfo.createPrimitive kind, name
+        self.types.psh primType
+    },
+
+    defineGlobal: name: str, kind: TypeKind, typeName: str :: void => {
+        globalSym = Symbol.create name, kind, typeName, false, true, 0, 0, 0
+        rootScope: Scope = self.scopes[0]
+        rootSyms: Symbol[] = rootScope.symbols
+        rootSyms.psh globalSym
+        rootScope.symbols = rootSyms
+        self.scopes[0] = rootScope
+    },
+
+    enterScope: :: void => {
+        nextLevel: num = self.scopes.ln
+        emptySyms: Symbol[] = []
+        newScope = Scope.create nextLevel, emptySyms
+        self.scopes.psh newScope
+    },
+
+    exitScope: :: void => {
+        if self.scopes.ln > 1 {
+            self.scopes.pop
+        }
+    },
+
+    /**
+     * Returns the current zero-based scope nesting depth level.
+     *
+     * @returns {num} Current scope nesting depth
+     */
+    currentLevel: :: num => {
+        total: num = self.scopes.ln
+        let lvl: num = 0
+        let i: num = 1
+        wh i < total {
+            lvl++
+            i++
+        }
+        -> lvl
+    },
+
+    defineSymbol: targetSym: Symbol :: bool => {
+        if self.scopes.ln == 0 {
+            self.enterScope
+        }
+        topIdx: num = self.scopes.ln - 1
+        curScope: Scope = self.scopes[topIdx]
+        symList: Symbol[] = curScope.symbols
+        count: num = symList.ln
+        let i: num = 0
+        wh i < count {
+            existing: Symbol = symList[i]
+            if existing.name == targetSym.name {
+                sLine: num = targetSym.line
+                sCol: num = targetSym.col
+                sLen: num = targetSym.name.ln
+                self.addError "E0301", "Variable '" + targetSym.name + "' is already declared in the current scope", sLine, sCol, sLen, "consider reusing or renaming variable"
+                -> false
+            }
+            i++
+        }
+        targetSym.scopeLevel = topIdx
+        symList.psh targetSym
+        curScope.symbols = symList
+        self.scopes[topIdx] = curScope
+        -> true
+    },
+
+    resolveSymbol: name: str :: Symbol => {
+        totalScopes: num = self.scopes.ln
+        let sIdx: num = 0
+        wh sIdx < totalScopes {
+            curRevIdx: num = totalScopes - 1 - sIdx
+            sc: Scope = self.scopes[curRevIdx]
+            syms: Symbol[] = sc.symbols
+            totalSyms: num = syms.ln
+            let j: num = 0
+            wh j < totalSyms {
+                curSymIdx: num = totalSyms - 1 - j
+                sItem: Symbol = syms[curSymIdx]
+                if sItem.name == name {
+                    -> sItem
+                }
+                j++
+            }
+            sIdx++
+        }
+
+        notFound = Symbol.createNotFound
+        -> notFound
+    },
+
+    hasSymbol: name: str :: bool => {
+        resolvedSym: Symbol = self.resolveSymbol name
+        -> resolvedSym.name.ln > 0
+    },
+
+    hasSymbolInCurrentScope: name: str :: bool => {
+        totalScopes: num = self.scopes.ln
+        if totalScopes == 0 {
+            -> false
+        }
+        topIdx: num = totalScopes - 1
+        curScope: Scope = self.scopes[topIdx]
+        syms: Symbol[] = curScope.symbols
+        count: num = syms.ln
+        let i: num = 0
+        wh i < count {
+            sItem: Symbol = syms[i]
+            if sItem.name == name {
+                -> true
+            }
+            i++
+        }
+        -> false
+    },
+
+    registerType: info: TypeInfo :: void => {
+        self.types.psh info
+    },
+
+    resolveType: name: str :: TypeInfo => {
+        count: num = self.types.ln
+        let i: num = 0
+        wh i < count {
+            typeItem: TypeInfo = self.types[i]
+            if typeItem.name == name {
+                -> typeItem
+            }
+            i++
+        }
+        unkKind = TypeKind.Unknown
+        unkType = TypeInfo.createPrimitive unkKind, name
+        -> unkType
+    },
+
+    addError: code: str, msg: str, line: num, col: num, len: num, help: str :: void => {
+        srcFile: str = self.file
+        diag = Diagnostic.create code, msg, srcFile, line, col, len, help
+        self.errors.psh diag
+    },
+
+    getErrors: :: Diagnostic[] => {
+        -> self.errors
+    },
+
+    hasErrors: :: bool => {
+        -> self.errors.ln > 0
+    }
+}

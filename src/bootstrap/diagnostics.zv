@@ -72,18 +72,18 @@ obj Diagnostic {
 ExtractSourceLine sourceText: str, targetLine: num :: str {
     let curLine: num = 1
     let startIdx: num = 0
-    let totalLen: num = sourceText.ln
+    totalLen: num = sourceText.ln
     let found: str = ""
     fr i = 0; i < totalLen; i++ {
-        let ch: str = sourceText.chr i
+        ch: str = sourceText.chr i
         if ch == "\n" {
             if curLine == targetLine {
                 found = sourceText.slc startIdx, i
                 i = totalLen
             }
-            curLine ++
+            curLine++
             startIdx = i
-            startIdx ++
+            startIdx++
         }
     }
     if curLine == targetLine {
@@ -99,11 +99,11 @@ ExtractSourceLine sourceText: str, targetLine: num :: str {
  * @returns {str} Space padding string
  */
 BuildSpaces count: num :: str {
-    let s: str = ""
+    let spaces: str = ""
     fr i = 0; i < count; i++ {
-        s = s + " "
+        spaces = spaces + " "
     }
-    -> s
+    -> spaces
 }
 
 /**
@@ -113,15 +113,15 @@ BuildSpaces count: num :: str {
  * @returns {str} Caret underline string
  */
 BuildCarets spanLen: num :: str {
-    let s: str = ""
-    let n: num = spanLen
-    if n < 1 {
-        n = 1
+    let caretsStr: str = ""
+    let count: num = spanLen
+    if count < 1 {
+        count = 1
     }
-    fr i = 0; i < n; i++ {
-        s = s + "^"
+    fr i = 0; i < count; i++ {
+        caretsStr = caretsStr + "^"
     }
-    -> s
+    -> caretsStr
 }
 
 /**
@@ -139,26 +139,26 @@ BuildCarets spanLen: num :: str {
  * @returns {str} Formatted multi-line diagnostic string
  */
 FormatDiagnostic diag: Diagnostic, sourceText: str :: str {
-    let lineStr: str = "" + diag.line
-    let colStr: str = "" + diag.col
-    let header: str = "error[" + diag.code + "]: " + diag.message + "\n"
-    let loc: str = "  --> " + diag.file + ":" + lineStr + ":" + colStr + "\n"
-    let gutter: str = "   |\n"
+    lineStr: str = "" + diag.line
+    colStr: str = "" + diag.col
+    header: str = "error[" + diag.code + "]: " + diag.message + "\n"
+    loc: str = "  --> " + diag.file + ":" + lineStr + ":" + colStr + "\n"
+    gutter: str = "   |\n"
 
-    let srcLine: str = ExtractSourceLine sourceText, diag.line
-    let snippet: str = " " + lineStr + " | " + srcLine + "\n"
+    srcLine: str = ExtractSourceLine sourceText, diag.line
+    snippet: str = " " + lineStr + " | " + srcLine + "\n"
 
     let padCount: num = diag.col - 1
     if padCount < 0 {
         padCount = 0
     }
-    let pad: str = BuildSpaces padCount
-    let carets: str = BuildCarets diag.len
-    let underline: str = "   | " + pad + carets + "\n"
+    pad: str = BuildSpaces padCount
+    carets: str = BuildCarets diag.len
+    underline: str = "   | " + pad + carets + "\n"
 
     let out: str = header + loc + gutter + snippet + underline
     if diag.help != "" {
-        let helpNote: str = "   |\n   = help: " + diag.help + "\n"
+        helpNote: str = "   |\n   = help: " + diag.help + "\n"
         out = out + helpNote
     }
     -> out
@@ -172,26 +172,26 @@ FormatDiagnostic diag: Diagnostic, sourceText: str :: str {
  * @returns {str} Formatted multi-line warning string
  */
 FormatWarning diag: Diagnostic, sourceText: str :: str {
-    let lineStr: str = "" + diag.line
-    let colStr: str = "" + diag.col
-    let header: str = "warning[" + diag.code + "]: " + diag.message + "\n"
-    let loc: str = "  --> " + diag.file + ":" + lineStr + ":" + colStr + "\n"
-    let gutter: str = "   |\n"
+    lineStr: str = "" + diag.line
+    colStr: str = "" + diag.col
+    header: str = "warning[" + diag.code + "]: " + diag.message + "\n"
+    loc: str = "  --> " + diag.file + ":" + lineStr + ":" + colStr + "\n"
+    gutter: str = "   |\n"
 
-    let srcLine: str = ExtractSourceLine sourceText, diag.line
-    let snippet: str = " " + lineStr + " | " + srcLine + "\n"
+    srcLine: str = ExtractSourceLine sourceText, diag.line
+    snippet: str = " " + lineStr + " | " + srcLine + "\n"
 
     let padCount: num = diag.col - 1
     if padCount < 0 {
         padCount = 0
     }
-    let pad: str = BuildSpaces padCount
-    let carets: str = BuildCarets diag.len
-    let underline: str = "   | " + pad + carets + "\n"
+    pad: str = BuildSpaces padCount
+    carets: str = BuildCarets diag.len
+    underline: str = "   | " + pad + carets + "\n"
 
     let out: str = header + loc + gutter + snippet + underline
     if diag.help != "" {
-        let helpNote: str = "   |\n   = help: " + diag.help + "\n"
+        helpNote: str = "   |\n   = help: " + diag.help + "\n"
         out = out + helpNote
     }
     -> out

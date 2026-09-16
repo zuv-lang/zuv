@@ -105,13 +105,13 @@ obj Lexer {
      * @returns {Lexer} Initialized Lexer instance
      */
     create: src: str :: Lexer => {
-        let l: num = src.ln
+        srcLen: num = src.ln
         -> {
             src,
             pos: 0,
             line: 1,
             col: 1,
-            len: l
+            len: srcLen
         }
     },
 
@@ -133,7 +133,7 @@ obj Lexer {
      * @returns {str} Next character string, or "" if EOF
      */
     peek: :: str => {
-        let nextPos: num = self.pos + 1
+        nextPos: num = self.pos + 1
         if nextPos >= self.len {
             -> ""
         }
@@ -147,7 +147,7 @@ obj Lexer {
      * @returns {str} Character string at pos + offset, or "" if out of bounds
      */
     peekAhead: offset: num :: str => {
-        let targetPos: num = self.pos + offset
+        targetPos: num = self.pos + offset
         if targetPos >= self.len || targetPos < 0 {
             -> ""
         }
@@ -163,7 +163,7 @@ obj Lexer {
         if self.pos >= self.len {
             -> ""
         }
-        let ch: str = self.src.chr self.pos
+        ch: str = self.src.chr self.pos
         self.pos = self.pos + 1
         if ch == "\n" {
             self.line = self.line + 1
@@ -181,7 +181,7 @@ obj Lexer {
      */
     skipWhitespaceAndComments: :: void => {
         wh self.pos < self.len {
-            let ch: str = self.cur
+            ch: str = self.cur
             if IsWhitespace ch {
                 self.advance
             } els if ch == "/" && self.peek == "/" {
@@ -216,16 +216,16 @@ obj Lexer {
      * @returns {Token} Scanned TOK_STRING token
      */
     scanString: quote: str :: Token => {
-        let startLine: num = self.line
-        let startCol: num = self.col
+        startLine: num = self.line
+        startCol: num = self.col
         self.advance // Skip opening quote
         let val: str = ""
 
         wh self.pos < self.len && self.cur != quote {
-            let ch: str = self.cur
+            ch: str = self.cur
             if ch == "\\" {
                 self.advance
-                let esc: str = self.cur
+                esc: str = self.cur
                 if esc == "n" {
                     val = val + "\n"
                 } els if esc == "t" {
@@ -260,7 +260,7 @@ obj Lexer {
         if tokLen < 1 {
             tokLen = 1
         }
-        let tok = Token.create TokenType.TOK_STRING, val, startLine, startCol, tokLen
+        tok = Token.create TokenType.TOK_STRING, val, startLine, startCol, tokLen
         -> tok
     },
 
@@ -271,8 +271,8 @@ obj Lexer {
      * @returns {Token} Scanned TOK_STRING token
      */
     scanRawString: quote: str :: Token => {
-        let startLine: num = self.line
-        let startCol: num = self.col - 1 // Include 'r' prefix in column
+        startLine: num = self.line
+        startCol: num = self.col - 1 // Include 'r' prefix in column
         self.advance // Skip opening quote
         let val: str = ""
 
@@ -289,7 +289,7 @@ obj Lexer {
         if tokLen < 1 {
             tokLen = 1
         }
-        let tok = Token.create TokenType.TOK_STRING, val, startLine, startCol, tokLen
+        tok = Token.create TokenType.TOK_STRING, val, startLine, startCol, tokLen
         -> tok
     },
 
@@ -299,16 +299,16 @@ obj Lexer {
      * @returns {Token} Scanned TOK_TEMPLATE_STRING token
      */
     scanTemplateString: :: Token => {
-        let startLine: num = self.line
-        let startCol: num = self.col
+        startLine: num = self.line
+        startCol: num = self.col
         self.advance // Skip opening backtick
         let val: str = ""
 
         wh self.pos < self.len && self.cur != "`" {
-            let ch: str = self.cur
+            ch: str = self.cur
             if ch == "\\" {
                 self.advance
-                let esc: str = self.cur
+                esc: str = self.cur
                 if esc == "n" {
                     val = val + "\n"
                 } els if esc == "t" {
@@ -341,7 +341,7 @@ obj Lexer {
         if tokLen < 1 {
             tokLen = 1
         }
-        let tok = Token.create TokenType.TOK_TEMPLATE_STRING, val, startLine, startCol, tokLen
+        tok = Token.create TokenType.TOK_TEMPLATE_STRING, val, startLine, startCol, tokLen
         -> tok
     },
 
@@ -351,43 +351,43 @@ obj Lexer {
      * @returns {Token} Scanned TOK_NUMBER or TOK_BIGINT token
      */
     scanNumber: :: Token => {
-        let startLine: num = self.line
-        let startCol: num = self.col
-        let startPos: num = self.pos
+        startLine: num = self.line
+        startCol: num = self.col
+        startPos: num = self.pos
 
         // Check base prefix (0x, 0b, 0o)
         if self.cur == "0" {
-            let p: str = self.peek
-            let p2: str = self.peekAhead 2
-            if (p == "x" || p == "X") && (IsHexDigit p2) {
+            prefixChar: str = self.peek
+            p2: str = self.peekAhead 2
+            if (prefixChar == "x" || prefixChar == "X") && (IsHexDigit p2) {
                 self.advance // '0'
                 self.advance // 'x'
                 wh IsHexDigit self.cur {
                     self.advance
                 }
-                let rawHex: str = self.src.slc startPos, self.pos
-                let tokLen: num = self.pos - startPos
-                let tok = Token.create TokenType.TOK_NUMBER, rawHex, startLine, startCol, tokLen
+                rawHex: str = self.src.slc startPos, self.pos
+                tokLen: num = self.pos - startPos
+                tok = Token.create TokenType.TOK_NUMBER, rawHex, startLine, startCol, tokLen
                 -> tok
-            } els if (p == "b" || p == "B") && (IsBinDigit p2) {
+            } els if (prefixChar == "b" || prefixChar == "B") && (IsBinDigit p2) {
                 self.advance // '0'
                 self.advance // 'b'
                 wh IsBinDigit self.cur {
                     self.advance
                 }
-                let rawBin: str = self.src.slc startPos, self.pos
-                let tokLen: num = self.pos - startPos
-                let tok = Token.create TokenType.TOK_NUMBER, rawBin, startLine, startCol, tokLen
+                rawBin: str = self.src.slc startPos, self.pos
+                tokLen: num = self.pos - startPos
+                tok = Token.create TokenType.TOK_NUMBER, rawBin, startLine, startCol, tokLen
                 -> tok
-            } els if (p == "o" || p == "O") && (IsOctDigit p2) {
+            } els if (prefixChar == "o" || prefixChar == "O") && (IsOctDigit p2) {
                 self.advance // '0'
                 self.advance // 'o'
                 wh IsOctDigit self.cur {
                     self.advance
                 }
-                let rawOct: str = self.src.slc startPos, self.pos
-                let tokLen: num = self.pos - startPos
-                let tok = Token.create TokenType.TOK_NUMBER, rawOct, startLine, startCol, tokLen
+                rawOct: str = self.src.slc startPos, self.pos
+                tokLen: num = self.pos - startPos
+                tok = Token.create TokenType.TOK_NUMBER, rawOct, startLine, startCol, tokLen
                 -> tok
             }
         }
@@ -402,10 +402,10 @@ obj Lexer {
 
         // Scientific exponent: 1e5, 1.5E-2, 10e+3
         if self.cur == "e" || self.cur == "E" {
-            let next: str = self.peek
+            next: str = self.peek
             let expOk: bool = IsDigit next
             if !expOk && (next == "+" || next == "-") {
-                let afterSign: str = self.peekAhead 2
+                afterSign: str = self.peekAhead 2
                 expOk = IsDigit afterSign
             }
             if expOk {
@@ -421,16 +421,16 @@ obj Lexer {
 
         // BigInt suffix: 123n / 123N
         if !hasDot && (self.cur == "n" || self.cur == "N") {
-            let rawNum: str = self.src.slc startPos, self.pos
+            rawNum: str = self.src.slc startPos, self.pos
             self.advance // consume 'n'
-            let tokLen: num = self.pos - startPos
-            let tok = Token.create TokenType.TOK_BIGINT, rawNum, startLine, startCol, tokLen
+            tokLen: num = self.pos - startPos
+            tok = Token.create TokenType.TOK_BIGINT, rawNum, startLine, startCol, tokLen
             -> tok
         }
 
-        let rawVal: str = self.src.slc startPos, self.pos
-        let tokLen: num = self.pos - startPos
-        let tok = Token.create TokenType.TOK_NUMBER, rawVal, startLine, startCol, tokLen
+        rawVal: str = self.src.slc startPos, self.pos
+        tokLen: num = self.pos - startPos
+        tok = Token.create TokenType.TOK_NUMBER, rawVal, startLine, startCol, tokLen
         -> tok
     },
 
@@ -440,18 +440,18 @@ obj Lexer {
      * @returns {Token} Scanned TOK_IDENT or keyword token
      */
     scanIdentifier: :: Token => {
-        let startLine: num = self.line
-        let startCol: num = self.col
-        let startPos: num = self.pos
+        startLine: num = self.line
+        startCol: num = self.col
+        startPos: num = self.pos
 
         wh IsIdentChar self.cur {
             self.advance
         }
 
-        let literal: str = self.src.slc startPos, self.pos
-        let kind: TokenType = LookupKeyword literal
-        let tokLen: num = self.pos - startPos
-        let tok = Token.create kind, literal, startLine, startCol, tokLen
+        literal: str = self.src.slc startPos, self.pos
+        kind: TokenType = LookupKeyword literal
+        tokLen: num = self.pos - startPos
+        tok = Token.create kind, literal, startLine, startCol, tokLen
         -> tok
     },
 
@@ -464,41 +464,41 @@ obj Lexer {
         self.skipWhitespaceAndComments
 
         if self.pos >= self.len {
-            let tok = Token.create TokenType.TOK_EOF, "", self.line, self.col, 0
+            tok = Token.create TokenType.TOK_EOF, "", self.line, self.col, 0
             -> tok
         }
 
-        let startLine: num = self.line
-        let startCol: num = self.col
-        let ch: str = self.cur
+        startLine: num = self.line
+        startCol: num = self.col
+        ch: str = self.cur
 
         // Raw string prefix: r"..." or r'...'
         if ch == "r" && (self.peek == "\"" || self.peek == "'") {
             self.advance // consume 'r'
-            let q: str = self.cur
-            let tok = self.scanRawString q
+            quoteChar: str = self.cur
+            tok = self.scanRawString quoteChar
             -> tok
         }
 
         // Identifiers & Keywords
         if IsIdentStart ch {
-            let tok = self.scanIdentifier
+            tok = self.scanIdentifier
             -> tok
         }
 
         // Numbers
         if IsDigit ch {
-            let tok = self.scanNumber
+            tok = self.scanNumber
             -> tok
         }
 
         // Strings & Template Literals
         if ch == "\"" || ch == "'" {
-            let tok = self.scanString ch
+            tok = self.scanString ch
             -> tok
         }
         if ch == "`" {
-            let tok = self.scanTemplateString
+            tok = self.scanTemplateString
             -> tok
         }
 
@@ -507,14 +507,14 @@ obj Lexer {
             self.advance
             if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_EQ, "==", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_EQ, "==", startLine, startCol, 2
                 -> tok
             } els if self.cur == ">" {
                 self.advance
-                let tok = Token.create TokenType.TOK_FAT_ARROW, "=>", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_FAT_ARROW, "=>", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_ASSIGN, "=", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_ASSIGN, "=", startLine, startCol, 1
             -> tok
         }
 
@@ -522,14 +522,14 @@ obj Lexer {
             self.advance
             if self.cur == "?" {
                 self.advance
-                let tok = Token.create TokenType.TOK_NULLISH, "??", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_NULLISH, "??", startLine, startCol, 2
                 -> tok
             } els if self.cur == "." {
                 self.advance
-                let tok = Token.create TokenType.TOK_OPT_DOT, "?.", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_OPT_DOT, "?.", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_QUESTION, "?", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_QUESTION, "?", startLine, startCol, 1
             -> tok
         }
 
@@ -537,14 +537,14 @@ obj Lexer {
             self.advance
             if self.cur == "+" {
                 self.advance
-                let tok = Token.create TokenType.TOK_INC, "++", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_INC, "++", startLine, startCol, 2
                 -> tok
             } els if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_PLUS_EQ, "+=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_PLUS_EQ, "+=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_PLUS, "+", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_PLUS, "+", startLine, startCol, 1
             -> tok
         }
 
@@ -552,18 +552,18 @@ obj Lexer {
             self.advance
             if self.cur == ">" {
                 self.advance
-                let tok = Token.create TokenType.TOK_ARROW, "->", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_ARROW, "->", startLine, startCol, 2
                 -> tok
             } els if self.cur == "-" {
                 self.advance
-                let tok = Token.create TokenType.TOK_DEC, "--", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_DEC, "--", startLine, startCol, 2
                 -> tok
             } els if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_MINUS_EQ, "-=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_MINUS_EQ, "-=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_MINUS, "-", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_MINUS, "-", startLine, startCol, 1
             -> tok
         }
 
@@ -573,17 +573,17 @@ obj Lexer {
                 self.advance
                 if self.cur == "=" {
                     self.advance
-                    let tok = Token.create TokenType.TOK_POW_EQ, "**=", startLine, startCol, 3
+                    tok = Token.create TokenType.TOK_POW_EQ, "**=", startLine, startCol, 3
                     -> tok
                 }
-                let tok = Token.create TokenType.TOK_POW, "**", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_POW, "**", startLine, startCol, 2
                 -> tok
             } els if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_STAR_EQ, "*=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_STAR_EQ, "*=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_ASTERISK, "*", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_ASTERISK, "*", startLine, startCol, 1
             -> tok
         }
 
@@ -591,10 +591,10 @@ obj Lexer {
             self.advance
             if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_SLASH_EQ, "/=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_SLASH_EQ, "/=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_SLASH, "/", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_SLASH, "/", startLine, startCol, 1
             -> tok
         }
 
@@ -602,10 +602,10 @@ obj Lexer {
             self.advance
             if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_PERCENT_EQ, "%=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_PERCENT_EQ, "%=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_PERCENT, "%", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_PERCENT, "%", startLine, startCol, 1
             -> tok
         }
 
@@ -613,10 +613,10 @@ obj Lexer {
             self.advance
             if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_NOT_EQ, "!=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_NOT_EQ, "!=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_NOT, "!", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_NOT, "!", startLine, startCol, 1
             -> tok
         }
 
@@ -624,14 +624,14 @@ obj Lexer {
             self.advance
             if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_LTE, "<=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_LTE, "<=", startLine, startCol, 2
                 -> tok
             } els if self.cur == "<" {
                 self.advance
-                let tok = Token.create TokenType.TOK_SHL, "<<", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_SHL, "<<", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_LT, "<", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_LT, "<", startLine, startCol, 1
             -> tok
         }
 
@@ -641,45 +641,45 @@ obj Lexer {
                 self.advance
                 if self.cur == ">" {
                     self.advance
-                    let tok = Token.create TokenType.TOK_USHR, ">>>", startLine, startCol, 3
+                    tok = Token.create TokenType.TOK_USHR, ">>>", startLine, startCol, 3
                     -> tok
                 }
-                let tok = Token.create TokenType.TOK_SHR, ">>", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_SHR, ">>", startLine, startCol, 2
                 -> tok
             } els if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_GTE, ">=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_GTE, ">=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_GT, ">", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_GT, ">", startLine, startCol, 1
             -> tok
         }
 
         if ch == "&" {
             // Check for &let keyword
-            let p1: str = self.peek
-            let p2: str = self.peekAhead 2
-            let p3: str = self.peekAhead 3
-            let p4: str = self.peekAhead 4
+            p1: str = self.peek
+            p2: str = self.peekAhead 2
+            p3: str = self.peekAhead 3
+            p4: str = self.peekAhead 4
             if p1 == "l" && p2 == "e" && p3 == "t" && !(IsIdentChar p4) {
                 self.advance // '&'
                 self.advance // 'l'
                 self.advance // 'e'
                 self.advance // 't'
-                let tok = Token.create TokenType.TOK_AMP_LET, "&let", startLine, startCol, 4
+                tok = Token.create TokenType.TOK_AMP_LET, "&let", startLine, startCol, 4
                 -> tok
             }
             self.advance
             if self.cur == "&" {
                 self.advance
-                let tok = Token.create TokenType.TOK_AND, "&&", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_AND, "&&", startLine, startCol, 2
                 -> tok
             } els if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_AMP_EQ, "&=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_AMP_EQ, "&=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_AMP, "&", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_AMP, "&", startLine, startCol, 1
             -> tok
         }
 
@@ -687,14 +687,14 @@ obj Lexer {
             self.advance
             if self.cur == "|" {
                 self.advance
-                let tok = Token.create TokenType.TOK_OR, "||", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_OR, "||", startLine, startCol, 2
                 -> tok
             } els if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_PIPE_EQ, "|=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_PIPE_EQ, "|=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_PIPE, "|", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_PIPE, "|", startLine, startCol, 1
             -> tok
         }
 
@@ -702,71 +702,71 @@ obj Lexer {
             self.advance
             if self.cur == "=" {
                 self.advance
-                let tok = Token.create TokenType.TOK_CARET_EQ, "^=", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_CARET_EQ, "^=", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_CARET, "^", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_CARET, "^", startLine, startCol, 1
             -> tok
         }
 
         if ch == "~" {
             self.advance
-            let tok = Token.create TokenType.TOK_TILDE, "~", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_TILDE, "~", startLine, startCol, 1
             -> tok
         }
 
         if ch == "(" {
             self.advance
-            let tok = Token.create TokenType.TOK_LPAREN, "(", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_LPAREN, "(", startLine, startCol, 1
             -> tok
         }
         if ch == ")" {
             self.advance
-            let tok = Token.create TokenType.TOK_RPAREN, ")", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_RPAREN, ")", startLine, startCol, 1
             -> tok
         }
         if ch == "{" {
             self.advance
-            let tok = Token.create TokenType.TOK_LBRACE, "{", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_LBRACE, "{", startLine, startCol, 1
             -> tok
         }
         if ch == "}" {
             self.advance
-            let tok = Token.create TokenType.TOK_RBRACE, "}", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_RBRACE, "}", startLine, startCol, 1
             -> tok
         }
         if ch == "[" {
             self.advance
-            let tok = Token.create TokenType.TOK_LBRACKET, "[", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_LBRACKET, "[", startLine, startCol, 1
             -> tok
         }
         if ch == "]" {
             self.advance
-            let tok = Token.create TokenType.TOK_RBRACKET, "]", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_RBRACKET, "]", startLine, startCol, 1
             -> tok
         }
 
         if ch == "." {
-            let p2: str = self.peekAhead 2
+            p2: str = self.peekAhead 2
             if self.peek == "." && p2 == "." {
                 self.advance // '.'
                 self.advance // '.'
                 self.advance // '.'
-                let tok = Token.create TokenType.TOK_ELLIPSIS, "...", startLine, startCol, 3
+                tok = Token.create TokenType.TOK_ELLIPSIS, "...", startLine, startCol, 3
                 -> tok
             }
             if IsDigit self.peek {
-                let tok = self.scanNumber
+                tok = self.scanNumber
                 -> tok
             }
             self.advance
-            let tok = Token.create TokenType.TOK_DOT, ".", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_DOT, ".", startLine, startCol, 1
             -> tok
         }
 
         if ch == "," {
             self.advance
-            let tok = Token.create TokenType.TOK_COMMA, ",", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_COMMA, ",", startLine, startCol, 1
             -> tok
         }
 
@@ -774,34 +774,34 @@ obj Lexer {
             self.advance
             if self.cur == ":" {
                 self.advance
-                let tok = Token.create TokenType.TOK_COLON_COLON, "::", startLine, startCol, 2
+                tok = Token.create TokenType.TOK_COLON_COLON, "::", startLine, startCol, 2
                 -> tok
             }
-            let tok = Token.create TokenType.TOK_COLON, ":", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_COLON, ":", startLine, startCol, 1
             -> tok
         }
 
         if ch == ";" {
             self.advance
-            let tok = Token.create TokenType.TOK_SEMICOLON, ";", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_SEMICOLON, ";", startLine, startCol, 1
             -> tok
         }
 
         if ch == "@" {
             self.advance
-            let tok = Token.create TokenType.TOK_AT, "@", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_AT, "@", startLine, startCol, 1
             -> tok
         }
 
         if ch == "#" {
             self.advance
-            let tok = Token.create TokenType.TOK_HASH, "#", startLine, startCol, 1
+            tok = Token.create TokenType.TOK_HASH, "#", startLine, startCol, 1
             -> tok
         }
 
         // Unrecognized character
-        let badChar: str = self.advance
-        let tok = Token.create TokenType.TOK_ILLEGAL, badChar, startLine, startCol, 1
+        badChar: str = self.advance
+        tok = Token.create TokenType.TOK_ILLEGAL, badChar, startLine, startCol, 1
         -> tok
     },
 
@@ -811,10 +811,10 @@ obj Lexer {
      * @returns {Token[]} Array of all scanned Tokens ending with TOK_EOF
      */
     tokenizeAll: :: Token[] => {
-        let tokens: Token[] = []
+        tokens: Token[] = []
         let done: bool = false
         wh !done {
-            let tok: Token = self.scanToken
+            tok = self.scanToken
             tokens.psh tok
             if tok.kind == TokenType.TOK_EOF {
                 done = true

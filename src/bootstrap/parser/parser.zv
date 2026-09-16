@@ -38,12 +38,12 @@ obj Parser {
      * @returns {Parser} Initialized Parser coordinator instance
      */
     create: tokens: Token[], file: str, source: str :: Parser => {
-        let l: num = tokens.ln
-        let errs: Diagnostic[] = []
+        totalTokens: num = tokens.ln
+        errs: Diagnostic[] = []
         -> {
             tokens,
             pos: 0,
-            len: l,
+            len: totalTokens,
             file,
             source,
             errors: errs
@@ -57,10 +57,10 @@ obj Parser {
      */
     cur: :: Token => {
         if self.pos >= self.len {
-            let eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
+            eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
             -> eofTok
         }
-        let tok: Token = self.tokens[self.pos]
+        tok: Token = self.tokens[self.pos]
         -> tok
     },
 
@@ -70,12 +70,12 @@ obj Parser {
      * @returns {Token} Next token (pos + 1) or EOF token
      */
     peek: :: Token => {
-        let nextPos: num = self.pos + 1
+        nextPos: num = self.pos + 1
         if nextPos >= self.len {
-            let eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
+            eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
             -> eofTok
         }
-        let tok: Token = self.tokens[nextPos]
+        tok: Token = self.tokens[nextPos]
         -> tok
     },
 
@@ -86,12 +86,12 @@ obj Parser {
      * @returns {Token} Token at pos + offset, or EOF token if out of bounds
      */
     peekAhead: offset: num :: Token => {
-        let targetPos: num = self.pos + offset
+        targetPos: num = self.pos + offset
         if targetPos >= self.len || targetPos < 0 {
-            let eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
+            eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
             -> eofTok
         }
-        let tok: Token = self.tokens[targetPos]
+        tok: Token = self.tokens[targetPos]
         -> tok
     },
 
@@ -102,11 +102,11 @@ obj Parser {
      */
     prev: :: Token => {
         if self.pos <= 0 {
-            let eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
+            eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
             -> eofTok
         }
-        let prevPos: num = self.pos - 1
-        let tok: Token = self.tokens[prevPos]
+        prevPos: num = self.pos - 1
+        tok: Token = self.tokens[prevPos]
         -> tok
     },
 
@@ -119,8 +119,8 @@ obj Parser {
         if self.pos >= self.len {
             -> true
         }
-        let c: Token = self.cur
-        -> c.kind == TokenType.TOK_EOF
+        curTok: Token = self.cur
+        -> curTok.kind == TokenType.TOK_EOF
     },
 
     /**
@@ -133,8 +133,8 @@ obj Parser {
         if self.isAtEnd {
             -> kind == TokenType.TOK_EOF
         }
-        let c: Token = self.cur
-        -> c.kind == kind
+        curTok: Token = self.cur
+        -> curTok.kind == kind
     },
 
     /**
@@ -144,8 +144,8 @@ obj Parser {
      * @returns {bool} True if matching, false otherwise
      */
     checkPeek: kind: TokenType :: bool => {
-        let p: Token = self.peek
-        -> p.kind == kind
+        peekTok: Token = self.peek
+        -> peekTok.kind == kind
     },
 
     /**
@@ -185,9 +185,9 @@ obj Parser {
         if self.check kind {
             -> self.advance
         }
-        let c: Token = self.cur
-        self.addError "E0102", errMsg, c.line, c.col, c.len, "expected token"
-        -> c
+        curTok: Token = self.cur
+        self.addError "E0102", errMsg, curTok.line, curTok.col, curTok.len, "expected token"
+        -> curTok
     },
 
     /**
@@ -202,7 +202,7 @@ obj Parser {
      * @returns {void}
      */
     addError: code: str, msg: str, line: num, col: num, len: num, help: str :: void => {
-        let diag = Diagnostic.create code, msg, self.file, line, col, len, help
+        diag = Diagnostic.create code, msg, self.file, line, col, len, help
         self.errors.psh diag
     },
 
@@ -216,20 +216,20 @@ obj Parser {
     synchronize: :: void => {
         self.advance
         wh !(self.isAtEnd) {
-            let p: Token = self.prev
-            if p.kind == TokenType.TOK_SEMICOLON {
+            prevTok: Token = self.prev
+            if prevTok.kind == TokenType.TOK_SEMICOLON {
                 ret
             }
-            let c: Token = self.cur
-            if c.kind == TokenType.TOK_LET || c.kind == TokenType.TOK_AMP_LET ||
-               c.kind == TokenType.TOK_FN || c.kind == TokenType.TOK_STRUCT ||
-               c.kind == TokenType.TOK_TYP || c.kind == TokenType.TOK_ENUM ||
-               c.kind == TokenType.TOK_IF || c.kind == TokenType.TOK_WH ||
-               c.kind == TokenType.TOK_FOR || c.kind == TokenType.TOK_MATCH ||
-               c.kind == TokenType.TOK_RET || c.kind == TokenType.TOK_PUB ||
-               c.kind == TokenType.TOK_EXTERN || c.kind == TokenType.TOK_IMP ||
-               c.kind == TokenType.TOK_PRNT || c.kind == TokenType.TOK_LOG ||
-               c.kind == TokenType.TOK_TRY || c.kind == TokenType.TOK_PANIC {
+            curTok: Token = self.cur
+            if curTok.kind == TokenType.TOK_LET || curTok.kind == TokenType.TOK_AMP_LET ||
+               curTok.kind == TokenType.TOK_FN || curTok.kind == TokenType.TOK_STRUCT ||
+               curTok.kind == TokenType.TOK_TYP || curTok.kind == TokenType.TOK_ENUM ||
+               curTok.kind == TokenType.TOK_IF || curTok.kind == TokenType.TOK_WH ||
+               curTok.kind == TokenType.TOK_FOR || curTok.kind == TokenType.TOK_MATCH ||
+               curTok.kind == TokenType.TOK_RET || curTok.kind == TokenType.TOK_PUB ||
+               curTok.kind == TokenType.TOK_EXTERN || curTok.kind == TokenType.TOK_IMP ||
+               curTok.kind == TokenType.TOK_PRNT || curTok.kind == TokenType.TOK_LOG ||
+               curTok.kind == TokenType.TOK_TRY || curTok.kind == TokenType.TOK_PANIC {
                 ret
             }
             self.advance
@@ -242,7 +242,7 @@ obj Parser {
      * @returns {bool} True if errors exist, false otherwise
      */
     hasErrors: :: bool => {
-        let count: num = self.errors.ln
+        count: num = self.errors.ln
         -> count > 0
     },
 
@@ -262,17 +262,17 @@ obj Parser {
      */
     formatErrors: :: str => {
         let res: str = ""
-        let count: num = self.errors.ln
+        count: num = self.errors.ln
         let i: num = 0
         wh i < count {
-            let diag: Diagnostic = self.errors[i]
-            let formatted: str = diag.format self.source
+            diag: Diagnostic = self.errors[i]
+            formatted: str = diag.format self.source
             if res == "" {
                 res = formatted
             } els {
                 res = res + "\n\n" + formatted
             }
-            i = i + 1
+            i++
         }
         -> res
     }

@@ -16,254 +16,292 @@ imp Parser frm parser/parser
 imp ParseDeclaration frm parser/decl
 imp ParseStatement frm parser/stmt
 imp ParseExpression frm parser/expr
+imp Checker, Symbol, Scope frm checker/checker
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
 
     // 1. Token Verification via Token.create and instance methods
-    let tok = Token.create TokenType.TOK_LET, "let", 1, 1, 3
-    let tokName: str = tok.toString
+    tok = Token.create TokenType.TOK_LET, "let", 1, 1, 3
+    tokName: str = tok.toString
     prnt `1. Token kind: ${tokName}`
     if tok.isKeyword {
         prnt "   Token keyword check: OK"
     }
 
     // 2. Type System Verification via TypeInfo factories and helpers
-    let tDbl: TypeKind = TypeKind.Double
-    let tI32: TypeKind = TypeKind.I32
-    let dblType = TypeInfo.createPrimitive tDbl, "double"
+    tDbl = TypeKind.Double
+    tI32 = TypeKind.I32
+    dblType = TypeInfo.createPrimitive tDbl, "double"
     prnt `2. Type kind: ${dblType.toString} (isNumeric: ${dblType.isNumeric})`
-    let compat: bool = AreTypesCompatible tDbl, tI32
+    compat: bool = AreTypesCompatible tDbl, tI32
     if compat {
         prnt "   Type compatibility: i32 -> double OK"
     }
-    let parsedKind = StrToTypeKind "i64"
-    let ptrType = TypeInfo.createPointer parsedKind, "i64"
+    parsedKind = StrToTypeKind "i64"
+    ptrType = TypeInfo.createPointer parsedKind, "i64"
     prnt `   Pointer type: ${ptrType.toString} (isPointer: ${ptrType.isPointer})`
-    let fnParams: str[] = ["num", "num"]
-    let fnType = TypeInfo.createFunc TypeKind.Double, "num", fnParams
+    fnParams: str[] = ["num", "num"]
+    fnType = TypeInfo.createFunc TypeKind.Double, "num", fnParams
     prnt `   Function type: ${fnType.toString}`
 
     // 3. AST Verification via ASTNode factories and methods
-    let numNode = ASTNode.createNum 42, 1, 5
-    let nodeName: str = numNode.toString
-    let nodeTyp: str = TypeKindToStr numNode.inferredType
+    numNode = ASTNode.createNum 42, 1, 5
+    nodeName: str = numNode.toString
+    nodeTyp: str = TypeKindToStr numNode.inferredType
     prnt `3. AST Node: ${nodeName} (inferred: ${nodeTyp}, val: ${numNode.numVal})`
 
-    let num10 = ASTNode.createNum 10, 1, 10
-    let binNode = ASTNode.createBinary "+", numNode, num10, 1, 8
+    num10 = ASTNode.createNum 10, 1, 10
+    binNode = ASTNode.createBinary "+", numNode, num10, 1, 8
     prnt `   AST Binary: ${binNode.toString} (op: '${binNode.op}', isExpr: ${binNode.isExpr})`
 
-    let varNode = ASTNode.createVarDecl "total", "num", false, binNode, 1, 1
+    varNode = ASTNode.createVarDecl "total", "num", false, binNode, 1, 1
     prnt `   AST VarDecl: ${varNode.toString} (name: '${varNode.name}', isDecl: ${varNode.isDecl})`
 
-    let condNode = ASTNode.createBool true, 2, 5
-    let thenBlock = ASTNode.createBlock [], 2, 12
-    let elseBlock = ASTNode.createNil 2, 20
-    let ifNode = ASTNode.createIf condNode, thenBlock, elseBlock, 2, 1
+    condNode = ASTNode.createBool true, 2, 5
+    thenBlock = ASTNode.createBlock [], 2, 12
+    elseBlock = ASTNode.createNil 2, 20
+    ifNode = ASTNode.createIf condNode, thenBlock, elseBlock, 2, 1
     prnt `   AST IfStmt: ${ifNode.toString} (isStmt: ${ifNode.isStmt})`
 
     // 4. Diagnostics Verification via Diagnostic.create and diag.format
-    let diag = Diagnostic.create "E0102", "Expected next token to be {, got IDENTIFIER instead", "example.zv", 2, 11, 1, "add '{' here"
-    let mockSource: str = "fn square x {\n    -> x * x\n}"
-    let formatted: str = diag.format mockSource
+    diag = Diagnostic.create "E0102", "Expected next token to be {, got IDENTIFIER instead", "example.zv", 2, 11, 1, "add '{' here"
+    mockSource: str = "fn square x {\n    -> x * x\n}"
+    formatted: str = diag.format mockSource
     prnt "4. Formatted Diagnostic:"
     prnt formatted
 
     // 5. Lexer Verification (Phase 2 Task 2.1)
     prnt "5. Lexer Verification:"
-    let sampleCode: str = "let x = 0xFF\n&let ref = x\n// comment\nprnt r\"raw\\nstr\"\nfr i = 0; i < 5; i++ {\n    -> `val: ${i}`\n}"
-    let lex = Lexer.create sampleCode
-    let scannedTokens: Token[] = lex.tokenizeAll
-    let count: num = scannedTokens.ln
+    sampleCode: str = "let x = 0xFF\n&let ref = x\n// comment\nprnt r\"raw\\nstr\"\nfr i = 0; i < 5; i++ {\n    -> `val: ${i}`\n}"
+    lex = Lexer.create sampleCode
+    scannedTokens: Token[] = lex.tokenizeAll
+    count: num = scannedTokens.ln
     prnt `   Tokenized ${count} tokens successfully`
     let i: num = 0
     wh i < count {
-        let t: Token = scannedTokens[i]
-        prnt `   Token ${i}: ${t.toString} ('${t.val}')`
-        i = i + 1
+        tokItem: Token = scannedTokens[i]
+        prnt `   Token ${i}: ${tokItem.toString} ('${tokItem.val}')`
+        i++
     }
 
     // 6. Parser Coordinator Verification (Phase 2 Task 2.2)
     prnt "6. Parser Coordinator Verification:"
-    let parser = Parser.create scannedTokens, "test.zv", sampleCode
-    let curTok: Token = parser.cur
+    parser = Parser.create scannedTokens, "test.zv", sampleCode
+    curTok: Token = parser.cur
     prnt `   Parser initial cur: ${curTok.toString} ('${curTok.val}')`
-    let peekTok: Token = parser.peek
+    peekTok: Token = parser.peek
     prnt `   Parser peek: ${peekTok.toString} ('${peekTok.val}')`
-    let peek2Tok: Token = parser.peekAhead 2
+    peek2Tok: Token = parser.peekAhead 2
     prnt `   Parser peekAhead(2): ${peek2Tok.toString} ('${peek2Tok.val}')`
-    let matchedLet: bool = parser.matchToken TokenType.TOK_LET
+    matchedLet: bool = parser.matchToken TokenType.TOK_LET
     prnt `   Parser matched 'let': ${matchedLet}`
-    let curAfterMatch: Token = parser.cur
+    curAfterMatch: Token = parser.cur
     prnt `   Parser cur after match: ${curAfterMatch.toString} ('${curAfterMatch.val}')`
-    let consumedIdent: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier"
+    consumedIdent: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier"
     prnt `   Parser consumed ident: '${consumedIdent.val}'`
-    let isEnd: bool = parser.isAtEnd
+    isEnd: bool = parser.isAtEnd
     prnt `   Parser isAtEnd: ${isEnd}`
 
     // 7. Declaration Parser Verification (Phase 2 Task 2.3)
     prnt "7. Declaration Parser Verification:"
-    let typeDeclCode: str = "type Point = { x: num, y: num }"
-    let lexType = Lexer.create typeDeclCode
-    let pType = Parser.create lexType.tokenizeAll, "type.zv", typeDeclCode
-    let astType: ASTNode = ParseDeclaration pType
+    typeDeclCode: str = "type Point = { x: num, y: num }"
+    lexType = Lexer.create typeDeclCode
+    pType = Parser.create lexType.tokenizeAll, "type.zv", typeDeclCode
+    astType: ASTNode = ParseDeclaration pType
     prnt `   Parsed TypeDecl: '${astType.name}', fields count: ${astType.fields.ln}`
 
-    let objDeclCode: str = "obj User { name: str, age: num }"
-    let lexObj = Lexer.create objDeclCode
-    let pObj = Parser.create lexObj.tokenizeAll, "obj.zv", objDeclCode
-    let astObj: ASTNode = ParseDeclaration pObj
+    objDeclCode: str = "obj User { name: str, age: num }"
+    lexObj = Lexer.create objDeclCode
+    pObj = Parser.create lexObj.tokenizeAll, "obj.zv", objDeclCode
+    astObj: ASTNode = ParseDeclaration pObj
     prnt `   Parsed ObjDecl: '${astObj.name}', fields count: ${astObj.fields.ln}`
 
-    let fnDeclCode: str = "pub fn add a: num, b: num :: num"
-    let lexFn = Lexer.create fnDeclCode
-    let pFn = Parser.create lexFn.tokenizeAll, "fn.zv", fnDeclCode
-    let astFn: ASTNode = ParseDeclaration pFn
+    fnDeclCode: str = "pub fn add a: num, b: num :: num"
+    lexFn = Lexer.create fnDeclCode
+    pFn = Parser.create lexFn.tokenizeAll, "fn.zv", fnDeclCode
+    astFn: ASTNode = ParseDeclaration pFn
     prnt `   Parsed FuncDecl: '${astFn.name}', params count: ${astFn.params.ln}, ret: '${astFn.typeAnnotation}', pub: ${astFn.isPub}`
 
-    let enumDeclCode: str = "enum Color { Red, Green, Blue = 10 }"
-    let lexEnum = Lexer.create enumDeclCode
-    let pEnum = Parser.create lexEnum.tokenizeAll, "enum.zv", enumDeclCode
-    let astEnum: ASTNode = ParseDeclaration pEnum
+    enumDeclCode: str = "enum Color { Red, Green, Blue = 10 }"
+    lexEnum = Lexer.create enumDeclCode
+    pEnum = Parser.create lexEnum.tokenizeAll, "enum.zv", enumDeclCode
+    astEnum: ASTNode = ParseDeclaration pEnum
     prnt `   Parsed EnumDecl: '${astEnum.name}', variants count: ${astEnum.fields.ln}`
 
-    let impDeclCode: str = "imp Token, TokenType frm ../tokens"
-    let lexImp = Lexer.create impDeclCode
-    let pImp = Parser.create lexImp.tokenizeAll, "imp.zv", impDeclCode
-    let astImp: ASTNode = ParseDeclaration pImp
+    impDeclCode: str = "imp Token, TokenType frm ../tokens"
+    lexImp = Lexer.create impDeclCode
+    pImp = Parser.create lexImp.tokenizeAll, "imp.zv", impDeclCode
+    astImp: ASTNode = ParseDeclaration pImp
     prnt `   Parsed ImportDecl: path: '${astImp.val}', symbols count: ${astImp.fields.ln}`
 
     // 8. Statement Parser Verification (Phase 2 Task 2.4)
     prnt "8. Statement Parser Verification:"
-    let varStmtCode: str = "let total: num = 100"
-    let lexVar = Lexer.create varStmtCode
-    let pVar = Parser.create lexVar.tokenizeAll, "var.zv", varStmtCode
-    let astVar: ASTNode = ParseStatement pVar
+    varStmtCode: str = "let total: num = 100"
+    lexVar = Lexer.create varStmtCode
+    pVar = Parser.create lexVar.tokenizeAll, "var.zv", varStmtCode
+    astVar: ASTNode = ParseStatement pVar
     prnt `   Parsed VarDecl: '${astVar.name}', type: '${astVar.typeAnnotation}', isBorrow: ${astVar.isBorrow}`
 
-    let borrowStmtCode: str = "&let ref = total"
-    let lexBorrow = Lexer.create borrowStmtCode
-    let pBorrow = Parser.create lexBorrow.tokenizeAll, "borrow.zv", borrowStmtCode
-    let astBorrow: ASTNode = ParseStatement pBorrow
+    borrowStmtCode: str = "&let ref = total"
+    lexBorrow = Lexer.create borrowStmtCode
+    pBorrow = Parser.create lexBorrow.tokenizeAll, "borrow.zv", borrowStmtCode
+    astBorrow: ASTNode = ParseStatement pBorrow
     prnt `   Parsed BorrowDecl: '${astBorrow.name}', isBorrow: ${astBorrow.isBorrow}`
 
-    let ifStmtCode: str = "if total > 50 { -> true } els { -> false }"
-    let lexIf = Lexer.create ifStmtCode
-    let pIf = Parser.create lexIf.tokenizeAll, "if.zv", ifStmtCode
-    let astIf: ASTNode = ParseStatement pIf
+    ifStmtCode: str = "if total > 50 { -> true } els { -> false }"
+    lexIf = Lexer.create ifStmtCode
+    pIf = Parser.create lexIf.tokenizeAll, "if.zv", ifStmtCode
+    astIf: ASTNode = ParseStatement pIf
     prnt `   Parsed IfStmt: children: ${astIf.children.ln}, kind: ${astIf.toString}`
 
-    let whStmtCode: str = "wh i < 10 { i++ }"
-    let lexWh = Lexer.create whStmtCode
-    let pWh = Parser.create lexWh.tokenizeAll, "wh.zv", whStmtCode
-    let astWh: ASTNode = ParseStatement pWh
+    whStmtCode: str = "wh i < 10 { i++ }"
+    lexWh = Lexer.create whStmtCode
+    pWh = Parser.create lexWh.tokenizeAll, "wh.zv", whStmtCode
+    astWh: ASTNode = ParseStatement pWh
     prnt `   Parsed WhileStmt: children: ${astWh.children.ln}, kind: ${astWh.toString}`
 
-    let frStmtCode: str = "fr item in items { -> item }"
-    let lexFr = Lexer.create frStmtCode
-    let pFr = Parser.create lexFr.tokenizeAll, "fr.zv", frStmtCode
-    let astFr: ASTNode = ParseStatement pFr
+    frStmtCode: str = "fr item in items { -> item }"
+    lexFr = Lexer.create frStmtCode
+    pFr = Parser.create lexFr.tokenizeAll, "fr.zv", frStmtCode
+    astFr: ASTNode = ParseStatement pFr
     prnt `   Parsed ForStmt: item: '${astFr.name}', kind: ${astFr.toString}`
 
-    let retStmtCode: str = "-> x + 1"
-    let lexRet = Lexer.create retStmtCode
-    let pRet = Parser.create lexRet.tokenizeAll, "ret.zv", retStmtCode
-    let astRet: ASTNode = ParseStatement pRet
+    retStmtCode: str = "-> x + 1"
+    lexRet = Lexer.create retStmtCode
+    pRet = Parser.create lexRet.tokenizeAll, "ret.zv", retStmtCode
+    astRet: ASTNode = ParseStatement pRet
     prnt `   Parsed RetStmt: children: ${astRet.children.ln}, kind: ${astRet.toString}`
 
-    let brkStmtCode: str = "brk"
-    let lexBrk = Lexer.create brkStmtCode
-    let pBrk = Parser.create lexBrk.tokenizeAll, "brk.zv", brkStmtCode
-    let astBrk: ASTNode = ParseStatement pBrk
+    brkStmtCode: str = "brk"
+    lexBrk = Lexer.create brkStmtCode
+    pBrk = Parser.create lexBrk.tokenizeAll, "brk.zv", brkStmtCode
+    astBrk: ASTNode = ParseStatement pBrk
     prnt `   Parsed BreakStmt: kind: ${astBrk.toString}`
 
-    let contStmtCode: str = "cont"
-    let lexCont = Lexer.create contStmtCode
-    let pCont = Parser.create lexCont.tokenizeAll, "cont.zv", contStmtCode
-    let astCont: ASTNode = ParseStatement pCont
+    contStmtCode: str = "cont"
+    lexCont = Lexer.create contStmtCode
+    pCont = Parser.create lexCont.tokenizeAll, "cont.zv", contStmtCode
+    astCont: ASTNode = ParseStatement pCont
     prnt `   Parsed ContinueStmt: kind: ${astCont.toString}`
 
-    let panicStmtCode: str = "panic \"fatal error\""
-    let lexPanic = Lexer.create panicStmtCode
-    let pPanic = Parser.create lexPanic.tokenizeAll, "panic.zv", panicStmtCode
-    let astPanic: ASTNode = ParseStatement pPanic
+    panicStmtCode: str = "panic \"fatal error\""
+    lexPanic = Lexer.create panicStmtCode
+    pPanic = Parser.create lexPanic.tokenizeAll, "panic.zv", panicStmtCode
+    astPanic: ASTNode = ParseStatement pPanic
     prnt `   Parsed PanicStmt: children: ${astPanic.children.ln}, kind: ${astPanic.toString}`
 
-    let tryStmtCode: str = "try { doTask } cth err { panic err }"
-    let lexTry = Lexer.create tryStmtCode
-    let pTry = Parser.create lexTry.tokenizeAll, "try.zv", tryStmtCode
-    let astTry: ASTNode = ParseStatement pTry
+    tryStmtCode: str = "try { doTask } cth err { panic err }"
+    lexTry = Lexer.create tryStmtCode
+    pTry = Parser.create lexTry.tokenizeAll, "try.zv", tryStmtCode
+    astTry: ASTNode = ParseStatement pTry
     prnt `   Parsed TryCthStmt: errVar: '${astTry.name}', children: ${astTry.children.ln}`
 
-    let swStmtCode: str = "sw status { 1 => { -> true }, _ => { -> false } }"
-    let lexSw = Lexer.create swStmtCode
-    let pSw = Parser.create lexSw.tokenizeAll, "sw.zv", swStmtCode
-    let astSw: ASTNode = ParseStatement pSw
+    swStmtCode: str = "sw status { 1 => { -> true }, _ => { -> false } }"
+    lexSw = Lexer.create swStmtCode
+    pSw = Parser.create lexSw.tokenizeAll, "sw.zv", swStmtCode
+    astSw: ASTNode = ParseStatement pSw
     prnt `   Parsed SwStmt: cases: ${astSw.cases.ln}, children: ${astSw.children.ln}`
 
     // 9. Expression Parser Verification (Phase 2 Task 2.5)
     prnt "9. Expression Parser Verification:"
-    let arithCode: str = "1 + 2 * 3"
-    let lexArith = Lexer.create arithCode
-    let pArith = Parser.create lexArith.tokenizeAll, "arith.zv", arithCode
-    let astArith: ASTNode = ParseExpression pArith, 1
+    arithCode: str = "1 + 2 * 3"
+    lexArith = Lexer.create arithCode
+    pArith = Parser.create lexArith.tokenizeAll, "arith.zv", arithCode
+    astArith: ASTNode = ParseExpression pArith, 1
     prnt `   Parsed Binary Precedence: op: '${astArith.op}', left: ${astArith.children[0].val}, right op: '${astArith.children[1].op}'`
 
-    let logicCode: str = "x > 0 && y <= 10"
-    let lexLogic = Lexer.create logicCode
-    let pLogic = Parser.create lexLogic.tokenizeAll, "logic.zv", logicCode
-    let astLogic: ASTNode = ParseExpression pLogic, 1
+    logicCode: str = "x > 0 && y <= 10"
+    lexLogic = Lexer.create logicCode
+    pLogic = Parser.create lexLogic.tokenizeAll, "logic.zv", logicCode
+    astLogic: ASTNode = ParseExpression pLogic, 1
     prnt `   Parsed Logic Precedence: op: '${astLogic.op}', left op: '${astLogic.children[0].op}', right op: '${astLogic.children[1].op}'`
 
-    let accessCode: str = "user.profile.name[0]"
-    let lexAccess = Lexer.create accessCode
-    let pAccess = Parser.create lexAccess.tokenizeAll, "access.zv", accessCode
-    let astAccess: ASTNode = ParseExpression pAccess, 1
+    accessCode: str = "user.profile.name[0]"
+    lexAccess = Lexer.create accessCode
+    pAccess = Parser.create lexAccess.tokenizeAll, "access.zv", accessCode
+    astAccess: ASTNode = ParseExpression pAccess, 1
     prnt `   Parsed Index & Member Access: kind: ${astAccess.toString}`
 
-    let safeCode: str = "config?.debug"
-    let lexSafe = Lexer.create safeCode
-    let pSafe = Parser.create lexSafe.tokenizeAll, "safe.zv", safeCode
-    let astSafe: ASTNode = ParseExpression pSafe, 1
+    safeCode: str = "config?.debug"
+    lexSafe = Lexer.create safeCode
+    pSafe = Parser.create lexSafe.tokenizeAll, "safe.zv", safeCode
+    astSafe: ASTNode = ParseExpression pSafe, 1
     prnt `   Parsed Safe Navigation: op: '${astSafe.op}', name: '${astSafe.name}'`
 
-    let callCode: str = "add(x, y * 2)"
-    let lexCall = Lexer.create callCode
-    let pCall = Parser.create lexCall.tokenizeAll, "call.zv", callCode
-    let astCall: ASTNode = ParseExpression pCall, 1
+    callCode: str = "add(x, y * 2)"
+    lexCall = Lexer.create callCode
+    pCall = Parser.create lexCall.tokenizeAll, "call.zv", callCode
+    astCall: ASTNode = ParseExpression pCall, 1
     prnt `   Parsed CallExpr: kind: ${astCall.toString}, children: ${astCall.children.ln}`
 
-    let incCode: str = "count++"
-    let lexInc = Lexer.create incCode
-    let pInc = Parser.create lexInc.tokenizeAll, "inc.zv", incCode
-    let astInc: ASTNode = ParseExpression pInc, 1
+    incCode: str = "count++"
+    lexInc = Lexer.create incCode
+    pInc = Parser.create lexInc.tokenizeAll, "inc.zv", incCode
+    astInc: ASTNode = ParseExpression pInc, 1
     prnt `   Parsed Postfix Unary: op: '${astInc.op}', isPrefix: ${astInc.isPrefix}`
 
-    let ternaryCode: str = "isReady ? 100 : 0"
-    let lexTernary = Lexer.create ternaryCode
-    let pTernary = Parser.create lexTernary.tokenizeAll, "ternary.zv", ternaryCode
-    let astTernary: ASTNode = ParseExpression pTernary, 1
+    ternaryCode: str = "isReady ? 100 : 0"
+    lexTernary = Lexer.create ternaryCode
+    pTernary = Parser.create lexTernary.tokenizeAll, "ternary.zv", ternaryCode
+    astTernary: ASTNode = ParseExpression pTernary, 1
     prnt `   Parsed Ternary: kind: ${astTernary.toString}, children: ${astTernary.children.ln}`
 
-    let castCode: str = "total as i64"
-    let lexCast = Lexer.create castCode
-    let pCast = Parser.create lexCast.tokenizeAll, "cast.zv", castCode
-    let astCast: ASTNode = ParseExpression pCast, 1
+    castCode: str = "total as i64"
+    lexCast = Lexer.create castCode
+    pCast = Parser.create lexCast.tokenizeAll, "cast.zv", castCode
+    astCast: ASTNode = ParseExpression pCast, 1
     prnt `   Parsed Type Cast: kind: ${astCast.toString}, typeAnnotation: '${astCast.typeAnnotation}'`
 
-    let arrLitCode: str = "[1, 2, 3 + 4]"
-    let lexArrLit = Lexer.create arrLitCode
-    let pArrLit = Parser.create lexArrLit.tokenizeAll, "arrlit.zv", arrLitCode
-    let astArrLit: ASTNode = ParseExpression pArrLit, 1
+    arrLitCode: str = "[1, 2, 3 + 4]"
+    lexArrLit = Lexer.create arrLitCode
+    pArrLit = Parser.create lexArrLit.tokenizeAll, "arrlit.zv", arrLitCode
+    astArrLit: ASTNode = ParseExpression pArrLit, 1
     prnt `   Parsed ArrExpr: kind: ${astArrLit.toString}, count: ${astArrLit.children.ln}`
 
-    let objLitCode: str = "{ name: \"alice\", count: 42 }"
-    let lexObjLit = Lexer.create objLitCode
-    let pObjLit = Parser.create lexObjLit.tokenizeAll, "objlit.zv", objLitCode
-    let astObjLit: ASTNode = ParseExpression pObjLit, 1
+    objLitCode: str = "{ name: \"alice\", count: 42 }"
+    lexObjLit = Lexer.create objLitCode
+    pObjLit = Parser.create lexObjLit.tokenizeAll, "objlit.zv", objLitCode
+    astObjLit: ASTNode = ParseExpression pObjLit, 1
     prnt `   Parsed ObjLitExpr: kind: ${astObjLit.toString}, fields: ${astObjLit.fields.ln}`
+
+    // 10. Scope Management & Symbol Table Verification (Phase 3 Task 3.1)
+    prnt "10. Scope Management & Symbol Table Verification:"
+    checker = Checker.create "main.zv", sampleCode
+    hasOs: bool = checker.hasSymbol "os"
+    hasPrnt: bool = checker.hasSymbol "prnt"
+    prnt `    Global builtins present: os=${hasOs}, prnt=${hasPrnt}`
+
+    symVar = Symbol.create "counter", TypeKind.Double, "num", false, true, 0, 1, 1
+    defRoot: bool = checker.defineSymbol symVar
+    prnt `    Defined root symbol 'counter': ${defRoot}`
+
+    checker.enterScope
+    nestedLvl: num = checker.currentLevel
+    prnt `    Entered nested scope level: ${nestedLvl}`
+    symNested = Symbol.create "temp", TypeKind.Str, "str", false, true, 1, 2, 5
+    defNested: bool = checker.defineSymbol symNested
+    prnt `    Defined nested symbol 'temp': ${defNested}`
+    hasTempLocal: bool = checker.hasSymbolInCurrentScope "temp"
+    hasCounterFromNested: bool = checker.hasSymbol "counter"
+    prnt `    Scope lookup: temp (local)=${hasTempLocal}, counter (enclosing)=${hasCounterFromNested}`
+
+    // Duplicate definition test in same scope
+    defDup: bool = checker.defineSymbol symNested
+    prnt `    Duplicate definition rejection: ${!defDup}, error logged: ${checker.hasErrors}`
+
+    checker.exitScope
+    prnt `    Exited scope, restored level: ${checker.currentLevel}`
+    hasTempAfterExit: bool = checker.hasSymbol "temp"
+    hasCounterAfterExit: bool = checker.hasSymbol "counter"
+    prnt `    Scope lookup after exit: temp=${hasTempAfterExit}, counter=${hasCounterAfterExit}`
+
+    customPoint = TypeInfo.createObject "Point"
+    checker.registerType customPoint
+    resolvedPoint: TypeInfo = checker.resolveType "Point"
+    prnt `    Custom type resolution: '${resolvedPoint.name}' (kind: ${resolvedPoint.kind})`
 }
+
 
 
 

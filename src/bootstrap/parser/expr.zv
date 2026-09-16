@@ -92,11 +92,11 @@ GetTokenPrecedence kind: TokenType :: num {
  * @returns {ASTNode} ArrExpr AST node
  */
 ParseArrayLiteral parser: Parser :: ASTNode {
-    let lbTok: Token = parser.consume TokenType.TOK_LBRACKET, "Expected '['"
-    let elems: ASTNode[] = []
+    lbTok: Token = parser.consume TokenType.TOK_LBRACKET, "Expected '['"
+    elems: ASTNode[] = []
 
     wh !(parser.check TokenType.TOK_RBRACKET) && !(parser.isAtEnd) {
-        let el: ASTNode = ParseExpression parser, 1
+        el: ASTNode = ParseExpression parser, 1
         elems.psh el
         if parser.matchToken TokenType.TOK_COMMA {
             // continue parsing next element
@@ -106,7 +106,7 @@ ParseArrayLiteral parser: Parser :: ASTNode {
     }
 
     parser.consume TokenType.TOK_RBRACKET, "Expected ']' after array literal"
-    let node: ASTNode = ASTNode.createBase NodeKind.ArrExpr, lbTok.line, lbTok.col
+    node = ASTNode.createBase NodeKind.ArrExpr, lbTok.line, lbTok.col
     node.children = elems
     -> node
 }
@@ -118,9 +118,9 @@ ParseArrayLiteral parser: Parser :: ASTNode {
  * @returns {ASTNode} ObjLitExpr AST node
  */
 ParseObjectLiteral parser: Parser :: ASTNode {
-    let lbTok: Token = parser.consume TokenType.TOK_LBRACE, "Expected '{'"
-    let entries: FieldEntry[] = []
-    let childExprs: ASTNode[] = []
+    lbTok: Token = parser.consume TokenType.TOK_LBRACE, "Expected '{'"
+    entries: FieldEntry[] = []
+    childExprs: ASTNode[] = []
 
     wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
         let isSpread: bool = false
@@ -128,11 +128,11 @@ ParseObjectLiteral parser: Parser :: ASTNode {
             isSpread = true
         }
 
-        let kTok: Token = parser.cur
+        kTok: Token = parser.cur
         parser.advance
-        let kName: str = kTok.val
+        kName: str = kTok.val
 
-        let valNode: ASTNode = ASTNode.createNil kTok.line, kTok.col
+        let valNode = ASTNode.createNil kTok.line, kTok.col
         if parser.matchToken TokenType.TOK_COLON {
             valNode = ParseExpression parser, 1
         } els {
@@ -140,7 +140,7 @@ ParseObjectLiteral parser: Parser :: ASTNode {
             valNode = ASTNode.createIdent kName, kTok.line, kTok.col
         }
 
-        let entry: FieldEntry = {
+        entry: FieldEntry = {
             name: kName,
             valStr: kName,
             isSpread: isSpread,
@@ -158,7 +158,7 @@ ParseObjectLiteral parser: Parser :: ASTNode {
     }
 
     parser.consume TokenType.TOK_RBRACE, "Expected '}' after object literal"
-    let node: ASTNode = ASTNode.createBase NodeKind.ObjLitExpr, lbTok.line, lbTok.col
+    node = ASTNode.createBase NodeKind.ObjLitExpr, lbTok.line, lbTok.col
     node.fields = entries
     node.children = childExprs
     -> node
@@ -171,49 +171,49 @@ ParseObjectLiteral parser: Parser :: ASTNode {
  * @returns {ASTNode} Primary AST node
  */
 ParsePrimary parser: Parser :: ASTNode {
-    let tok: Token = parser.cur
+    tok: Token = parser.cur
 
     // Numeric Literals
     if tok.kind == TokenType.TOK_NUMBER {
-        let numTok: Token = parser.advance
-        let n = ASTNode.createNum 0, numTok.line, numTok.col
-        n.val = numTok.val
-        -> n
+        numTok: Token = parser.advance
+        numNode = ASTNode.createNum 0, numTok.line, numTok.col
+        numNode.val = numTok.val
+        -> numNode
     }
 
     // BigInt Literals
     if tok.kind == TokenType.TOK_BIGINT {
-        let biTok: Token = parser.advance
+        biTok: Token = parser.advance
         -> ASTNode.createBigInt biTok.val, biTok.line, biTok.col
     }
 
     // String & Template Literals
     if tok.kind == TokenType.TOK_STRING || tok.kind == TokenType.TOK_TEMPLATE_STRING {
-        let strTok: Token = parser.advance
+        strTok: Token = parser.advance
         -> ASTNode.createStr strTok.val, strTok.line, strTok.col
     }
 
     // Booleans & Nil / Und
     if tok.kind == TokenType.TOK_TRUE {
-        let bTok: Token = parser.advance
+        bTok: Token = parser.advance
         -> ASTNode.createBool true, bTok.line, bTok.col
     }
     if tok.kind == TokenType.TOK_FALSE {
-        let bTok: Token = parser.advance
+        bTok: Token = parser.advance
         -> ASTNode.createBool false, bTok.line, bTok.col
     }
     if tok.kind == TokenType.TOK_NIL {
-        let nTok: Token = parser.advance
+        nTok: Token = parser.advance
         -> ASTNode.createNil nTok.line, nTok.col
     }
     if tok.kind == TokenType.TOK_UND {
-        let uTok: Token = parser.advance
+        uTok: Token = parser.advance
         -> ASTNode.createUnd uTok.line, uTok.col
     }
 
     // Identifiers & Variable References
     if tok.kind == TokenType.TOK_IDENT {
-        let idTok: Token = parser.advance
+        idTok: Token = parser.advance
         -> ASTNode.createIdent idTok.val, idTok.line, idTok.col
     }
 
@@ -230,13 +230,13 @@ ParsePrimary parser: Parser :: ASTNode {
     // Parenthesized Expressions: (expr)
     if tok.kind == TokenType.TOK_LPAREN {
         parser.advance // consume '('
-        let inner: ASTNode = ParseExpression parser, 1
+        inner: ASTNode = ParseExpression parser, 1
         parser.consume TokenType.TOK_RPAREN, "Expected ')' after grouped expression"
         -> inner
     }
 
     // Fallback error recovery
-    let errTok: Token = parser.advance
+    errTok: Token = parser.advance
     parser.addError "E0101", "Expected valid expression, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected expression"
     -> ASTNode.createIdent errTok.val, errTok.line, errTok.col
 }
@@ -248,26 +248,26 @@ ParsePrimary parser: Parser :: ASTNode {
  * @returns {ASTNode} Unary or primary expression AST node
  */
 ParsePrefixExpr parser: Parser :: ASTNode {
-    let tok: Token = parser.cur
+    tok: Token = parser.cur
 
     if tok.kind == TokenType.TOK_NOT || tok.kind == TokenType.TOK_MINUS || tok.kind == TokenType.TOK_TILDE {
-        let opTok: Token = parser.advance
-        let operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        opTok: Token = parser.advance
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
         -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
     }
 
     if tok.kind == TokenType.TOK_AMP || tok.kind == TokenType.TOK_AMP_LET {
-        let opTok: Token = parser.advance
-        let operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
-        let node = ASTNode.createBase NodeKind.BorrowExpr, opTok.line, opTok.col
+        opTok: Token = parser.advance
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        node = ASTNode.createBase NodeKind.BorrowExpr, opTok.line, opTok.col
         node.isBorrow = true
         node.children = [operand]
         -> node
     }
 
     if tok.kind == TokenType.TOK_AWAIT {
-        let awTok: Token = parser.advance
-        let target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        awTok: Token = parser.advance
+        target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
         -> ASTNode.createAwait target, awTok.line, awTok.col
     }
 
@@ -286,14 +286,14 @@ ParsePrefixExpr parser: Parser :: ASTNode {
  * @returns {ASTNode} Combined expression AST node
  */
 ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
-    let opTok: Token = parser.cur
+    opTok: Token = parser.cur
 
     // Postfix Call: callee(arg1, arg2)
     if opTok.kind == TokenType.TOK_LPAREN {
         parser.advance // consume '('
-        let args: ASTNode[] = []
+        args: ASTNode[] = []
         wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
-            let arg: ASTNode = ParseExpression parser, 1
+            arg: ASTNode = ParseExpression parser, 1
             args.psh arg
             if parser.matchToken TokenType.TOK_COMMA {
                 // continue parsing next argument
@@ -308,7 +308,7 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     // Postfix Index: target[index]
     if opTok.kind == TokenType.TOK_LBRACKET {
         parser.advance // consume '['
-        let idxExpr: ASTNode = ParseExpression parser, 1
+        idxExpr: ASTNode = ParseExpression parser, 1
         parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
         -> ASTNode.createIndex left, idxExpr, left.line, left.col
     }
@@ -316,8 +316,8 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     // Postfix Member Access: target.property
     if opTok.kind == TokenType.TOK_DOT {
         parser.advance // consume '.'
-        let propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
-        let propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
+        propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
+        propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
         propNode.name = propTok.val
         propNode.children = [left]
         -> propNode
@@ -326,8 +326,8 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     // Postfix Safe Navigation: target?.property
     if opTok.kind == TokenType.TOK_OPT_DOT {
         parser.advance // consume '?.'
-        let propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '?.'"
-        let propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
+        propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '?.'"
+        propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
         propNode.name = propTok.val
         propNode.op = "?."
         propNode.children = [left]
@@ -347,8 +347,8 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     // Type Cast: expr as Type
     if opTok.kind == TokenType.TOK_AS {
         parser.advance // consume 'as'
-        let typeTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type name after 'as'"
-        let castNode = ASTNode.createBase NodeKind.CastExpr, opTok.line, opTok.col
+        typeTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type name after 'as'"
+        castNode = ASTNode.createBase NodeKind.CastExpr, opTok.line, opTok.col
         castNode.typeAnnotation = typeTok.val
         castNode.children = [left]
         -> castNode
@@ -357,9 +357,9 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     // Ternary Conditional: cond ? thenVal : elseVal
     if opTok.kind == TokenType.TOK_QUESTION {
         parser.advance // consume '?'
-        let thenExpr: ASTNode = ParseExpression parser, 1
+        thenExpr: ASTNode = ParseExpression parser, 1
         parser.consume TokenType.TOK_COLON, "Expected ':' in ternary conditional"
-        let elseExpr: ASTNode = ParseExpression parser, 3 // PREC_TERNARY
+        elseExpr: ASTNode = ParseExpression parser, 3 // PREC_TERNARY
         -> ASTNode.createTernary left, thenExpr, elseExpr, opTok.line, opTok.col
     }
 
@@ -372,7 +372,7 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
         nextMinPrec = prec - 1
     }
 
-    let right: ASTNode = ParseExpression parser, nextMinPrec
+    right: ASTNode = ParseExpression parser, nextMinPrec
     -> ASTNode.createBinary opTok.val, left, right, opTok.line, opTok.col
 }
 
@@ -389,7 +389,7 @@ ParseExpression parser: Parser, minPrec: num :: ASTNode {
     let left: ASTNode = ParsePrefixExpr parser
 
     wh !(parser.isAtEnd) {
-        let curPrec: num = GetTokenPrecedence parser.cur.kind
+        curPrec: num = GetTokenPrecedence parser.cur.kind
         if curPrec <= minPrec {
             brk
         }

@@ -143,10 +143,10 @@ obj ASTNode {
      * @returns {ASTNode} Number literal AST node
      */
     createNum: val: num, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.NumExpr, line, col
-        n.numVal = val
-        n.inferredType = TypeKind.Double
-        -> n
+        node = ASTNode.createBase NodeKind.NumExpr, line, col
+        node.numVal = val
+        node.inferredType = TypeKind.Double
+        -> node
     },
 
     /**
@@ -158,10 +158,10 @@ obj ASTNode {
      * @returns {ASTNode} String literal AST node
      */
     createStr: val: str, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.StrExpr, line, col
-        n.val = val
-        n.inferredType = TypeKind.Str
-        -> n
+        node = ASTNode.createBase NodeKind.StrExpr, line, col
+        node.val = val
+        node.inferredType = TypeKind.Str
+        -> node
     },
 
     /**
@@ -173,10 +173,10 @@ obj ASTNode {
      * @returns {ASTNode} Boolean literal AST node
      */
     createBool: val: bool, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.BoolExpr, line, col
-        n.boolVal = val
-        n.inferredType = TypeKind.Bool
-        -> n
+        node = ASTNode.createBase NodeKind.BoolExpr, line, col
+        node.boolVal = val
+        node.inferredType = TypeKind.Bool
+        -> node
     },
 
     /**
@@ -187,9 +187,9 @@ obj ASTNode {
      * @returns {ASTNode} Nil literal AST node
      */
     createNil: line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.NilExpr, line, col
-        n.inferredType = TypeKind.Nil
-        -> n
+        node = ASTNode.createBase NodeKind.NilExpr, line, col
+        node.inferredType = TypeKind.Nil
+        -> node
     },
 
     /**
@@ -200,9 +200,9 @@ obj ASTNode {
      * @returns {ASTNode} Undefined literal AST node
      */
     createUnd: line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.UndExpr, line, col
-        n.inferredType = TypeKind.Und
-        -> n
+        node = ASTNode.createBase NodeKind.UndExpr, line, col
+        node.inferredType = TypeKind.Und
+        -> node
     },
 
     /**
@@ -214,10 +214,10 @@ obj ASTNode {
      * @returns {ASTNode} BigInt expression AST node
      */
     createBigInt: digits: str, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.BigIntExpr, line, col
-        n.val = digits
-        n.inferredType = TypeKind.I64
-        -> n
+        node = ASTNode.createBase NodeKind.BigIntExpr, line, col
+        node.val = digits
+        node.inferredType = TypeKind.I64
+        -> node
     },
 
     /**
@@ -229,9 +229,9 @@ obj ASTNode {
      * @returns {ASTNode} Identifier expression AST node
      */
     createIdent: name: str, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.IdentExpr, line, col
-        n.name = name
-        -> n
+        node = ASTNode.createBase NodeKind.IdentExpr, line, col
+        node.name = name
+        -> node
     },
 
     /**
@@ -245,10 +245,10 @@ obj ASTNode {
      * @returns {ASTNode} Binary expression AST node
      */
     createBinary: op: str, leftNode: ASTNode, rightNode: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.BinaryExpr, line, col
-        n.op = op
-        n.children = [leftNode, rightNode]
-        -> n
+        node = ASTNode.createBase NodeKind.BinaryExpr, line, col
+        node.op = op
+        node.children = [leftNode, rightNode]
+        -> node
     },
 
     /**
@@ -262,11 +262,11 @@ obj ASTNode {
      * @returns {ASTNode} Unary expression AST node
      */
     createUnary: op: str, operand: ASTNode, prefix: bool, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.UnaryExpr, line, col
-        n.op = op
-        n.isPrefix = prefix
-        n.children = [operand]
-        -> n
+        node = ASTNode.createBase NodeKind.UnaryExpr, line, col
+        node.op = op
+        node.isPrefix = prefix
+        node.children = [operand]
+        -> node
     },
 
     /**
@@ -279,12 +279,12 @@ obj ASTNode {
      * @returns {ASTNode} Call expression AST node
      */
     createCall: callee: ASTNode, args: ASTNode[], line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.CallExpr, line, col
-        n.children = [callee]
-        fr a in args {
-            n.children.psh a
+        node = ASTNode.createBase NodeKind.CallExpr, line, col
+        node.children = [callee]
+        fr arg in args {
+            node.children.psh arg
         }
-        -> n
+        -> node
     },
 
     /**
@@ -298,13 +298,13 @@ obj ASTNode {
      * @returns {ASTNode} Method call expression AST node
      */
     createMethodCall: target: ASTNode, methodName: str, args: ASTNode[], line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.MethodCallExpr, line, col
-        n.name = methodName
-        n.children = [target]
-        fr a in args {
-            n.children.psh a
+        node = ASTNode.createBase NodeKind.MethodCallExpr, line, col
+        node.name = methodName
+        node.children = [target]
+        fr arg in args {
+            node.children.psh arg
         }
-        -> n
+        -> node
     },
 
     /**
@@ -317,9 +317,9 @@ obj ASTNode {
      * @returns {ASTNode} Index expression AST node
      */
     createIndex: target: ASTNode, index: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.IndexExpr, line, col
-        n.children = [target, index]
-        -> n
+        node = ASTNode.createBase NodeKind.IndexExpr, line, col
+        node.children = [target, index]
+        -> node
     },
 
     /**
@@ -332,10 +332,10 @@ obj ASTNode {
      * @returns {ASTNode} Property expression AST node
      */
     createProp: target: ASTNode, propName: str, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.PropExpr, line, col
-        n.name = propName
-        n.children = [target]
-        -> n
+        node = ASTNode.createBase NodeKind.PropExpr, line, col
+        node.name = propName
+        node.children = [target]
+        -> node
     },
 
     /**
@@ -347,10 +347,10 @@ obj ASTNode {
      * @returns {ASTNode} Array literal expression AST node
      */
     createArr: elements: ASTNode[], line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.ArrExpr, line, col
-        n.inferredType = TypeKind.Arr
-        n.children = elements
-        -> n
+        node = ASTNode.createBase NodeKind.ArrExpr, line, col
+        node.inferredType = TypeKind.Arr
+        node.children = elements
+        -> node
     },
 
     /**
@@ -362,10 +362,10 @@ obj ASTNode {
      * @returns {ASTNode} Object literal expression AST node
      */
     createObjLit: fields: FieldEntry[], line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.ObjLitExpr, line, col
-        n.inferredType = TypeKind.Obj
-        n.fields = fields
-        -> n
+        node = ASTNode.createBase NodeKind.ObjLitExpr, line, col
+        node.inferredType = TypeKind.Obj
+        node.fields = fields
+        -> node
     },
 
     /**
@@ -378,10 +378,10 @@ obj ASTNode {
      * @returns {ASTNode} Cast expression AST node
      */
     createCast: target: ASTNode, targetType: str, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.CastExpr, line, col
-        n.typeAnnotation = targetType
-        n.children = [target]
-        -> n
+        node = ASTNode.createBase NodeKind.CastExpr, line, col
+        node.typeAnnotation = targetType
+        node.children = [target]
+        -> node
     },
 
     /**
@@ -393,11 +393,11 @@ obj ASTNode {
      * @returns {ASTNode} Borrow expression AST node
      */
     createBorrow: target: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.BorrowExpr, line, col
-        n.isBorrow = true
-        n.inferredType = TypeKind.Ptr
-        n.children = [target]
-        -> n
+        node = ASTNode.createBase NodeKind.BorrowExpr, line, col
+        node.isBorrow = true
+        node.inferredType = TypeKind.Ptr
+        node.children = [target]
+        -> node
     },
 
     /**
@@ -411,9 +411,9 @@ obj ASTNode {
      * @returns {ASTNode} Ternary expression AST node
      */
     createTernary: cond: ASTNode, thenExpr: ASTNode, elseExpr: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.TernaryExpr, line, col
-        n.children = [cond, thenExpr, elseExpr]
-        -> n
+        node = ASTNode.createBase NodeKind.TernaryExpr, line, col
+        node.children = [cond, thenExpr, elseExpr]
+        -> node
     },
 
     /**
@@ -425,9 +425,9 @@ obj ASTNode {
      * @returns {ASTNode} Await expression AST node
      */
     createAwait: target: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.AwaitExpr, line, col
-        n.children = [target]
-        -> n
+        node = ASTNode.createBase NodeKind.AwaitExpr, line, col
+        node.children = [target]
+        -> node
     },
 
     /**
@@ -439,9 +439,9 @@ obj ASTNode {
      * @returns {ASTNode} Block statement AST node
      */
     createBlock: stmts: ASTNode[], line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.BlockStmt, line, col
-        n.children = stmts
-        -> n
+        node = ASTNode.createBase NodeKind.BlockStmt, line, col
+        node.children = stmts
+        -> node
     },
 
     /**
@@ -453,9 +453,9 @@ obj ASTNode {
      * @returns {ASTNode} Expression statement AST node
      */
     createExprStmt: expr: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.ExprStmt, line, col
-        n.children = [expr]
-        -> n
+        node = ASTNode.createBase NodeKind.ExprStmt, line, col
+        node.children = [expr]
+        -> node
     },
 
     /**
@@ -469,9 +469,9 @@ obj ASTNode {
      * @returns {ASTNode} If statement AST node
      */
     createIf: cond: ASTNode, thenBlock: ASTNode, elseBlock: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.IfStmt, line, col
-        n.children = [cond, thenBlock, elseBlock]
-        -> n
+        node = ASTNode.createBase NodeKind.IfStmt, line, col
+        node.children = [cond, thenBlock, elseBlock]
+        -> node
     },
 
     /**
@@ -484,9 +484,9 @@ obj ASTNode {
      * @returns {ASTNode} While loop statement AST node
      */
     createWh: cond: ASTNode, body: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.WhStmt, line, col
-        n.children = [cond, body]
-        -> n
+        node = ASTNode.createBase NodeKind.WhStmt, line, col
+        node.children = [cond, body]
+        -> node
     },
 
     /**
@@ -498,9 +498,9 @@ obj ASTNode {
      * @returns {ASTNode} Return statement AST node
      */
     createRet: expr: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.RetStmt, line, col
-        n.children = [expr]
-        -> n
+        node = ASTNode.createBase NodeKind.RetStmt, line, col
+        node.children = [expr]
+        -> node
     },
 
     /**
@@ -534,9 +534,9 @@ obj ASTNode {
      * @returns {ASTNode} Panic statement AST node
      */
     createPanic: msgExpr: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.PanicStmt, line, col
-        n.children = [msgExpr]
-        -> n
+        node = ASTNode.createBase NodeKind.PanicStmt, line, col
+        node.children = [msgExpr]
+        -> node
     },
 
     /**
@@ -551,12 +551,12 @@ obj ASTNode {
      * @returns {ASTNode} Variable declaration AST node
      */
     createVarDecl: name: str, typeAnnotation: str, isBorrow: bool, init: ASTNode, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.VarDecl, line, col
-        n.name = name
-        n.typeAnnotation = typeAnnotation
-        n.isBorrow = isBorrow
-        n.children = [init]
-        -> n
+        node = ASTNode.createBase NodeKind.VarDecl, line, col
+        node.name = name
+        node.typeAnnotation = typeAnnotation
+        node.isBorrow = isBorrow
+        node.children = [init]
+        -> node
     },
 
     /**
@@ -571,12 +571,12 @@ obj ASTNode {
      * @returns {ASTNode} Function declaration AST node
      */
     createFuncDecl: name: str, returnType: str, isAsync: bool, isPub: bool, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.FuncDecl, line, col
-        n.name = name
-        n.typeAnnotation = returnType
-        n.isAsync = isAsync
-        n.isPub = isPub
-        -> n
+        node = ASTNode.createBase NodeKind.FuncDecl, line, col
+        node.name = name
+        node.typeAnnotation = returnType
+        node.isAsync = isAsync
+        node.isPub = isPub
+        -> node
     },
 
     /**
@@ -589,10 +589,10 @@ obj ASTNode {
      * @returns {ASTNode} Object declaration AST node
      */
     createObjDecl: name: str, isPub: bool, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.ObjDecl, line, col
-        n.name = name
-        n.isPub = isPub
-        -> n
+        node = ASTNode.createBase NodeKind.ObjDecl, line, col
+        node.name = name
+        node.isPub = isPub
+        -> node
     },
 
     /**
@@ -605,10 +605,10 @@ obj ASTNode {
      * @returns {ASTNode} Type declaration AST node
      */
     createTypeDecl: name: str, isPub: bool, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.TypeDecl, line, col
-        n.name = name
-        n.isPub = isPub
-        -> n
+        node = ASTNode.createBase NodeKind.TypeDecl, line, col
+        node.name = name
+        node.isPub = isPub
+        -> node
     },
 
     /**
@@ -621,10 +621,10 @@ obj ASTNode {
      * @returns {ASTNode} Enum declaration AST node
      */
     createEnumDecl: name: str, isPub: bool, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.EnumDecl, line, col
-        n.name = name
-        n.isPub = isPub
-        -> n
+        node = ASTNode.createBase NodeKind.EnumDecl, line, col
+        node.name = name
+        node.isPub = isPub
+        -> node
     },
 
     /**
@@ -636,9 +636,9 @@ obj ASTNode {
      * @returns {ASTNode} Import declaration AST node
      */
     createImportDecl: modulePath: str, line: num, col: num :: ASTNode => {
-        let n = ASTNode.createBase NodeKind.ImportDecl, line, col
-        n.val = modulePath
-        -> n
+        node = ASTNode.createBase NodeKind.ImportDecl, line, col
+        node.val = modulePath
+        -> node
     },
 
     /**
