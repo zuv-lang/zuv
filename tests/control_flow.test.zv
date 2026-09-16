@@ -19,7 +19,7 @@ wh count < 5 {
 }
 
 lg "Testing fr loop:"
-fr i = 0; i < 5; i = i + 1 {
+fr i = 0; i < 5; i++ {
     if i == 1 {
         cont
     }

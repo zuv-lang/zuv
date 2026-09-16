@@ -57,9 +57,9 @@ ExtractSourceLine sourceText: str, targetLine: num :: str {
                 found = sourceText.slc startIdx, i
                 i = totalLen
             }
-            curLine++
+            curLine ++
             startIdx = i
-            startIdx++
+            startIdx ++
         }
     }
     if curLine == targetLine {
