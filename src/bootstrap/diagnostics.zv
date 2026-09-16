@@ -19,13 +19,13 @@ obj Diagnostic {
 
     create: code: str, message: str, file: str, line: num, col: num, len: num, help: str :: Diagnostic => {
         -> {
-            code: code,
-            message: message,
-            file: file,
-            line: line,
-            col: col,
-            len: len,
-            help: help
+            code,
+            message,
+            file,
+            line,
+            col,
+            len,
+            help
         }
     },
 

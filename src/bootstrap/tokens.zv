@@ -146,11 +146,11 @@ obj Token {
 
     create: kind: TokenType, val: str, line: num, col: num, len: num :: Token => {
         -> {
-            kind: kind,
-            val: val,
-            line: line,
-            col: col,
-            len: len
+            kind,
+            val,
+            line,
+            col,
+            len
         }
     },
 

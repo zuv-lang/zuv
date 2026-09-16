@@ -38,8 +38,8 @@ obj TypeInfo {
 
     createPrimitive: kind: TypeKind, name: str :: TypeInfo => {
         -> {
-            kind: kind,
-            name: name,
+            kind,
+            name,
             elemType: TypeKind.Unknown,
             elemTypeName: "",
             fields: [],
@@ -63,7 +63,7 @@ obj TypeInfo {
     createObject: name: str :: TypeInfo => {
         -> {
             kind: TypeKind.Obj,
-            name: name,
+            name,
             elemType: TypeKind.Unknown,
             elemTypeName: "",
             fields: [],

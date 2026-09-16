@@ -104,14 +104,14 @@ obj ASTNode {
 
     createBase: kind: NodeKind, line: num, col: num :: ASTNode => {
         -> {
-            kind: kind,
+            kind,
             inferredType: TypeKind.Unknown,
             val: "",
             name: "",
             typeAnnotation: "",
             op: "",
-            line: line,
-            col: col,
+            line,
+            col,
             len: 1,
             isAsync: false,
             isPub: false,
