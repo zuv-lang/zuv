@@ -12,6 +12,7 @@ imp ASTNode, NodeKind frm ast
 imp Diagnostic frm diagnostics
 
 imp Lexer frm lexer
+imp Parser frm parser/parser
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -79,6 +80,24 @@ main {
         prnt `   Token ${i}: ${t.toString} ('${t.val}')`
         i = i + 1
     }
+
+    // 6. Parser Coordinator Verification (Phase 2 Task 2.2)
+    prnt "6. Parser Coordinator Verification:"
+    let parser = Parser.create scannedTokens, "test.zv", sampleCode
+    let curTok: Token = parser.cur
+    prnt `   Parser initial cur: ${curTok.toString} ('${curTok.val}')`
+    let peekTok: Token = parser.peek
+    prnt `   Parser peek: ${peekTok.toString} ('${peekTok.val}')`
+    let peek2Tok: Token = parser.peekAhead 2
+    prnt `   Parser peekAhead(2): ${peek2Tok.toString} ('${peek2Tok.val}')`
+    let matchedLet: bool = parser.matchToken TokenType.TOK_LET
+    prnt `   Parser matched 'let': ${matchedLet}`
+    let curAfterMatch: Token = parser.cur
+    prnt `   Parser cur after match: ${curAfterMatch.toString} ('${curAfterMatch.val}')`
+    let consumedIdent: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier"
+    prnt `   Parser consumed ident: '${consumedIdent.val}'`
+    let isEnd: bool = parser.isAtEnd
+    prnt `   Parser isAtEnd: ${isEnd}`
 }
 
 

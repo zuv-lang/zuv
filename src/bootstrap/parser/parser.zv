@@ -10,10 +10,10 @@
  */
 
 imp str, arr
-imp Token, TokenType frm "../tokens"
-imp Diagnostic frm "../diagnostics"
-imp ASTNode, NodeKind, ProgramDeclAST frm "../ast"
-imp TypeInfo, TypeKind frm "../types"
+imp Token, TokenType frm ../tokens
+imp Diagnostic frm ../diagnostics
+imp ASTNode, NodeKind, ProgramDeclAST frm ../ast
+imp TypeInfo, TypeKind frm ../types
 
 /**
  * Stateful recursive descent parser coordinator.
@@ -22,24 +22,24 @@ imp TypeInfo, TypeKind frm "../types"
  * and primitive lookahead/navigation operations.
  */
 obj Parser {
-    tokens: arr,
+    tokens: Token[],
     pos: num,
     len: num,
     file: str,
     source: str,
-    errors: arr,
+    errors: Diagnostic[],
 
     /**
      * Creates and initializes a new Parser instance for the provided tokens.
      *
-     * @param {arr} tokens - Array of scanned Token objects
+     * @param {Token[]} tokens - Array of scanned Token objects
      * @param {str} file - Source file path for diagnostic reporting
      * @param {str} source - Full original source code text
      * @returns {Parser} Initialized Parser coordinator instance
      */
-    create: tokens: arr, file: str, source: str :: Parser => {
+    create: tokens: Token[], file: str, source: str :: Parser => {
         let l: num = tokens.ln
-        let errs = []
+        let errs: Diagnostic[] = []
         -> {
             tokens,
             pos: 0,
@@ -218,19 +218,19 @@ obj Parser {
         wh !(self.isAtEnd) {
             let p: Token = self.prev
             if p.kind == TokenType.TOK_SEMICOLON {
-                -> void
+                ret
             }
             let c: Token = self.cur
             if c.kind == TokenType.TOK_LET || c.kind == TokenType.TOK_AMP_LET ||
                c.kind == TokenType.TOK_FN || c.kind == TokenType.TOK_STRUCT ||
-               c.kind == TokenType.TOK_TYPE || c.kind == TokenType.TOK_ENUM ||
+               c.kind == TokenType.TOK_TYP || c.kind == TokenType.TOK_ENUM ||
                c.kind == TokenType.TOK_IF || c.kind == TokenType.TOK_WH ||
                c.kind == TokenType.TOK_FOR || c.kind == TokenType.TOK_MATCH ||
                c.kind == TokenType.TOK_RET || c.kind == TokenType.TOK_PUB ||
                c.kind == TokenType.TOK_EXTERN || c.kind == TokenType.TOK_IMP ||
                c.kind == TokenType.TOK_PRNT || c.kind == TokenType.TOK_LOG ||
                c.kind == TokenType.TOK_TRY || c.kind == TokenType.TOK_PANIC {
-                -> void
+                ret
             }
             self.advance
         }
@@ -249,9 +249,9 @@ obj Parser {
     /**
      * Returns the array of collected Diagnostic records.
      *
-     * @returns {arr} Array of Diagnostic instances
+     * @returns {Diagnostic[]} Array of Diagnostic instances
      */
-    getErrors: :: arr => {
+    getErrors: :: Diagnostic[] => {
         -> self.errors
     },
 
