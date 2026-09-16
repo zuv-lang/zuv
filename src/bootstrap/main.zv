@@ -11,8 +11,10 @@ imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm typ
 imp ASTNode, NodeKind frm ast
 imp Diagnostic frm diagnostics
 
-main :: void {
-    prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 Foundations) ==="
+imp Lexer frm lexer
+
+main {
+    prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
 
     // 1. Token Verification via Token.create and instance methods
     let tok = Token.create TokenType.TOK_LET, "let", 1, 1, 3
@@ -63,6 +65,20 @@ main :: void {
     let formatted: str = diag.format mockSource
     prnt "4. Formatted Diagnostic:"
     prnt formatted
+
+    // 5. Lexer Verification (Phase 2 Task 2.1)
+    prnt "5. Lexer Verification:"
+    let sampleCode: str = "let x = 0xFF\n&let ref = x\n// comment\nprnt r\"raw\\nstr\"\nfr i = 0; i < 5; i++ {\n    -> `val: ${i}`\n}"
+    let lex = Lexer.create sampleCode
+    let scannedTokens: Token[] = lex.tokenizeAll
+    let count: num = scannedTokens.ln
+    prnt `   Tokenized ${count} tokens successfully`
+    let i: num = 0
+    wh i < count {
+        let t: Token = scannedTokens[i]
+        prnt `   Token ${i}: ${t.toString} ('${t.val}')`
+        i = i + 1
+    }
 }
 
 

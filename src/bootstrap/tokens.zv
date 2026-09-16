@@ -499,6 +499,7 @@ LookupKeyword text: str :: TokenType => sw text {
     "wrk"      => TokenType.TOK_WRK
     "worker"   => TokenType.TOK_WRK
     "typ"      => TokenType.TOK_TYP
+    "type"     => TokenType.TOK_TYP
     "sizeof"   => TokenType.TOK_SIZEOF
     "sz"       => TokenType.TOK_SZ
     "sym"      => TokenType.TOK_SYM

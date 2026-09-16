@@ -1,11 +1,279 @@
 /*
  * =============================================================================
- * Zuv Bootstrap Compiler — Parser State & Top-Level Coordinator
+ * Zuv Bootstrap Compiler — Parser State & Core Coordinator
  * Path: sub_projects/zuv/src/bootstrap/parser/parser.zv
  * =============================================================================
+ *
+ * Provides the foundational `obj Parser` state machine managing the token
+ * stream, cursor navigation, error diagnostics accumulation, and statement
+ * boundary synchronization.
  */
 
 imp str, arr
+imp Token, TokenType frm "../tokens"
+imp Diagnostic frm "../diagnostics"
+imp ASTNode, NodeKind, ProgramDeclAST frm "../ast"
+imp TypeInfo, TypeKind frm "../types"
 
-// Parser coordinator will be implemented in Phase 2
+/**
+ * Stateful recursive descent parser coordinator.
+ *
+ * Maintains token stream cursor, error collection, source file metadata,
+ * and primitive lookahead/navigation operations.
+ */
+obj Parser {
+    tokens: arr,
+    pos: num,
+    len: num,
+    file: str,
+    source: str,
+    errors: arr,
 
+    /**
+     * Creates and initializes a new Parser instance for the provided tokens.
+     *
+     * @param {arr} tokens - Array of scanned Token objects
+     * @param {str} file - Source file path for diagnostic reporting
+     * @param {str} source - Full original source code text
+     * @returns {Parser} Initialized Parser coordinator instance
+     */
+    create: tokens: arr, file: str, source: str :: Parser => {
+        let l: num = tokens.ln
+        let errs = []
+        -> {
+            tokens,
+            pos: 0,
+            len: l,
+            file,
+            source,
+            errors: errs
+        }
+    },
+
+    /**
+     * Returns the token at the current cursor position, or EOF token if past end.
+     *
+     * @returns {Token} Current token
+     */
+    cur: :: Token => {
+        if self.pos >= self.len {
+            let eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
+            -> eofTok
+        }
+        let tok: Token = self.tokens[self.pos]
+        -> tok
+    },
+
+    /**
+     * Peeks at the token immediately after the current cursor without advancing.
+     *
+     * @returns {Token} Next token (pos + 1) or EOF token
+     */
+    peek: :: Token => {
+        let nextPos: num = self.pos + 1
+        if nextPos >= self.len {
+            let eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
+            -> eofTok
+        }
+        let tok: Token = self.tokens[nextPos]
+        -> tok
+    },
+
+    /**
+     * Peeks ahead by an arbitrary offset from current position without advancing.
+     *
+     * @param {num} offset - Number of tokens ahead to inspect
+     * @returns {Token} Token at pos + offset, or EOF token if out of bounds
+     */
+    peekAhead: offset: num :: Token => {
+        let targetPos: num = self.pos + offset
+        if targetPos >= self.len || targetPos < 0 {
+            let eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
+            -> eofTok
+        }
+        let tok: Token = self.tokens[targetPos]
+        -> tok
+    },
+
+    /**
+     * Returns the token immediately preceding the current cursor.
+     *
+     * @returns {Token} Previous token (pos - 1) or EOF token if at start
+     */
+    prev: :: Token => {
+        if self.pos <= 0 {
+            let eofTok = Token.create TokenType.TOK_EOF, "", 0, 0, 0
+            -> eofTok
+        }
+        let prevPos: num = self.pos - 1
+        let tok: Token = self.tokens[prevPos]
+        -> tok
+    },
+
+    /**
+     * Checks whether the parser has reached the end of the token stream.
+     *
+     * @returns {bool} True if cursor is at or past EOF, false otherwise
+     */
+    isAtEnd: :: bool => {
+        if self.pos >= self.len {
+            -> true
+        }
+        let c: Token = self.cur
+        -> c.kind == TokenType.TOK_EOF
+    },
+
+    /**
+     * Checks if current token matches the expected TokenType without consuming.
+     *
+     * @param {TokenType} kind - Expected token kind
+     * @returns {bool} True if matching, false otherwise
+     */
+    check: kind: TokenType :: bool => {
+        if self.isAtEnd {
+            -> kind == TokenType.TOK_EOF
+        }
+        let c: Token = self.cur
+        -> c.kind == kind
+    },
+
+    /**
+     * Checks if the next peek token matches expected TokenType.
+     *
+     * @param {TokenType} kind - Expected peek token kind
+     * @returns {bool} True if matching, false otherwise
+     */
+    checkPeek: kind: TokenType :: bool => {
+        let p: Token = self.peek
+        -> p.kind == kind
+    },
+
+    /**
+     * Consumes and returns the current token, advancing cursor by one position.
+     *
+     * @returns {Token} The consumed token
+     */
+    advance: :: Token => {
+        if !(self.isAtEnd) {
+            self.pos = self.pos + 1
+        }
+        -> self.prev
+    },
+
+    /**
+     * If the current token matches the given kind, consumes it and returns true.
+     *
+     * @param {TokenType} kind - Expected token kind to match
+     * @returns {bool} True if matched and consumed, false otherwise
+     */
+    matchToken: kind: TokenType :: bool => {
+        if self.check kind {
+            self.advance
+            -> true
+        }
+        -> false
+    },
+
+    /**
+     * Consumes the current token if it matches expected kind, otherwise logs error.
+     *
+     * @param {TokenType} kind - Expected token kind
+     * @param {str} errMsg - Error message to report on mismatch
+     * @returns {Token} Consumed token on match, or current token on error
+     */
+    consume: kind: TokenType, errMsg: str :: Token => {
+        if self.check kind {
+            -> self.advance
+        }
+        let c: Token = self.cur
+        self.addError "E0102", errMsg, c.line, c.col, c.len, "expected token"
+        -> c
+    },
+
+    /**
+     * Records a new diagnostic error record attached to source coordinates.
+     *
+     * @param {str} code - Error code (e.g. 'E0101', 'E0102')
+     * @param {str} msg - Primary diagnostic message
+     * @param {num} line - 1-based source line number
+     * @param {num} col - 1-based source column number
+     * @param {num} len - Length of source span to underline
+     * @param {str} help - Actionable suggestion or fix text
+     * @returns {void}
+     */
+    addError: code: str, msg: str, line: num, col: num, len: num, help: str :: void => {
+        let diag = Diagnostic.create code, msg, self.file, line, col, len, help
+        self.errors.psh diag
+    },
+
+    /**
+     * Synchronizes token cursor at statement boundary after encountering an error.
+     *
+     * Skips tokens until encountering a semicolon or statement-starting keyword.
+     *
+     * @returns {void}
+     */
+    synchronize: :: void => {
+        self.advance
+        wh !(self.isAtEnd) {
+            let p: Token = self.prev
+            if p.kind == TokenType.TOK_SEMICOLON {
+                -> void
+            }
+            let c: Token = self.cur
+            if c.kind == TokenType.TOK_LET || c.kind == TokenType.TOK_AMP_LET ||
+               c.kind == TokenType.TOK_FN || c.kind == TokenType.TOK_STRUCT ||
+               c.kind == TokenType.TOK_TYPE || c.kind == TokenType.TOK_ENUM ||
+               c.kind == TokenType.TOK_IF || c.kind == TokenType.TOK_WH ||
+               c.kind == TokenType.TOK_FOR || c.kind == TokenType.TOK_MATCH ||
+               c.kind == TokenType.TOK_RET || c.kind == TokenType.TOK_PUB ||
+               c.kind == TokenType.TOK_EXTERN || c.kind == TokenType.TOK_IMP ||
+               c.kind == TokenType.TOK_PRNT || c.kind == TokenType.TOK_LOG ||
+               c.kind == TokenType.TOK_TRY || c.kind == TokenType.TOK_PANIC {
+                -> void
+            }
+            self.advance
+        }
+    },
+
+    /**
+     * Returns whether the parser recorded one or more diagnostic errors.
+     *
+     * @returns {bool} True if errors exist, false otherwise
+     */
+    hasErrors: :: bool => {
+        let count: num = self.errors.ln
+        -> count > 0
+    },
+
+    /**
+     * Returns the array of collected Diagnostic records.
+     *
+     * @returns {arr} Array of Diagnostic instances
+     */
+    getErrors: :: arr => {
+        -> self.errors
+    },
+
+    /**
+     * Formats all accumulated diagnostics into rustc-style error messages.
+     *
+     * @returns {str} Combined formatted error string
+     */
+    formatErrors: :: str => {
+        let res: str = ""
+        let count: num = self.errors.ln
+        let i: num = 0
+        wh i < count {
+            let diag: Diagnostic = self.errors[i]
+            let formatted: str = diag.format self.source
+            if res == "" {
+                res = formatted
+            } els {
+                res = res + "\n\n" + formatted
+            }
+            i = i + 1
+        }
+        -> res
+    }
+}
