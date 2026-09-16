@@ -17,6 +17,18 @@ obj Diagnostic {
     len: num,
     help: str,
 
+    /**
+     * Creates a new Diagnostic record.
+     *
+     * @param {str} code - Diagnostic error code (e.g. "E0101", "E0302")
+     * @param {str} message - Diagnostic description message
+     * @param {str} file - Source file path
+     * @param {num} line - 1-indexed source line number
+     * @param {num} col - 1-indexed source column number
+     * @param {num} len - Length of source code error span
+     * @param {str} help - Optional actionable help note or suggestion
+     * @returns {Diagnostic} Initialized Diagnostic object
+     */
     create: code: str, message: str, file: str, line: num, col: num, len: num, help: str :: Diagnostic => {
         -> {
             code,
@@ -29,10 +41,22 @@ obj Diagnostic {
         }
     },
 
+    /**
+     * Formats this diagnostic into rustc-style error output with caret underlining.
+     *
+     * @param {str} sourceText - Full source code text
+     * @returns {str} Formatted error string with source snippet and carets
+     */
     format: sourceText: str :: str => {
         -> FormatDiagnostic self, sourceText
     },
 
+    /**
+     * Formats this diagnostic into rustc-style warning output.
+     *
+     * @param {str} sourceText - Full source code text
+     * @returns {str} Formatted warning string
+     */
     formatWarning: sourceText: str :: str => {
         -> FormatWarning self, sourceText
     }
