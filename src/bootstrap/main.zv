@@ -15,6 +15,7 @@ imp Lexer frm lexer
 imp Parser frm parser/parser
 imp ParseDeclaration frm parser/decl
 imp ParseStatement frm parser/stmt
+imp ParseExpression frm parser/expr
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -200,6 +201,68 @@ main {
     let pSw = Parser.create lexSw.tokenizeAll, "sw.zv", swStmtCode
     let astSw: ASTNode = ParseStatement pSw
     prnt `   Parsed SwStmt: cases: ${astSw.cases.ln}, children: ${astSw.children.ln}`
+
+    // 9. Expression Parser Verification (Phase 2 Task 2.5)
+    prnt "9. Expression Parser Verification:"
+    let arithCode: str = "1 + 2 * 3"
+    let lexArith = Lexer.create arithCode
+    let pArith = Parser.create lexArith.tokenizeAll, "arith.zv", arithCode
+    let astArith: ASTNode = ParseExpression pArith, 1
+    prnt `   Parsed Binary Precedence: op: '${astArith.op}', left: ${astArith.children[0].val}, right op: '${astArith.children[1].op}'`
+
+    let logicCode: str = "x > 0 && y <= 10"
+    let lexLogic = Lexer.create logicCode
+    let pLogic = Parser.create lexLogic.tokenizeAll, "logic.zv", logicCode
+    let astLogic: ASTNode = ParseExpression pLogic, 1
+    prnt `   Parsed Logic Precedence: op: '${astLogic.op}', left op: '${astLogic.children[0].op}', right op: '${astLogic.children[1].op}'`
+
+    let accessCode: str = "user.profile.name[0]"
+    let lexAccess = Lexer.create accessCode
+    let pAccess = Parser.create lexAccess.tokenizeAll, "access.zv", accessCode
+    let astAccess: ASTNode = ParseExpression pAccess, 1
+    prnt `   Parsed Index & Member Access: kind: ${astAccess.toString}`
+
+    let safeCode: str = "config?.debug"
+    let lexSafe = Lexer.create safeCode
+    let pSafe = Parser.create lexSafe.tokenizeAll, "safe.zv", safeCode
+    let astSafe: ASTNode = ParseExpression pSafe, 1
+    prnt `   Parsed Safe Navigation: op: '${astSafe.op}', name: '${astSafe.name}'`
+
+    let callCode: str = "add(x, y * 2)"
+    let lexCall = Lexer.create callCode
+    let pCall = Parser.create lexCall.tokenizeAll, "call.zv", callCode
+    let astCall: ASTNode = ParseExpression pCall, 1
+    prnt `   Parsed CallExpr: kind: ${astCall.toString}, children: ${astCall.children.ln}`
+
+    let incCode: str = "count++"
+    let lexInc = Lexer.create incCode
+    let pInc = Parser.create lexInc.tokenizeAll, "inc.zv", incCode
+    let astInc: ASTNode = ParseExpression pInc, 1
+    prnt `   Parsed Postfix Unary: op: '${astInc.op}', isPrefix: ${astInc.isPrefix}`
+
+    let ternaryCode: str = "isReady ? 100 : 0"
+    let lexTernary = Lexer.create ternaryCode
+    let pTernary = Parser.create lexTernary.tokenizeAll, "ternary.zv", ternaryCode
+    let astTernary: ASTNode = ParseExpression pTernary, 1
+    prnt `   Parsed Ternary: kind: ${astTernary.toString}, children: ${astTernary.children.ln}`
+
+    let castCode: str = "total as i64"
+    let lexCast = Lexer.create castCode
+    let pCast = Parser.create lexCast.tokenizeAll, "cast.zv", castCode
+    let astCast: ASTNode = ParseExpression pCast, 1
+    prnt `   Parsed Type Cast: kind: ${astCast.toString}, typeAnnotation: '${astCast.typeAnnotation}'`
+
+    let arrLitCode: str = "[1, 2, 3 + 4]"
+    let lexArrLit = Lexer.create arrLitCode
+    let pArrLit = Parser.create lexArrLit.tokenizeAll, "arrlit.zv", arrLitCode
+    let astArrLit: ASTNode = ParseExpression pArrLit, 1
+    prnt `   Parsed ArrExpr: kind: ${astArrLit.toString}, count: ${astArrLit.children.ln}`
+
+    let objLitCode: str = "{ name: \"alice\", count: 42 }"
+    let lexObjLit = Lexer.create objLitCode
+    let pObjLit = Parser.create lexObjLit.tokenizeAll, "objlit.zv", objLitCode
+    let astObjLit: ASTNode = ParseExpression pObjLit, 1
+    prnt `   Parsed ObjLitExpr: kind: ${astObjLit.toString}, fields: ${astObjLit.fields.ln}`
 }
 
 
