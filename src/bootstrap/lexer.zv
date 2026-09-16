@@ -747,7 +747,8 @@ obj Lexer {
         }
 
         if ch == "." {
-            if self.peek == "." && self.peekAhead 2 == "." {
+            let p2: str = self.peekAhead 2
+            if self.peek == "." && p2 == "." {
                 self.advance // '.'
                 self.advance // '.'
                 self.advance // '.'

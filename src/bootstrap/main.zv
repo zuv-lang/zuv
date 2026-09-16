@@ -13,6 +13,7 @@ imp Diagnostic frm diagnostics
 
 imp Lexer frm lexer
 imp Parser frm parser/parser
+imp ParseDeclaration frm parser/decl
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -98,7 +99,40 @@ main {
     prnt `   Parser consumed ident: '${consumedIdent.val}'`
     let isEnd: bool = parser.isAtEnd
     prnt `   Parser isAtEnd: ${isEnd}`
+
+    // 7. Declaration Parser Verification (Phase 2 Task 2.3)
+    prnt "7. Declaration Parser Verification:"
+    let typeDeclCode: str = "type Point = { x: num, y: num }"
+    let lexType = Lexer.create typeDeclCode
+    let pType = Parser.create lexType.tokenizeAll, "type.zv", typeDeclCode
+    let astType: ASTNode = ParseDeclaration pType
+    prnt `   Parsed TypeDecl: '${astType.name}', fields count: ${astType.fields.ln}`
+
+    let objDeclCode: str = "obj User { name: str, age: num }"
+    let lexObj = Lexer.create objDeclCode
+    let pObj = Parser.create lexObj.tokenizeAll, "obj.zv", objDeclCode
+    let astObj: ASTNode = ParseDeclaration pObj
+    prnt `   Parsed ObjDecl: '${astObj.name}', fields count: ${astObj.fields.ln}`
+
+    let fnDeclCode: str = "pub fn add a: num, b: num :: num"
+    let lexFn = Lexer.create fnDeclCode
+    let pFn = Parser.create lexFn.tokenizeAll, "fn.zv", fnDeclCode
+    let astFn: ASTNode = ParseDeclaration pFn
+    prnt `   Parsed FuncDecl: '${astFn.name}', params count: ${astFn.params.ln}, ret: '${astFn.typeAnnotation}', pub: ${astFn.isPub}`
+
+    let enumDeclCode: str = "enum Color { Red, Green, Blue = 10 }"
+    let lexEnum = Lexer.create enumDeclCode
+    let pEnum = Parser.create lexEnum.tokenizeAll, "enum.zv", enumDeclCode
+    let astEnum: ASTNode = ParseDeclaration pEnum
+    prnt `   Parsed EnumDecl: '${astEnum.name}', variants count: ${astEnum.fields.ln}`
+
+    let impDeclCode: str = "imp Token, TokenType frm ../tokens"
+    let lexImp = Lexer.create impDeclCode
+    let pImp = Parser.create lexImp.tokenizeAll, "imp.zv", impDeclCode
+    let astImp: ASTNode = ParseDeclaration pImp
+    prnt `   Parsed ImportDecl: path: '${astImp.val}', symbols count: ${astImp.fields.ln}`
 }
+
 
 
 
