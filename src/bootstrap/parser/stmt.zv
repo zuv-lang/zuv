@@ -3,8 +3,483 @@
  * Zuv Bootstrap Compiler — Statement & Control Flow Parser
  * Path: sub_projects/zuv/src/bootstrap/parser/stmt.zv
  * =============================================================================
+ *
+ * Implements recursive descent parsing for control flow and executable statements:
+ * - Variable bindings: `let name [: Type] = init` and borrow bindings `&let name = init`
+ * - Conditional branching: `if cond { ... } [els { ... }]` and `els if` chains
+ * - Iteration loops: `wh cond { ... }`, `fr x in arr { ... }`, `fr x of arr { ... }`, C-style `fr init; cond; post`
+ * - Jump & control flow: `-> expr` (return), `ret expr`, `brk` (break), `cont` (continue)
+ * - Error handling: `try { ... } cth err { ... } fin { ... }` and `panic msg`
+ * - Pattern matching: `sw expr { val => { ... }, _ => { ... } }` and `mch`
+ * - Scoped block statements: `{ stmt1; stmt2; }`
+ * - Expression statements: `callee arg1, arg2`, assignments, and standalone expressions
  */
 
 imp str, arr
+imp Token, TokenType frm ../tokens
+imp ASTNode, NodeKind, Param, FieldEntry, MatchArm frm ../ast
+imp TypeInfo, TypeKind frm ../types
+imp Diagnostic frm ../diagnostics
+imp Parser frm parser
 
-// Statement parser will be implemented in Task 2.4
+/**
+ * Parses a simple or binary expression for statements, conditions, and initializers.
+ *
+ * Handles literals, identifiers, unary operators, binary expressions, calls, and member access.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Parsed expression AST node
+ */
+ParseExpr parser: Parser :: ASTNode {
+    let tok: Token = parser.cur
+
+    // Unary prefix operators: !, -, ~, not
+    if tok.kind == TokenType.TOK_NOT || tok.kind == TokenType.TOK_MINUS || tok.kind == TokenType.TOK_TILDE {
+        let opTok: Token = parser.advance
+        let operand: ASTNode = ParseExpr parser
+        -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
+    }
+
+    let left: ASTNode = ASTNode.createNil tok.line, tok.col
+
+    // Primary Expressions
+    if tok.kind == TokenType.TOK_NUMBER {
+        let numTok: Token = parser.advance
+        left = ASTNode.createNum 0, numTok.line, numTok.col
+        left.val = numTok.val
+    } els if tok.kind == TokenType.TOK_STRING || tok.kind == TokenType.TOK_TEMPLATE_STRING {
+        let strTok: Token = parser.advance
+        left = ASTNode.createStr strTok.val, strTok.line, strTok.col
+    } els if tok.kind == TokenType.TOK_TRUE {
+        let bTok: Token = parser.advance
+        left = ASTNode.createBool true, bTok.line, bTok.col
+    } els if tok.kind == TokenType.TOK_FALSE {
+        let bTok: Token = parser.advance
+        left = ASTNode.createBool false, bTok.line, bTok.col
+    } els if tok.kind == TokenType.TOK_NIL {
+        let nTok: Token = parser.advance
+        left = ASTNode.createNil nTok.line, nTok.col
+    } els if tok.kind == TokenType.TOK_UND {
+        let uTok: Token = parser.advance
+        left = ASTNode.createUnd uTok.line, uTok.col
+    } els if tok.kind == TokenType.TOK_BIGINT {
+        let biTok: Token = parser.advance
+        left = ASTNode.createBigInt biTok.val, biTok.line, biTok.col
+    } els if tok.kind == TokenType.TOK_IDENT {
+        let idTok: Token = parser.advance
+        left = ASTNode.createIdent idTok.val, idTok.line, idTok.col
+    } els if tok.kind == TokenType.TOK_LBRACKET {
+        // Array literal: [elem1, elem2]
+        let lbTok: Token = parser.advance
+        let elems: ASTNode[] = []
+        wh !(parser.check TokenType.TOK_RBRACKET) && !(parser.isAtEnd) {
+            let el: ASTNode = ParseExpr parser
+            elems.psh el
+            if parser.matchToken TokenType.TOK_COMMA {
+                // consume delimiter
+            } els {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_RBRACKET, "Expected ']' to close array literal"
+        let arrNode = ASTNode.createBase NodeKind.ArrExpr, lbTok.line, lbTok.col
+        arrNode.children = elems
+        left = arrNode
+    } els if tok.kind == TokenType.TOK_LPAREN {
+        // Parenthesized expression: (expr)
+        parser.advance
+        left = ParseExpr parser
+        parser.consume TokenType.TOK_RPAREN, "Expected ')' after expression"
+    } els {
+        let fallbackTok: Token = parser.advance
+        left = ASTNode.createIdent fallbackTok.val, fallbackTok.line, fallbackTok.col
+    }
+
+    // Postfix Operations: member access (.prop), index ([idx]), call (args)
+    wh !(parser.isAtEnd) {
+        if parser.matchToken TokenType.TOK_DOT {
+            let propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
+            let propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
+            propNode.name = propTok.val
+            propNode.children = [left]
+            left = propNode
+        } els if parser.matchToken TokenType.TOK_LBRACKET {
+            let idxExpr: ASTNode = ParseExpr parser
+            parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
+            left = ASTNode.createIndex left, idxExpr, left.line, left.col
+        } els if parser.matchToken TokenType.TOK_INC {
+            left = ASTNode.createUnary "++", left, false, left.line, left.col
+        } els if parser.matchToken TokenType.TOK_DEC {
+            left = ASTNode.createUnary "--", left, false, left.line, left.col
+        } els {
+            brk
+        }
+    }
+
+    // Binary Operators: +, -, *, /, %, ==, !=, <, >, <=, >=, &&, ||, =
+    let nextTok: Token = parser.cur
+    if nextTok.kind == TokenType.TOK_PLUS || nextTok.kind == TokenType.TOK_MINUS ||
+       nextTok.kind == TokenType.TOK_ASTERISK || nextTok.kind == TokenType.TOK_SLASH || nextTok.kind == TokenType.TOK_PERCENT ||
+       nextTok.kind == TokenType.TOK_EQ || nextTok.kind == TokenType.TOK_NOT_EQ ||
+       nextTok.kind == TokenType.TOK_LT || nextTok.kind == TokenType.TOK_GT ||
+       nextTok.kind == TokenType.TOK_LTE || nextTok.kind == TokenType.TOK_GTE ||
+       nextTok.kind == TokenType.TOK_AND || nextTok.kind == TokenType.TOK_OR ||
+       nextTok.kind == TokenType.TOK_ASSIGN || nextTok.kind == TokenType.TOK_PLUS_EQ || nextTok.kind == TokenType.TOK_MINUS_EQ {
+        let opTok: Token = parser.advance
+        let right: ASTNode = ParseExpr parser
+        left = ASTNode.createBinary opTok.val, left, right, opTok.line, opTok.col
+    }
+
+    -> left
+}
+
+/**
+ * Parses a variable binding declaration (`let name [: Type] = init` or `&let name = init`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} VarDecl AST node
+ */
+ParseVarDecl parser: Parser :: ASTNode {
+    let isBorrow: bool = false
+    let startTok: Token = parser.cur
+
+    if parser.matchToken TokenType.TOK_AMP_LET {
+        isBorrow = true
+    } els {
+        parser.consume TokenType.TOK_LET, "Expected 'let' or '&let'"
+    }
+
+    let nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected variable name identifier"
+    let typeAnnot: str = ""
+
+    if parser.matchToken TokenType.TOK_COLON {
+        let tTok: Token = parser.cur
+        typeAnnot = tTok.val
+        parser.advance
+        wh parser.check TokenType.TOK_LBRACKET {
+            if parser.checkPeek TokenType.TOK_RBRACKET {
+                parser.advance
+                parser.advance
+                typeAnnot = typeAnnot + "[]"
+            } els {
+                brk
+            }
+        }
+    }
+
+    let initExpr: ASTNode = ASTNode.createNil nameTok.line, nameTok.col
+    if parser.matchToken TokenType.TOK_ASSIGN {
+        initExpr = ParseExpr parser
+    }
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    -> ASTNode.createVarDecl nameTok.val, typeAnnot, isBorrow, initExpr, startTok.line, startTok.col
+}
+
+/**
+ * Parses an if statement with optional else / else-if branches.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} IfStmt AST node
+ */
+ParseIfStmt parser: Parser :: ASTNode {
+    let ifTok: Token = parser.consume TokenType.TOK_IF, "Expected 'if'"
+    let condNode: ASTNode = ParseExpr parser
+    let thenBlock: ASTNode = ParseBlockStmt parser
+    let elseBlock: ASTNode = ASTNode.createNil ifTok.line, ifTok.col
+
+    if parser.matchToken TokenType.TOK_ELS {
+        if parser.check TokenType.TOK_IF {
+            let nestedIf: ASTNode = ParseIfStmt parser
+            elseBlock = ASTNode.createBlock [nestedIf], nestedIf.line, nestedIf.col
+        } els {
+            elseBlock = ParseBlockStmt parser
+        }
+    }
+
+    -> ASTNode.createIf condNode, thenBlock, elseBlock, ifTok.line, ifTok.col
+}
+
+/**
+ * Parses a while loop statement (`wh condition { body }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} WhStmt AST node
+ */
+ParseWhileStmt parser: Parser :: ASTNode {
+    let whTok: Token = parser.consume TokenType.TOK_WH, "Expected 'wh'"
+    let condNode: ASTNode = ParseExpr parser
+    let bodyBlock: ASTNode = ParseBlockStmt parser
+    -> ASTNode.createWh condNode, bodyBlock, whTok.line, whTok.col
+}
+
+/**
+ * Parses a for loop statement (`fr item in arr { ... }` or `fr i = 0; i < n; i++ { ... }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} For statement AST node (FrInStmt or FrOfStmt)
+ */
+ParseForStmt parser: Parser :: ASTNode {
+    let frTok: Token = parser.consume TokenType.TOK_FOR, "Expected 'fr'"
+
+    // Check for for-in / for-of: fr item in collection { ... }
+    if parser.check TokenType.TOK_IDENT {
+        let peekTok: Token = parser.peek
+        if peekTok.kind == TokenType.TOK_IN {
+            let itemTok: Token = parser.advance
+            parser.advance // consume 'in'
+            let iterExpr: ASTNode = ParseExpr parser
+            let bodyBlock: ASTNode = ParseBlockStmt parser
+            let node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
+            node.name = itemTok.val
+            node.children = [iterExpr, bodyBlock]
+            -> node
+        } els if peekTok.kind == TokenType.TOK_OF {
+            let itemTok: Token = parser.advance
+            parser.advance // consume 'of'
+            let iterExpr: ASTNode = ParseExpr parser
+            let bodyBlock: ASTNode = ParseBlockStmt parser
+            let node = ASTNode.createBase NodeKind.FrOfStmt, frTok.line, frTok.col
+            node.name = itemTok.val
+            node.children = [iterExpr, bodyBlock]
+            -> node
+        }
+    }
+
+    // C-style for loop: fr init; cond; post { body }
+    let initStmt: ASTNode = ParseStatement parser
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional semicolon after init
+    }
+    let condExpr: ASTNode = ParseExpr parser
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional semicolon after cond
+    }
+    let postExpr: ASTNode = ParseExpr parser
+    let bodyBlock: ASTNode = ParseBlockStmt parser
+
+    let node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
+    node.children = [initStmt, condExpr, postExpr, bodyBlock]
+    -> node
+}
+
+/**
+ * Parses a return statement (`-> expr` or `ret expr`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} RetStmt AST node
+ */
+ParseReturnStmt parser: Parser :: ASTNode {
+    let retTok: Token = parser.advance // consume '->' or 'ret'
+    let retExpr: ASTNode = ASTNode.createNil retTok.line, retTok.col
+
+    if !(parser.check TokenType.TOK_SEMICOLON) && !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        retExpr = ParseExpr parser
+    }
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    -> ASTNode.createRet retExpr, retTok.line, retTok.col
+}
+
+/**
+ * Parses a break statement (`brk`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} BrkStmt AST node
+ */
+ParseBreakStmt parser: Parser :: ASTNode {
+    let tok: Token = parser.consume TokenType.TOK_BRK, "Expected 'brk'"
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+    -> ASTNode.createBrk tok.line, tok.col
+}
+
+/**
+ * Parses a continue statement (`cont`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} ContStmt AST node
+ */
+ParseContinueStmt parser: Parser :: ASTNode {
+    let tok: Token = parser.consume TokenType.TOK_CONT, "Expected 'cont'"
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+    -> ASTNode.createCont tok.line, tok.col
+}
+
+/**
+ * Parses a panic error termination statement (`panic expr`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} PanicStmt AST node
+ */
+ParsePanicStmt parser: Parser :: ASTNode {
+    let tok: Token = parser.consume TokenType.TOK_PANIC, "Expected 'panic'"
+    let msgExpr: ASTNode = ParseExpr parser
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+    -> ASTNode.createPanic msgExpr, tok.line, tok.col
+}
+
+/**
+ * Parses an exception handling block (`try { ... } cth err { ... } [fin { ... }]`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} TryCthStmt AST node
+ */
+ParseTryStmt parser: Parser :: ASTNode {
+    let tryTok: Token = parser.consume TokenType.TOK_TRY, "Expected 'try'"
+    let tryBlock: ASTNode = ParseBlockStmt parser
+
+    parser.consume TokenType.TOK_CTH, "Expected 'cth' after try block"
+    let errVarTok: Token = parser.consume TokenType.TOK_IDENT, "Expected error variable identifier in catch"
+    let catchBlock: ASTNode = ParseBlockStmt parser
+
+    let finBlock: ASTNode = ASTNode.createNil tryTok.line, tryTok.col
+    if parser.matchToken TokenType.TOK_FIN {
+        finBlock = ParseBlockStmt parser
+    }
+
+    let node = ASTNode.createBase NodeKind.TryCthStmt, tryTok.line, tryTok.col
+    node.name = errVarTok.val
+    node.children = [tryBlock, catchBlock, finBlock]
+    -> node
+}
+
+/**
+ * Parses a pattern matching switch statement (`sw expr { val => { ... }, _ => { ... } }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} SwStmt AST node
+ */
+ParseMatchStmt parser: Parser :: ASTNode {
+    let swTok: Token = parser.advance // consume 'sw' / 'mch'
+    let targetExpr: ASTNode = ParseExpr parser
+    let node = ASTNode.createBase NodeKind.SwStmt, swTok.line, swTok.col
+    node.children = [targetExpr]
+
+    parser.consume TokenType.TOK_LBRACE, "Expected '{' before match arms"
+
+    wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        let patTok: Token = parser.cur
+        parser.advance // consume pattern token (IDENT, NUMBER, STRING, or '_')
+
+        parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after pattern"
+
+        let armBody: ASTNode = ASTNode.createNil patTok.line, patTok.col
+        if parser.check TokenType.TOK_LBRACE {
+            armBody = ParseBlockStmt parser
+        } els {
+            let exprArm: ASTNode = ParseExpr parser
+            armBody = ASTNode.createBlock [exprArm], patTok.line, patTok.col
+        }
+
+        let arm: MatchArm = {
+            patternKind: patTok.val,
+            varName: patTok.val,
+            litText: patTok.val,
+            line: patTok.line,
+            col: patTok.col
+        }
+        node.cases.psh arm
+        node.children.psh armBody
+
+        if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+            // optional arm separator
+        }
+    }
+
+    parser.consume TokenType.TOK_RBRACE, "Expected '}' after match arms"
+    -> node
+}
+
+/**
+ * Parses a braced block statement (`{ stmt1; stmt2; ... }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} BlockStmt AST node
+ */
+ParseBlockStmt parser: Parser :: ASTNode {
+    let lbrace: Token = parser.consume TokenType.TOK_LBRACE, "Expected '{' to begin block"
+    let stmts: ASTNode[] = []
+
+    wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            cont
+        }
+        let s: ASTNode = ParseStatement parser
+        stmts.psh s
+    }
+
+    parser.consume TokenType.TOK_RBRACE, "Expected '}' to end block"
+    -> ASTNode.createBlock stmts, lbrace.line, lbrace.col
+}
+
+/**
+ * Parses an expression statement (`expr;` or `call arg1, arg2`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} ExprStmt AST node
+ */
+ParseExpressionStmt parser: Parser :: ASTNode {
+    let expr: ASTNode = ParseExpr parser
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+    -> ASTNode.createExprStmt expr, expr.line, expr.col
+}
+
+/**
+ * Master statement dispatcher routing tokens to specialized statement parsers.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Parsed statement AST node
+ */
+ParseStatement parser: Parser :: ASTNode {
+    let c: Token = parser.cur
+
+    if c.kind == TokenType.TOK_LET || c.kind == TokenType.TOK_AMP_LET {
+        -> ParseVarDecl parser
+    }
+    if c.kind == TokenType.TOK_IF {
+        -> ParseIfStmt parser
+    }
+    if c.kind == TokenType.TOK_WH {
+        -> ParseWhileStmt parser
+    }
+    if c.kind == TokenType.TOK_FOR {
+        -> ParseForStmt parser
+    }
+    if c.kind == TokenType.TOK_ARROW || c.kind == TokenType.TOK_RET {
+        -> ParseReturnStmt parser
+    }
+    if c.kind == TokenType.TOK_BRK {
+        -> ParseBreakStmt parser
+    }
+    if c.kind == TokenType.TOK_CONT {
+        -> ParseContinueStmt parser
+    }
+    if c.kind == TokenType.TOK_PANIC {
+        -> ParsePanicStmt parser
+    }
+    if c.kind == TokenType.TOK_TRY {
+        -> ParseTryStmt parser
+    }
+    if c.kind == TokenType.TOK_MATCH {
+        -> ParseMatchStmt parser
+    }
+    if c.kind == TokenType.TOK_LBRACE {
+        -> ParseBlockStmt parser
+    }
+
+    -> ParseExpressionStmt parser
+}

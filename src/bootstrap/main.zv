@@ -14,6 +14,7 @@ imp Diagnostic frm diagnostics
 imp Lexer frm lexer
 imp Parser frm parser/parser
 imp ParseDeclaration frm parser/decl
+imp ParseStatement frm parser/stmt
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -131,7 +132,76 @@ main {
     let pImp = Parser.create lexImp.tokenizeAll, "imp.zv", impDeclCode
     let astImp: ASTNode = ParseDeclaration pImp
     prnt `   Parsed ImportDecl: path: '${astImp.val}', symbols count: ${astImp.fields.ln}`
+
+    // 8. Statement Parser Verification (Phase 2 Task 2.4)
+    prnt "8. Statement Parser Verification:"
+    let varStmtCode: str = "let total: num = 100"
+    let lexVar = Lexer.create varStmtCode
+    let pVar = Parser.create lexVar.tokenizeAll, "var.zv", varStmtCode
+    let astVar: ASTNode = ParseStatement pVar
+    prnt `   Parsed VarDecl: '${astVar.name}', type: '${astVar.typeAnnotation}', isBorrow: ${astVar.isBorrow}`
+
+    let borrowStmtCode: str = "&let ref = total"
+    let lexBorrow = Lexer.create borrowStmtCode
+    let pBorrow = Parser.create lexBorrow.tokenizeAll, "borrow.zv", borrowStmtCode
+    let astBorrow: ASTNode = ParseStatement pBorrow
+    prnt `   Parsed BorrowDecl: '${astBorrow.name}', isBorrow: ${astBorrow.isBorrow}`
+
+    let ifStmtCode: str = "if total > 50 { -> true } els { -> false }"
+    let lexIf = Lexer.create ifStmtCode
+    let pIf = Parser.create lexIf.tokenizeAll, "if.zv", ifStmtCode
+    let astIf: ASTNode = ParseStatement pIf
+    prnt `   Parsed IfStmt: children: ${astIf.children.ln}, kind: ${astIf.toString}`
+
+    let whStmtCode: str = "wh i < 10 { i++ }"
+    let lexWh = Lexer.create whStmtCode
+    let pWh = Parser.create lexWh.tokenizeAll, "wh.zv", whStmtCode
+    let astWh: ASTNode = ParseStatement pWh
+    prnt `   Parsed WhileStmt: children: ${astWh.children.ln}, kind: ${astWh.toString}`
+
+    let frStmtCode: str = "fr item in items { -> item }"
+    let lexFr = Lexer.create frStmtCode
+    let pFr = Parser.create lexFr.tokenizeAll, "fr.zv", frStmtCode
+    let astFr: ASTNode = ParseStatement pFr
+    prnt `   Parsed ForStmt: item: '${astFr.name}', kind: ${astFr.toString}`
+
+    let retStmtCode: str = "-> x + 1"
+    let lexRet = Lexer.create retStmtCode
+    let pRet = Parser.create lexRet.tokenizeAll, "ret.zv", retStmtCode
+    let astRet: ASTNode = ParseStatement pRet
+    prnt `   Parsed RetStmt: children: ${astRet.children.ln}, kind: ${astRet.toString}`
+
+    let brkStmtCode: str = "brk"
+    let lexBrk = Lexer.create brkStmtCode
+    let pBrk = Parser.create lexBrk.tokenizeAll, "brk.zv", brkStmtCode
+    let astBrk: ASTNode = ParseStatement pBrk
+    prnt `   Parsed BreakStmt: kind: ${astBrk.toString}`
+
+    let contStmtCode: str = "cont"
+    let lexCont = Lexer.create contStmtCode
+    let pCont = Parser.create lexCont.tokenizeAll, "cont.zv", contStmtCode
+    let astCont: ASTNode = ParseStatement pCont
+    prnt `   Parsed ContinueStmt: kind: ${astCont.toString}`
+
+    let panicStmtCode: str = "panic \"fatal error\""
+    let lexPanic = Lexer.create panicStmtCode
+    let pPanic = Parser.create lexPanic.tokenizeAll, "panic.zv", panicStmtCode
+    let astPanic: ASTNode = ParseStatement pPanic
+    prnt `   Parsed PanicStmt: children: ${astPanic.children.ln}, kind: ${astPanic.toString}`
+
+    let tryStmtCode: str = "try { doTask } cth err { panic err }"
+    let lexTry = Lexer.create tryStmtCode
+    let pTry = Parser.create lexTry.tokenizeAll, "try.zv", tryStmtCode
+    let astTry: ASTNode = ParseStatement pTry
+    prnt `   Parsed TryCthStmt: errVar: '${astTry.name}', children: ${astTry.children.ln}`
+
+    let swStmtCode: str = "sw status { 1 => { -> true }, _ => { -> false } }"
+    let lexSw = Lexer.create swStmtCode
+    let pSw = Parser.create lexSw.tokenizeAll, "sw.zv", swStmtCode
+    let astSw: ASTNode = ParseStatement pSw
+    prnt `   Parsed SwStmt: cases: ${astSw.cases.ln}, children: ${astSw.children.ln}`
 }
+
 
 
 
