@@ -36,6 +36,13 @@ obj TypeInfo {
     fieldTypes: TypeKind[],
     isRef: bool,
 
+    /**
+     * Creates a primitive TypeInfo descriptor.
+     *
+     * @param {TypeKind} kind - The primitive type kind
+     * @param {str} name - Canonical primitive name string
+     * @returns {TypeInfo} Initialized primitive type descriptor
+     */
     createPrimitive: kind: TypeKind, name: str :: TypeInfo => {
         -> {
             kind,
@@ -48,6 +55,13 @@ obj TypeInfo {
         }
     },
 
+    /**
+     * Creates an array TypeInfo descriptor.
+     *
+     * @param {TypeKind} elemKind - Element type kind
+     * @param {str} elemName - Element type name string
+     * @returns {TypeInfo} Initialized array type descriptor
+     */
     createArray: elemKind: TypeKind, elemName: str :: TypeInfo => {
         -> {
             kind: TypeKind.Arr,
@@ -60,6 +74,12 @@ obj TypeInfo {
         }
     },
 
+    /**
+     * Creates an object / struct TypeInfo descriptor.
+     *
+     * @param {str} name - Struct / object type name
+     * @returns {TypeInfo} Initialized object type descriptor
+     */
     createObject: name: str :: TypeInfo => {
         -> {
             kind: TypeKind.Obj,
@@ -72,22 +92,116 @@ obj TypeInfo {
         }
     },
 
+    /**
+     * Creates a function TypeInfo descriptor.
+     *
+     * @param {TypeKind} returnKind - Return value type kind
+     * @param {str} returnTypeName - Return value type name
+     * @param {str[]} paramTypeNames - Array of parameter type names
+     * @returns {TypeInfo} Initialized function type descriptor
+     */
+    createFunc: returnKind: TypeKind, returnTypeName: str, paramTypeNames: str[] :: TypeInfo => {
+        -> {
+            kind: TypeKind.Func,
+            name: "fn()->" + returnTypeName,
+            elemType: returnKind,
+            elemTypeName: returnTypeName,
+            fields: paramTypeNames,
+            fieldTypes: [],
+            isRef: false
+        }
+    },
+
+    /**
+     * Creates a pointer / borrow reference TypeInfo descriptor.
+     *
+     * @param {TypeKind} elemKind - Pointee type kind
+     * @param {str} elemName - Pointee type name
+     * @returns {TypeInfo} Initialized pointer type descriptor
+     */
+    createPointer: elemKind: TypeKind, elemName: str :: TypeInfo => {
+        -> {
+            kind: TypeKind.Ptr,
+            name: "&" + elemName,
+            elemType: elemKind,
+            elemTypeName: elemName,
+            fields: [],
+            fieldTypes: [],
+            isRef: true
+        }
+    },
+
+    /**
+     * Creates an enum TypeInfo descriptor.
+     *
+     * @param {str} name - Enum name
+     * @returns {TypeInfo} Initialized enum type descriptor
+     */
+    createEnum: name: str :: TypeInfo => {
+        -> {
+            kind: TypeKind.Enum,
+            name,
+            elemType: TypeKind.I32,
+            elemTypeName: "i32",
+            fields: [],
+            fieldTypes: [],
+            isRef: false
+        }
+    },
+
+    /**
+     * Appends a named field and its type to this object type descriptor.
+     *
+     * @param {str} fieldName - Member field identifier
+     * @param {TypeKind} fieldType - Member field TypeKind
+     * @returns {void}
+     */
+    addField: fieldName: str, fieldType: TypeKind :: void => {
+        self.fields.psh fieldName
+        self.fieldTypes.psh fieldType
+    },
+
+    /**
+     * Checks if this type represents an integer type.
+     *
+     * @returns {bool} True if integer type, false otherwise
+     */
     isInteger: :: bool => {
         -> IsIntegerType self.kind
     },
 
+    /**
+     * Checks if this type represents a numeric type (integer or float).
+     *
+     * @returns {bool} True if numeric type, false otherwise
+     */
     isNumeric: :: bool => {
         -> IsNumericType self.kind
     },
 
+    /**
+     * Checks if this type represents a pointer or reference type.
+     *
+     * @returns {bool} True if pointer / ref type, false otherwise
+     */
     isPointer: :: bool => {
         -> IsPointerType self.kind
     },
 
+    /**
+     * Checks if this type represents a primitive value type.
+     *
+     * @returns {bool} True if primitive, false otherwise
+     */
     isPrimitive: :: bool => {
         -> IsPrimitiveType self.kind
     },
 
+    /**
+     * Returns the string representation of this TypeInfo descriptor.
+     *
+     * @returns {str} Canonical type name
+     */
     toString: :: str => {
         -> self.name
     }
@@ -210,4 +324,28 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
     }
     -> false
 }
+
+/**
+ * Resolves a type annotation name string to its corresponding TypeKind enum variant.
+ *
+ * @param {str} typeName - Type name annotation string (e.g. "num", "str", "bool", "i64")
+ * @returns {TypeKind} Corresponding TypeKind variant
+ */
+StrToTypeKind typeName: str :: TypeKind => sw typeName {
+    "num"    => TypeKind.Double
+    "double" => TypeKind.Double
+    "f64"    => TypeKind.Double
+    "i64"    => TypeKind.I64
+    "i32"    => TypeKind.I32
+    "i16"    => TypeKind.I16
+    "i8"     => TypeKind.I8
+    "bool"   => TypeKind.Bool
+    "str"    => TypeKind.Str
+    "void"   => TypeKind.Void
+    "ptr"    => TypeKind.Ptr
+    "und"    => TypeKind.Und
+    "nil"    => TypeKind.Nil
+    _        => TypeKind.Obj
+}
+
 

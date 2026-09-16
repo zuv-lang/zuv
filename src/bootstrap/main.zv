@@ -7,7 +7,7 @@
 
 imp os, fs, str, arr
 imp Token, TokenType frm tokens
-imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible frm types
+imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm types
 imp ASTNode, NodeKind frm ast
 imp Diagnostic frm diagnostics
 
@@ -22,21 +22,40 @@ main :: void {
         prnt "   Token keyword check: OK"
     }
 
-    // 2. Type System Verification via TypeInfo.createPrimitive and methods
+    // 2. Type System Verification via TypeInfo factories and helpers
     let tDbl: TypeKind = TypeKind.Double
     let tI32: TypeKind = TypeKind.I32
     let dblType = TypeInfo.createPrimitive tDbl, "double"
-    prnt `2. Type kind: ${dblType.toString}`
+    prnt `2. Type kind: ${dblType.toString} (isNumeric: ${dblType.isNumeric})`
     let compat: bool = AreTypesCompatible tDbl, tI32
     if compat {
         prnt "   Type compatibility: i32 -> double OK"
     }
+    let parsedKind = StrToTypeKind "i64"
+    let ptrType = TypeInfo.createPointer parsedKind, "i64"
+    prnt `   Pointer type: ${ptrType.toString} (isPointer: ${ptrType.isPointer})`
+    let fnParams: str[] = ["num", "num"]
+    let fnType = TypeInfo.createFunc TypeKind.Double, "num", fnParams
+    prnt `   Function type: ${fnType.toString}`
 
-    // 3. AST Verification via ASTNode.createNum and methods
+    // 3. AST Verification via ASTNode factories and methods
     let numNode = ASTNode.createNum 42, 1, 5
     let nodeName: str = numNode.toString
     let nodeTyp: str = TypeKindToStr numNode.inferredType
     prnt `3. AST Node: ${nodeName} (inferred: ${nodeTyp}, val: ${numNode.numVal})`
+
+    let num10 = ASTNode.createNum 10, 1, 10
+    let binNode = ASTNode.createBinary "+", numNode, num10, 1, 8
+    prnt `   AST Binary: ${binNode.toString} (op: '${binNode.op}', isExpr: ${binNode.isExpr})`
+
+    let varNode = ASTNode.createVarDecl "total", "num", false, binNode, 1, 1
+    prnt `   AST VarDecl: ${varNode.toString} (name: '${varNode.name}', isDecl: ${varNode.isDecl})`
+
+    let condNode = ASTNode.createBool true, 2, 5
+    let thenBlock = ASTNode.createBlock [], 2, 12
+    let elseBlock = ASTNode.createNil 2, 20
+    let ifNode = ASTNode.createIf condNode, thenBlock, elseBlock, 2, 1
+    prnt `   AST IfStmt: ${ifNode.toString} (isStmt: ${ifNode.isStmt})`
 
     // 4. Diagnostics Verification via Diagnostic.create and diag.format
     let diag = Diagnostic.create "E0102", "Expected next token to be {, got IDENTIFIER instead", "example.zv", 2, 11, 1, "add '{' here"
