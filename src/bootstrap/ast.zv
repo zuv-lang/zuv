@@ -1,0 +1,325 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Abstract Syntax Tree (AST) Definitions
+ * Path: sub_projects/zuv/src/bootstrap/ast.zv
+ * Defines all AST node kinds, typed schemas, and node factory constructors.
+ * =============================================================================
+ */
+
+imp str, arr
+imp TypeKind frm types
+
+enum NodeKind {
+    // Declarations
+    ProgramDecl,
+    FuncDecl,
+    ObjDecl,
+    TypeDecl,
+    EnumDecl,
+    ExternDecl,
+    ImportDecl,
+    VarDecl,
+
+    // Statements
+    BlockStmt,
+    ExprStmt,
+    IfStmt,
+    WhStmt,
+    FrInStmt,
+    FrOfStmt,
+    SwStmt,
+    RetStmt,
+    BrkStmt,
+    ContStmt,
+    TryCthStmt,
+    PanicStmt,
+
+    // Expressions
+    NumExpr,
+    StrExpr,
+    BoolExpr,
+    NilExpr,
+    UndExpr,
+    BigIntExpr,
+    IdentExpr,
+    BinaryExpr,
+    UnaryExpr,
+    CallExpr,
+    MethodCallExpr,
+    IndexExpr,
+    PropExpr,
+    ArrExpr,
+    ObjLitExpr,
+    CastExpr,
+    BorrowExpr,
+    TernaryExpr,
+    AwaitExpr
+}
+
+obj Param {
+    name: str,
+    typeAnnotation: str,
+    isRest: bool,
+    isOptional: bool,
+    line: num,
+    col: num
+}
+
+obj MatchArm {
+    patternKind: str,
+    varName: str,
+    litText: str,
+    line: num,
+    col: num
+}
+
+obj FieldEntry {
+    name: str,
+    valStr: str,
+    isSpread: bool,
+    line: num,
+    col: num
+}
+
+obj ASTNode {
+    kind: NodeKind,
+    inferredType: TypeKind,
+    val: str,
+    name: str,
+    typeAnnotation: str,
+    op: str,
+    line: num,
+    col: num,
+    len: num,
+    isAsync: bool,
+    isPub: bool,
+    isBorrow: bool,
+    isPrefix: bool,
+    boolVal: bool,
+    numVal: num,
+    params: Param[],
+    children: ASTNode[],
+    cases: MatchArm[],
+    fields: FieldEntry[],
+
+    createBase: kind: NodeKind, line: num, col: num :: ASTNode => {
+        -> {
+            kind: kind,
+            inferredType: TypeKind.Unknown,
+            val: "",
+            name: "",
+            typeAnnotation: "",
+            op: "",
+            line: line,
+            col: col,
+            len: 1,
+            isAsync: false,
+            isPub: false,
+            isBorrow: false,
+            isPrefix: false,
+            boolVal: false,
+            numVal: 0,
+            params: [],
+            children: [],
+            cases: [],
+            fields: []
+        }
+    },
+
+    createNum: val: num, line: num, col: num :: ASTNode => {
+        let n = ASTNode.createBase NodeKind.NumExpr, line, col
+        n.numVal = val
+        n.inferredType = TypeKind.Double
+        -> n
+    },
+
+    createStr: val: str, line: num, col: num :: ASTNode => {
+        let n = ASTNode.createBase NodeKind.StrExpr, line, col
+        n.val = val
+        n.inferredType = TypeKind.Str
+        -> n
+    },
+
+    createBool: val: bool, line: num, col: num :: ASTNode => {
+        let n = ASTNode.createBase NodeKind.BoolExpr, line, col
+        n.boolVal = val
+        n.inferredType = TypeKind.Bool
+        -> n
+    },
+
+    createIdent: name: str, line: num, col: num :: ASTNode => {
+        let n = ASTNode.createBase NodeKind.IdentExpr, line, col
+        n.name = name
+        -> n
+    },
+
+    createBinary: op: str, leftNode: ASTNode, rightNode: ASTNode, line: num, col: num :: ASTNode => {
+        let n = ASTNode.createBase NodeKind.BinaryExpr, line, col
+        n.op = op
+        n.children = [leftNode, rightNode]
+        -> n
+    },
+
+    createUnary: op: str, operand: ASTNode, prefix: bool, line: num, col: num :: ASTNode => {
+        let n = ASTNode.createBase NodeKind.UnaryExpr, line, col
+        n.op = op
+        n.isPrefix = prefix
+        n.children = [operand]
+        -> n
+    },
+
+    createVarDecl: name: str, typeAnnotation: str, isBorrow: bool, init: ASTNode, line: num, col: num :: ASTNode => {
+        let n = ASTNode.createBase NodeKind.VarDecl, line, col
+        n.name = name
+        n.typeAnnotation = typeAnnotation
+        n.isBorrow = isBorrow
+        n.children = [init]
+        -> n
+    },
+
+    createFuncDecl: name: str, returnType: str, isAsync: bool, isPub: bool, line: num, col: num :: ASTNode => {
+        let n = ASTNode.createBase NodeKind.FuncDecl, line, col
+        n.name = name
+        n.typeAnnotation = returnType
+        n.isAsync = isAsync
+        n.isPub = isPub
+        -> n
+    },
+
+    isDecl: :: bool => {
+        -> IsDeclNode self.kind
+    },
+
+    isStmt: :: bool => {
+        -> IsStmtNode self.kind
+    },
+
+    isExpr: :: bool => {
+        -> IsExprNode self.kind
+    },
+
+    toString: :: str => {
+        -> NodeKindToStr self.kind
+    }
+}
+
+/**
+ * Converts a NodeKind enum variant to its canonical string representation.
+ *
+ * @param {NodeKind} kind - The node kind to stringify
+ * @returns {str} The canonical string representation
+ */
+NodeKindToStr kind: NodeKind :: str => sw kind {
+    NodeKind.ProgramDecl    => "ProgramDecl"
+    NodeKind.FuncDecl       => "FuncDecl"
+    NodeKind.ObjDecl        => "ObjDecl"
+    NodeKind.TypeDecl       => "TypeDecl"
+    NodeKind.EnumDecl       => "EnumDecl"
+    NodeKind.ExternDecl     => "ExternDecl"
+    NodeKind.ImportDecl     => "ImportDecl"
+    NodeKind.VarDecl        => "VarDecl"
+    NodeKind.BlockStmt      => "BlockStmt"
+    NodeKind.ExprStmt       => "ExprStmt"
+    NodeKind.IfStmt         => "IfStmt"
+    NodeKind.WhStmt         => "WhStmt"
+    NodeKind.FrInStmt       => "FrInStmt"
+    NodeKind.FrOfStmt       => "FrOfStmt"
+    NodeKind.SwStmt         => "SwStmt"
+    NodeKind.RetStmt        => "RetStmt"
+    NodeKind.BrkStmt        => "BrkStmt"
+    NodeKind.ContStmt       => "ContStmt"
+    NodeKind.TryCthStmt     => "TryCthStmt"
+    NodeKind.PanicStmt      => "PanicStmt"
+    NodeKind.NumExpr        => "NumExpr"
+    NodeKind.StrExpr        => "StrExpr"
+    NodeKind.BoolExpr       => "BoolExpr"
+    NodeKind.NilExpr        => "NilExpr"
+    NodeKind.UndExpr        => "UndExpr"
+    NodeKind.BigIntExpr     => "BigIntExpr"
+    NodeKind.IdentExpr      => "IdentExpr"
+    NodeKind.BinaryExpr     => "BinaryExpr"
+    NodeKind.UnaryExpr      => "UnaryExpr"
+    NodeKind.CallExpr       => "CallExpr"
+    NodeKind.MethodCallExpr => "MethodCallExpr"
+    NodeKind.IndexExpr      => "IndexExpr"
+    NodeKind.PropExpr       => "PropExpr"
+    NodeKind.ArrExpr        => "ArrExpr"
+    NodeKind.ObjLitExpr     => "ObjLitExpr"
+    NodeKind.CastExpr       => "CastExpr"
+    NodeKind.BorrowExpr     => "BorrowExpr"
+    NodeKind.TernaryExpr    => "TernaryExpr"
+    NodeKind.AwaitExpr      => "AwaitExpr"
+    _                       => "UnknownNode"
+}
+
+/**
+ * Checks whether a given NodeKind represents a declaration node.
+ *
+ * @param {NodeKind} kind - The node kind to check
+ * @returns {bool} True if the node is a declaration, false otherwise
+ */
+IsDeclNode kind: NodeKind :: bool => sw kind {
+    NodeKind.ProgramDecl => true
+    NodeKind.FuncDecl    => true
+    NodeKind.ObjDecl     => true
+    NodeKind.TypeDecl    => true
+    NodeKind.EnumDecl    => true
+    NodeKind.ExternDecl  => true
+    NodeKind.ImportDecl  => true
+    NodeKind.VarDecl     => true
+    _                    => false
+}
+
+/**
+ * Checks whether a given NodeKind represents a statement node.
+ *
+ * @param {NodeKind} kind - The node kind to check
+ * @returns {bool} True if the node is a statement, false otherwise
+ */
+IsStmtNode kind: NodeKind :: bool => sw kind {
+    NodeKind.BlockStmt  => true
+    NodeKind.ExprStmt   => true
+    NodeKind.IfStmt     => true
+    NodeKind.WhStmt     => true
+    NodeKind.FrInStmt   => true
+    NodeKind.FrOfStmt   => true
+    NodeKind.SwStmt     => true
+    NodeKind.RetStmt    => true
+    NodeKind.BrkStmt    => true
+    NodeKind.ContStmt   => true
+    NodeKind.TryCthStmt => true
+    NodeKind.PanicStmt  => true
+    _                   => false
+}
+
+/**
+ * Checks whether a given NodeKind represents an expression node.
+ *
+ * @param {NodeKind} kind - The node kind to check
+ * @returns {bool} True if the node is an expression, false otherwise
+ */
+IsExprNode kind: NodeKind :: bool => sw kind {
+    NodeKind.NumExpr        => true
+    NodeKind.StrExpr        => true
+    NodeKind.BoolExpr       => true
+    NodeKind.NilExpr        => true
+    NodeKind.UndExpr        => true
+    NodeKind.BigIntExpr     => true
+    NodeKind.IdentExpr      => true
+    NodeKind.BinaryExpr     => true
+    NodeKind.UnaryExpr      => true
+    NodeKind.CallExpr       => true
+    NodeKind.MethodCallExpr => true
+    NodeKind.IndexExpr      => true
+    NodeKind.PropExpr       => true
+    NodeKind.ArrExpr        => true
+    NodeKind.ObjLitExpr     => true
+    NodeKind.CastExpr       => true
+    NodeKind.BorrowExpr     => true
+    NodeKind.TernaryExpr    => true
+    NodeKind.AwaitExpr      => true
+    _                       => false
+}
+
+
+

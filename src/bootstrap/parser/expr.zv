@@ -1,0 +1,10 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Expression Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/expr.zv
+ * =============================================================================
+ */
+
+imp str, arr
+
+// Expression parser will be implemented in Task 2.5

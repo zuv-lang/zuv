@@ -1,0 +1,10 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Command-Line Interface Driver
+ * Path: sub_projects/zuv/src/bootstrap/cli.zv
+ * =============================================================================
+ */
+
+imp os, fs, str, arr, time
+
+// CLI handlers will be implemented in Phase 5

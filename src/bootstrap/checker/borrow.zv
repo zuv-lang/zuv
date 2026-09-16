@@ -1,0 +1,9 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Borrow Checker
+ * Path: sub_projects/zuv/src/bootstrap/checker/borrow.zv
+ * =============================================================================
+ */
+
+imp str, arr
+

@@ -1,0 +1,9 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Extern & FFI Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/extern.zv
+ * =============================================================================
+ */
+
+imp str, arr
+

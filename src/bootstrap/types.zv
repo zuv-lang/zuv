@@ -1,0 +1,213 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Semantic Type System Definitions
+ * Path: sub_projects/zuv/src/bootstrap/types.zv
+ * Defines all semantic type kinds, TypeInfo schema, and type compatibility helpers.
+ * =============================================================================
+ */
+
+imp str, arr
+
+enum TypeKind {
+    Unknown,
+    Void,
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    Double,
+    Str,
+    Ptr,
+    Arr,
+    Obj,
+    Enum,
+    Func,
+    Und,
+    Nil
+}
+
+obj TypeInfo {
+    kind: TypeKind,
+    name: str,
+    elemType: TypeKind,
+    elemTypeName: str,
+    fields: str[],
+    fieldTypes: TypeKind[],
+    isRef: bool,
+
+    createPrimitive: kind: TypeKind, name: str :: TypeInfo => {
+        -> {
+            kind: kind,
+            name: name,
+            elemType: TypeKind.Unknown,
+            elemTypeName: "",
+            fields: [],
+            fieldTypes: [],
+            isRef: false
+        }
+    },
+
+    createArray: elemKind: TypeKind, elemName: str :: TypeInfo => {
+        -> {
+            kind: TypeKind.Arr,
+            name: elemName + "[]",
+            elemType: elemKind,
+            elemTypeName: elemName,
+            fields: [],
+            fieldTypes: [],
+            isRef: true
+        }
+    },
+
+    createObject: name: str :: TypeInfo => {
+        -> {
+            kind: TypeKind.Obj,
+            name: name,
+            elemType: TypeKind.Unknown,
+            elemTypeName: "",
+            fields: [],
+            fieldTypes: [],
+            isRef: true
+        }
+    },
+
+    isInteger: :: bool => {
+        -> IsIntegerType self.kind
+    },
+
+    isNumeric: :: bool => {
+        -> IsNumericType self.kind
+    },
+
+    isPointer: :: bool => {
+        -> IsPointerType self.kind
+    },
+
+    isPrimitive: :: bool => {
+        -> IsPrimitiveType self.kind
+    },
+
+    toString: :: str => {
+        -> self.name
+    }
+}
+
+/**
+ * Converts a TypeKind enum variant to its canonical string representation.
+ *
+ * @param {TypeKind} kind - The type kind enum variant to convert
+ * @returns {str} The canonical string representation
+ */
+TypeKindToStr kind: TypeKind :: str => sw kind {
+    TypeKind.Unknown => "unknown"
+    TypeKind.Void    => "void"
+    TypeKind.Bool    => "bool"
+    TypeKind.I8      => "i8"
+    TypeKind.I16     => "i16"
+    TypeKind.I32     => "i32"
+    TypeKind.I64     => "i64"
+    TypeKind.Double  => "double"
+    TypeKind.Str     => "str"
+    TypeKind.Ptr     => "ptr"
+    TypeKind.Arr     => "arr"
+    TypeKind.Obj     => "obj"
+    TypeKind.Enum    => "enum"
+    TypeKind.Func    => "func"
+    TypeKind.Und     => "und"
+    TypeKind.Nil     => "nil"
+    _                => "unknown"
+}
+
+/**
+ * Checks whether a given TypeKind represents an integer type.
+ *
+ * @param {TypeKind} kind - The type kind to evaluate
+ * @returns {bool} True if the type is an integer type, false otherwise
+ */
+IsIntegerType kind: TypeKind :: bool => sw kind {
+    TypeKind.I8  => true
+    TypeKind.I16 => true
+    TypeKind.I32 => true
+    TypeKind.I64 => true
+    _            => false
+}
+
+/**
+ * Checks whether a given TypeKind represents a numeric type (integer or float).
+ *
+ * @param {TypeKind} kind - The type kind to evaluate
+ * @returns {bool} True if the type is numeric, false otherwise
+ */
+IsNumericType kind: TypeKind :: bool => sw kind {
+    TypeKind.I8     => true
+    TypeKind.I16    => true
+    TypeKind.I32    => true
+    TypeKind.I64    => true
+    TypeKind.Double => true
+    _               => false
+}
+
+/**
+ * Checks whether a given TypeKind represents a pointer or heap reference type.
+ *
+ * @param {TypeKind} kind - The type kind to evaluate
+ * @returns {bool} True if the type is a pointer, array, or object reference
+ */
+IsPointerType kind: TypeKind :: bool => sw kind {
+    TypeKind.Ptr => true
+    TypeKind.Arr => true
+    TypeKind.Obj => true
+    TypeKind.Str => true
+    _            => false
+}
+
+/**
+ * Checks whether a given TypeKind is a primitive value type.
+ *
+ * @param {TypeKind} kind - The type kind to evaluate
+ * @returns {bool} True if primitive, false otherwise
+ */
+IsPrimitiveType kind: TypeKind :: bool => sw kind {
+    TypeKind.Void   => true
+    TypeKind.Bool   => true
+    TypeKind.I8     => true
+    TypeKind.I16    => true
+    TypeKind.I32    => true
+    TypeKind.I64    => true
+    TypeKind.Double => true
+    TypeKind.Str    => true
+    TypeKind.Und    => true
+    TypeKind.Nil    => true
+    _               => false
+}
+
+/**
+ * Checks whether two types are compatible for assignment or parameter passing.
+ *
+ * @param {TypeKind} target - The destination type kind
+ * @param {TypeKind} source - The source expression type kind
+ * @returns {bool} True if assignment is sound, false otherwise
+ */
+AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
+    if target == source {
+        -> true
+    }
+    if target == TypeKind.Double && (source == TypeKind.I64 || source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
+        -> true
+    }
+    if target == TypeKind.I64 && (source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
+        -> true
+    }
+    if target == TypeKind.I32 && (source == TypeKind.I16 || source == TypeKind.I8) {
+        -> true
+    }
+    if target == TypeKind.I16 && source == TypeKind.I8 {
+        -> true
+    }
+    if (target == TypeKind.Ptr || target == TypeKind.Obj || target == TypeKind.Arr) && (source == TypeKind.Nil || source == TypeKind.Und) {
+        -> true
+    }
+    -> false
+}
+

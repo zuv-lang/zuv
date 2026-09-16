@@ -1,0 +1,10 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl.zv
+ * =============================================================================
+ */
+
+imp str, arr
+
+// Declaration parser will be implemented in Task 2.3

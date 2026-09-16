@@ -1,0 +1,11 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Streaming Lexical Scanner
+ * Path: sub_projects/zuv/src/bootstrap/lexer.zv
+ * =============================================================================
+ */
+
+imp str, arr
+
+// Lexical scanner will be implemented in Phase 2
+

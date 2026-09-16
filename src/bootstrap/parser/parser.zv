@@ -1,0 +1,11 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Parser State & Top-Level Coordinator
+ * Path: sub_projects/zuv/src/bootstrap/parser/parser.zv
+ * =============================================================================
+ */
+
+imp str, arr
+
+// Parser coordinator will be implemented in Phase 2
+

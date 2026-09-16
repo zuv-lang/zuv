@@ -1,0 +1,175 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Diagnostics & Error Reporting
+ * Path: sub_projects/zuv/src/bootstrap/diagnostics.zv
+ * Defines Diagnostic schema, formatting helpers, and caret underlining engine.
+ * =============================================================================
+ */
+
+imp str, arr
+
+obj Diagnostic {
+    code: str,
+    message: str,
+    file: str,
+    line: num,
+    col: num,
+    len: num,
+    help: str,
+
+    create: code: str, message: str, file: str, line: num, col: num, len: num, help: str :: Diagnostic => {
+        -> {
+            code: code,
+            message: message,
+            file: file,
+            line: line,
+            col: col,
+            len: len,
+            help: help
+        }
+    },
+
+    format: sourceText: str :: str => {
+        -> FormatDiagnostic self, sourceText
+    },
+
+    formatWarning: sourceText: str :: str => {
+        -> FormatWarning self, sourceText
+    }
+}
+
+/**
+ * Extracts a single line of text from a multi-line source string.
+ *
+ * @param {str} sourceText - Full source code text
+ * @param {num} targetLine - 1-indexed target line number
+ * @returns {str} Extracted line content without trailing newline
+ */
+ExtractSourceLine sourceText: str, targetLine: num :: str {
+    let curLine: num = 1
+    let startIdx: num = 0
+    let totalLen: num = sourceText.ln
+    let found: str = ""
+    fr i = 0; i < totalLen; i++ {
+        let ch: str = sourceText.chr i
+        if ch == "\n" {
+            if curLine == targetLine {
+                found = sourceText.slc startIdx, i
+                i = totalLen
+            }
+            curLine++
+            startIdx = i
+            startIdx++
+        }
+    }
+    if curLine == targetLine {
+        found = sourceText.slc startIdx, totalLen
+    }
+    -> found
+}
+
+/**
+ * Builds a string of leading space characters for caret column alignment.
+ *
+ * @param {num} count - Number of space characters
+ * @returns {str} Space padding string
+ */
+BuildSpaces count: num :: str {
+    let s: str = ""
+    fr i = 0; i < count; i++ {
+        s = s + " "
+    }
+    -> s
+}
+
+/**
+ * Builds a caret underline string (e.g. "^" or "^^^") matching error span.
+ *
+ * @param {num} spanLen - Number of caret characters
+ * @returns {str} Caret underline string
+ */
+BuildCarets spanLen: num :: str {
+    let s: str = ""
+    let n: num = spanLen
+    if n < 1 {
+        n = 1
+    }
+    fr i = 0; i < n; i++ {
+        s = s + "^"
+    }
+    -> s
+}
+
+/**
+ * Formats a Diagnostic record into standard Rust-style compiler error output
+ * with caret underlining and source snippets:
+ *
+ * error[EXXXX]: message --> file.zv:line:col
+ *   |
+ * 2 | source line text
+ *   |      ^ carets
+ *   = help: suggestion
+ *
+ * @param {Diagnostic} diag - The diagnostic error to format
+ * @param {str} sourceText - Source code text for snippet extraction
+ * @returns {str} Formatted multi-line diagnostic string
+ */
+FormatDiagnostic diag: Diagnostic, sourceText: str :: str {
+    let lineStr: str = "" + diag.line
+    let colStr: str = "" + diag.col
+    let header: str = "error[" + diag.code + "]: " + diag.message + "\n"
+    let loc: str = "  --> " + diag.file + ":" + lineStr + ":" + colStr + "\n"
+    let gutter: str = "   |\n"
+
+    let srcLine: str = ExtractSourceLine sourceText, diag.line
+    let snippet: str = " " + lineStr + " | " + srcLine + "\n"
+
+    let padCount: num = diag.col - 1
+    if padCount < 0 {
+        padCount = 0
+    }
+    let pad: str = BuildSpaces padCount
+    let carets: str = BuildCarets diag.len
+    let underline: str = "   | " + pad + carets + "\n"
+
+    let out: str = header + loc + gutter + snippet + underline
+    if diag.help != "" {
+        let helpNote: str = "   |\n   = help: " + diag.help + "\n"
+        out = out + helpNote
+    }
+    -> out
+}
+
+/**
+ * Formats a Diagnostic record into warning compiler output.
+ *
+ * @param {Diagnostic} diag - The diagnostic warning to format
+ * @param {str} sourceText - Source code text for snippet extraction
+ * @returns {str} Formatted multi-line warning string
+ */
+FormatWarning diag: Diagnostic, sourceText: str :: str {
+    let lineStr: str = "" + diag.line
+    let colStr: str = "" + diag.col
+    let header: str = "warning[" + diag.code + "]: " + diag.message + "\n"
+    let loc: str = "  --> " + diag.file + ":" + lineStr + ":" + colStr + "\n"
+    let gutter: str = "   |\n"
+
+    let srcLine: str = ExtractSourceLine sourceText, diag.line
+    let snippet: str = " " + lineStr + " | " + srcLine + "\n"
+
+    let padCount: num = diag.col - 1
+    if padCount < 0 {
+        padCount = 0
+    }
+    let pad: str = BuildSpaces padCount
+    let carets: str = BuildCarets diag.len
+    let underline: str = "   | " + pad + carets + "\n"
+
+    let out: str = header + loc + gutter + snippet + underline
+    if diag.help != "" {
+        let helpNote: str = "   |\n   = help: " + diag.help + "\n"
+        out = out + helpNote
+    }
+    -> out
+}
+
