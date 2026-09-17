@@ -20,6 +20,7 @@ imp Checker, Symbol, Scope frm checker/checker
 imp InferExpression, InferStatement, InferDeclaration, InferProgram frm checker/infer
 imp BorrowChecker, BorrowVar, BorrowScope, ReferenceAlias, BorrowCheckProgram, BorrowCheckStatement, BorrowCheckExpression frm checker/borrow
 imp Codegen, StringConstant frm codegen/codegen
+imp ExternManager, ExternFuncInfo, ToLLVMExternType, FormatExternDeclare frm codegen/extern
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -487,10 +488,41 @@ main {
     hasStrConst = moduleIR.cnt "@str_0"
     hasFunc = moduleIR.cnt "@test_func"
     prnt `    Module IR generated: length=${moduleIR.ln}, hasTriple=${hasTriple}, hasStrConst=${hasStrConst}, hasFunc=${hasFunc}`
+
+    // 14. Multiline extern & Foreign Function Declarations (Phase 4 Task 4.2)
+    prnt "14. Multiline extern & Foreign Function Declarations:"
+    cgExt = Codegen.create "x86_64-pc-windows-msvc", false
+    extMgr = ExternManager.create
+
+    // 14.1 Emit standard C runtime declarations
+    extMgr.emitCRuntimeDecls cgExt
+    hasMalloc = extMgr.isDeclared "malloc"
+    hasFree = extMgr.isDeclared "free"
+    hasMemcpy = extMgr.isDeclared "memcpy"
+    hasStrlen = extMgr.isDeclared "strlen"
+    hasPrintf = extMgr.isDeclared "printf"
+    hasExit = extMgr.isDeclared "exit"
+    prnt `    C runtime decls: malloc=${hasMalloc}, free=${hasFree}, memcpy=${hasMemcpy}, strlen=${hasStrlen}, printf=${hasPrintf}, exit=${hasExit}`
+
+    // 14.2 Multiline extern block parsing and emission
+    extCode = "extern \"kernel32.lib\" {\n    GetCurrentProcessId -> num\n    Sleep ms: num -> void\n}\n"
+    lexExt = Lexer.create extCode
+    pExt = Parser.create lexExt.tokenizeAll, "ext_test.zv", extCode
+    extNode = ParseDeclaration pExt
+    emittedK32 = extMgr.emitExternDeclNode extNode, cgExt
+    prnt `    Parsed multiline extern "kernel32.lib": emitted=${emittedK32}, hasGetPid=${extMgr.isDeclared "GetCurrentProcessId"}, hasSleep=${extMgr.isDeclared "Sleep"}`
+
+    // 14.3 Single-line extern with multiple params
+    extUser32 = "extern \"user32.dll\" MessageBoxA hwnd: num, text: str, caption: str, uType: num -> num\n"
+    lexU32 = Lexer.create extUser32
+    pU32 = Parser.create lexU32.tokenizeAll, "u32_test.zv", extUser32
+    u32Node = ParseDeclaration pU32
+    emittedU32 = extMgr.emitExternDeclNode u32Node, cgExt
+    prnt `    Parsed single extern "user32.dll": emitted=${emittedU32}, hasMsgBox=${extMgr.isDeclared "MessageBoxA"}`
+
+    // 14.4 Deduplication & library tracking
+    emittedDup = extMgr.emitExternDeclNode extNode, cgExt
+    libs = extMgr.getExternLibs
+    prnt `    Deduplication rejection: emitted=${emittedDup}, totalFuncs=${extMgr.getFuncCount}`
+    prnt `    Tracked extern libraries count: ${libs.ln} (k32=${extMgr.hasLib "kernel32.lib"}, user32=${extMgr.hasLib "user32.dll"})`
 }
-
-
-
-
-
-

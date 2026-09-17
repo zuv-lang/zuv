@@ -1,9 +1,275 @@
 /*
  * =============================================================================
- * Zuv Bootstrap Compiler — Extern & FFI Code Generation
+ * Zuv Bootstrap Compiler — Foreign Function Interface & Extern Codegen
  * Path: sub_projects/zuv/src/bootstrap/codegen/extern.zv
+ *
+ * Implements code generation for C Foreign Function Interface (FFI) and Win32
+ * external library declarations from single-line and multiline `extern "lib"` blocks.
  * =============================================================================
  */
 
 imp str, arr
+imp ASTNode, NodeKind, Param frm ../ast
+imp Codegen, StringConstant frm codegen
 
+/**
+ * Maps a Zuv or C type annotation to its corresponding LLVM IR type representation.
+ *
+ * @param {str} typeStr - High-level type name (e.g. "num", "str", "void", "i64", "double")
+ * @returns {str} LLVM IR type string ("void", "i1", "i8", "i16", "i32", "i64", "double", "ptr")
+ */
+ToLLVMExternType typeStr: str :: str {
+    if typeStr == "void" {
+        -> "void"
+    }
+    if typeStr == "double" || typeStr == "f64" || typeStr == "float" {
+        -> "double"
+    }
+    if typeStr == "i64" || typeStr == "int64" || typeStr == "size_t" || typeStr == "u64" {
+        -> "i64"
+    }
+    if typeStr == "str" || typeStr == "ptr" || typeStr == "*byte" || typeStr == "any" {
+        -> "ptr"
+    }
+    if typeStr == "bool" || typeStr == "i1" {
+        -> "i1"
+    }
+    if typeStr == "i8" || typeStr == "u8" || typeStr == "byte" {
+        -> "i8"
+    }
+    if typeStr == "i16" || typeStr == "u16" {
+        -> "i16"
+    }
+    // Default for C ABI "num", "i32", "int", "DWORD", or unknown
+    -> "i32"
+}
+
+/**
+ * Formats a valid LLVM IR declare statement for an external foreign function.
+ *
+ * @param {str} retType - LLVM IR return type (e.g. "void", "i32", "ptr")
+ * @param {str} name - Name of the function symbol
+ * @param {str[]} paramTypes - Array of LLVM IR parameter type strings
+ * @param {bool} isVarArg - True if function accepts variable arguments (...)
+ * @returns {str} Formatted LLVM IR declare statement
+ */
+FormatExternDeclare retType: str, name: str, paramTypes: str[], isVarArg: bool :: str {
+    let paramsStr = ""
+    let first = true
+    fr pType of paramTypes {
+        if !first {
+            paramsStr = paramsStr + ", "
+        }
+        paramsStr = paramsStr + pType
+        first = false
+    }
+    if isVarArg {
+        if !first {
+            paramsStr = paramsStr + ", "
+        }
+        paramsStr = paramsStr + "..."
+    }
+    -> "declare " + retType + " @" + name + "(" + paramsStr + ")"
+}
+
+/**
+ * Holds metadata for a foreign external C / Win32 function declaration.
+ */
+obj ExternFuncInfo {
+    name: str,
+    libName: str,
+    retType: str,
+    paramTypes: str[],
+    isVarArg: bool,
+    rawDecl: str
+}
+
+/**
+ * Coordinates external function declarations, library tracking, and C runtime symbol emission.
+ */
+obj ExternManager {
+    declaredFuncs: str[],
+    externLibs: str[],
+    functions: ExternFuncInfo[],
+
+    /**
+     * Initializes a new ExternManager instance.
+     *
+     * @returns {ExternManager} Initialized extern manager
+     */
+    create: :: ExternManager => {
+        -> ExternManager {
+            declaredFuncs: [],
+            externLibs: [],
+            functions: []
+        }
+    },
+
+    /**
+     * Checks whether a function symbol has already been declared.
+     *
+     * @param {str} name - Function symbol name
+     * @returns {bool} True if already declared
+     */
+    isDeclared: name: str :: bool => {
+        fr fnName of self.declaredFuncs {
+            if fnName == name {
+                -> true
+            }
+        }
+        -> false
+    },
+
+    /**
+     * Checks whether an external library has already been recorded.
+     *
+     * @param {str} libName - Library file name
+     * @returns {bool} True if already registered
+     */
+    hasLib: libName: str :: bool => {
+        fr lib of self.externLibs {
+            if lib == libName {
+                -> true
+            }
+        }
+        -> false
+    },
+
+    /**
+     * Adds an external library dependency for the linker, ignoring default C runtime.
+     *
+     * @param {str} libName - Library name (e.g. "kernel32.lib", "user32.dll")
+     * @returns {void}
+     */
+    addLib: libName: str :: void => {
+        if libName.ln == 0 || libName == "c" || libName == "libc" {
+            -> und
+        }
+        if !(self.hasLib libName) {
+            self.externLibs.psh libName
+        }
+    },
+
+    /**
+     * Emits an external function declaration into the Codegen header and records metadata.
+     *
+     * @param {str} name - Function symbol name
+     * @param {str} libName - Library file name
+     * @param {str} retType - LLVM return type
+     * @param {str[]} paramTypes - Array of LLVM parameter types
+     * @param {bool} isVarArg - True if variadic
+     * @param {Codegen} codegen - LLVM module coordinator
+     * @returns {str} Formatted declare statement or empty string if already declared
+     */
+    emitFunctionDecl: name: str, libName: str, retType: str, paramTypes: str[], isVarArg: bool, codegen: Codegen :: str => {
+        if self.isDeclared name {
+            -> ""
+        }
+        self.declaredFuncs.psh name
+        self.addLib libName
+
+        let declStr = FormatExternDeclare retType, name, paramTypes, isVarArg
+        codegen.emitExtern declStr
+
+        let info = ExternFuncInfo {
+            name: name,
+            libName: libName,
+            retType: retType,
+            paramTypes: paramTypes,
+            isVarArg: isVarArg,
+            rawDecl: declStr
+        }
+        self.functions.psh info
+        -> declStr
+    },
+
+    /**
+     * Emits standard C runtime library declarations required by the Zuv language runtime.
+     *
+     * @param {Codegen} codegen - LLVM module coordinator
+     * @returns {void}
+     */
+    emitCRuntimeDecls: codegen: Codegen :: void => {
+        // Memory management functions
+        self.emitFunctionDecl "malloc", "c", "ptr", ["i64"], false, codegen
+        self.emitFunctionDecl "realloc", "c", "ptr", ["ptr", "i64"], false, codegen
+        self.emitFunctionDecl "free", "c", "void", ["ptr"], false, codegen
+        self.emitFunctionDecl "memcpy", "c", "ptr", ["ptr", "ptr", "i64"], false, codegen
+        self.emitFunctionDecl "memset", "c", "ptr", ["ptr", "i32", "i64"], false, codegen
+        self.emitFunctionDecl "memmove", "c", "ptr", ["ptr", "ptr", "i64"], false, codegen
+
+        // Strings & formatted I/O functions
+        self.emitFunctionDecl "strlen", "c", "i64", ["ptr"], false, codegen
+        self.emitFunctionDecl "strcmp", "c", "i32", ["ptr", "ptr"], false, codegen
+        self.emitFunctionDecl "strncmp", "c", "i32", ["ptr", "ptr", "i64"], false, codegen
+        self.emitFunctionDecl "strstr", "c", "ptr", ["ptr", "ptr"], false, codegen
+        self.emitFunctionDecl "snprintf", "c", "i32", ["ptr", "i64", "ptr"], true, codegen
+        self.emitFunctionDecl "printf", "c", "i32", ["ptr"], true, codegen
+
+        // System & process execution functions
+        self.emitFunctionDecl "exit", "c", "void", ["i32"], false, codegen
+        self.emitFunctionDecl "system", "c", "i32", ["ptr"], false, codegen
+        self.emitFunctionDecl "getenv", "c", "ptr", ["ptr"], false, codegen
+    },
+
+    /**
+     * Emits foreign function declarations from an ExternDecl AST node (single or multiline block).
+     *
+     * @param {ASTNode} node - ASTNode with kind NodeKind.ExternDecl
+     * @param {Codegen} codegen - LLVM module coordinator
+     * @returns {num} Number of function declarations emitted
+     */
+    emitExternDeclNode: node: ASTNode, codegen: Codegen :: num => {
+        if node.kind != NodeKind.ExternDecl {
+            -> 0
+        }
+        let libName = node.val
+        let emittedCount = 0
+
+        fr fnChild of node.children {
+            let fnName = fnChild.name
+            let retType = ToLLVMExternType fnChild.typeAnnotation
+            let paramTypes: str[] = []
+            let isVarArg = false
+
+            // Special Win32 Sleep ABI handling: Sleep ms: num -> void (ms is DWORD / i32)
+            if fnName == "Sleep" && fnChild.params.ln > 0 {
+                paramTypes.psh "i32"
+            } els {
+                fr p of fnChild.params {
+                    if p.isRest {
+                        isVarArg = true
+                    } els {
+                        let pType = ToLLVMExternType p.typeAnnotation
+                        paramTypes.psh pType
+                    }
+                }
+            }
+
+            let decl = self.emitFunctionDecl fnName, libName, retType, paramTypes, isVarArg, codegen
+            if decl.ln > 0 {
+                emittedCount++
+            }
+        }
+
+        -> emittedCount
+    },
+
+    /**
+     * Returns the list of registered external library dependencies.
+     *
+     * @returns {str[]} Array of library names
+     */
+    getExternLibs: :: str[] => {
+        -> self.externLibs
+    },
+
+    /**
+     * Returns the number of registered external functions.
+     *
+     * @returns {num} Total registered functions count
+     */
+    getFuncCount: :: num => {
+        -> self.functions.ln
+    }
+}
