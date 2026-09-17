@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-17
+
+### 🔄 Rewrite Zuv Bootstrap with Proper Structure
+- **Self-Host Bootstrap Architecture (`sub_projects/zuv/src/bootstrap`)**:
+  - Re-wrote the Zuv bootstrap compiler with a proper, modular architecture:
+    - Token definitions & classifications (`tokens.zv`)
+    - Source scanner & lexical analyzer (`lexer.zv`)
+    - Abstract syntax tree structures & builders (`ast.zv`)
+    - Parser modules with clean separation (`parser/parser.zv`, `parser/decl.zv`, `parser/stmt.zv`, `parser/expr.zv`, `parser/program.zv`)
+    - Rustc-style diagnostics and error formatting (`diagnostics.zv`)
+    - Semantic type system & type inference (`types.zv`, `checker/infer.zv`)
+    - Scope-aware borrow checker (`checker/borrow.zv`, `checker/checker.zv`)
+    - LLVM code generation modules (`codegen/codegen.zv`, `codegen/decl.zv`, `codegen/stmt.zv`, `codegen/expr.zv`, `codegen/array.zv`, `codegen/extern.zv`, `codegen/runtime.zv`, `codegen/types.zv`)
+    - Full CLI coordinator with in-process LLVM emission & direct LLD linking (`cli.zv`, `main.zv`)
+- **Removal of `let` Across Bootstrap**:
+  - Removed all occurrences of `let` across the bootstrap codebase.
+  - Supported first-class implicit variable declarations (`ident = expr`) and typed declarations (`ident: Type = expr`) without `let`.
+  - Variables declared without `let` are mutable by default across both compilers.
+- **Top-Level Script Execution Support**:
+  - Added automatic `@main` wrapping in `cli.zv`: statements at top-level scope are collected and wrapped in an auto-generated `@main` function with crash handling and exit code.
+- **Anonymous Object Literal Support**:
+  - Added dynamic field offset registration in `StructLayoutRegistry` for anonymous object literals (`{ x: 12, y: 34 }`), giving properties distinct 64-bit word slot offsets and fixing property reads and mutations.
+- **Linker Subsystem**:
+  - Configured `-subsystem:console` for Windows executables to ensure proper terminal I/O and entry point binding.
+- **Fixed Execution of `anonymous_object.test.zv`**:
+  - Fixed semantic checking and end-to-end runtime execution for `tests/anonymous_object.test.zv`:
+    - Resolved `E0202: Undefined identifier 'pt'` error by parsing implicit variable assignments at statement level.
+    - Resolved linker failures (`subsystem must be defined`) by auto-generating `@main` entry points and adding `-subsystem:console`.
+    - Resolved property slot collision so anonymous object fields (`pt.x`, `pt.y`) read and mutate separate 64-bit offsets (verifying `12`, `34`, `99`).
+
+### ⚠️ Deprecation of C++ Bootstrap Compiler
+- **Phasing out C++ Bootstrap (`zuv.exe`)**:
+  - Formally deprecated the C++ bootstrap compiler (`D:\rujs\src/`).
+  - Established deprecation roadmap: the C++ compiler will be retired once the self-host compiler is fully capable of compiling itself end-to-end.
+
 ## [0.12.0] - 2026-09-07
 
 ### 🔀 Braceless Single-Statement Control Flow (`if`, `els`, `wh`)
