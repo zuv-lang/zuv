@@ -1,9 +1,663 @@
 /*
  * =============================================================================
- * Zuv Bootstrap Compiler — Borrow Checker
+ * Zuv Bootstrap Compiler — Borrow Checker & Reference Aliasing Engine
  * Path: sub_projects/zuv/src/bootstrap/checker/borrow.zv
  * =============================================================================
+ *
+ * Implements borrow checking and reference alias tracking:
+ * - `obj BorrowVar`: Variable state tracking mutability, active borrows, moves, and lifetime
+ * - `obj BorrowScope`: Lexical scope tracking local variables and borrow references
+ * - `obj ReferenceAlias`: Reference target mapping for zero-cost auto-dereferencing
+ * - `obj BorrowChecker`: Scope stack manager, alias resolver, and borrow rule validator
+ * - `BorrowCheckProgram`: Traversal entry point for full program AST
+ * - `BorrowCheckStatement`: Statement AST validation (VarDecl, If, Wh, FrOf, ExprStmt)
+ * - `BorrowCheckExpression`: Expression AST validation (IdentExpr, BinaryExpr, UnaryExpr)
  */
 
 imp str, arr
+imp Token, TokenType frm ../tokens
+imp ASTNode, NodeKind frm ../ast
+imp TypeInfo, TypeKind frm ../types
+imp Diagnostic frm ../diagnostics
 
+/**
+ * Tracks variable binding state, active borrow references, moves, and lexical scope depth.
+ */
+obj BorrowVar {
+    name: str,
+    isBorrow: bool,
+    target: str,
+    isMutable: bool,
+    isMoved: bool,
+    activeBorrows: num,
+    scopeLevel: num,
+    line: num,
+    col: num,
+
+    /**
+     * Creates a new BorrowVar tracking binding state and active borrows.
+     *
+     * @param {str} name - Variable identifier name
+     * @param {bool} isBorrow - True if this is a borrow reference (&let)
+     * @param {str} target - Referenced target variable name if isBorrow
+     * @param {bool} isMutable - True if variable is reassignable
+     * @param {num} scopeLevel - Lexical scope nesting depth
+     * @param {num} line - Source declaration line
+     * @param {num} col - Source declaration column
+     * @returns {BorrowVar} Initialized BorrowVar instance
+     */
+    create: name: str, isBorrow: bool, target: str, isMutable: bool, scopeLevel: num, line: num, col: num :: BorrowVar => {
+        -> {
+            name,
+            isBorrow,
+            target,
+            isMutable,
+            isMoved: false,
+            activeBorrows: 0,
+            scopeLevel,
+            line,
+            col
+        }
+    },
+
+    /**
+     * Creates an empty sentinel BorrowVar indicating a variable was not found.
+     *
+     * @returns {BorrowVar} Empty sentinel variable
+     */
+    createNotFound: :: BorrowVar => {
+        emptyStr: str = ""
+        -> {
+            name: emptyStr,
+            isBorrow: false,
+            target: emptyStr,
+            isMutable: false,
+            isMoved: false,
+            activeBorrows: 0,
+            scopeLevel: -1,
+            line: 0,
+            col: 0
+        }
+    }
+}
+
+/**
+ * Represents a single lexical scope frame holding declared BorrowVars.
+ */
+obj BorrowScope {
+    level: num,
+    vars: BorrowVar[],
+
+    /**
+     * Creates a new lexical scope frame.
+     *
+     * @param {num} level - Scope nesting depth level
+     * @param {BorrowVar[]} vars - Initial variables in scope
+     * @returns {BorrowScope} Initialized borrow scope
+     */
+    create: level: num, vars: BorrowVar[] :: BorrowScope => {
+        -> {
+            level,
+            vars
+        }
+    }
+}
+
+/**
+ * Tracks an alias mapping from a reference variable to its underlying root target.
+ *
+ * Used by code generation for zero-cost auto-dereferencing.
+ */
+obj ReferenceAlias {
+    refName: str,
+    targetName: str,
+
+    /**
+     * Creates an alias mapping from a borrow reference to its target identifier.
+     *
+     * @param {str} refName - Borrow reference variable name
+     * @param {str} targetName - Target variable identifier being referenced
+     * @returns {ReferenceAlias} Reference alias mapping
+     */
+    create: refName: str, targetName: str :: ReferenceAlias => {
+        -> {
+            refName,
+            targetName
+        }
+    }
+}
+
+/**
+ * Semantic Borrow Checker and Reference Alias Coordinator.
+ */
+obj BorrowChecker {
+    scopes: BorrowScope[],
+    aliases: ReferenceAlias[],
+    errors: Diagnostic[],
+    file: str,
+    source: str,
+
+    /**
+     * Creates an initialized BorrowChecker with a root global scope.
+     *
+     * @param {str} file - Source file path for diagnostics
+     * @param {str} source - Source file content string
+     * @returns {BorrowChecker} New BorrowChecker coordinator
+     */
+    create: file: str, source: str :: BorrowChecker => {
+        emptyVars: BorrowVar[] = []
+        rootScope = BorrowScope.create 0, emptyVars
+        rootScopes: BorrowScope[] = [rootScope]
+        emptyAliases: ReferenceAlias[] = []
+        emptyErrors: Diagnostic[] = []
+
+        -> {
+            scopes: rootScopes,
+            aliases: emptyAliases,
+            errors: emptyErrors,
+            file,
+            source
+        }
+    },
+
+    /**
+     * Pushes a new lexical scope level onto the scope hierarchy stack.
+     *
+     * @returns {void}
+     */
+    enterScope: :: void => {
+        nextLevel: num = self.scopes.ln
+        emptyVars: BorrowVar[] = []
+        newScope = BorrowScope.create nextLevel, emptyVars
+        self.scopes.psh newScope
+    },
+
+    /**
+     * Pops the current lexical scope level, releasing active borrow counts for targets whose references expire.
+     *
+     * @returns {void}
+     */
+    exitScope: :: void => {
+        totalScopes: num = self.scopes.ln
+        if totalScopes > 1 {
+            topIdx: num = totalScopes - 1
+            dyingScope: BorrowScope = self.scopes[topIdx]
+
+            fr v of dyingScope.vars {
+                if v.isBorrow && v.target.ln > 0 {
+                    actualTarget: str = self.resolveReferenceTarget v.target
+                    targetVar: BorrowVar = self.getVar actualTarget
+                    if targetVar.name.ln > 0 && targetVar.activeBorrows > 0 {
+                        targetVar.activeBorrows = targetVar.activeBorrows - 1
+                        self.updateVar targetVar
+                    }
+                }
+            }
+
+            let survivingAliases: ReferenceAlias[] = []
+            fr alias of self.aliases {
+                let refVar: BorrowVar = self.getVar alias.refName
+                if refVar.name.ln == 0 || refVar.scopeLevel != topIdx {
+                    survivingAliases.psh alias
+                }
+            }
+            self.aliases = survivingAliases
+            self.scopes.pop
+        }
+    },
+
+    /**
+     * Returns the current zero-based scope nesting depth level.
+     *
+     * @returns {num} Current scope nesting depth
+     */
+    currentLevel: :: num => {
+        total: num = self.scopes.ln
+        if total <= 1 {
+            -> 0
+        }
+        -> total - 1
+    },
+
+    /**
+     * Defines a new variable in the current innermost scope, verifying no duplicate declaration.
+     *
+     * @param {str} name - Variable identifier name
+     * @param {bool} isBorrow - True if borrow reference (&let)
+     * @param {str} target - Referenced target variable name
+     * @param {bool} isMutable - True if mutable/reassignable
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {bool} True if successfully defined, false if duplicate (E0201)
+     */
+    defineVar: name: str, isBorrow: bool, target: str, isMutable: bool, line: num, col: num :: bool => {
+        if self.scopes.ln == 0 {
+            self.enterScope
+        }
+        topIdx: num = self.scopes.ln - 1
+        curScope: BorrowScope = self.scopes[topIdx]
+        varList: BorrowVar[] = curScope.vars
+        fr existing of varList {
+            if existing.name == name {
+                self.addError "E0201", "Variable '" + name + "' is already declared in this scope", line, col, name.ln, "remove duplicate declaration or rename"
+                -> false
+            }
+        }
+        newVar = BorrowVar.create name, isBorrow, target, isMutable, topIdx, line, col
+        varList.psh newVar
+        curScope.vars = varList
+        self.scopes[topIdx] = curScope
+        -> true
+    },
+
+    /**
+     * Looks up a variable across the scope hierarchy from innermost to outermost.
+     *
+     * @param {str} name - Variable identifier name to find
+     * @returns {BorrowVar} Found BorrowVar or sentinel createNotFound
+     */
+    getVar: name: str :: BorrowVar => {
+        let revScopes: BorrowScope[] = []
+        fr sc of self.scopes {
+            let nextRev: BorrowScope[] = [sc]
+            fr r of revScopes {
+                nextRev.psh r
+            }
+            revScopes = nextRev
+        }
+        fr sc of revScopes {
+            fr v of sc.vars {
+                if v.name == name {
+                    -> v
+                }
+            }
+        }
+        notFound = BorrowVar.createNotFound
+        -> notFound
+    },
+
+    /**
+     * Updates an existing variable in place matching its name and scope level.
+     *
+     * @param {BorrowVar} updated - Variable with updated properties
+     * @returns {bool} True if updated successfully, false if not found
+     */
+    updateVar: updated: BorrowVar :: bool => {
+        let scopeIdx: num = 0
+        fr sc of self.scopes {
+            if sc.level == updated.scopeLevel {
+                let newVars: BorrowVar[] = []
+                let found: bool = false
+                fr v of sc.vars {
+                    if v.name == updated.name && not found {
+                        newVars.psh updated
+                        found = true
+                    } els {
+                        newVars.psh v
+                    }
+                }
+                if found {
+                    sc.vars = newVars
+                    self.scopes[scopeIdx] = sc
+                    -> true
+                }
+            }
+            scopeIdx++
+        }
+        -> false
+    },
+
+    /**
+     * Transitively resolves a reference identifier to its ultimate underlying target identifier.
+     *
+     * @param {str} refName - Reference variable name to resolve
+     * @returns {str} Root target identifier name, or refName if not an alias
+     */
+    resolveReferenceTarget: refName: str :: str => {
+        let current: str = refName
+        let resolved: str = refName
+        let hops: num[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        fr step of hops {
+            let foundHop: bool = false
+            fr alias of self.aliases {
+                if alias.refName == current {
+                    current = alias.targetName
+                    resolved = alias.targetName
+                    foundHop = true
+                }
+            }
+            if not foundHop {
+                brk
+            }
+        }
+        -> resolved
+    },
+
+    /**
+     * Records an immutable borrow reference to a target variable, verifying move state and lifetime rules.
+     *
+     * @param {str} targetName - Identifier of target being borrowed
+     * @param {str} refName - Identifier of newly created borrow reference
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {bool} True if borrow is valid, false if rule violation
+     */
+    recordBorrow: targetName: str, refName: str, line: num, col: num :: bool => {
+        actualTarget: str = self.resolveReferenceTarget targetName
+        targetVar: BorrowVar = self.getVar actualTarget
+        if targetVar.name.ln > 0 {
+            if targetVar.isMoved {
+                self.addError "E0202", "Cannot borrow moved value: '" + actualTarget + "'", line, col, actualTarget.ln, "value was moved earlier"
+                -> false
+            }
+            let refLevel: num = self.currentLevel
+            refVar: BorrowVar = self.getVar refName
+            if refVar.name.ln > 0 {
+                refLevel = refVar.scopeLevel
+            }
+            targetLevel: num = targetVar.scopeLevel
+            if targetLevel > refLevel {
+                self.addError "E0204", "Borrowed value '" + actualTarget + "' does not live long enough", line, col, actualTarget.ln, "borrowed value has shorter lifetime than reference"
+                -> false
+            }
+            targetVar.activeBorrows = targetVar.activeBorrows + 1
+            self.updateVar targetVar
+            newAlias = ReferenceAlias.create refName, actualTarget
+            self.aliases.psh newAlias
+        }
+        -> true
+    },
+
+    /**
+     * Checks if a variable can be legally mutated, verifying it has no active borrows.
+     *
+     * @param {str} varName - Variable identifier being mutated
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {bool} True if mutation is permitted, false if variable is borrowed (E0204)
+     */
+    checkMutation: varName: str, line: num, col: num :: bool => {
+        actualTarget: str = self.resolveReferenceTarget varName
+        targetVar: BorrowVar = self.getVar actualTarget
+        if targetVar.name.ln > 0 {
+            if targetVar.activeBorrows > 0 {
+                self.addError "E0204", "Cannot mutate '" + actualTarget + "' while it is borrowed", line, col, actualTarget.ln, "cannot assign to borrowed variable"
+                -> false
+            }
+        }
+        -> true
+    },
+
+    /**
+     * Marks a variable as moved, checking that it is not currently borrowed and has not been moved already.
+     *
+     * @param {str} varName - Variable identifier being moved
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {bool} True if move succeeds, false if borrowed or already moved
+     */
+    markMoved: varName: str, line: num, col: num :: bool => {
+        actualTarget: str = self.resolveReferenceTarget varName
+        targetVar: BorrowVar = self.getVar actualTarget
+        if targetVar.name.ln > 0 {
+            if targetVar.activeBorrows > 0 {
+                self.addError "E0204", "Cannot move '" + actualTarget + "' while it is borrowed", line, col, actualTarget.ln, "cannot move variable with active borrow references"
+                -> false
+            }
+            if targetVar.isMoved {
+                self.addError "E0202", "Use of moved value: '" + actualTarget + "'", line, col, actualTarget.ln, "value was moved earlier"
+                -> false
+            }
+            targetVar.isMoved = true
+            self.updateVar targetVar
+        }
+        -> true
+    },
+
+    /**
+     * Verifies that a variable being read has not been previously moved.
+     *
+     * @param {str} varName - Variable identifier being read
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {bool} True if use is valid, false if value was moved (E0202)
+     */
+    checkUse: varName: str, line: num, col: num :: bool => {
+        actualTarget: str = self.resolveReferenceTarget varName
+        targetVar: BorrowVar = self.getVar actualTarget
+        if targetVar.name.ln > 0 && targetVar.isMoved {
+            self.addError "E0202", "Use of moved value: '" + actualTarget + "'", line, col, actualTarget.ln, "value was moved earlier"
+            -> false
+        }
+        -> true
+    },
+
+    /**
+     * Records a diagnostic compile error with source file context.
+     *
+     * @param {str} code - Diagnostic error code (e.g. E0201, E0202, E0204)
+     * @param {str} msg - Human-readable diagnostic message
+     * @param {num} line - Line number where error occurred
+     * @param {num} col - Column number where error occurred
+     * @param {num} len - Length of erroneous token span
+     * @param {str} help - Helpful suggestion message
+     * @returns {void}
+     */
+    addError: code: str, msg: str, line: num, col: num, len: num, help: str :: void => {
+        srcFile: str = self.file
+        diag = Diagnostic.create code, msg, srcFile, line, col, len, help
+        self.errors.psh diag
+    },
+
+    /**
+     * Returns the list of accumulated diagnostic errors.
+     *
+     * @returns {Diagnostic[]} Array of diagnostic error records
+     */
+    getErrors: :: Diagnostic[] => {
+        -> self.errors
+    },
+
+    /**
+     * Checks if any borrow checker errors have been logged.
+     *
+     * @returns {bool} True if error count > 0, false otherwise
+     */
+    hasErrors: :: bool => {
+        -> self.errors.ln > 0
+    },
+
+    /**
+     * Formats all accumulated diagnostic errors with source code context snippets.
+     *
+     * @returns {str} Formatted multi-line diagnostic error report
+     */
+    formatErrors: :: str => {
+        let out: str = ""
+        fr d of self.errors {
+            let f: str = d.format self.source
+            out = out + f + "\n"
+        }
+        -> out
+    }
+}
+
+/**
+ * Traverses an expression AST node, enforcing borrow validity, move checks, and mutation constraints.
+ *
+ * @param {BorrowChecker} checker - Active borrow checker instance
+ * @param {ASTNode} expr - Expression AST node to validate
+ * @returns {void}
+ */
+BorrowCheckExpression checker: BorrowChecker, expr: ASTNode :: void {
+    let k = expr.kind
+    if k == NodeKind.IdentExpr {
+        checker.checkUse expr.val, expr.line, expr.col
+        ->
+    }
+    if k == NodeKind.BinaryExpr {
+        if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" {
+            if expr.children.ln > 0 {
+                let left = expr.children[0]
+                if left.kind == NodeKind.IdentExpr {
+                    checker.checkMutation left.val, left.line, left.col
+                }
+            }
+            if expr.children.ln > 1 {
+                BorrowCheckExpression checker, expr.children[1]
+            }
+            ->
+        }
+        fr child of expr.children {
+            BorrowCheckExpression checker, child
+        }
+        ->
+    }
+    if k == NodeKind.UnaryExpr {
+        if expr.op == "++" || expr.op == "--" {
+            if expr.children.ln > 0 {
+                let operand = expr.children[0]
+                if operand.kind == NodeKind.IdentExpr {
+                    checker.checkMutation operand.val, operand.line, operand.col
+                }
+            }
+            ->
+        }
+        fr child of expr.children {
+            BorrowCheckExpression checker, child
+        }
+        ->
+    }
+    if k == NodeKind.BorrowExpr {
+        if expr.children.ln > 0 {
+            let targetNode = expr.children[0]
+            if targetNode.kind == NodeKind.IdentExpr {
+                checker.checkUse targetNode.val, expr.line, expr.col
+            } els {
+                BorrowCheckExpression checker, targetNode
+            }
+        }
+        ->
+    }
+    fr child of expr.children {
+        BorrowCheckExpression checker, child
+    }
+}
+
+/**
+ * Traverses a statement AST node, managing scope boundaries, variable declarations, and borrow bindings.
+ *
+ * @param {BorrowChecker} checker - Active borrow checker instance
+ * @param {ASTNode} stmt - Statement AST node to validate
+ * @returns {void}
+ */
+BorrowCheckStatement checker: BorrowChecker, stmt: ASTNode :: void {
+    let k = stmt.kind
+    if k == NodeKind.VarDecl {
+        if stmt.isBorrow {
+            let targetName: str = ""
+            if stmt.children.ln > 0 {
+                let initNode = stmt.children[0]
+                if initNode.kind == NodeKind.BorrowExpr && initNode.children.ln > 0 {
+                    targetName = initNode.children[0].val
+                } els if initNode.kind == NodeKind.IdentExpr {
+                    targetName = initNode.val
+                } els {
+                    targetName = initNode.val
+                }
+            }
+            checker.defineVar stmt.name, true, targetName, false, stmt.line, stmt.col
+            checker.recordBorrow targetName, stmt.name, stmt.line, stmt.col
+            ->
+        }
+        checker.defineVar stmt.name, false, "", true, stmt.line, stmt.col
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        ->
+    }
+    if k == NodeKind.ExprStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        ->
+    }
+    if k == NodeKind.BlockStmt {
+        checker.enterScope
+        fr child of stmt.children {
+            BorrowCheckStatement checker, child
+        }
+        checker.exitScope
+        ->
+    }
+    if k == NodeKind.IfStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        checker.enterScope
+        if stmt.children.ln > 1 {
+            BorrowCheckStatement checker, stmt.children[1]
+        }
+        checker.exitScope
+        if stmt.children.ln > 2 {
+            checker.enterScope
+            BorrowCheckStatement checker, stmt.children[2]
+            checker.exitScope
+        }
+        ->
+    }
+    if k == NodeKind.WhStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        checker.enterScope
+        if stmt.children.ln > 1 {
+            BorrowCheckStatement checker, stmt.children[1]
+        }
+        checker.exitScope
+        ->
+    }
+    if k == NodeKind.FrOfStmt || k == NodeKind.FrInStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        checker.enterScope
+        checker.defineVar stmt.name, false, "", true, stmt.line, stmt.col
+        if stmt.children.ln > 1 {
+            BorrowCheckStatement checker, stmt.children[1]
+        }
+        checker.exitScope
+        ->
+    }
+    if k == NodeKind.FuncDecl {
+        checker.defineVar stmt.name, false, "", false, stmt.line, stmt.col
+        checker.enterScope
+        fr param of stmt.params {
+            checker.defineVar param.name, false, "", true, param.line, param.col
+        }
+        fr bStmt of stmt.children {
+            BorrowCheckStatement checker, bStmt
+        }
+        checker.exitScope
+        ->
+    }
+    if k == NodeKind.RetStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        ->
+    }
+}
+
+/**
+ * Traverses a top-level program AST node, validating borrow rules, moves, and aliasing.
+ *
+ * @param {BorrowChecker} checker - Active borrow checker instance
+ * @param {ASTNode} program - Root ProgramDecl AST node
+ * @returns {void}
+ */
+BorrowCheckProgram checker: BorrowChecker, program: ASTNode :: void {
+    fr child of program.children {
+        BorrowCheckStatement checker, child
+    }
+}

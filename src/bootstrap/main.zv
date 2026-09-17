@@ -18,6 +18,7 @@ imp ParseStatement frm parser/stmt
 imp ParseExpression frm parser/expr
 imp Checker, Symbol, Scope frm checker/checker
 imp InferExpression, InferStatement, InferDeclaration, InferProgram frm checker/infer
+imp BorrowChecker, BorrowVar, BorrowScope, ReferenceAlias, BorrowCheckProgram, BorrowCheckStatement, BorrowCheckExpression frm checker/borrow
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -383,6 +384,72 @@ main {
         callErr = cInfer.errors[cInfer.errors.ln - 1]
         prnt `    Reported Diagnostic: ${callErr.code} - ${callErr.message}`
     }
+
+    // 12. Borrow Checker & Reference Aliasing Verification (Phase 3 Task 3.3)
+    prnt "12. Borrow Checker & Reference Aliasing Verification:"
+    bCheck = BorrowChecker.create "borrow_test.zv", "let x = 10\n&let r = x\n&let r2 = r\nx = 20\n"
+
+    // 12.1 Root variable & borrow reference definition
+    bCheck.defineVar "x", false, "", true, 1, 1
+    xVar = bCheck.getVar "x"
+    prnt `    Defined root variable 'x': isBorrow=${xVar.isBorrow}, activeBorrows=${xVar.activeBorrows}`
+
+    bCheck.defineVar "r", true, "x", false, 2, 1
+    bCheck.recordBorrow "x", "r", 2, 1
+    xAfterBorrow = bCheck.getVar "x"
+    prnt `    Created borrow '&let r = x': 'x' activeBorrows=${xAfterBorrow.activeBorrows}`
+
+    // 12.2 Chained / Transitive reference alias resolution
+    bCheck.defineVar "r2", true, "r", false, 3, 1
+    bCheck.recordBorrow "r", "r2", 3, 1
+    r2Target: str = bCheck.resolveReferenceTarget "r2"
+    rTarget: str = bCheck.resolveReferenceTarget "r"
+    prnt `    Chained reference alias: 'r' -> '${rTarget}', 'r2' -> '${r2Target}' (transitive: ${r2Target == "x"})`
+
+    // 12.3 Mutation rejection while borrowed (E0204)
+    mutationAllowed: bool = bCheck.checkMutation "x", 4, 1
+    prnt `    Mutation on borrowed 'x = 20' permitted: ${mutationAllowed}`
+    if bCheck.hasErrors {
+        lastErr = bCheck.errors[bCheck.errors.ln - 1]
+        prnt `    Reported Diagnostic: ${lastErr.code} - ${lastErr.message}`
+    }
+
+    // 12.4 Borrow of moved value rejection (E0202)
+    bCheck.defineVar "y", false, "", true, 5, 1
+    bCheck.markMoved "y", 6, 1
+    moveAllowed: bool = bCheck.recordBorrow "y", "ry", 7, 1
+    prnt `    Borrowing moved value 'y' permitted: ${moveAllowed}`
+    if bCheck.hasErrors {
+        lastErr = bCheck.errors[bCheck.errors.ln - 1]
+        prnt `    Reported Diagnostic: ${lastErr.code} - ${lastErr.message}`
+    }
+
+    // 12.5 Scope lifetime enforcement (E0204)
+    // Reference in outer scope cannot borrow value defined in inner scope
+    bCheck.defineVar "outerRef", true, "", false, 8, 1
+    bCheck.enterScope
+    bCheck.defineVar "innerVal", false, "", true, 9, 5
+    lifetimeOk: bool = bCheck.recordBorrow "innerVal", "outerRef", 10, 5
+    prnt `    Borrow of short-lived 'innerVal' into outer 'outerRef' permitted: ${lifetimeOk}`
+    if bCheck.hasErrors {
+        lastErr = bCheck.errors[bCheck.errors.ln - 1]
+        prnt `    Reported Diagnostic: ${lastErr.code} - ${lastErr.message}`
+    }
+    bCheck.exitScope
+
+    // 12.6 Scope exit borrow release
+    bCheckScope = BorrowChecker.create "scope_release_test.zv", "let a = 100\n{\n    &let refA = a\n}\na = 200\n"
+    bCheckScope.defineVar "a", false, "", true, 1, 1
+    bCheckScope.enterScope
+    bCheckScope.defineVar "refA", true, "a", false, 3, 5
+    bCheckScope.recordBorrow "a", "refA", 3, 5
+    aDuringScope = bCheckScope.getVar "a"
+    prnt `    'a' activeBorrows inside scope: ${aDuringScope.activeBorrows}`
+    bCheckScope.exitScope
+    aAfterScope = bCheckScope.getVar "a"
+    prnt `    'a' activeBorrows after scope exit: ${aAfterScope.activeBorrows}`
+    canMutateAfterExit: bool = bCheckScope.checkMutation "a", 5, 1
+    prnt `    Mutation 'a = 200' after inner scope ended permitted: ${canMutateAfterExit}`
 }
 
 
