@@ -1,0 +1,423 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Statement & Control Flow Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt.zv
+ *
+ * Implements code generation for all statements and control flow structures:
+ * - Variable declarations (alloca stack slot, initializer evaluation, symbol registration)
+ * - If/else branching with block merging and deterministic label allocation
+ * - While loops and for-of array iterations with break/continue tracking
+ * - Pattern matching switches using LLVM switch i64 instruction tables
+ * - Return statements with integer widening (zext i8 to i64, zext i1 to i64)
+ * - Break and continue jumps within loop contexts
+ * - Panic error statements and unreachable trap emissions
+ * =============================================================================
+ */
+
+imp str, arr
+imp TypeKind frm ../types
+imp ASTNode, NodeKind, MatchArm frm ../ast
+imp Codegen frm codegen/codegen
+imp llvmType, llvmStackType, selectDefaultValue frm codegen/types
+imp boxValueToI64, unboxValueFromI64 frm codegen/array
+imp resolveFieldTypeKind frm codegen/decl
+imp ExprCodegen, ExprResult, ScopeSymbol frm codegen/expr
+
+/**
+ * Coordinates statement lowering and control flow graph construction.
+ */
+obj StmtCodegen {
+    codegen: Codegen,
+    exprGen: ExprCodegen,
+    breakLabels: str[],
+    continueLabels: str[],
+    returnType: TypeKind,
+
+    /**
+     * Initializes a new StmtCodegen coordinator instance.
+     *
+     * @param {Codegen} codegen - LLVM module coordinator
+     * @param {ExprCodegen} exprGen - Expression code generation coordinator
+     * @returns {StmtCodegen} Initialized StmtCodegen instance
+     */
+    create: codegen: Codegen, exprGen: ExprCodegen :: StmtCodegen => {
+        emptyBrk: str[] = []
+        emptyCont: str[] = []
+        -> {
+            codegen,
+            exprGen,
+            breakLabels: emptyBrk,
+            continueLabels: emptyCont,
+            returnType: TypeKind.Void
+        }
+    },
+
+    /**
+     * Sets the expected return type for the enclosing function body.
+     *
+     * @param {TypeKind} returnType - Semantic return type
+     * @returns {void}
+     */
+    setReturnType: returnType: TypeKind :: void => {
+        self.returnType = returnType
+    },
+
+    /**
+     * Master statement dispatcher routing AST nodes to specialized emitters.
+     *
+     * @param {ASTNode} node - Statement AST node
+     * @returns {void}
+     */
+    emitStmt: node: ASTNode :: void => sw node.kind {
+        NodeKind.VarDecl   => self.emitVarDecl node
+        NodeKind.BlockStmt => self.emitBlock node
+        NodeKind.ExprStmt  => self.emitExprStmt node
+        NodeKind.IfStmt    => self.emitIf node
+        NodeKind.WhStmt    => self.emitWh node
+        NodeKind.FrOfStmt  => self.emitFrOf node
+        NodeKind.FrInStmt  => self.emitFrIn node
+        NodeKind.SwStmt    => self.emitSw node
+        NodeKind.RetStmt   => self.emitRet node
+        NodeKind.BrkStmt   => self.emitBrk node
+        NodeKind.ContStmt  => self.emitCont node
+        NodeKind.PanicStmt => self.emitPanic node
+        _                  => {}
+    },
+
+    /**
+     * Emits stack allocation and initialization for a variable declaration.
+     *
+     * @param {ASTNode} node - VarDecl AST node
+     * @returns {void}
+     */
+    emitVarDecl: node: ASTNode :: void => {
+        varType: TypeKind = node.inferredType
+        if varType == TypeKind.Unknown {
+            varType = resolveFieldTypeKind node.typeAnnotation
+        }
+        initReg: str = ""
+        hasInit: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
+
+        if hasInit {
+            initRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            initReg = initRes.reg
+            if varType == TypeKind.Unknown {
+                varType = initRes.typeKind
+            }
+        } els {
+            initReg = selectDefaultValue varType
+        }
+
+        if varType == TypeKind.Unknown {
+            varType = TypeKind.I64
+        }
+
+        stType: str = llvmStackType varType
+        slotReg: str = self.codegen.newReg
+        self.codegen.emit `${slotReg} = alloca ${stType}`
+        if initReg.ln > 0 {
+            self.codegen.emit `store ${stType} ${initReg}, ptr ${slotReg}`
+        }
+
+        self.exprGen.addSymbol node.name, slotReg, varType, false, true
+    },
+
+    /**
+     * Emits statements inside a block scope.
+     *
+     * @param {ASTNode} node - BlockStmt AST node
+     * @returns {void}
+     */
+    emitBlock: node: ASTNode :: void => {
+        fr child of node.children {
+            self.emitStmt child
+        }
+    },
+
+    /**
+     * Emits an expression statement.
+     *
+     * @param {ASTNode} node - ExprStmt AST node
+     * @returns {void}
+     */
+    emitExprStmt: node: ASTNode :: void => {
+        if node.children.ln > 0 {
+            self.exprGen.emitExpr node.children[0]
+        }
+    },
+
+    /**
+     * Emits an if/else conditional branch with merge label.
+     *
+     * @param {ASTNode} node - IfStmt AST node
+     * @returns {void}
+     */
+    emitIf: node: ASTNode :: void => {
+        condRes = self.exprGen.emitExpr node.children[0]
+        thenLbl: str = self.codegen.newLabel "if_then"
+        elseLbl: str = self.codegen.newLabel "if_else"
+        mergeLbl: str = self.codegen.newLabel "if_merge"
+
+        hasElse: bool = (node.children.ln > 2 && node.children[2].kind != NodeKind.NilExpr)
+        targetElseLbl: str = mergeLbl
+        if hasElse {
+            targetElseLbl = elseLbl
+        }
+
+        self.codegen.emit `br i1 ${condRes.reg}, label %${thenLbl}, label %${targetElseLbl}`
+
+        self.codegen.emitLabel thenLbl
+        self.emitStmt node.children[1]
+        self.codegen.emit `br label %${mergeLbl}`
+
+        if hasElse {
+            self.codegen.emitLabel elseLbl
+            self.emitStmt node.children[2]
+            self.codegen.emit `br label %${mergeLbl}`
+        }
+
+        self.codegen.emitLabel mergeLbl
+    },
+
+    /**
+     * Emits a while loop with condition check, loop body, and exit label.
+     *
+     * @param {ASTNode} node - WhStmt AST node
+     * @returns {void}
+     */
+    emitWh: node: ASTNode :: void => {
+        condLbl = self.codegen.newLabel "wh_cond"
+        bodyLbl: str = self.codegen.newLabel "wh_body"
+        endLbl: str = self.codegen.newLabel "wh_end"
+
+        self.breakLabels.psh endLbl
+        self.continueLabels.psh condLbl
+
+        self.codegen.emit `br label %${condLbl}`
+        self.codegen.emitLabel condLbl
+
+        condRes = self.exprGen.emitExpr node.children[0]
+        self.codegen.emit `br i1 ${condRes.reg}, label %${bodyLbl}, label %${endLbl}`
+
+        self.codegen.emitLabel bodyLbl
+        self.emitStmt node.children[1]
+        self.codegen.emit `br label %${condLbl}`
+
+        self.codegen.emitLabel endLbl
+        self.breakLabels.pp
+        self.continueLabels.pp
+    },
+
+    /**
+     * Emits a for-of loop iterating over an array collection.
+     *
+     * @param {ASTNode} node - FrOfStmt AST node
+     * @returns {void}
+     */
+    emitFrOf: node: ASTNode :: void => {
+        arrRes = self.exprGen.emitExpr node.children[0]
+        lenReg: str = self.exprGen.arrGen.emitLength arrRes.reg
+
+        idxSlot: str = self.codegen.newReg
+        self.codegen.emit `${idxSlot} = alloca i64`
+        self.codegen.emit `store i64 0, ptr ${idxSlot}`
+
+        itemType: TypeKind = node.inferredType
+        if itemType == TypeKind.Unknown {
+            itemType = TypeKind.I64
+        }
+        itemSlot: str = self.codegen.newReg
+        stType: str = llvmStackType itemType
+        self.codegen.emit `${itemSlot} = alloca ${stType}`
+        self.exprGen.addSymbol node.name, itemSlot, itemType, false, true
+
+        condLbl: str = self.codegen.newLabel "frof_cond"
+        bodyLbl: str = self.codegen.newLabel "frof_body"
+        stepLbl: str = self.codegen.newLabel "frof_step"
+        endLbl: str = self.codegen.newLabel "frof_end"
+
+        self.breakLabels.psh endLbl
+        self.continueLabels.psh stepLbl
+
+        self.codegen.emit `br label %${condLbl}`
+        self.codegen.emitLabel condLbl
+
+        curIdxReg: str = self.codegen.newReg
+        self.codegen.emit `${curIdxReg} = load i64, ptr ${idxSlot}`
+        hasMore: str = self.codegen.newReg
+        self.codegen.emit `${hasMore} = icmp ult i64 ${curIdxReg}, ${lenReg}`
+        self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
+
+        self.codegen.emitLabel bodyLbl
+        elemRaw: str = self.exprGen.arrGen.emitGetElement arrRes.reg, curIdxReg, false, node.line
+        elemVal: str = unboxValueFromI64 self.codegen, elemRaw, itemType
+        self.codegen.emit `store ${stType} ${elemVal}, ptr ${itemSlot}`
+        self.emitStmt node.children[1]
+        self.codegen.emit `br label %${stepLbl}`
+
+        self.codegen.emitLabel stepLbl
+        sIdx: str = self.codegen.newReg
+        self.codegen.emit `${sIdx} = load i64, ptr ${idxSlot}`
+        nextIdx: str = self.codegen.newReg
+        self.codegen.emit `${nextIdx} = add i64 ${sIdx}, 1`
+        self.codegen.emit `store i64 ${nextIdx}, ptr ${idxSlot}`
+        self.codegen.emit `br label %${condLbl}`
+
+        self.codegen.emitLabel endLbl
+        self.breakLabels.pp
+        self.continueLabels.pp
+    },
+
+    /**
+     * Emits a for-in loop iterating over collection keys or elements.
+     *
+     * @param {ASTNode} node - FrInStmt AST node
+     * @returns {void}
+     */
+    emitFrIn: node: ASTNode :: void => {
+        self.emitFrOf node
+    },
+
+    /**
+     * Emits a pattern matching switch statement using LLVM switch i64 instruction.
+     *
+     * @param {ASTNode} node - SwStmt AST node
+     * @returns {void}
+     */
+    emitSw: node: ASTNode :: void => {
+        targetRes = self.exprGen.emitExpr node.children[0]
+        boxedTarget: str = boxValueToI64 self.codegen, targetRes.reg, targetRes.typeKind
+
+        defaultLbl: str = self.codegen.newLabel "sw_def"
+        mergeLbl: str = self.codegen.newLabel "sw_merge"
+
+        caseLabels: str[] = []
+        armIdx: num = 0
+        fr arm of node.cases {
+            cLbl: str = self.codegen.newLabel `sw_case_${armIdx}`
+            caseLabels.psh cLbl
+            armIdx++
+        }
+
+        swTable: str = `switch i64 ${boxedTarget}, label %${defaultLbl} [\n`
+        defArmIdx: num = -1
+        caseIdx: num = 0
+        fr arm of node.cases {
+            if arm.litText == "_" || arm.patternKind == "_" {
+                defArmIdx = caseIdx
+            } els {
+                tagVal: str = arm.litText
+                if tagVal.ln == 0 {
+                    tagVal = `${caseIdx}`
+                }
+                cLbl: str = caseLabels[caseIdx]
+                swTable = swTable + `    i64 ${tagVal}, label %${cLbl}\n`
+            }
+            caseIdx++
+        }
+        swTable = swTable + "  ]"
+        self.codegen.emitRaw swTable
+
+        childArmIdx: num = 1
+        labelArmIdx: num = 0
+        fr arm of node.cases {
+            cLbl: str = caseLabels[labelArmIdx]
+            self.codegen.emitLabel cLbl
+            if childArmIdx < node.children.ln {
+                self.emitStmt node.children[childArmIdx]
+            }
+            self.codegen.emit `br label %${mergeLbl}`
+            childArmIdx++
+            labelArmIdx++
+        }
+
+        self.codegen.emitLabel defaultLbl
+        if defArmIdx >= 0 {
+            defChildIdx: num = defArmIdx + 1
+            if defChildIdx < node.children.ln {
+                self.emitStmt node.children[defChildIdx]
+            }
+        }
+        self.codegen.emit `br label %${mergeLbl}`
+
+        self.codegen.emitLabel mergeLbl
+    },
+
+    /**
+     * Emits a return statement with widening if applicable.
+     *
+     * @param {ASTNode} node - RetStmt AST node
+     * @returns {void}
+     */
+    emitRet: node: ASTNode :: void => {
+        hasVal: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
+
+        if hasVal {
+            retRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            if self.returnType == TypeKind.I32 && retRes.typeKind == TypeKind.I64 {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = trunc i64 ${retRes.reg} to i32`
+                self.codegen.emit `ret i32 ${tReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I8 {
+                wReg: str = self.codegen.newReg
+                self.codegen.emit `${wReg} = zext i8 ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${wReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.Bool {
+                wReg: str = self.codegen.newReg
+                self.codegen.emit `${wReg} = zext i1 ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${wReg}`
+            } els {
+                retTypeStr: str = llvmType self.returnType
+                self.codegen.emit `ret ${retTypeStr} ${retRes.reg}`
+            }
+        } els {
+            if self.returnType == TypeKind.Void {
+                self.codegen.emit `ret void`
+            } els {
+                rStr: str = llvmType self.returnType
+                dVal: str = selectDefaultValue self.returnType
+                self.codegen.emit `ret ${rStr} ${dVal}`
+            }
+        }
+    },
+
+    /**
+     * Emits a break branch jumping to the enclosing loop's exit label.
+     *
+     * @param {ASTNode} node - BrkStmt AST node
+     * @returns {void}
+     */
+    emitBrk: node: ASTNode :: void => {
+        if self.breakLabels.ln > 0 {
+            bLbl: str = self.breakLabels[self.breakLabels.ln - 1]
+            self.codegen.emit `br label %${bLbl}`
+        }
+    },
+
+    /**
+     * Emits a continue branch jumping to the enclosing loop's condition/step label.
+     *
+     * @param {ASTNode} node - ContStmt AST node
+     * @returns {void}
+     */
+    emitCont: node: ASTNode :: void => {
+        if self.continueLabels.ln > 0 {
+            cLbl: str = self.continueLabels[self.continueLabels.ln - 1]
+            self.codegen.emit `br label %${cLbl}`
+        }
+    },
+
+    /**
+     * Emits a panic termination calling abort and emitting unreachable.
+     *
+     * @param {ASTNode} node - PanicStmt AST node
+     * @returns {void}
+     */
+    emitPanic: node: ASTNode :: void => {
+        if node.children.ln > 0 {
+            self.exprGen.emitExpr node.children[0]
+        }
+        self.codegen.emit `call void @abort()`
+        self.codegen.emit `unreachable`
+    }
+}

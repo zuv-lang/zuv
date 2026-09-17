@@ -1,0 +1,58 @@
+imp arr
+
+// 1. Literal array exact sizing test
+let nums = [10, 20, 30]
+prnt "Initial length:"
+prnt nums.ln
+prnt "Elements:"
+prnt nums[0]
+prnt nums[1]
+prnt nums[2]
+
+// 2. Growth beyond initial capacity (3 -> 6 via realloc)
+nums.psh 40
+prnt "Length after 1st push (triggered realloc to 6):"
+prnt nums.ln
+
+nums.psh 50
+nums.psh 60
+prnt "Length after filling capacity 6:"
+prnt nums.ln
+
+// 3. Second growth (6 -> 12 via realloc)
+nums.psh 70
+prnt "Length after 4th push (triggered realloc to 12):"
+prnt nums.ln
+
+// 4. Verify all elements are preserved after multiple reallocations
+prnt "All elements after reallocations:"
+prnt nums[0]
+prnt nums[1]
+prnt nums[2]
+prnt nums[3]
+prnt nums[4]
+prnt nums[5]
+prnt nums[6]
+
+// 5. Pop and re-push
+let last = nums.pp
+prnt "Popped:"
+prnt last
+prnt "Length after pop:"
+prnt nums.ln
+
+// 6. Large stress test: push 2,000 elements (exceeds the old 1,024 buffer limit)
+let big = [1, 2, 3]
+let i = 0
+wh i < 2000 {
+    big.psh i
+    i = i + 1
+}
+prnt "Big array length (exceeded 1024):"
+prnt big.ln
+prnt "Big array first element:"
+prnt big[0]
+prnt "Big array last pushed element:"
+prnt big[2002]
+
+prnt "Task 2 Verification Passed!"

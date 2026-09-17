@@ -1,0 +1,800 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Abstract Syntax Tree (AST) Definitions
+ * Path: sub_projects/zuv/src/bootstrap/ast.zv
+ * Defines all AST node kinds, typed schemas, and node factory constructors.
+ * =============================================================================
+ */
+
+imp str, arr
+imp TypeKind frm types
+
+enum NodeKind {
+    // Declarations
+    ProgramDecl,
+    FuncDecl,
+    ObjDecl,
+    TypeDecl,
+    EnumDecl,
+    ExternDecl,
+    ImportDecl,
+    VarDecl,
+
+    // Statements
+    BlockStmt,
+    ExprStmt,
+    IfStmt,
+    WhStmt,
+    FrInStmt,
+    FrOfStmt,
+    SwStmt,
+    RetStmt,
+    BrkStmt,
+    ContStmt,
+    TryCthStmt,
+    PanicStmt,
+
+    // Expressions
+    NumExpr,
+    StrExpr,
+    BoolExpr,
+    NilExpr,
+    UndExpr,
+    BigIntExpr,
+    IdentExpr,
+    BinaryExpr,
+    UnaryExpr,
+    CallExpr,
+    MethodCallExpr,
+    IndexExpr,
+    PropExpr,
+    ArrExpr,
+    ObjLitExpr,
+    CastExpr,
+    BorrowExpr,
+    TernaryExpr,
+    AwaitExpr
+}
+
+type Param = {
+    name: str;
+    typeAnnotation: str;
+    isRest: bool;
+    isOptional: bool;
+    line: num;
+    col: num;
+};
+
+type MatchArm = {
+    patternKind: str;
+    varName: str;
+    litText: str;
+    line: num;
+    col: num;
+};
+
+type FieldEntry = {
+    name: str;
+    valStr: str;
+    isSpread: bool;
+    line: num;
+    col: num;
+};
+
+obj ASTNode {
+    kind: NodeKind,
+    inferredType: TypeKind,
+    val: str,
+    name: str,
+    typeAnnotation: str,
+    op: str,
+    line: num,
+    col: num,
+    len: num,
+    isAsync: bool,
+    isPub: bool,
+    isBorrow: bool,
+    isPrefix: bool,
+    boolVal: bool,
+    numVal: num,
+    params: Param[],
+    children: ASTNode[],
+    cases: MatchArm[],
+    fields: FieldEntry[],
+
+    /**
+     * Creates a base ASTNode with default initializers.
+     *
+     * @param {NodeKind} kind - The AST node kind
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Initialized base AST node
+     */
+    createBase: kind: NodeKind, line: num, col: num :: ASTNode => {
+        -> {
+            kind,
+            inferredType: TypeKind.Unknown,
+            val: "",
+            name: "",
+            typeAnnotation: "",
+            op: "",
+            line,
+            col,
+            len: 1,
+            isAsync: false,
+            isPub: false,
+            isBorrow: false,
+            isPrefix: false,
+            boolVal: false,
+            numVal: 0,
+            params: [],
+            children: [],
+            cases: [],
+            fields: []
+        }
+    },
+
+    /**
+     * Creates a numeric literal expression node (defaults to TypeKind.Num).
+     *
+     * @param {num} val - Number value
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Number literal AST node
+     */
+    createNum: val: num, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.NumExpr, line, col
+        node.numVal = val
+        node.inferredType = TypeKind.Num
+        -> node
+    },
+
+    /**
+     * Creates a string literal expression node.
+     *
+     * @param {str} val - String value
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} String literal AST node
+     */
+    createStr: val: str, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.StrExpr, line, col
+        node.val = val
+        node.inferredType = TypeKind.Str
+        -> node
+    },
+
+    /**
+     * Creates a boolean literal expression node.
+     *
+     * @param {bool} val - Boolean value
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Boolean literal AST node
+     */
+    createBool: val: bool, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.BoolExpr, line, col
+        node.boolVal = val
+        node.inferredType = TypeKind.Bool
+        -> node
+    },
+
+    /**
+     * Creates a nil literal expression node.
+     *
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Nil literal AST node
+     */
+    createNil: line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.NilExpr, line, col
+        node.inferredType = TypeKind.Nil
+        -> node
+    },
+
+    /**
+     * Creates an undefined literal expression node.
+     *
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Undefined literal AST node
+     */
+    createUnd: line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.UndExpr, line, col
+        node.inferredType = TypeKind.Und
+        -> node
+    },
+
+    /**
+     * Creates a BigInt literal expression node.
+     *
+     * @param {str} digits - Decimal digits string
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} BigInt expression AST node
+     */
+    createBigInt: digits: str, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.BigIntExpr, line, col
+        node.val = digits
+        node.inferredType = TypeKind.I64
+        -> node
+    },
+
+    /**
+     * Creates an identifier expression node.
+     *
+     * @param {str} name - Variable / identifier name
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Identifier expression AST node
+     */
+    createIdent: name: str, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.IdentExpr, line, col
+        node.name = name
+        -> node
+    },
+
+    /**
+     * Creates a binary operation expression node.
+     *
+     * @param {str} op - Operator string (e.g. "+", "==", "&&")
+     * @param {ASTNode} leftNode - Left operand
+     * @param {ASTNode} rightNode - Right operand
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Binary expression AST node
+     */
+    createBinary: op: str, leftNode: ASTNode, rightNode: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.BinaryExpr, line, col
+        node.op = op
+        node.children = [leftNode, rightNode]
+        -> node
+    },
+
+    /**
+     * Creates a unary operation expression node.
+     *
+     * @param {str} op - Unary operator string (e.g. "!", "-", "~")
+     * @param {ASTNode} operand - Target operand
+     * @param {bool} prefix - True if prefix operator, false if postfix
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Unary expression AST node
+     */
+    createUnary: op: str, operand: ASTNode, prefix: bool, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.UnaryExpr, line, col
+        node.op = op
+        node.isPrefix = prefix
+        node.children = [operand]
+        -> node
+    },
+
+    /**
+     * Creates a function call expression node.
+     *
+     * @param {ASTNode} callee - Callee expression
+     * @param {ASTNode[]} args - Call argument nodes
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Call expression AST node
+     */
+    createCall: callee: ASTNode, args: ASTNode[], line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.CallExpr, line, col
+        node.children = [callee]
+        fr arg of args {
+            node.children.psh arg
+        }
+        -> node
+    },
+
+    /**
+     * Creates a method call expression node.
+     *
+     * @param {ASTNode} target - Target object receiver
+     * @param {str} methodName - Name of the method being called
+     * @param {ASTNode[]} args - Method call argument nodes
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Method call expression AST node
+     */
+    createMethodCall: target: ASTNode, methodName: str, args: ASTNode[], line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.MethodCallExpr, line, col
+        node.name = methodName
+        node.children = [target]
+        fr arg of args {
+            node.children.psh arg
+        }
+        -> node
+    },
+
+    /**
+     * Creates an array indexing expression node.
+     *
+     * @param {ASTNode} target - Target collection / array node
+     * @param {ASTNode} index - Index expression node
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Index expression AST node
+     */
+    createIndex: target: ASTNode, index: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.IndexExpr, line, col
+        node.children = [target, index]
+        -> node
+    },
+
+    /**
+     * Creates a property member access expression node.
+     *
+     * @param {ASTNode} target - Target object receiver
+     * @param {str} propName - Member property name
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Property expression AST node
+     */
+    createProp: target: ASTNode, propName: str, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.PropExpr, line, col
+        node.name = propName
+        node.children = [target]
+        -> node
+    },
+
+    /**
+     * Creates an array literal expression node.
+     *
+     * @param {ASTNode[]} elements - Array element nodes
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Array literal expression AST node
+     */
+    createArr: elements: ASTNode[], line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.ArrExpr, line, col
+        node.inferredType = TypeKind.Arr
+        node.children = elements
+        -> node
+    },
+
+    /**
+     * Creates an object literal expression node.
+     *
+     * @param {FieldEntry[]} fields - Field entries
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Object literal expression AST node
+     */
+    createObjLit: fields: FieldEntry[], line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.ObjLitExpr, line, col
+        node.inferredType = TypeKind.Obj
+        node.fields = fields
+        -> node
+    },
+
+    /**
+     * Creates an explicit type cast expression node.
+     *
+     * @param {ASTNode} target - Expression to cast
+     * @param {str} targetType - Target type name annotation
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Cast expression AST node
+     */
+    createCast: target: ASTNode, targetType: str, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.CastExpr, line, col
+        node.typeAnnotation = targetType
+        node.children = [target]
+        -> node
+    },
+
+    /**
+     * Creates a borrow reference expression node.
+     *
+     * @param {ASTNode} target - Variable expression being borrowed
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Borrow expression AST node
+     */
+    createBorrow: target: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.BorrowExpr, line, col
+        node.isBorrow = true
+        node.inferredType = TypeKind.Ptr
+        node.children = [target]
+        -> node
+    },
+
+    /**
+     * Creates a ternary conditional expression node.
+     *
+     * @param {ASTNode} cond - Condition expression
+     * @param {ASTNode} thenExpr - True branch expression
+     * @param {ASTNode} elseExpr - False branch expression
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Ternary expression AST node
+     */
+    createTernary: cond: ASTNode, thenExpr: ASTNode, elseExpr: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.TernaryExpr, line, col
+        node.children = [cond, thenExpr, elseExpr]
+        -> node
+    },
+
+    /**
+     * Creates an await expression node.
+     *
+     * @param {ASTNode} target - Promise / async task expression
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Await expression AST node
+     */
+    createAwait: target: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.AwaitExpr, line, col
+        node.children = [target]
+        -> node
+    },
+
+    /**
+     * Creates a block statement AST node.
+     *
+     * @param {ASTNode[]} stmts - Statements inside the block
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Block statement AST node
+     */
+    createBlock: stmts: ASTNode[], line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.BlockStmt, line, col
+        node.children = stmts
+        -> node
+    },
+
+    /**
+     * Creates an expression statement AST node.
+     *
+     * @param {ASTNode} expr - Underlying expression
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Expression statement AST node
+     */
+    createExprStmt: expr: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.ExprStmt, line, col
+        node.children = [expr]
+        -> node
+    },
+
+    /**
+     * Creates an if statement AST node.
+     *
+     * @param {ASTNode} cond - Condition expression
+     * @param {ASTNode} thenBlock - Then body block
+     * @param {ASTNode} elseBlock - Optional else body block
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} If statement AST node
+     */
+    createIf: cond: ASTNode, thenBlock: ASTNode, elseBlock: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.IfStmt, line, col
+        node.children = [cond, thenBlock, elseBlock]
+        -> node
+    },
+
+    /**
+     * Creates a while loop statement AST node.
+     *
+     * @param {ASTNode} cond - Loop condition expression
+     * @param {ASTNode} body - Loop body block
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} While loop statement AST node
+     */
+    createWh: cond: ASTNode, body: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.WhStmt, line, col
+        node.children = [cond, body]
+        -> node
+    },
+
+    /**
+     * Creates a return statement AST node.
+     *
+     * @param {ASTNode} expr - Optional return value expression
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Return statement AST node
+     */
+    createRet: expr: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.RetStmt, line, col
+        node.children = [expr]
+        -> node
+    },
+
+    /**
+     * Creates a break statement AST node.
+     *
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Break statement AST node
+     */
+    createBrk: line: num, col: num :: ASTNode => {
+        -> ASTNode.createBase NodeKind.BrkStmt, line, col
+    },
+
+    /**
+     * Creates a continue statement AST node.
+     *
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Continue statement AST node
+     */
+    createCont: line: num, col: num :: ASTNode => {
+        -> ASTNode.createBase NodeKind.ContStmt, line, col
+    },
+
+    /**
+     * Creates a panic statement AST node.
+     *
+     * @param {ASTNode} msgExpr - Panic message expression
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Panic statement AST node
+     */
+    createPanic: msgExpr: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.PanicStmt, line, col
+        node.children = [msgExpr]
+        -> node
+    },
+
+    /**
+     * Creates a variable declaration AST node (`let name: Type = init`).
+     *
+     * @param {str} name - Variable identifier
+     * @param {str} typeAnnotation - Optional type annotation string
+     * @param {bool} isBorrow - True if borrow binding (&let), false otherwise
+     * @param {ASTNode} init - Initializer expression
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Variable declaration AST node
+     */
+    createVarDecl: name: str, typeAnnotation: str, isBorrow: bool, init: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.VarDecl, line, col
+        node.name = name
+        node.typeAnnotation = typeAnnotation
+        node.isBorrow = isBorrow
+        node.children = [init]
+        -> node
+    },
+
+    /**
+     * Creates a function declaration AST node.
+     *
+     * @param {str} name - Function name
+     * @param {str} returnType - Return type annotation string
+     * @param {bool} isAsync - True if async function
+     * @param {bool} isPub - True if exported public function
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Function declaration AST node
+     */
+    createFuncDecl: name: str, returnType: str, isAsync: bool, isPub: bool, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.FuncDecl, line, col
+        node.name = name
+        node.typeAnnotation = returnType
+        node.isAsync = isAsync
+        node.isPub = isPub
+        -> node
+    },
+
+    /**
+     * Creates an object / struct declaration AST node.
+     *
+     * @param {str} name - Object / struct type name
+     * @param {bool} isPub - True if exported public struct
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Object declaration AST node
+     */
+    createObjDecl: name: str, isPub: bool, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.ObjDecl, line, col
+        node.name = name
+        node.isPub = isPub
+        -> node
+    },
+
+    /**
+     * Creates a type alias declaration AST node.
+     *
+     * @param {str} name - Type alias name
+     * @param {bool} isPub - True if exported public type
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Type declaration AST node
+     */
+    createTypeDecl: name: str, isPub: bool, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.TypeDecl, line, col
+        node.name = name
+        node.isPub = isPub
+        -> node
+    },
+
+    /**
+     * Creates an enum declaration AST node.
+     *
+     * @param {str} name - Enum name
+     * @param {bool} isPub - True if exported public enum
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Enum declaration AST node
+     */
+    createEnumDecl: name: str, isPub: bool, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.EnumDecl, line, col
+        node.name = name
+        node.isPub = isPub
+        -> node
+    },
+
+    /**
+     * Creates an import declaration AST node.
+     *
+     * @param {str} modulePath - Source module path string
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Import declaration AST node
+     */
+    createImportDecl: modulePath: str, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.ImportDecl, line, col
+        node.val = modulePath
+        -> node
+    },
+
+    /**
+     * Checks if this ASTNode represents a declaration.
+     *
+     * @returns {bool} True if declaration node, false otherwise
+     */
+    isDecl: :: bool => {
+        -> IsDeclNode self.kind
+    },
+
+    /**
+     * Checks if this ASTNode represents a statement.
+     *
+     * @returns {bool} True if statement node, false otherwise
+     */
+    isStmt: :: bool => {
+        -> IsStmtNode self.kind
+    },
+
+    /**
+     * Checks if this ASTNode represents an expression.
+     *
+     * @returns {bool} True if expression node, false otherwise
+     */
+    isExpr: :: bool => {
+        -> IsExprNode self.kind
+    },
+
+    /**
+     * Returns the canonical string representation of the node's kind.
+     *
+     * @returns {str} Canonical node kind string
+     */
+    toString: :: str => {
+        -> NodeKindToStr self.kind
+    }
+}
+
+/**
+ * Converts a NodeKind enum variant to its canonical string representation.
+ *
+ * @param {NodeKind} kind - The node kind to stringify
+ * @returns {str} The canonical string representation
+ */
+NodeKindToStr kind: NodeKind :: str => sw kind {
+    NodeKind.ProgramDecl    => "ProgramDecl"
+    NodeKind.FuncDecl       => "FuncDecl"
+    NodeKind.ObjDecl        => "ObjDecl"
+    NodeKind.TypeDecl       => "TypeDecl"
+    NodeKind.EnumDecl       => "EnumDecl"
+    NodeKind.ExternDecl     => "ExternDecl"
+    NodeKind.ImportDecl     => "ImportDecl"
+    NodeKind.VarDecl        => "VarDecl"
+    NodeKind.BlockStmt      => "BlockStmt"
+    NodeKind.ExprStmt       => "ExprStmt"
+    NodeKind.IfStmt         => "IfStmt"
+    NodeKind.WhStmt         => "WhStmt"
+    NodeKind.FrInStmt       => "FrInStmt"
+    NodeKind.FrOfStmt       => "FrOfStmt"
+    NodeKind.SwStmt         => "SwStmt"
+    NodeKind.RetStmt        => "RetStmt"
+    NodeKind.BrkStmt        => "BrkStmt"
+    NodeKind.ContStmt       => "ContStmt"
+    NodeKind.TryCthStmt     => "TryCthStmt"
+    NodeKind.PanicStmt      => "PanicStmt"
+    NodeKind.NumExpr        => "NumExpr"
+    NodeKind.StrExpr        => "StrExpr"
+    NodeKind.BoolExpr       => "BoolExpr"
+    NodeKind.NilExpr        => "NilExpr"
+    NodeKind.UndExpr        => "UndExpr"
+    NodeKind.BigIntExpr     => "BigIntExpr"
+    NodeKind.IdentExpr      => "IdentExpr"
+    NodeKind.BinaryExpr     => "BinaryExpr"
+    NodeKind.UnaryExpr      => "UnaryExpr"
+    NodeKind.CallExpr       => "CallExpr"
+    NodeKind.MethodCallExpr => "MethodCallExpr"
+    NodeKind.IndexExpr      => "IndexExpr"
+    NodeKind.PropExpr       => "PropExpr"
+    NodeKind.ArrExpr        => "ArrExpr"
+    NodeKind.ObjLitExpr     => "ObjLitExpr"
+    NodeKind.CastExpr       => "CastExpr"
+    NodeKind.BorrowExpr     => "BorrowExpr"
+    NodeKind.TernaryExpr    => "TernaryExpr"
+    NodeKind.AwaitExpr      => "AwaitExpr"
+    _                       => "UnknownNode"
+}
+
+/**
+ * Checks whether a given NodeKind represents a declaration node.
+ *
+ * @param {NodeKind} kind - The node kind to check
+ * @returns {bool} True if the node is a declaration, false otherwise
+ */
+IsDeclNode kind: NodeKind :: bool => sw kind {
+    NodeKind.ProgramDecl => true
+    NodeKind.FuncDecl    => true
+    NodeKind.ObjDecl     => true
+    NodeKind.TypeDecl    => true
+    NodeKind.EnumDecl    => true
+    NodeKind.ExternDecl  => true
+    NodeKind.ImportDecl  => true
+    NodeKind.VarDecl     => true
+    _                    => false
+}
+
+/**
+ * Checks whether a given NodeKind represents a statement node.
+ *
+ * @param {NodeKind} kind - The node kind to check
+ * @returns {bool} True if the node is a statement, false otherwise
+ */
+IsStmtNode kind: NodeKind :: bool => sw kind {
+    NodeKind.BlockStmt  => true
+    NodeKind.ExprStmt   => true
+    NodeKind.IfStmt     => true
+    NodeKind.WhStmt     => true
+    NodeKind.FrInStmt   => true
+    NodeKind.FrOfStmt   => true
+    NodeKind.SwStmt     => true
+    NodeKind.RetStmt    => true
+    NodeKind.BrkStmt    => true
+    NodeKind.ContStmt   => true
+    NodeKind.TryCthStmt => true
+    NodeKind.PanicStmt  => true
+    _                   => false
+}
+
+/**
+ * Checks whether a given NodeKind represents an expression node.
+ *
+ * @param {NodeKind} kind - The node kind to check
+ * @returns {bool} True if the node is an expression, false otherwise
+ */
+IsExprNode kind: NodeKind :: bool => sw kind {
+    NodeKind.NumExpr        => true
+    NodeKind.StrExpr        => true
+    NodeKind.BoolExpr       => true
+    NodeKind.NilExpr        => true
+    NodeKind.UndExpr        => true
+    NodeKind.BigIntExpr     => true
+    NodeKind.IdentExpr      => true
+    NodeKind.BinaryExpr     => true
+    NodeKind.UnaryExpr      => true
+    NodeKind.CallExpr       => true
+    NodeKind.MethodCallExpr => true
+    NodeKind.IndexExpr      => true
+    NodeKind.PropExpr       => true
+    NodeKind.ArrExpr        => true
+    NodeKind.ObjLitExpr     => true
+    NodeKind.CastExpr       => true
+    NodeKind.BorrowExpr     => true
+    NodeKind.TernaryExpr    => true
+    NodeKind.AwaitExpr      => true
+    _                       => false
+}
+
+
+

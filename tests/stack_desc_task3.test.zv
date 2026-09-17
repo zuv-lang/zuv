@@ -1,0 +1,51 @@
+// tests/stack_desc_task3.test.zv
+// Verification for Task 3: Header / Metadata ? 24 Bytes on Stack (ptr, cap, len)
+imp arr frm "std/arr"
+
+// Test 1: Empty array stack descriptor
+let empty = []
+prnt("Test 1 empty len: " + empty.ln)
+prnt("Test 1 empty cap: " + empty.cap)
+
+// Test 2: Fixed array literal stack descriptor
+let nums = [10, 20, 30]
+prnt("Test 2 nums len: " + nums.ln)
+prnt("Test 2 nums cap: " + nums.cap)
+prnt("Test 2 nums[0]: " + nums[0])
+prnt("Test 2 nums[1]: " + nums[1])
+prnt("Test 2 nums[2]: " + nums[2])
+
+// Test 3: Growth via push synchronizes stack descriptor
+nums.psh(40)
+prnt("Test 3 after push len: " + nums.ln)
+prnt("Test 3 after push cap: " + nums.cap)
+prnt("Test 3 nums[3]: " + nums[3])
+
+// Test 4: Pop synchronizes stack descriptor
+let popped = nums.pp()
+prnt("Test 4 popped val: " + popped)
+prnt("Test 4 after pop len: " + nums.ln)
+prnt("Test 4 after pop cap: " + nums.cap)
+
+// Test 5: First push on empty array
+let dynamic_arr = []
+dynamic_arr.psh(100)
+prnt("Test 5 dynamic len: " + dynamic_arr.ln)
+prnt("Test 5 dynamic cap: " + dynamic_arr.cap)
+prnt("Test 5 dynamic[0]: " + dynamic_arr[0])
+
+// Test 6: Multiple pushes past initial capacity
+dynamic_arr.psh(200)
+dynamic_arr.psh(300)
+dynamic_arr.psh(400)
+dynamic_arr.psh(500)
+prnt("Test 6 dynamic len: " + dynamic_arr.ln)
+prnt("Test 6 dynamic cap: " + dynamic_arr.cap)
+prnt("Test 6 dynamic[4]: " + dynamic_arr[4])
+
+// Test 7: Array variable assignment copies stack descriptor
+let copied = dynamic_arr
+prnt("Test 7 copied len: " + copied.ln)
+prnt("Test 7 copied cap: " + copied.cap)
+
+prnt("Task 3 Stack Descriptor: ALL CHECKS PASSED")

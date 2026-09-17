@@ -136,13 +136,14 @@ zuv/
 ├── LICENSE                 # MIT License
 ├── tests/                  # Automated Test Suite (27 test files)
 └── src/
-    ├── tokens.zv           # Token definitions and keyword map
-    ├── lexer.zv            # Pure Zuv source tokenizer & scanner
-    ├── parser.zv           # Recursive descent AST parser
-    ├── checker.zv          # Compile-time borrow checker & safety validator
-    ├── codegen.zv          # LLVM IR emitter & in-process C-API bindings
-    ├── cli.zv              # CLI driver and AOT test runner
-    └── main.zv             # Compiler entry point & command dispatcher
+    └── bootstrap/          # Self-hosting bootstrap compiler
+        ├── tokens.zv       # Token definitions and keyword map
+        ├── lexer.zv        # Pure Zuv source tokenizer & scanner
+        ├── parser/         # Recursive descent AST parser
+        ├── checker/        # Compile-time borrow checker & safety validator
+        ├── codegen/        # LLVM IR emitter & in-process C-API bindings
+        ├── cli.zv          # CLI driver and AOT test runner
+        └── main.zv         # Compiler entry point & command dispatcher
 ```
 
 ---
@@ -192,8 +193,8 @@ zuv --help
 ## 🛠️ Building & Running the Self-Hosting Compiler
 
 ### Prerequisites
-- **Windows** with [LLVM](https://llvm.org/releases/) installed (e.g. `D:\LLVM`)
-- **lld-link.exe** — comes with LLVM, used by `zuv.exe` for native linking
+- **Windows** with [LLVM 22.1.8](https://llvm.org/releases/) installed (e.g. `D:\LLVM`)
+- **lld-link.exe** — comes with LLVM (v22.1.8), used by `zuv.exe` for native linking
 
 ---
 
@@ -201,7 +202,7 @@ zuv --help
 
 ```powershell
 # From the repo root
-.\zuv.exe build sub_projects/zuv/src/main.zv -o sub_projects/zuv/zuv_selfhost.exe
+.\zuv.exe build sub_projects/zuv/src/bootstrap/main.zv -o sub_projects/zuv/zuv_selfhost.exe
 ```
 
 To install it as your system `zuv`:

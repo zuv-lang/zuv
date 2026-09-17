@@ -1,0 +1,204 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Diagnostics & Error Reporting
+ * Path: sub_projects/zuv/src/bootstrap/diagnostics.zv
+ * Defines Diagnostic schema, formatting helpers, and caret underlining engine.
+ * =============================================================================
+ */
+
+imp str, arr
+
+obj Diagnostic {
+    code: str,
+    message: str,
+    file: str,
+    line: num,
+    col: num,
+    len: num,
+    help: str,
+
+    /**
+     * Creates a new Diagnostic record.
+     *
+     * @param {str} code - Diagnostic error code (e.g. "E0101", "E0302")
+     * @param {str} message - Diagnostic description message
+     * @param {str} file - Source file path
+     * @param {num} line - 1-indexed source line number
+     * @param {num} col - 1-indexed source column number
+     * @param {num} len - Length of source code error span
+     * @param {str} help - Optional actionable help note or suggestion
+     * @returns {Diagnostic} Initialized Diagnostic object
+     */
+    create: code: str, message: str, file: str, line: num, col: num, len: num, help: str :: Diagnostic => {
+        -> {
+            code,
+            message,
+            file,
+            line,
+            col,
+            len,
+            help
+        }
+    },
+
+    /**
+     * Formats this diagnostic into rustc-style error output with caret underlining.
+     *
+     * @param {str} sourceText - Full source code text
+     * @returns {str} Formatted error string with source snippet and carets
+     */
+    format: sourceText: str :: str => {
+        -> FormatDiagnostic self, sourceText
+    },
+
+    /**
+     * Formats this diagnostic into rustc-style warning output.
+     *
+     * @param {str} sourceText - Full source code text
+     * @returns {str} Formatted warning string
+     */
+    formatWarning: sourceText: str :: str => {
+        -> FormatWarning self, sourceText
+    }
+}
+
+/**
+ * Extracts a single line of text from a multi-line source string.
+ *
+ * @param {str} sourceText - Full source code text
+ * @param {num} targetLine - 1-indexed target line number
+ * @returns {str} Extracted line content without trailing newline
+ */
+ExtractSourceLine sourceText: str, targetLine: num :: str {
+    if sourceText == und || sourceText == nil {
+        -> ""
+    }
+    totalLen: num = sourceText.ln
+    if totalLen == 0 || targetLine < 1 {
+        -> ""
+    }
+    curLine: num = 1
+    startIdx: num = 0
+    found: str = ""
+    fr i = 0; i < totalLen; i++ {
+        ch: str = sourceText.chr i
+        if ch == "\n" {
+            if curLine == targetLine {
+                found = sourceText.slc startIdx, i
+                -> found
+            }
+            curLine++
+            startIdx = i + 1
+        }
+    }
+    if curLine == targetLine && startIdx <= totalLen {
+        found = sourceText.slc startIdx, totalLen
+    }
+    -> found
+}
+
+/**
+ * Builds a string of leading space characters for caret column alignment.
+ *
+ * @param {num} count - Number of space characters
+ * @returns {str} Space padding string
+ */
+BuildSpaces count: num :: str {
+    spaces: str = ""
+    fr i = 0; i < count; i++ {
+        spaces = spaces + " "
+    }
+    -> spaces
+}
+
+/**
+ * Builds a caret underline string (e.g. "^" or "^^^") matching error span.
+ *
+ * @param {num} spanLen - Number of caret characters
+ * @returns {str} Caret underline string
+ */
+BuildCarets spanLen: num :: str {
+    caretsStr: str = ""
+    count: num = spanLen
+    if count < 1 {
+        count = 1
+    }
+    fr i = 0; i < count; i++ {
+        caretsStr = caretsStr + "^"
+    }
+    -> caretsStr
+}
+
+/**
+ * Formats a Diagnostic record into standard Rust-style compiler error output
+ * with caret underlining and source snippets:
+ *
+ * error[EXXXX]: message --> file.zv:line:col
+ *   |
+ * 2 | source line text
+ *   |      ^ carets
+ *   = help: suggestion
+ *
+ * @param {Diagnostic} diag - The diagnostic error to format
+ * @param {str} sourceText - Source code text for snippet extraction
+ * @returns {str} Formatted multi-line diagnostic string
+ */
+FormatDiagnostic diag: Diagnostic, sourceText: str :: str {
+    lineStr: str = "" + diag.line
+    colStr: str = "" + diag.col
+    header: str = "error[" + diag.code + "]: " + diag.message + "\n"
+    loc: str = "  --> " + diag.file + ":" + lineStr + ":" + colStr + "\n"
+    gutter: str = "   |\n"
+
+    srcLine: str = ExtractSourceLine sourceText, diag.line
+    snippet: str = " " + lineStr + " | " + srcLine + "\n"
+
+    padCount: num = diag.col - 1
+    if padCount < 0 {
+        padCount = 0
+    }
+    pad: str = BuildSpaces padCount
+    carets: str = BuildCarets diag.len
+    underline: str = "   | " + pad + carets + "\n"
+
+    out: str = header + loc + gutter + snippet + underline
+    if diag.help != "" {
+        helpNote: str = "   |\n   = help: " + diag.help + "\n"
+        out = out + helpNote
+    }
+    -> out
+}
+
+/**
+ * Formats a Diagnostic record into warning compiler output.
+ *
+ * @param {Diagnostic} diag - The diagnostic warning to format
+ * @param {str} sourceText - Source code text for snippet extraction
+ * @returns {str} Formatted multi-line warning string
+ */
+FormatWarning diag: Diagnostic, sourceText: str :: str {
+    lineStr: str = "" + diag.line
+    colStr: str = "" + diag.col
+    header: str = "warning[" + diag.code + "]: " + diag.message + "\n"
+    loc: str = "  --> " + diag.file + ":" + lineStr + ":" + colStr + "\n"
+    gutter: str = "   |\n"
+
+    srcLine: str = ExtractSourceLine sourceText, diag.line
+    snippet: str = " " + lineStr + " | " + srcLine + "\n"
+
+    padCount: num = diag.col - 1
+    if padCount < 0 {
+        padCount = 0
+    }
+    pad: str = BuildSpaces padCount
+    carets: str = BuildCarets diag.len
+    underline: str = "   | " + pad + carets + "\n"
+
+    out: str = header + loc + gutter + snippet + underline
+    if diag.help != "" {
+        helpNote: str = "   |\n   = help: " + diag.help + "\n"
+        out = out + helpNote
+    }
+    -> out
+}
+

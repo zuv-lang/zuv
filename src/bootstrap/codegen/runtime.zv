@@ -1,0 +1,731 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Runtime Intrinsics & Crash Handling Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime.zv
+ * =============================================================================
+ *
+ * Implements code generation for Zuv runtime intrinsics and panic/crash handling:
+ * - Function descriptor metadata tracking (`FunctionDescriptor`)
+ * - Global runtime constants, format strings, and metadata tables
+ * - Runtime panic handling (`@zuv_panic`) with file/line reporting and exit 101
+ * - Stack backtrace capture and unwinding (`@zuv_walk_stack`, `@zuv_dump_stack`, `@zuv_backtrace`)
+ * - Symbol resolution against function descriptor tables (`@zuv_resolve_pc`, `@zuv_ensure_fn_sorted`)
+ * - Runtime array bounds-check handler (`@zuv_check_bounds`)
+ * - Win32 Vectored Exception Handling (`@zuv_init_crash_handler`, `@zuv_crash_handler`)
+ *   for hardware access violations, division by zero, stack overflow, and aborts
+ */
+
+imp str, arr
+imp Codegen frm codegen
+
+/**
+ * Holds function metadata for backtrace symbol resolution.
+ */
+obj FunctionDescriptor {
+    llvmName: str,
+    displayName: str,
+    filePath: str,
+    startLine: num,
+
+    /**
+     * Creates an initialized FunctionDescriptor record.
+     *
+     * @param {str} llvmName - LLVM IR symbol name (without @)
+     * @param {str} displayName - Human-readable function name
+     * @param {str} filePath - Source file path
+     * @param {num} startLine - Source file starting line number
+     * @returns {FunctionDescriptor} Initialized function descriptor
+     */
+    create: llvmName: str, displayName: str, filePath: str, startLine: num :: FunctionDescriptor => {
+        -> {
+            llvmName,
+            displayName,
+            filePath,
+            startLine
+        }
+    }
+}
+
+/**
+ * Manages runtime crash handling, panic emission, and stack unwinding IR generators.
+ */
+obj RuntimeCodegen {
+    codegen: Codegen,
+    runtimeEmitted: bool,
+    funcDescs: FunctionDescriptor[],
+
+    /**
+     * Creates a new RuntimeCodegen coordinator.
+     *
+     * @param {Codegen} codegen - LLVM IR module coordinator
+     * @returns {RuntimeCodegen} Initialized runtime code generator
+     */
+    create: codegen: Codegen :: RuntimeCodegen => {
+        descs: FunctionDescriptor[] = []
+        -> {
+            codegen,
+            runtimeEmitted: false,
+            funcDescs: descs
+        }
+    },
+
+    /**
+     * Registers a function descriptor for symbol table backtrace resolution.
+     *
+     * @param {str} llvmName - LLVM IR function name (without @)
+     * @param {str} displayName - Human-readable function name
+     * @param {str} filePath - Source file path
+     * @param {num} startLine - Source file starting line number
+     * @returns {void}
+     */
+    registerFunction: llvmName: str, displayName: str, filePath: str, startLine: num :: void => {
+        desc = FunctionDescriptor.create llvmName, displayName, filePath, startLine
+        self.funcDescs.psh desc
+    },
+
+    /**
+     * Emits an external C / Win32 runtime declaration into the module header if not already declared.
+     *
+     * @param {str} decl - Full declare statement (e.g. "declare i32 @printf(ptr, ...)")
+     * @param {str} symbol - Symbol identifier to check for duplication (e.g. "@printf")
+     * @returns {void}
+     */
+    emitRuntimeDecl: decl: str, symbol: str :: void => {
+        if !(self.codegen.header.cnt symbol) {
+            self.codegen.header += decl + "\n"
+        }
+    },
+
+    /**
+     * Emits all global runtime constants, format strings, and function descriptor tables.
+     *
+     * @returns {void}
+     */
+    emitRuntimeGlobals: :: void => {
+        // Emit required external function declarations if not already declared
+        self.emitRuntimeDecl "declare i32 @printf(ptr nocapture readonly, ...)", "@printf"
+        self.emitRuntimeDecl "declare ptr @getenv(ptr)", "@getenv"
+        self.emitRuntimeDecl "declare void @exit(i32) noreturn", "@exit"
+        self.emitRuntimeDecl "declare i32 @RtlCaptureStackBackTrace(i32, i32, ptr, ptr)", "@RtlCaptureStackBackTrace"
+        self.emitRuntimeDecl "declare ptr @AddVectoredExceptionHandler(i32, ptr)", "@AddVectoredExceptionHandler"
+        self.emitRuntimeDecl "declare ptr @malloc(i64)", "@malloc"
+        self.emitRuntimeDecl "declare i64 @strlen(ptr)", "@strlen"
+        self.emitRuntimeDecl "declare i32 @snprintf(ptr, i64, ptr, ...)", "@snprintf"
+
+        // Type definition for function descriptor
+        self.codegen.header += "%struct.ZuvFuncDesc = type { ptr, ptr, ptr, i32 }\n\n"
+
+        numDescs: num = self.funcDescs.ln
+        if numDescs == 0 {
+            self.codegen.header += `
+            @zuv_fn_descs = internal global [0 x %struct.ZuvFuncDesc] zeroinitializer
+            @zuv_fn_count = internal constant i64 0
+            @zuv_fn_sorted = internal global i32 0
+            `
+        } els {
+            fr desc, i of self.funcDescs {
+                nStr: str = `zuv_fn_n_${i}`
+                fStr: str = `zuv_fn_f_${i}`
+                dLen: num = desc.displayName.ln + 1
+                fLen: num = desc.filePath.ln + 1
+                self.codegen.header += `@${nStr} = private unnamed_addr constant [${dLen} x i8] c"${desc.displayName}\\00"\n`
+                self.codegen.header += `@${fStr} = private unnamed_addr constant [${fLen} x i8] c"${desc.filePath}\\00"\n`
+            }
+
+            self.codegen.header += `\n@zuv_fn_descs = internal global [${numDescs} x %struct.ZuvFuncDesc] [\n`
+            fr desc, i of self.funcDescs {
+                nStr: str = `zuv_fn_n_${i}`
+                fStr: str = `zuv_fn_f_${i}`
+                comma: str = (i + 1 < numDescs) ? "," : ""
+                self.codegen.header += `  %struct.ZuvFuncDesc { ptr @${desc.llvmName}, ptr @${nStr}, ptr @${fStr}, i32 ${desc.startLine} }${comma}\n`
+            }
+            self.codegen.header += "]\n"
+            self.codegen.header += `@zuv_fn_count = internal constant i64 ${numDescs}\n`
+            self.codegen.header += "@zuv_fn_sorted = internal global i32 0\n\n"
+        }
+
+        // Format strings and runtime constant literals
+        self.codegen.header += `
+        @zuv_fmt_panic_msg = private unnamed_addr constant [37 x i8] c"\\0Afatal runtime error: %s\\0A  at %s:%d\\0A\\00"
+        @zuv_fmt_panic_simple = private unnamed_addr constant [26 x i8] c"\\0Afatal runtime error: %s\\0A\\00"
+        @zuv_fmt_bt_header = private unnamed_addr constant [18 x i8] c"stack backtrace:\\0A\\00"
+        @zuv_fmt_bt_frame_sym = private unnamed_addr constant [37 x i8] c"  %2d: %s\\0A       at %s:%d (+0x%llx)\\0A\\00"
+        @zuv_fmt_bt_frame_unk = private unnamed_addr constant [30 x i8] c"  %2d: [unknown] (0x%016llx)\\0A\\00"
+        @zuv_fmt_bt_hint = private unnamed_addr constant [78 x i8] c"note: run with 'ZUV_BACKTRACE=1' environment variable to display a backtrace\\0A\\00"
+        @zuv_env_backtrace = private unnamed_addr constant [14 x i8] c"ZUV_BACKTRACE\\00"
+        @zuv_fmt_crash_msg = private unnamed_addr constant [58 x i8] c"\\0Afatal runtime error: hardware crash 0x%08X at 0x%016llx\\0A\\00"
+        @zuv_err_oob = private unnamed_addr constant [20 x i8] c"index out of bounds\\00"
+        `
+    },
+
+    /**
+     * Emits the internal helper function `@zuv_ensure_fn_sorted` for sorting symbol tables.
+     *
+     * @returns {void}
+     */
+    emitEnsureFnSorted: :: void => {
+        self.codegen.funcs += `
+        define internal void @zuv_ensure_fn_sorted() {
+        entry:
+            ; Check if symbol table was already sorted
+            %flag = load i32, ptr @zuv_fn_sorted
+            %already = icmp ne i32 %flag, 0
+            br i1 %already, label %ret, label %do_sort
+
+        do_sort:
+            ; Mark table as sorted
+            store i32 1, ptr @zuv_fn_sorted
+            %count = load i64, ptr @zuv_fn_count
+            %has_elems = icmp sgt i64 %count, 1
+            br i1 %has_elems, label %init_i, label %ret
+
+        init_i:
+            ; Insertion sort outer loop initialization: i = 1
+            %p_i = alloca i64, align 8
+            %p_j = alloca i64, align 8
+            store i64 1, ptr %p_i
+            br label %cond_i
+
+        cond_i:
+            ; Loop condition: i < count
+            %i_val = load i64, ptr %p_i
+            %i_cmp = icmp slt i64 %i_val, %count
+            br i1 %i_cmp, label %body_i, label %ret
+
+        body_i:
+            ; Extract key descriptor at index i
+            %i_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %i_val
+            %key_fn = load ptr, ptr %i_ptr
+            %key_fn_int = ptrtoint ptr %key_fn to i64
+            %key_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 1
+            %key_name = load ptr, ptr %key_name_ptr
+            %key_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 2
+            %key_file = load ptr, ptr %key_file_ptr
+            %key_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 3
+            %key_line = load i32, ptr %key_line_ptr
+            store i64 %i_val, ptr %p_j
+            br label %cond_j
+
+        cond_j:
+            ; Inner loop condition: j > 0
+            %j_val = load i64, ptr %p_j
+            %j_gt_zero = icmp sgt i64 %j_val, 0
+            br i1 %j_gt_zero, label %check_prev, label %insert
+
+        check_prev:
+            ; Compare preceding element: descs[j - 1].fn > key_fn
+            %j_prev = sub i64 %j_val, 1
+            %prev_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %j_prev
+            %prev_fn = load ptr, ptr %prev_ptr
+            %prev_fn_int = ptrtoint ptr %prev_fn to i64
+            %prev_gt = icmp ugt i64 %prev_fn_int, %key_fn_int
+            br i1 %prev_gt, label %shift_j, label %insert
+
+        shift_j:
+            ; Shift preceding element forward to index j
+            %cur_j_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %j_val
+            %prev_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 1
+            %prev_name = load ptr, ptr %prev_name_ptr
+            %prev_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 2
+            %prev_file = load ptr, ptr %prev_file_ptr
+            %prev_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 3
+            %prev_line = load i32, ptr %prev_line_ptr
+            store ptr %prev_fn, ptr %cur_j_ptr
+            %cur_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 1
+            store ptr %prev_name, ptr %cur_name_ptr
+            %cur_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 2
+            store ptr %prev_file, ptr %cur_file_ptr
+            %cur_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 3
+            store i32 %prev_line, ptr %cur_line_ptr
+            store i64 %j_prev, ptr %p_j
+            br label %cond_j
+
+        insert:
+            ; Insert key record at sorted position j
+            %ins_j = load i64, ptr %p_j
+            %pos_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %ins_j
+            store ptr %key_fn, ptr %pos_ptr
+            %ins_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 1
+            store ptr %key_name, ptr %ins_name_ptr
+            %ins_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 2
+            store ptr %key_file, ptr %ins_file_ptr
+            %ins_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 3
+            store i32 %key_line, ptr %ins_line_ptr
+            %i_next = add i64 %i_val, 1
+            store i64 %i_next, ptr %p_i
+            br label %cond_i
+
+        ret:
+            ret void
+        }
+        `
+    },
+
+    /**
+     * Emits the `@zuv_resolve_pc(ptr %pc) -> ptr` function for finding matching function descriptor.
+     *
+     * @returns {void}
+     */
+    emitResolvePc: :: void => {
+        self.codegen.funcs += `
+        define internal ptr @zuv_resolve_pc(ptr %pc) {
+        entry:
+            ; Ensure descriptor table is sorted by function entry address
+            call void @zuv_ensure_fn_sorted()
+            %count = load i64, ptr @zuv_fn_count
+            %has_elems = icmp sgt i64 %count, 0
+            br i1 %has_elems, label %init, label %not_found
+
+        init:
+            ; Start search from highest function entry downwards
+            %p_k = alloca i64, align 8
+            %init_idx = sub i64 %count, 1
+            store i64 %init_idx, ptr %p_k
+            %target = ptrtoint ptr %pc to i64
+            br label %loop
+
+        loop:
+            %k = load i64, ptr %p_k
+            %k_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %k
+            %entry_fn = load ptr, ptr %k_ptr
+            %entry_fn_int = ptrtoint ptr %entry_fn to i64
+            %is_le = icmp ule i64 %entry_fn_int, %target
+            br i1 %is_le, label %check_dist, label %step_back
+
+        check_dist:
+            ; Verify target instruction pointer is within 2MB threshold of entry
+            %dist = sub i64 %target, %entry_fn_int
+            %in_range = icmp ult i64 %dist, 2097152
+            br i1 %in_range, label %found, label %not_found
+
+        found:
+            ret ptr %k_ptr
+
+        step_back:
+            ; Decrement index to check preceding function descriptor
+            %k_is_zero = icmp eq i64 %k, 0
+            br i1 %k_is_zero, label %not_found, label %do_step
+
+        do_step:
+            %k_prev = sub i64 %k, 1
+            store i64 %k_prev, ptr %p_k
+            br label %loop
+
+        not_found:
+            ret ptr null
+        }
+        `
+    },
+
+    /**
+     * Emits the `@zuv_walk_stack(i32 %skip, i32 %maxFrames)` stack unwinding function.
+     *
+     * Uses RtlCaptureStackBackTrace to capture frames, resolves symbol information
+     * via `@zuv_resolve_pc`, and prints symbol name, file, line, and relative offset.
+     *
+     * @returns {void}
+     */
+    emitWalkStack: :: void => {
+        self.codegen.funcs += `
+        define internal void @zuv_walk_stack(i32 %skip, i32 %maxFrames) {
+        entry:
+            ; Allocate local frame buffer and capture return addresses
+            %buf = alloca [32 x ptr], align 8
+            %frames = call i32 @RtlCaptureStackBackTrace(i32 %skip, i32 %maxFrames, ptr %buf, ptr null)
+            %has_frames = icmp sgt i32 %frames, 0
+            br i1 %has_frames, label %init, label %done
+
+        init:
+            ; Loop index initialization: idx = 0
+            %p_idx = alloca i32, align 4
+            store i32 0, ptr %p_idx
+            br label %loop
+
+        loop:
+            ; Retrieve program counter and resolve symbol metadata
+            %idx = load i32, ptr %p_idx
+            %slot = getelementptr inbounds [32 x ptr], ptr %buf, i32 0, i32 %idx
+            %pc = load ptr, ptr %slot
+            %desc = call ptr @zuv_resolve_pc(ptr %pc)
+            %is_null = icmp eq ptr %desc, null
+            br i1 %is_null, label %print_unk, label %print_sym
+
+        print_sym:
+            ; Print formatted frame
+            %fn_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 1
+            %fn_name = load ptr, ptr %fn_name_ptr
+            %file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 2
+            %file = load ptr, ptr %file_ptr
+            %line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 3
+            %line = load i32, ptr %line_ptr
+            %fn_entry_ptr = load ptr, ptr %desc
+            %pc_int = ptrtoint ptr %pc to i64
+            %entry_int = ptrtoint ptr %fn_entry_ptr to i64
+            %offset = sub i64 %pc_int, %entry_int
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_frame_sym, i32 %idx, ptr %fn_name, ptr %file, i32 %line, i64 %offset)
+            br label %cont
+
+        print_unk:
+            ; Print unknown frame address: "  %2d: [unknown] (0x%016llx)"
+            %pc_as_i64 = ptrtoint ptr %pc to i64
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_frame_unk, i32 %idx, i64 %pc_as_i64)
+            br label %cont
+
+        cont:
+            ; Advance to next stack frame
+            %next_idx = add i32 %idx, 1
+            store i32 %next_idx, ptr %p_idx
+            %more = icmp slt i32 %next_idx, %frames
+            br i1 %more, label %loop, label %done
+
+        done:
+            ret void
+        }
+        `
+    },
+
+    /**
+     * Emits the `@zuv_panic(ptr %msg, ptr %file, i32 %line)` handler function.
+     *
+     * Prints runtime panic message with file/line information to stderr/stdout,
+     * checks ZUV_BACKTRACE environment variable, unwinds stack frames if enabled,
+     * and exits with status code 101.
+     *
+     * @returns {void}
+     */
+    emitPanicHandler: :: void => {
+        self.codegen.funcs += `
+        define void @zuv_panic(ptr %msg, ptr %file, i32 %line) {
+        entry:
+            ; Check if source file and line information was provided
+            %has_file = icmp ne ptr %file, null
+            br i1 %has_file, label %p_file, label %p_simple
+
+        p_file:
+            ; Print fatal error message with location metadata: "fatal runtime error: %s at %s:%d"
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_panic_msg, ptr %msg, ptr %file, i32 %line)
+            br label %check_env
+
+        p_simple:
+            ; Print fatal error message without location: "fatal runtime error: %s"
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_panic_simple, ptr %msg)
+            br label %check_env
+
+        check_env:
+            ; Query ZUV_BACKTRACE environment variable
+            %env = call ptr @getenv(ptr @zuv_env_backtrace)
+            %has_env = icmp ne ptr %env, null
+            br i1 %has_env, label %check_val, label %print_hint
+
+        check_val:
+            ; Check if backtrace is disabled (ZUV_BACKTRACE="0")
+            %ch = load i8, ptr %env
+            %is_zero = icmp eq i8 %ch, 48
+            br i1 %is_zero, label %print_hint, label %print_bt
+
+        print_bt:
+            ; Print backtrace header and unwind stack frames (skip panic handler frame)
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)
+            call void @zuv_walk_stack(i32 1, i32 32)
+            br label %do_exit
+
+        print_hint:
+            ; Print diagnostic hint on how to enable stack unwinding
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_hint)
+            br label %do_exit
+
+        do_exit:
+            ; Standard Rust/Zuv runtime panic exit code (101)
+            call void @exit(i32 101)
+            unreachable
+        }
+        `
+    },
+
+    /**
+     * Emits the `@zuv_check_bounds(ptr %arr, i64 %idx, ptr %file, i32 %line)` handler.
+     *
+     * Validates array pointer non-null and index within [0, len). If validation fails,
+     * calls `@zuv_panic` with "index out of bounds" and terminates with exit 101.
+     *
+     * @returns {void}
+     */
+    emitBoundsCheckHandler: :: void => {
+        self.codegen.funcs += `
+        define internal void @zuv_check_bounds(ptr %arr, i64 %idx, ptr %file, i32 %line) {
+        entry:
+            ; Reject null pointer dereference
+            %is_null = icmp eq ptr %arr, null
+            br i1 %is_null, label %fail, label %check
+
+        check:
+            ; Load array length header and check bounds: 0 <= idx < len
+            %len = load i64, ptr %arr
+            %in_bounds = icmp ult i64 %idx, %len
+            br i1 %in_bounds, label %ok, label %fail
+
+        fail:
+            ; Out of bounds violation: invoke runtime panic with file and line metadata
+            call void @zuv_panic(ptr @zuv_err_oob, ptr %file, i32 %line)
+            unreachable
+
+        ok:
+            ; Index within valid range, proceed with operation
+            ret void
+        }
+        `
+    },
+
+    /**
+     * Emits the `@zuv_dump_stack()` function for runtime diagnostics.
+     *
+     * Captures and prints active backtrace frames to stdout/stderr.
+     *
+     * @returns {void}
+     */
+    emitDumpStackHandler: :: void => {
+        self.codegen.funcs += `
+        define void @zuv_dump_stack() {
+        entry:
+            ; Print stack backtrace header and dump active call frames
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)
+            call void @zuv_walk_stack(i32 1, i32 32)
+            ret void
+        }
+        `
+    },
+
+    /**
+     * Emits the `@zuv_backtrace() -> ptr` function for collecting backtrace string.
+     *
+     * Allocates a buffer and formats captured stack frames into a heap-allocated C string.
+     *
+     * @returns {void}
+     */
+    emitBacktraceHandler: :: void => {
+        self.codegen.funcs += `
+        define ptr @zuv_backtrace() {
+        entry:
+            ; Capture stack frame return addresses and allocate 4KB output string buffer
+            %buf = alloca [32 x ptr], align 8
+            %frames = call i32 @RtlCaptureStackBackTrace(i32 1, i32 32, ptr %buf, ptr null)
+            %out = call ptr @malloc(i64 4096)
+            store i8 0, ptr %out
+            %has_frames = icmp sgt i32 %frames, 0
+            br i1 %has_frames, label %init, label %done
+
+        init:
+            ; Buffer formatting loop initialization: bidx = 0
+            %p_bidx = alloca i32, align 4
+            store i32 0, ptr %p_bidx
+            br label %loop
+
+        loop:
+            ; Format frame at index into buffer using snprintf
+            %idx = load i32, ptr %p_bidx
+            %cur_len = call i64 @strlen(ptr %out)
+            %slot = getelementptr inbounds [32 x ptr], ptr %buf, i32 0, i32 %idx
+            %pc = load ptr, ptr %slot
+            %desc = call ptr @zuv_resolve_pc(ptr %pc)
+            %is_null = icmp eq ptr %desc, null
+            %dest_ptr = getelementptr inbounds i8, ptr %out, i64 %cur_len
+            %avail = sub i64 4000, %cur_len
+            br i1 %is_null, label %fmt_unk, label %fmt_sym
+
+        fmt_sym:
+            ; Known symbol frame
+            %fn_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 1
+            %fn_name = load ptr, ptr %fn_name_ptr
+            %file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 2
+            %file = load ptr, ptr %file_ptr
+            %line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 3
+            %line = load i32, ptr %line_ptr
+            %fn_entry_ptr = load ptr, ptr %desc
+            %pc_int = ptrtoint ptr %pc to i64
+            %entry_int = ptrtoint ptr %fn_entry_ptr to i64
+            %offset = sub i64 %pc_int, %entry_int
+            call i32 (ptr, i64, ptr, ...) @snprintf(ptr %dest_ptr, i64 %avail, ptr @zuv_fmt_bt_frame_sym, i32 %idx, ptr %fn_name, ptr %file, i32 %line, i64 %offset)
+            br label %cont
+
+        fmt_unk:
+            ; Unknown symbol: append "  %2d: [unknown] (0x%016llx)"
+            %pc_as_i64 = ptrtoint ptr %pc to i64
+            call i32 (ptr, i64, ptr, ...) @snprintf(ptr %dest_ptr, i64 %avail, ptr @zuv_fmt_bt_frame_unk, i32 %idx, i64 %pc_as_i64)
+            br label %cont
+
+        cont:
+            ; Loop iteration step
+            %next_idx = add i32 %idx, 1
+            store i32 %next_idx, ptr %p_bidx
+            %more = icmp slt i32 %next_idx, %frames
+            br i1 %more, label %loop, label %done
+
+        done:
+            ; Return heap-allocated formatted backtrace string pointer
+            ret ptr %out
+        }
+        `
+    },
+
+    /**
+     * Emits the `@zuv_crash_handler(ptr %pExc) -> i32` vectored exception handler.
+     *
+     * Catches hardware exceptions (Access Violation 0xC0000005, Division by Zero 0xC0000094,
+     * Stack Overflow 0xC00000FD, Assertion/Abort 0xC000008C), prints faulting instruction
+     * pointer, checks ZUV_BACKTRACE, walks stack, and exits with code 101.
+     *
+     * @returns {void}
+     */
+    emitCrashHandler: :: void => {
+        self.codegen.funcs += `
+        define internal i32 @zuv_crash_handler(ptr %pExc) {
+        entry:
+            ; Inspect exception code from EXCEPTION_POINTERS -> EXCEPTION_RECORD
+            %rec_ptr = load ptr, ptr %pExc
+            %code = load i32, ptr %rec_ptr
+            %is_av = icmp eq i32 %code, -1073741819 ; 0xC0000005: Access Violation
+            %is_dz = icmp eq i32 %code, -1073741676 ; 0xC0000094: Integer Division by Zero
+            %is_ab = icmp eq i32 %code, -1073741684 ; 0xC000008C: Array Bounds / Abort
+            %is_so = icmp eq i32 %code, -1073741571 ; 0xC00000FD: Stack Overflow
+            %fatal1 = or i1 %is_av, %is_dz
+            %fatal2 = or i1 %is_ab, %is_so
+            %is_fatal = or i1 %fatal1, %fatal2
+            br i1 %is_fatal, label %handle_crash, label %pass
+
+        handle_crash:
+            ; Hardware crash detected: print exception code and faulting instruction pointer
+            %addr_ptr = getelementptr inbounds i8, ptr %rec_ptr, i64 16
+            %fault_pc = load ptr, ptr %addr_ptr
+            %fault_pc_i64 = ptrtoint ptr %fault_pc to i64
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_crash_msg, i32 %code, i64 %fault_pc_i64)
+            %env = call ptr @getenv(ptr @zuv_env_backtrace)
+            %has_env = icmp ne ptr %env, null
+            br i1 %has_env, label %check_crash_env, label %print_crash_hint
+
+        check_crash_env:
+            ; Check if backtrace is disabled (ZUV_BACKTRACE="0")
+            %ch = load i8, ptr %env
+            %is_zero = icmp eq i8 %ch, 48
+            br i1 %is_zero, label %print_crash_hint, label %print_crash_bt
+
+        print_crash_bt:
+            ; Unwind and dump crash backtrace
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)
+            call void @zuv_walk_stack(i32 0, i32 32)
+            br label %exit_crash
+
+        print_crash_hint:
+            ; Print crash diagnostic hint
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_hint)
+            br label %exit_crash
+
+        exit_crash:
+            ; Terminate process with exit code 101
+            call void @exit(i32 101)
+            ret i32 0
+
+        pass:
+            ; Non-fatal exception: pass through to subsequent exception handlers
+            ret i32 0
+        }
+        `
+    },
+
+    /**
+     * Emits the `@zuv_init_crash_handler()` function.
+     *
+     * Registers the vectored exception handler with the Win32 API via AddVectoredExceptionHandler.
+     *
+     * @returns {void}
+     */
+    emitInitCrashHandler: :: void => {
+        self.codegen.funcs += `
+        define void @zuv_init_crash_handler() {
+        entry:
+            ; Register vectored exception handler at head of handler chain
+            call ptr @AddVectoredExceptionHandler(i32 1, ptr @zuv_crash_handler)
+            ret void
+        }
+        `
+    },
+
+    /**
+     * Emits the complete suite of runtime intrinsics, crash handling, and backtrace handlers.
+     *
+     * @returns {void}
+     */
+    emitAll: :: void => {
+        if self.runtimeEmitted {
+            -> und
+        }
+        self.emitRuntimeGlobals
+        self.emitEnsureFnSorted
+        self.emitResolvePc
+        self.emitWalkStack
+        self.emitPanicHandler
+        self.emitBoundsCheckHandler
+        self.emitDumpStackHandler
+        self.emitBacktraceHandler
+        self.emitCrashHandler
+        self.emitInitCrashHandler
+        self.runtimeEmitted = true
+    },
+
+    /**
+     * Emits a call to `@zuv_panic` with file and line metadata, followed by `unreachable`.
+     *
+     * @param {str} msg - Panic explanation text
+     * @param {str} file - Source file path
+     * @param {num} line - Source line number
+     * @returns {void}
+     */
+    emitPanicCall: msg: str, file: str, line: num :: void => {
+        msgSym: str = self.codegen.addStringConstant msg
+        fileSym: str = self.codegen.addStringConstant file
+        self.codegen.emit `call void @zuv_panic(ptr ${msgSym}, ptr ${fileSym}, i32 ${line})`
+        self.codegen.emit "unreachable"
+    },
+
+    /**
+     * Emits a call to array bounds checking handler `@zuv_check_bounds`.
+     *
+     * @param {str} arrReg - SSA virtual register containing array pointer
+     * @param {str} idxReg - SSA virtual register containing index value (i64)
+     * @param {str} file - Source file path
+     * @param {num} line - Source line number
+     * @returns {void}
+     */
+    emitBoundsCheckCall: arrReg: str, idxReg: str, file: str, line: num :: void => {
+        fileSym: str = self.codegen.addStringConstant file
+        self.codegen.emit `call void @zuv_check_bounds(ptr ${arrReg}, i64 ${idxReg}, ptr ${fileSym}, i32 ${line})`
+    },
+
+    /**
+     * Emits a call to `@zuv_init_crash_handler` to enable vectored exception trapping.
+     *
+     * @returns {void}
+     */
+    emitInitCrashHandlerCall: :: void => {
+        self.codegen.emit "call void @zuv_init_crash_handler()"
+    },
+
+    /**
+     * Emits a call to `@zuv_dump_stack` to dump the current backtrace to stderr.
+     *
+     * @returns {void}
+     */
+    emitDumpStackCall: :: void => {
+        self.codegen.emit "call void @zuv_dump_stack()"
+    },
+
+    /**
+     * Emits a call to `@zuv_backtrace` returning a heap-allocated formatted stack trace string.
+     *
+     * @returns {str} SSA virtual register holding string pointer (`ptr`)
+     */
+    emitBacktraceCall: :: str => {
+        resReg: str = self.codegen.newReg
+        self.codegen.emit `${resReg} = call ptr @zuv_backtrace()`
+        -> resReg
+    }
+}

@@ -1,0 +1,433 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Type Lowering & LLVM Type Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/types.zv
+ *
+ * Implements direct semantic TypeKind to LLVM IR type mapping and zero
+ * name-guessing instruction selection directly from AST inferred types.
+ * =============================================================================
+ */
+
+imp str, arr
+imp TypeKind frm ../types
+imp ASTNode frm ../ast
+
+/**
+ * Maps a semantic TypeKind directly to its canonical LLVM IR type string representation.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {str} LLVM IR type ("void", "i1", "i8", "i16", "i32", "i64", "double", "ptr")
+ */
+llvmType typeKind: TypeKind :: str => sw typeKind {
+    TypeKind.Void => "void"
+    TypeKind.Bool => "i1"
+    TypeKind.I8   => "i8"
+    TypeKind.Enum => "i8"
+    TypeKind.I16  => "i16"
+    TypeKind.I32  => "i32"
+    TypeKind.I64  => "i64"
+    TypeKind.Num  => "double"
+    TypeKind.Str  => "ptr"
+    TypeKind.Ptr  => "ptr"
+    TypeKind.Arr  => "ptr"
+    TypeKind.Obj  => "ptr"
+    TypeKind.Func => "ptr"
+    TypeKind.Und  => "i64"
+    TypeKind.Nil  => "i64"
+    _             => "i64"
+}
+
+/**
+ * Maps a TypeKind to its 64-bit runtime boxed representation in Zuv ABI.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {str} LLVM IR boxed type ("double" or "i64")
+ */
+llvmBoxedType typeKind: TypeKind :: str {
+    if typeKind == TypeKind.Num {
+        -> "double"
+    }
+    -> "i64"
+}
+
+/**
+ * Maps a TypeKind to its stack allocation (alloca) type representation.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {str} LLVM IR stack allocation type
+ */
+llvmStackType typeKind: TypeKind :: str => sw typeKind {
+    TypeKind.Num  => "double"
+    TypeKind.Bool => "i1"
+    TypeKind.I8   => "i8"
+    TypeKind.Enum => "i8"
+    TypeKind.I16  => "i16"
+    TypeKind.I32  => "i32"
+    TypeKind.I64  => "i64"
+    TypeKind.Void => "void"
+    _             => "ptr"
+}
+
+/**
+ * Determines whether a TypeKind represents an integer or integral scalar.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {bool} True if integral scalar
+ */
+isIntegerType typeKind: TypeKind :: bool => sw typeKind {
+    TypeKind.I8   => true
+    TypeKind.I16  => true
+    TypeKind.I32  => true
+    TypeKind.I64  => true
+    TypeKind.Bool => true
+    TypeKind.Enum => true
+    _             => false
+}
+
+/**
+ * Determines whether a TypeKind represents a floating point number.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {bool} True if floating point
+ */
+isFloatType typeKind: TypeKind :: bool {
+    if typeKind == TypeKind.Num {
+        -> true
+    }
+    -> false
+}
+
+/**
+ * Determines whether a TypeKind represents a pointer or heap object reference.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {bool} True if reference or pointer type
+ */
+isPointerType typeKind: TypeKind :: bool => sw typeKind {
+    TypeKind.Str  => true
+    TypeKind.Ptr  => true
+    TypeKind.Arr  => true
+    TypeKind.Obj  => true
+    TypeKind.Func => true
+    _             => false
+}
+
+/**
+ * Selects the default zero or null literal representation for a given TypeKind.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {str} LLVM literal string ("0.0", "false", "0", "null", or "")
+ */
+selectDefaultValue typeKind: TypeKind :: str => sw typeKind {
+    TypeKind.Num  => "0.0"
+    TypeKind.Bool => "false"
+    TypeKind.I8   => "0"
+    TypeKind.I16  => "0"
+    TypeKind.I32  => "0"
+    TypeKind.I64  => "0"
+    TypeKind.Enum => "0"
+    TypeKind.Und  => "0"
+    TypeKind.Nil  => "0"
+    TypeKind.Str  => "null"
+    TypeKind.Ptr  => "null"
+    TypeKind.Arr  => "null"
+    TypeKind.Obj  => "null"
+    TypeKind.Func => "null"
+    _             => ""
+}
+
+/**
+ * Selects the optimal LLVM IR binary arithmetic or bitwise instruction based purely on type.
+ *
+ * Employs zero name-guessing by selecting instruction variants exclusively from TypeKind.
+ *
+ * @param {str} op - Source operator symbol ("+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>", ">>>")
+ * @param {TypeKind} typeKind - Operand type kind
+ * @returns {str} LLVM IR instruction mnemonic ("fadd", "add", "fsub", "sub", "sdiv", "and", etc.)
+ */
+selectBinaryOp op: str, typeKind: TypeKind :: str {
+    if typeKind == TypeKind.Num {
+        -> sw op {
+            "+"  => "fadd"
+            "-"  => "fsub"
+            "*"  => "fmul"
+            "/"  => "fdiv"
+            "%"  => "frem"
+            "**" => "pow"
+            _    => "fadd"
+        }
+    }
+    if typeKind == TypeKind.Str && op == "+" {
+        -> "concat"
+    }
+    -> sw op {
+        "+"   => "add"
+        "-"   => "sub"
+        "*"   => "mul"
+        "/"   => "sdiv"
+        "%"   => "srem"
+        "&"   => "and"
+        "|"   => "or"
+        "^"   => "xor"
+        "<<"  => "shl"
+        ">>"  => "ashr"
+        ">>>" => "lshr"
+        _     => "add"
+    }
+}
+
+/**
+ * Selects the optimal LLVM IR comparison instruction and predicate based on type.
+ *
+ * @param {str} op - Comparison operator ("==", "!=", "<", "<=", ">", ">=")
+ * @param {TypeKind} typeKind - Operand type kind
+ * @returns {str} LLVM comparison instruction with predicate ("fcmp olt", "icmp slt", etc.)
+ */
+selectCmpOp op: str, typeKind: TypeKind :: str {
+    if typeKind == TypeKind.Num {
+        -> sw op {
+            "==" => "fcmp oeq"
+            "!=" => "fcmp one"
+            "<"  => "fcmp olt"
+            "<=" => "fcmp ole"
+            ">"  => "fcmp ogt"
+            ">=" => "fcmp oge"
+            _    => "fcmp oeq"
+        }
+    }
+    if typeKind == TypeKind.Str {
+        -> sw op {
+            "==" => "icmp eq"
+            "!=" => "icmp ne"
+            _    => "icmp eq"
+        }
+    }
+    -> sw op {
+        "==" => "icmp eq"
+        "!=" => "icmp ne"
+        "<"  => "icmp slt"
+        "<=" => "icmp sle"
+        ">"  => "icmp sgt"
+        ">=" => "icmp sge"
+        _    => "icmp eq"
+    }
+}
+
+/**
+ * Selects the optimal LLVM type conversion instruction between two semantic TypeKinds.
+ *
+ * @param {TypeKind} fromKind - Origin type kind
+ * @param {TypeKind} toKind - Destination type kind
+ * @returns {str} LLVM instruction mnemonic ("fptosi", "sitofp", "zext", "sext", "trunc", "ptrtoint", "inttoptr", "bitcast", or "")
+ */
+selectCastOp fromKind: TypeKind, toKind: TypeKind :: str {
+    if fromKind == toKind {
+        -> ""
+    }
+
+    sw fromKind {
+        TypeKind.Num => {
+            -> sw toKind {
+                TypeKind.Bool => "fcmp one"
+                TypeKind.I8   => "fptosi"
+                TypeKind.Enum => "fptosi"
+                TypeKind.I16  => "fptosi"
+                TypeKind.I32  => "fptosi"
+                TypeKind.I64  => "fptosi"
+                _             => ""
+            }
+        }
+        TypeKind.I8 => {
+            -> sw toKind {
+                TypeKind.Num => "sitofp"
+                TypeKind.I16 => "zext"
+                TypeKind.I32 => "zext"
+                TypeKind.I64 => "zext"
+                _            => ""
+            }
+        }
+        TypeKind.Enum => {
+            -> sw toKind {
+                TypeKind.Num => "sitofp"
+                TypeKind.I16 => "zext"
+                TypeKind.I32 => "zext"
+                TypeKind.I64 => "zext"
+                _            => ""
+            }
+        }
+        TypeKind.I16 => {
+            -> sw toKind {
+                TypeKind.Num  => "sitofp"
+                TypeKind.I32  => "sext"
+                TypeKind.I64  => "sext"
+                TypeKind.I8   => "trunc"
+                TypeKind.Enum => "trunc"
+                _             => ""
+            }
+        }
+        TypeKind.I32 => {
+            -> sw toKind {
+                TypeKind.Num  => "sitofp"
+                TypeKind.I64  => "sext"
+                TypeKind.I16  => "trunc"
+                TypeKind.I8   => "trunc"
+                TypeKind.Enum => "trunc"
+                _             => ""
+            }
+        }
+        TypeKind.I64 => {
+            -> sw toKind {
+                TypeKind.Num  => "sitofp"
+                TypeKind.I32  => "trunc"
+                TypeKind.I16  => "trunc"
+                TypeKind.I8   => "trunc"
+                TypeKind.Enum => "trunc"
+                TypeKind.Ptr  => "inttoptr"
+                TypeKind.Str  => "inttoptr"
+                TypeKind.Arr  => "inttoptr"
+                TypeKind.Obj  => "inttoptr"
+                TypeKind.Func => "inttoptr"
+                _             => ""
+            }
+        }
+        TypeKind.Str => {
+            -> sw toKind {
+                TypeKind.I64  => "ptrtoint"
+                TypeKind.Ptr  => "bitcast"
+                TypeKind.Arr  => "bitcast"
+                TypeKind.Obj  => "bitcast"
+                TypeKind.Func => "bitcast"
+                _             => ""
+            }
+        }
+        TypeKind.Ptr => {
+            -> sw toKind {
+                TypeKind.I64  => "ptrtoint"
+                TypeKind.Str  => "bitcast"
+                TypeKind.Arr  => "bitcast"
+                TypeKind.Obj  => "bitcast"
+                TypeKind.Func => "bitcast"
+                _             => ""
+            }
+        }
+        TypeKind.Arr => {
+            -> sw toKind {
+                TypeKind.I64  => "ptrtoint"
+                TypeKind.Str  => "bitcast"
+                TypeKind.Ptr  => "bitcast"
+                TypeKind.Obj  => "bitcast"
+                TypeKind.Func => "bitcast"
+                _             => ""
+            }
+        }
+        TypeKind.Obj => {
+            -> sw toKind {
+                TypeKind.I64  => "ptrtoint"
+                TypeKind.Str  => "bitcast"
+                TypeKind.Ptr  => "bitcast"
+                TypeKind.Arr  => "bitcast"
+                TypeKind.Func => "bitcast"
+                _             => ""
+            }
+        }
+        TypeKind.Func => {
+            -> sw toKind {
+                TypeKind.I64  => "ptrtoint"
+                TypeKind.Str  => "bitcast"
+                TypeKind.Ptr  => "bitcast"
+                TypeKind.Arr  => "bitcast"
+                TypeKind.Obj  => "bitcast"
+                _             => ""
+            }
+        }
+        _ => {
+            -> ""
+        }
+    }
+
+    -> ""
+}
+
+/**
+ * Selects a binary instruction directly from an AST expression node's inferred type.
+ *
+ * @param {str} op - Arithmetic or bitwise operator
+ * @param {ASTNode} expr - AST expression node
+ * @returns {str} LLVM binary instruction mnemonic
+ */
+selectBinaryOpForExpr op: str, expr: ASTNode :: str {
+    -> selectBinaryOp op, expr.inferredType
+}
+
+/**
+ * Selects a comparison instruction directly from an AST expression node's inferred type.
+ *
+ * @param {str} op - Comparison operator
+ * @param {ASTNode} expr - AST expression node
+ * @returns {str} LLVM comparison instruction mnemonic with predicate
+ */
+selectCmpOpForExpr op: str, expr: ASTNode :: str {
+    -> selectCmpOp op, expr.inferredType
+}
+
+/**
+ * Selects a cast instruction directly from an AST expression node's inferred type.
+ *
+ * @param {ASTNode} expr - AST expression node
+ * @param {TypeKind} toKind - Target type kind
+ * @returns {str} LLVM cast instruction mnemonic
+ */
+selectCastOpForExpr expr: ASTNode, toKind: TypeKind :: str {
+    -> selectCastOp expr.inferredType, toKind
+}
+
+/**
+ * Formats a complete LLVM IR binary instruction statement.
+ *
+ * @param {str} op - Operator symbol
+ * @param {str} leftReg - Left operand SSA register
+ * @param {str} rightReg - Right operand SSA register
+ * @param {TypeKind} typeKind - Operand type kind
+ * @param {str} resReg - Destination SSA register
+ * @returns {str} Formatted instruction (e.g. "%r2 = fadd double %r0, %r1")
+ */
+emitBinaryInstruction op: str, leftReg: str, rightReg: str, typeKind: TypeKind, resReg: str :: str {
+    instr = selectBinaryOp op, typeKind
+    typeName = llvmType typeKind
+    -> resReg + " = " + instr + " " + typeName + " " + leftReg + ", " + rightReg
+}
+
+/**
+ * Formats a complete LLVM IR comparison instruction statement.
+ *
+ * @param {str} op - Comparison operator symbol
+ * @param {str} leftReg - Left operand SSA register
+ * @param {str} rightReg - Right operand SSA register
+ * @param {TypeKind} typeKind - Operand type kind
+ * @param {str} resReg - Destination SSA register
+ * @returns {str} Formatted instruction (e.g. "%r2 = fcmp olt double %r0, %r1")
+ */
+emitCmpInstruction op: str, leftReg: str, rightReg: str, typeKind: TypeKind, resReg: str :: str {
+    instr = selectCmpOp op, typeKind
+    typeName = llvmType typeKind
+    -> resReg + " = " + instr + " " + typeName + " " + leftReg + ", " + rightReg
+}
+
+/**
+ * Formats a complete LLVM IR type cast or conversion instruction statement.
+ *
+ * @param {str} valReg - Source SSA register
+ * @param {TypeKind} fromKind - Source type kind
+ * @param {TypeKind} toKind - Destination type kind
+ * @param {str} resReg - Destination SSA register
+ * @returns {str} Formatted instruction (e.g. "%res = zext i8 %val to i64")
+ */
+emitCastInstruction valReg: str, fromKind: TypeKind, toKind: TypeKind, resReg: str :: str {
+    castOp = selectCastOp fromKind, toKind
+    fromType = llvmType fromKind
+    toType = llvmType toKind
+    if castOp.ln == 0 {
+        -> resReg + " = bitcast " + fromType + " " + valReg + " to " + toType
+    }
+    -> resReg + " = " + castOp + " " + fromType + " " + valReg + " to " + toType
+}

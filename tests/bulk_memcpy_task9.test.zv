@@ -1,0 +1,88 @@
+// Test for Task 9: Bulk Block Copy via @memcpy (Fast Spreads & Clones)
+// Verifies:
+// 1. Array cloning via spread [...original] copies all elements accurately.
+// 2. Value independence: mutating a spread clone does not mutate the original array.
+// 3. Multi-array spread concatenation: [...a, ...b, ...c].
+// 4. Mixed literal and spread concatenation: [100, ...a, 200, ...b, 300].
+// 5. Empty and nil spreads: [...[], 42, ...nil].
+// 6. One-shot exact capacity allocation: copy.cap == original.ln (no wasted over-allocation).
+// 7. High-performance bulk @memcpy copy across 10,000 elements.
+
+// 1. Basic Array Cloning via Spread
+let original = [10, 20, 30, 40, 50]
+let clone = [...original]
+
+prnt clone.ln
+if clone.ln == 5 {
+    if clone[0] == 10 and clone[1] == 20 and clone[2] == 30 and clone[3] == 40 and clone[4] == 50 {
+        prnt "Basic array spread clone passed"
+    }
+}
+
+// 2. Value Independence (Deep Copy Verification)
+clone[0] = 999
+clone[4] = 888
+
+prnt original[0]
+prnt clone[0]
+if original[0] == 10 and clone[0] == 999 and original[4] == 50 and clone[4] == 888 {
+    prnt "Value independence verified: clone has independent memory buffer"
+}
+
+// 3. One-Shot Exact Capacity Allocation
+prnt clone.cap
+if clone.cap == 5 {
+    prnt "One-shot exact capacity allocation verified"
+}
+
+// 4. Multi-Array Spread Concatenation
+let part1 = [1, 2]
+let part2 = [3, 4]
+let part3 = [5, 6]
+let combined = [...part1, ...part2, ...part3]
+
+prnt combined.ln
+if combined.ln == 6 {
+    if combined[0] == 1 and combined[1] == 2 and combined[2] == 3 and combined[3] == 4 and combined[4] == 5 and combined[5] == 6 {
+        prnt "Multi-array spread concatenation passed"
+    }
+}
+
+// 5. Mixed Literals and Spreads
+let mixed = [100, ...part1, 200, ...part2, 300]
+prnt mixed.ln
+if mixed.ln == 7 {
+    if mixed[0] == 100 and mixed[1] == 1 and mixed[2] == 2 and mixed[3] == 200 and mixed[4] == 3 and mixed[5] == 4 and mixed[6] == 300 {
+        prnt "Mixed literals and spreads passed"
+    }
+}
+
+// 6. Empty Array and Nil Spreading
+let empty_spread = [...[], 42, ...nil]
+prnt empty_spread.ln
+if empty_spread.ln == 1 and empty_spread[0] == 42 {
+    prnt "Empty and nil spread handling passed"
+}
+
+// 7. Large-Scale Bulk @memcpy Copy across 10,000 Elements
+let large = []
+fr let i = 0; i < 10000; i++ {
+    large.psh i
+}
+
+let large_copy = [...large]
+
+prnt large_copy.ln
+prnt large_copy[0]
+prnt large_copy[9999]
+
+let copy_sum = 0
+fr val of large_copy {
+    copy_sum = copy_sum + val
+}
+
+// Sum of 0..9999 = 10000 * 9999 / 2 = 49995000
+prnt copy_sum
+if large_copy.ln == 10000 and large_copy[0] == 0 and large_copy[9999] == 9999 and copy_sum == 49995000 {
+    prnt "Large-scale 10,000-element bulk @memcpy spread passed"
+}

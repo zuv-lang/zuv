@@ -1,11 +1,10 @@
 // Decorator test suite (tests/decorators.test.zv)
 imp time
 
-// 1. Object / Class Decorator
-LogClass target, ctx {
-    lg `Class: ${ctx.name}`
-    target.email = "default@example.com"
-    target.name = "Rohit"
+// 1. Object / Class Decorator (1 parameter like TypeScript)
+LogClass cls {
+    cls.email = "default@example.com"
+    cls.name = "Rohit"
 }
 
 @LogClass
@@ -19,10 +18,10 @@ obj User {
 }
 
 // 2. Method Decorator
-Log originalMethod, ctx {
+Log method, meta {
     -> ...args => {
-        lg `Calling ${ctx.name}`
-        -> originalMethod ...args
+        lg `Calling ${meta.name}`
+        -> method ...args
     }
 }
 
@@ -34,13 +33,13 @@ obj Greeter {
 }
 
 // 3. Behavior-changing decorator (timing / profiling)
-Measure originalMethod, ctx {
+Measure fn, c {
     -> ...args => {
         start = time.mono
-        result = originalMethod ...args
+        result = fn ...args
         end_time = time.mono
         elapsed = (end_time - start) / 1000000.0
-        lg `${ctx.name} took ${elapsed}ms`
+        lg `${c.name} took ${elapsed}ms`
         -> result
     }
 }
@@ -55,10 +54,10 @@ obj App {
 }
 
 // 4. Decorator Factory (parameterized)
-Route path {
-    -> (originalMethod, ctx) => {
-        lg `${ctx.name} -> ${path}`
-        -> originalMethod
+Route endpoint {
+    -> (m, ctxObj) => {
+        lg `${ctxObj.name} -> ${endpoint}`
+        -> m
     }
 }
 
@@ -70,9 +69,9 @@ obj UserController {
 }
 
 // 5. Free-function decorator
-Deprecated fn, ctx {
-    lg `Warning: ${ctx.name} is deprecated`
-    -> fn
+Deprecated targetFn, info {
+    lg `Warning: ${info.name} is deprecated`
+    -> targetFn
 }
 
 @Deprecated

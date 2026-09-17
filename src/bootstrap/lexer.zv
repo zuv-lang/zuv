@@ -1,0 +1,825 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Streaming Lexical Scanner
+ * Path: sub_projects/zuv/src/bootstrap/lexer.zv
+ * Provides the streaming Lexer scanning characters into typed tokens.
+ * =============================================================================
+ */
+
+imp str, arr
+imp Token, TokenType, LookupKeyword frm tokens
+
+
+
+/**
+ * Checks whether a character is standard whitespace (space, tab, carriage return, newline).
+ *
+ * @param {str} ch - Single character string
+ * @returns {bool} True if whitespace, false otherwise
+ */
+IsWhitespace ch: str :: bool {
+    -> ch == " " || ch == "\t" || ch == "\r" || ch == "\n"
+}
+
+/**
+ * Checks whether a character is an ASCII decimal digit ('0'-'9').
+ *
+ * @param {str} ch - Single character string
+ * @returns {bool} True if decimal digit, false otherwise
+ */
+IsDigit ch: str :: bool {
+    -> ch >= "0" && ch <= "9"
+}
+
+/**
+ * Checks whether a character is a hexadecimal digit ('0'-'9', 'a'-'f', 'A'-'F').
+ *
+ * @param {str} ch - Single character string
+ * @returns {bool} True if hexadecimal digit, false otherwise
+ */
+IsHexDigit ch: str :: bool {
+    -> (ch >= "0" && ch <= "9") || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
+}
+
+/**
+ * Checks whether a character is a binary digit ('0' or '1').
+ *
+ * @param {str} ch - Single character string
+ * @returns {bool} True if binary digit, false otherwise
+ */
+IsBinDigit ch: str :: bool {
+    -> ch == "0" || ch == "1"
+}
+
+/**
+ * Checks whether a character is an octal digit ('0'-'7').
+ *
+ * @param {str} ch - Single character string
+ * @returns {bool} True if octal digit, false otherwise
+ */
+IsOctDigit ch: str :: bool {
+    -> ch >= "0" && ch <= "7"
+}
+
+/**
+ * Checks whether a character is an ASCII alphabet letter ('a'-'z', 'A'-'Z').
+ *
+ * @param {str} ch - Single character string
+ * @returns {bool} True if alphabetic, false otherwise
+ */
+IsAlpha ch: str :: bool {
+    -> (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z")
+}
+
+/**
+ * Checks whether a character can start an identifier ('a'-'z', 'A'-'Z', '_', '$').
+ *
+ * @param {str} ch - Single character string
+ * @returns {bool} True if valid identifier start character, false otherwise
+ */
+IsIdentStart ch: str :: bool {
+    -> (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_" || ch == "$"
+}
+
+/**
+ * Checks whether a character can continue an identifier ('a'-'z', 'A'-'Z', '0'-'9', '_', '$').
+ *
+ * @param {str} ch - Single character string
+ * @returns {bool} True if valid identifier continuation character, false otherwise
+ */
+IsIdentChar ch: str :: bool {
+    -> (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9") || ch == "_" || ch == "$"
+}
+
+obj Lexer {
+    src: str,
+    pos: num,
+    line: num,
+    col: num,
+    len: num,
+
+    /**
+     * Creates and initializes a new Lexer instance for the given source text.
+     *
+     * @param {str} src - Source code text to tokenize
+     * @returns {Lexer} Initialized Lexer instance
+     */
+    create: src: str :: Lexer => {
+        srcLen: num = src.ln
+        -> {
+            src,
+            pos: 0,
+            line: 1,
+            col: 1,
+            len: srcLen
+        }
+    },
+
+    /**
+     * Returns the character at the current scanner position, or "" if EOF.
+     *
+     * @returns {str} Current character string
+     */
+    cur: :: str => {
+        if self.pos >= self.len {
+            -> ""
+        }
+        -> self.src.chr self.pos
+    },
+
+    /**
+     * Peeks at the next character without advancing the scanner position.
+     *
+     * @returns {str} Next character string, or "" if EOF
+     */
+    peek: :: str => {
+        nextPos: num = self.pos + 1
+        if nextPos >= self.len {
+            -> ""
+        }
+        -> self.src.chr nextPos
+    },
+
+    /**
+     * Peeks ahead by a specified offset without advancing the scanner position.
+     *
+     * @param {num} offset - Number of characters ahead to inspect
+     * @returns {str} Character string at pos + offset, or "" if out of bounds
+     */
+    peekAhead: offset: num :: str => {
+        targetPos: num = self.pos + offset
+        if targetPos >= self.len || targetPos < 0 {
+            -> ""
+        }
+        -> self.src.chr targetPos
+    },
+
+    /**
+     * Consumes and returns the current character, advancing line and column counters.
+     *
+     * @returns {str} Consumed character string
+     */
+    advance: :: str => {
+        if self.pos >= self.len {
+            -> ""
+        }
+        ch: str = self.src.chr self.pos
+        self.pos = self.pos + 1
+        if ch == "\n" {
+            self.line = self.line + 1
+            self.col = 1
+        } els {
+            self.col = self.col + 1
+        }
+        -> ch
+    },
+
+    /**
+     * Skips whitespace characters and both single-line (//) and multi-line (/* * /) comments.
+     *
+     * @returns {void}
+     */
+    skipWhitespaceAndComments: :: void => {
+        wh self.pos < self.len {
+            ch: str = self.cur
+            if IsWhitespace ch {
+                self.advance
+            } els if ch == "/" && self.peek == "/" {
+                // Skip single-line comment
+                wh self.pos < self.len && self.cur != "\n" {
+                    self.advance
+                }
+            } els if ch == "/" && self.peek == "*" {
+                // Skip multi-line comment
+                self.advance
+                self.advance
+                inComment: bool = true
+                wh self.pos < self.len && inComment {
+                    if self.cur == "*" && self.peek == "/" {
+                        self.advance
+                        self.advance
+                        inComment = false
+                    } els {
+                        self.advance
+                    }
+                }
+            } els {
+                brk
+            }
+        }
+    },
+
+    /**
+     * Scans a string literal with escape sequence interpretation.
+     *
+     * @param {str} quote - Opening quote character ('"' or "'")
+     * @returns {Token} Scanned TOK_STRING token
+     */
+    scanString: quote: str :: Token => {
+        startLine: num = self.line
+        startCol: num = self.col
+        self.advance // Skip opening quote
+        val: str = ""
+
+        wh self.pos < self.len && self.cur != quote {
+            ch: str = self.cur
+            if ch == "\\" {
+                self.advance
+                esc: str = self.cur
+                if esc == "n" {
+                    val = val + "\n"
+                } els if esc == "t" {
+                    val = val + "\t"
+                } els if esc == "r" {
+                    val = val + "\r"
+                } els if esc == "\"" {
+                    val = val + "\""
+                } els if esc == "'" {
+                    val = val + "'"
+                } els if esc == "\\" {
+                    val = val + "\\"
+                } els if esc == "0" {
+                    val = val + "\0"
+                } els if esc == "$" {
+                    val = val + "$"
+                } els {
+                    val = val + "\\" + esc
+                }
+                self.advance
+            } els {
+                val = val + ch
+                self.advance
+            }
+        }
+
+        if self.cur == quote {
+            self.advance // Skip closing quote
+        }
+
+        tokLen: num = self.col - startCol
+        if tokLen < 1 {
+            tokLen = 1
+        }
+        tok = Token.create TokenType.TOK_STRING, val, startLine, startCol, tokLen
+        -> tok
+    },
+
+    /**
+     * Scans a raw string literal (e.g. r"hello\nworld") preserving backslashes literally.
+     *
+     * @param {str} quote - Opening quote character ('"' or "'")
+     * @returns {Token} Scanned TOK_STRING token
+     */
+    scanRawString: quote: str :: Token => {
+        startLine: num = self.line
+        startCol: num = self.col - 1 // Include 'r' prefix in column
+        self.advance // Skip opening quote
+        val: str = ""
+
+        wh self.pos < self.len && self.cur != quote {
+            val = val + self.cur
+            self.advance
+        }
+
+        if self.cur == quote {
+            self.advance // Skip closing quote
+        }
+
+        tokLen: num = self.col - startCol
+        if tokLen < 1 {
+            tokLen = 1
+        }
+        tok = Token.create TokenType.TOK_STRING, val, startLine, startCol, tokLen
+        -> tok
+    },
+
+    /**
+     * Scans a template string literal enclosed in backticks (`...`).
+     *
+     * @returns {Token} Scanned TOK_TEMPLATE_STRING token
+     */
+    scanTemplateString: :: Token => {
+        startLine: num = self.line
+        startCol: num = self.col
+        self.advance // Skip opening backtick
+        val: str = ""
+
+        wh self.pos < self.len && self.cur != "`" {
+            ch: str = self.cur
+            if ch == "\\" {
+                self.advance
+                esc: str = self.cur
+                if esc == "n" {
+                    val = val + "\n"
+                } els if esc == "t" {
+                    val = val + "\t"
+                } els if esc == "r" {
+                    val = val + "\r"
+                } els if esc == "`" {
+                    val = val + "`"
+                } els if esc == "$" {
+                    val = val + "$"
+                } els if esc == "\\" {
+                    val = val + "\\"
+                } els if esc == "0" {
+                    val = val + "\0"
+                } els {
+                    val = val + "\\" + esc
+                }
+                self.advance
+            } els {
+                val = val + ch
+                self.advance
+            }
+        }
+
+        if self.cur == "`" {
+            self.advance // Skip closing backtick
+        }
+
+        tokLen: num = self.col - startCol
+        if tokLen < 1 {
+            tokLen = 1
+        }
+        tok = Token.create TokenType.TOK_TEMPLATE_STRING, val, startLine, startCol, tokLen
+        -> tok
+    },
+
+    /**
+     * Scans a numeric literal (decimal, float, hex 0x, binary 0b, octal 0o, exponent, BigInt).
+     *
+     * @returns {Token} Scanned TOK_NUMBER or TOK_BIGINT token
+     */
+    scanNumber: :: Token => {
+        startLine: num = self.line
+        startCol: num = self.col
+        startPos: num = self.pos
+
+        // Check base prefix (0x, 0b, 0o)
+        if self.cur == "0" {
+            prefixChar: str = self.peek
+            p2: str = self.peekAhead 2
+            if (prefixChar == "x" || prefixChar == "X") && (IsHexDigit p2) {
+                self.advance // '0'
+                self.advance // 'x'
+                wh IsHexDigit self.cur {
+                    self.advance
+                }
+                rawHex: str = self.src.slc startPos, self.pos
+                tokLen: num = self.pos - startPos
+                tok = Token.create TokenType.TOK_NUMBER, rawHex, startLine, startCol, tokLen
+                -> tok
+            } els if (prefixChar == "b" || prefixChar == "B") && (IsBinDigit p2) {
+                self.advance // '0'
+                self.advance // 'b'
+                wh IsBinDigit self.cur {
+                    self.advance
+                }
+                rawBin: str = self.src.slc startPos, self.pos
+                tokLen: num = self.pos - startPos
+                tok = Token.create TokenType.TOK_NUMBER, rawBin, startLine, startCol, tokLen
+                -> tok
+            } els if (prefixChar == "o" || prefixChar == "O") && (IsOctDigit p2) {
+                self.advance // '0'
+                self.advance // 'o'
+                wh IsOctDigit self.cur {
+                    self.advance
+                }
+                rawOct: str = self.src.slc startPos, self.pos
+                tokLen: num = self.pos - startPos
+                tok = Token.create TokenType.TOK_NUMBER, rawOct, startLine, startCol, tokLen
+                -> tok
+            }
+        }
+
+        hasDot: bool = false
+        wh (IsDigit self.cur) || (self.cur == "." && !hasDot && (IsDigit self.peek)) {
+            if self.cur == "." {
+                hasDot = true
+            }
+            self.advance
+        }
+
+        // Scientific exponent: 1e5, 1.5E-2, 10e+3
+        if self.cur == "e" || self.cur == "E" {
+            next: str = self.peek
+            expOk: bool = IsDigit next
+            if !expOk && (next == "+" || next == "-") {
+                afterSign: str = self.peekAhead 2
+                expOk = IsDigit afterSign
+            }
+            if expOk {
+                self.advance // 'e' or 'E'
+                if self.cur == "+" || self.cur == "-" {
+                    self.advance
+                }
+                wh IsDigit self.cur {
+                    self.advance
+                }
+            }
+        }
+
+        // BigInt suffix: 123n / 123N
+        if !hasDot && (self.cur == "n" || self.cur == "N") {
+            rawNum: str = self.src.slc startPos, self.pos
+            self.advance // consume 'n'
+            tokLen: num = self.pos - startPos
+            tok = Token.create TokenType.TOK_BIGINT, rawNum, startLine, startCol, tokLen
+            -> tok
+        }
+
+        rawVal: str = self.src.slc startPos, self.pos
+        tokLen: num = self.pos - startPos
+        tok = Token.create TokenType.TOK_NUMBER, rawVal, startLine, startCol, tokLen
+        -> tok
+    },
+
+    /**
+     * Scans an identifier or resolves it to a reserved keyword.
+     *
+     * @returns {Token} Scanned TOK_IDENT or keyword token
+     */
+    scanIdentifier: :: Token => {
+        startLine: num = self.line
+        startCol: num = self.col
+        startPos: num = self.pos
+
+        wh IsIdentChar self.cur {
+            self.advance
+        }
+
+        literal: str = self.src.slc startPos, self.pos
+        kind: TokenType = LookupKeyword literal
+        tokLen: num = self.pos - startPos
+        tok = Token.create kind, literal, startLine, startCol, tokLen
+        -> tok
+    },
+
+    /**
+     * Scans and returns the next single lexical token from the source text.
+     *
+     * @returns {Token} Next scanned Token
+     */
+    scanToken: :: Token => {
+        self.skipWhitespaceAndComments
+
+        if self.pos >= self.len {
+            tok = Token.create TokenType.TOK_EOF, "", self.line, self.col, 0
+            -> tok
+        }
+
+        startLine: num = self.line
+        startCol: num = self.col
+        ch: str = self.cur
+
+        // Raw string prefix: r"..." or r'...'
+        if ch == "r" && (self.peek == "\"" || self.peek == "'") {
+            self.advance // consume 'r'
+            quoteChar: str = self.cur
+            tok = self.scanRawString quoteChar
+            -> tok
+        }
+
+        // Identifiers & Keywords
+        if IsIdentStart ch {
+            tok = self.scanIdentifier
+            -> tok
+        }
+
+        // Numbers
+        if IsDigit ch {
+            tok = self.scanNumber
+            -> tok
+        }
+
+        // Strings & Template Literals
+        if ch == "\"" || ch == "'" {
+            tok = self.scanString ch
+            -> tok
+        }
+        if ch == "`" {
+            tok = self.scanTemplateString
+            -> tok
+        }
+
+        // Operators & Delimiters
+        if ch == "=" {
+            self.advance
+            if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_EQ, "==", startLine, startCol, 2
+                -> tok
+            } els if self.cur == ">" {
+                self.advance
+                tok = Token.create TokenType.TOK_FAT_ARROW, "=>", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_ASSIGN, "=", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "?" {
+            self.advance
+            if self.cur == "?" {
+                self.advance
+                tok = Token.create TokenType.TOK_NULLISH, "??", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "." {
+                self.advance
+                tok = Token.create TokenType.TOK_OPT_DOT, "?.", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_QUESTION, "?", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "+" {
+            self.advance
+            if self.cur == "+" {
+                self.advance
+                tok = Token.create TokenType.TOK_INC, "++", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_PLUS_EQ, "+=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_PLUS, "+", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "-" {
+            self.advance
+            if self.cur == ">" {
+                self.advance
+                tok = Token.create TokenType.TOK_ARROW, "->", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "-" {
+                self.advance
+                tok = Token.create TokenType.TOK_DEC, "--", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_MINUS_EQ, "-=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_MINUS, "-", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "*" {
+            self.advance
+            if self.cur == "*" {
+                self.advance
+                if self.cur == "=" {
+                    self.advance
+                    tok = Token.create TokenType.TOK_POW_EQ, "**=", startLine, startCol, 3
+                    -> tok
+                }
+                tok = Token.create TokenType.TOK_POW, "**", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_STAR_EQ, "*=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_ASTERISK, "*", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "/" {
+            self.advance
+            if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_SLASH_EQ, "/=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_SLASH, "/", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "%" {
+            self.advance
+            if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_PERCENT_EQ, "%=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_PERCENT, "%", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "!" {
+            self.advance
+            if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_NOT_EQ, "!=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_NOT, "!", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "<" {
+            self.advance
+            if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_LTE, "<=", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "<" {
+                self.advance
+                tok = Token.create TokenType.TOK_SHL, "<<", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_LT, "<", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == ">" {
+            self.advance
+            if self.cur == ">" {
+                self.advance
+                if self.cur == ">" {
+                    self.advance
+                    tok = Token.create TokenType.TOK_USHR, ">>>", startLine, startCol, 3
+                    -> tok
+                }
+                tok = Token.create TokenType.TOK_SHR, ">>", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_GTE, ">=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_GT, ">", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "&" {
+            // Check for &let keyword
+            p1: str = self.peek
+            p2: str = self.peekAhead 2
+            p3: str = self.peekAhead 3
+            p4: str = self.peekAhead 4
+            if p1 == "l" && p2 == "e" && p3 == "t" && !(IsIdentChar p4) {
+                self.advance // '&'
+                self.advance // 'l'
+                self.advance // 'e'
+                self.advance // 't'
+                tok = Token.create TokenType.TOK_AMP_LET, "&let", startLine, startCol, 4
+                -> tok
+            }
+            self.advance
+            if self.cur == "&" {
+                self.advance
+                tok = Token.create TokenType.TOK_AND, "&&", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_AMP_EQ, "&=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_AMP, "&", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "|" {
+            self.advance
+            if self.cur == "|" {
+                self.advance
+                tok = Token.create TokenType.TOK_OR, "||", startLine, startCol, 2
+                -> tok
+            } els if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_PIPE_EQ, "|=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_PIPE, "|", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "^" {
+            self.advance
+            if self.cur == "=" {
+                self.advance
+                tok = Token.create TokenType.TOK_CARET_EQ, "^=", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_CARET, "^", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "~" {
+            self.advance
+            tok = Token.create TokenType.TOK_TILDE, "~", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "(" {
+            self.advance
+            tok = Token.create TokenType.TOK_LPAREN, "(", startLine, startCol, 1
+            -> tok
+        }
+        if ch == ")" {
+            self.advance
+            tok = Token.create TokenType.TOK_RPAREN, ")", startLine, startCol, 1
+            -> tok
+        }
+        if ch == "{" {
+            self.advance
+            tok = Token.create TokenType.TOK_LBRACE, "{", startLine, startCol, 1
+            -> tok
+        }
+        if ch == "}" {
+            self.advance
+            tok = Token.create TokenType.TOK_RBRACE, "}", startLine, startCol, 1
+            -> tok
+        }
+        if ch == "[" {
+            self.advance
+            tok = Token.create TokenType.TOK_LBRACKET, "[", startLine, startCol, 1
+            -> tok
+        }
+        if ch == "]" {
+            self.advance
+            tok = Token.create TokenType.TOK_RBRACKET, "]", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "." {
+            p2: str = self.peekAhead 2
+            if self.peek == "." && p2 == "." {
+                self.advance // '.'
+                self.advance // '.'
+                self.advance // '.'
+                tok = Token.create TokenType.TOK_ELLIPSIS, "...", startLine, startCol, 3
+                -> tok
+            }
+            if IsDigit self.peek {
+                tok = self.scanNumber
+                -> tok
+            }
+            self.advance
+            tok = Token.create TokenType.TOK_DOT, ".", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "," {
+            self.advance
+            tok = Token.create TokenType.TOK_COMMA, ",", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == ":" {
+            self.advance
+            if self.cur == ":" {
+                self.advance
+                tok = Token.create TokenType.TOK_COLON_COLON, "::", startLine, startCol, 2
+                -> tok
+            }
+            tok = Token.create TokenType.TOK_COLON, ":", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == ";" {
+            self.advance
+            tok = Token.create TokenType.TOK_SEMICOLON, ";", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "@" {
+            self.advance
+            tok = Token.create TokenType.TOK_AT, "@", startLine, startCol, 1
+            -> tok
+        }
+
+        if ch == "#" {
+            self.advance
+            tok = Token.create TokenType.TOK_HASH, "#", startLine, startCol, 1
+            -> tok
+        }
+
+        // Unrecognized character
+        badChar: str = self.advance
+        tok = Token.create TokenType.TOK_ILLEGAL, badChar, startLine, startCol, 1
+        -> tok
+    },
+
+    /**
+     * Scans all tokens from the source text into an array until TOK_EOF.
+     *
+     * @returns {Token[]} Array of all scanned Tokens ending with TOK_EOF
+     */
+    tokenizeAll: :: Token[] => {
+        tokens: Token[] = []
+        done: bool = false
+        wh !done {
+            tok = self.scanToken
+            tokens.psh tok
+            if tok.kind == TokenType.TOK_EOF {
+                done = true
+            }
+        }
+        -> tokens
+    }
+}

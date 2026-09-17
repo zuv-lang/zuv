@@ -1,0 +1,559 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl.zv
+ * =============================================================================
+ *
+ * Implements recursive descent parsing for top-level declarations:
+ * - TypeScript-style `type Name = { ... };` schemas and type aliases
+ * - Object definitions `obj Name { ... }` with methods and fields
+ * - Function declarations `fn name params [:: Ret] { ... }` and `name => expr`
+ * - Enumerations `enum Name { Variant1, Variant2 }`
+ * - Foreign function interfaces `extern "lib" { ... }`
+ * - Module imports `imp a, b frm path` and `imp os, fs`
+ */
+
+imp str, arr
+imp Token, TokenType frm ../tokens
+imp ASTNode, NodeKind, Param, FieldEntry frm ../ast
+imp TypeInfo, TypeKind frm ../types
+imp Diagnostic frm ../diagnostics
+imp Parser frm parser
+imp ParseStatement, ParseBlockStmt, ParseMatchStmt, ParseExpr frm stmt
+
+/**
+ * Parses a type annotation string from the token stream.
+ *
+ * Handles primitives (num, str, bool, void), custom types, pointer types (&T),
+ * and array types (T[]).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {str} The parsed type signature string
+ */
+ParseTypeString parser: Parser :: str {
+    isPtr: bool = false
+    if parser.matchToken TokenType.TOK_AMP {
+        isPtr = true
+    }
+
+    curTok: Token = parser.cur
+    baseType: str = curTok.val
+    parser.advance
+
+    // Check for array dimensions: T[] or T[][]
+    wh parser.check TokenType.TOK_LBRACKET {
+        if parser.checkPeek TokenType.TOK_RBRACKET {
+            parser.advance // consume '['
+            parser.advance // consume ']'
+            baseType = baseType + "[]"
+        } els {
+            brk
+        }
+    }
+
+    if isPtr {
+        -> "&" + baseType
+    }
+    -> baseType
+}
+
+/**
+ * Parses a parameter list for functions or methods.
+ *
+ * Supports parenthesized lists `(p1: T1, ...rest)` and paren-free lists `p1: T1, p2: T2`.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {Param[]} Array of parsed parameter records
+ */
+ParseParamList parser: Parser :: Param[] {
+    params: Param[] = []
+    hasParen: bool = false
+
+    if parser.matchToken TokenType.TOK_LPAREN {
+        hasParen = true
+        if parser.check TokenType.TOK_RPAREN {
+            parser.advance
+            -> params
+        }
+    }
+
+    wh !(parser.isAtEnd) {
+        isRest: bool = false
+        if parser.matchToken TokenType.TOK_ELLIPSIS {
+            isRest = true
+        }
+
+        pTok: Token = parser.consume TokenType.TOK_IDENT, "Expected parameter identifier"
+        pName: str = pTok.val
+        pType: str = ""
+        isOpt: bool = false
+
+        if parser.matchToken TokenType.TOK_QUESTION {
+            isOpt = true
+        }
+
+        if parser.matchToken TokenType.TOK_COLON {
+            pType = ParseTypeString parser
+        }
+
+        paramItem: Param = {
+            name: pName,
+            typeAnnotation: pType,
+            isRest: isRest,
+            isOptional: isOpt,
+            line: pTok.line,
+            col: pTok.col
+        }
+        params.psh paramItem
+
+        if parser.matchToken TokenType.TOK_COMMA {
+            // continue parsing next parameter
+        } els {
+            brk
+        }
+    }
+
+    if hasParen {
+        parser.consume TokenType.TOK_RPAREN, "Expected ')' after parameter list"
+    }
+
+    -> params
+}
+
+/**
+ * Parses a TypeScript-style type alias declaration (`type Name = { ... };` or `type Alias = Type;`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {bool} isPub - True if exported public declaration
+ * @returns {ASTNode} Type declaration AST node
+ */
+ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
+    typeTok: Token = parser.advance // consume 'type' / 'typ'
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type name identifier"
+    name: str = nameTok.val
+
+    parser.consume TokenType.TOK_ASSIGN, "Expected '=' after type name"
+
+    node = ASTNode.createTypeDecl name, isPub, nameTok.line, nameTok.col
+
+    if parser.matchToken TokenType.TOK_LBRACE {
+        // Record schema definition: { field1: type; field2: type; }
+        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+            if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+                cont
+            }
+            if !(parser.check TokenType.TOK_IDENT) {
+                errTok: Token = parser.advance
+                parser.addError "E0102", "Expected field identifier in type record, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
+                cont
+            }
+            fTok: Token = parser.consume TokenType.TOK_IDENT, "Expected field identifier in type record"
+            parser.consume TokenType.TOK_COLON, "Expected ':' after field name"
+            fType: str = ParseTypeString parser
+
+            entry: FieldEntry = {
+                name: fTok.val,
+                valStr: fType,
+                isSpread: false,
+                line: fTok.line,
+                col: fTok.col
+            }
+            node.fields.psh entry
+
+            if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+                // consume delimiter
+            }
+        }
+        parser.consume TokenType.TOK_RBRACE, "Expected '}' after type record body"
+    } els {
+        // Simple type alias: type ID = num
+        aliasType: str = ParseTypeString parser
+        node.typeAnnotation = aliasType
+    }
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    -> node
+}
+
+/**
+ * Scans ahead on the current line to check if an object member is a method definition.
+ *
+ * Checks if a '=>' token appears on the same line before a semicolon or closing brace.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {bool} True if lookahead finds '=>' on the current line
+ */
+IsMethodMember parser: Parser :: bool {
+    cTok: Token = parser.cur
+    curLine: num = cTok.line
+    offset: num = 0
+    wh true {
+        tok: Token = parser.peekAhead offset
+        if tok.kind == TokenType.TOK_EOF || tok.line != curLine {
+            brk
+        }
+        if tok.kind == TokenType.TOK_FAT_ARROW {
+            -> true
+        }
+        if tok.kind == TokenType.TOK_SEMICOLON || tok.kind == TokenType.TOK_RBRACE {
+            brk
+        }
+        offset = offset + 1
+    }
+    -> false
+}
+
+/**
+ * Parses an object / struct declaration (`obj Name { field: Type, method: => { ... } }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {bool} isPub - True if exported public declaration
+ * @returns {ASTNode} Object declaration AST node
+ */
+ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
+    objTok: Token = parser.advance // consume 'obj'
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected object name identifier"
+    name: str = nameTok.val
+
+    node = ASTNode.createObjDecl name, isPub, nameTok.line, nameTok.col
+
+    parser.consume TokenType.TOK_LBRACE, "Expected '{' before object body"
+
+    wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+            cont
+        }
+
+        if !(parser.check TokenType.TOK_IDENT) {
+            errTok: Token = parser.advance
+            parser.addError "E0102", "Expected member name in object declaration, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
+            cont
+        }
+
+        mTok: Token = parser.consume TokenType.TOK_IDENT, "Expected member name in object declaration"
+        mName: str = mTok.val
+
+        if parser.matchToken TokenType.TOK_COLON {
+            // Check if member is a method or a field
+            if IsMethodMember parser {
+                // Method definition: method: params :: Ret => { ... }
+                mParams: Param[] = []
+                mRet: str = "void"
+
+                if !(parser.check TokenType.TOK_FAT_ARROW) && !(parser.check TokenType.TOK_COLON_COLON) {
+                    mParams = ParseParamList parser
+                }
+
+                if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) {
+                    mRet = ParseTypeString parser
+                }
+
+                parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' before method body"
+
+                mNode = ASTNode.createFuncDecl mName, mRet, false, true, mTok.line, mTok.col
+                mNode.params = mParams
+
+                parser.enterScope()
+                parser.addVar "self"
+                fr p of mParams {
+                    parser.addVar p.name
+                }
+
+                if parser.check TokenType.TOK_LBRACE {
+                    mBody: ASTNode = ParseBlockStmt parser
+                    mNode.children.psh mBody
+                } els if parser.check TokenType.TOK_MATCH {
+                    mMatch: ASTNode = ParseMatchStmt parser
+                    mNode.children.psh mMatch
+                } els {
+                    mExpr: ASTNode = ParseExpr parser
+                    mNode.children.psh mExpr
+                }
+
+                parser.exitScope()
+
+                node.children.psh mNode
+            } els {
+                // Field definition: field: Type
+                fType: str = ParseTypeString parser
+                entry: FieldEntry = {
+                    name: mName,
+                    valStr: fType,
+                    isSpread: false,
+                    line: mTok.line,
+                    col: mTok.col
+                }
+                node.fields.psh entry
+            }
+        } els {
+            // Shorthand field or method alias
+            entry: FieldEntry = {
+                name: mName,
+                valStr: "any",
+                isSpread: false,
+                line: mTok.line,
+                col: mTok.col
+            }
+            node.fields.psh entry
+        }
+
+        if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+            // optional separator
+        }
+    }
+
+    parser.consume TokenType.TOK_RBRACE, "Expected '}' after object body"
+    -> node
+}
+
+/**
+ * Parses a function declaration (`fn name params [:: RetType] { body }` or `name p1, p2 => expr`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {bool} isPub - True if exported public function
+ * @param {bool} isAsync - True if asynchronous function
+ * @returns {ASTNode} Function declaration AST node
+ */
+ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
+    if parser.matchToken TokenType.TOK_FN {
+        // consumed optional 'fn'
+    }
+
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected function name identifier"
+    name: str = nameTok.val
+
+    params: Param[] = []
+    if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_ARROW) && !(parser.check TokenType.TOK_FAT_ARROW) {
+        params = ParseParamList parser
+    }
+
+    returnType: str = "void"
+    if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) {
+        returnType = ParseTypeString parser
+    }
+
+    node = ASTNode.createFuncDecl name, returnType, isAsync, isPub, nameTok.line, nameTok.col
+    node.params = params
+
+    parser.enterScope()
+    fr p of params {
+        parser.addVar p.name
+    }
+
+    if parser.matchToken TokenType.TOK_FAT_ARROW {
+        if parser.check TokenType.TOK_LBRACE {
+            bodyBlock: ASTNode = ParseBlockStmt parser
+            node.children.psh bodyBlock
+        } els if parser.check TokenType.TOK_MATCH {
+            matchNode: ASTNode = ParseMatchStmt parser
+            node.children.psh matchNode
+        } els {
+            exprNode: ASTNode = ParseExpr parser
+            node.children.psh exprNode
+        }
+    } els if parser.check TokenType.TOK_LBRACE {
+        bodyBlock: ASTNode = ParseBlockStmt parser
+        node.children.psh bodyBlock
+    }
+
+    parser.exitScope()
+
+    -> node
+}
+
+/**
+ * Parses an enum declaration (`enum Name { Variant1, Variant2 = 10 }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {bool} isPub - True if exported public enum
+ * @returns {ASTNode} Enum declaration AST node
+ */
+ParseEnumDecl parser: Parser, isPub: bool :: ASTNode {
+    enumTok: Token = parser.advance // consume 'enum'
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected enum name identifier"
+    name: str = nameTok.val
+
+    node = ASTNode.createEnumDecl name, isPub, nameTok.line, nameTok.col
+
+    parser.consume TokenType.TOK_LBRACE, "Expected '{' before enum body"
+
+    wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+            cont
+        }
+
+        if !(parser.check TokenType.TOK_IDENT) {
+            errTok: Token = parser.advance
+            parser.addError "E0102", "Expected enum variant identifier, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
+            cont
+        }
+
+        vTok: Token = parser.consume TokenType.TOK_IDENT, "Expected enum variant identifier"
+        vName: str = vTok.val
+        vVal: str = ""
+
+        if parser.matchToken TokenType.TOK_ASSIGN {
+            valTok: Token = parser.advance
+            vVal = valTok.val
+        }
+
+        entry: FieldEntry = {
+            name: vName,
+            valStr: vVal,
+            isSpread: false,
+            line: vTok.line,
+            col: vTok.col
+        }
+        node.fields.psh entry
+
+        if parser.matchToken TokenType.TOK_COMMA {
+            // optional trailing comma
+        }
+    }
+
+    parser.consume TokenType.TOK_RBRACE, "Expected '}' after enum body"
+    -> node
+}
+
+/**
+ * Parses foreign function interface external declarations (`extern "lib" { fn ... }` or `ffi ...`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Extern declaration AST node
+ */
+ParseExternDecl parser: Parser :: ASTNode {
+    extTok: Token = parser.advance // consume 'extern' / 'ffi'
+    libName: str = "c"
+
+    if parser.check TokenType.TOK_STRING {
+        sTok: Token = parser.advance
+        libName = sTok.val
+    }
+
+    node = ASTNode.createBase NodeKind.ExternDecl, extTok.line, extTok.col
+    node.val = libName
+
+    if parser.matchToken TokenType.TOK_LBRACE {
+        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+            if parser.matchToken TokenType.TOK_SEMICOLON {
+                cont
+            }
+            fnNode: ASTNode = ParseFuncDecl parser, true, false
+            node.children.psh fnNode
+            if parser.matchToken TokenType.TOK_SEMICOLON {
+                // optional delimiter
+            }
+        }
+        parser.consume TokenType.TOK_RBRACE, "Expected '}' after extern block"
+    } els {
+        fnNode: ASTNode = ParseFuncDecl parser, true, false
+        node.children.psh fnNode
+    }
+
+    -> node
+}
+
+/**
+ * Parses module import declarations (`imp a, b frm path` or `imp os, fs, str`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Import declaration AST node
+ */
+ParseImportDecl parser: Parser :: ASTNode {
+    impTok: Token = parser.advance // consume 'imp'
+    symbols: str[] = []
+    modulePath: str = ""
+
+    // Parse imported symbol names
+    wh (parser.check TokenType.TOK_IDENT) || (parser.check TokenType.TOK_TYPE_STR) || (parser.check TokenType.TOK_TYPE_NUM) || (parser.check TokenType.TOK_TYPE_BOOL) {
+        symTok: Token = parser.advance
+        symbols.psh symTok.val
+
+        if parser.matchToken TokenType.TOK_COMMA {
+            // continue parsing next symbol
+        } els {
+            brk
+        }
+    }
+
+    if parser.matchToken TokenType.TOK_FRM {
+        // imp sym1, sym2 frm path
+        pathStr: str = ""
+        wh (parser.check TokenType.TOK_IDENT) || (parser.check TokenType.TOK_DOT) || (parser.check TokenType.TOK_SLASH) || (parser.check TokenType.TOK_STRING) {
+            partTok: Token = parser.advance
+            pathStr = pathStr + partTok.val
+        }
+        modulePath = pathStr
+    } els {
+        // imp os, fs, str (module names directly)
+        if symbols.ln > 0 {
+            modulePath = symbols[0]
+        }
+    }
+
+    node = ASTNode.createImportDecl modulePath, impTok.line, impTok.col
+    fr symName of symbols {
+        entry: FieldEntry = {
+            name: symName,
+            valStr: symName,
+            isSpread: false,
+            line: impTok.line,
+            col: impTok.col
+        }
+        node.fields.psh entry
+    }
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    -> node
+}
+
+/**
+ * Master dispatcher for parsing top-level declarations.
+ *
+ * Inspects leading modifiers (pub, asc) and delegates to appropriate declaration parser.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Parsed declaration AST node
+ */
+ParseDeclaration parser: Parser :: ASTNode {
+    isPub: bool = false
+    if parser.matchToken TokenType.TOK_PUB {
+        isPub = true
+    }
+
+    isAsync: bool = false
+    if (parser.matchToken TokenType.TOK_ASYNC) || (parser.matchToken TokenType.TOK_ASYNC_ST) {
+        isAsync = true
+    }
+
+    curTok: Token = parser.cur
+    if curTok.kind == TokenType.TOK_TYP || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "type") {
+        -> ParseTypeDecl parser, isPub
+    }
+    if curTok.kind == TokenType.TOK_STRUCT || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "obj") {
+        -> ParseObjDecl parser, isPub
+    }
+    if curTok.kind == TokenType.TOK_ENUM {
+        -> ParseEnumDecl parser, isPub
+    }
+    if curTok.kind == TokenType.TOK_EXTERN {
+        -> ParseExternDecl parser
+    }
+    if curTok.kind == TokenType.TOK_IMP {
+        -> ParseImportDecl parser
+    }
+    if curTok.kind == TokenType.TOK_FN || curTok.kind == TokenType.TOK_IDENT {
+        -> ParseFuncDecl parser, isPub, isAsync
+    }
+
+    // Default error recovery fallback
+    errTok: Token = parser.advance
+    parser.addError "E0101", "Expected declaration statement, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected declaration"
+    -> ASTNode.createBase NodeKind.ProgramDecl, errTok.line, errTok.col
+}

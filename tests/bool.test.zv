@@ -1,7 +1,9 @@
-flagTrue = yes
-flagFalse = no
+flagTrue = true
+flagFalse = false
 
 lg "Testing boolean literals:"
+lg flagTrue
+lg flagFalse
 if flagTrue {
     lg "flagTrue is yes"
 }

@@ -200,7 +200,7 @@ jobs:
             }
           }
           Write-Host "Building self-hosting compiler using bootstrap compiler..."
-          & "./bootstrap/${{ matrix.bin_name }}" build src/main.zv -o "./bin/${{ matrix.bin_name }}"
+          & "./bootstrap/${{ matrix.bin_name }}" build src/bootstrap/main.zv -o "./bin/${{ matrix.bin_name }}"
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to build self-hosting compiler."
             exit 1

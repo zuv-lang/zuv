@@ -1,0 +1,716 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Semantic Type Inference & AST Annotation Engine
+ * Path: sub_projects/zuv/src/bootstrap/checker/infer.zv
+ * =============================================================================
+ *
+ * Implements bottom-up sound semantic type inference and AST annotation:
+ * - Literals: NumExpr (Double/I64), StrExpr, BoolExpr, NilExpr, UndExpr, BigIntExpr
+ * - Identifiers: Scoped symbol resolution and type propagation
+ * - Array & Object Literals: Element and struct schema resolution
+ * - Unary & Binary Expressions: Strict numeric and boolean type validation
+ * - Member Access (PropExpr): Strict struct member verification without heuristics (E0302)
+ * - Array Indexing: Bounds and numeric index validation (E0307)
+ * - Function Calls: Signature validation, argument count, and return type inference
+ * - Statements & Declarations: Scope management, let bindings, and type registration
+ */
+
+imp str, arr
+imp Token, TokenType frm ../tokens
+imp ASTNode, NodeKind, Param, FieldEntry frm ../ast
+imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind, IsNumericType, IsIntegerType frm ../types
+imp Diagnostic frm ../diagnostics
+imp Checker, Symbol, Scope frm checker
+
+/**
+ * Checks if a numeric literal string represents an integer without decimal point or exponent.
+ *
+ * @param {str} text - Number literal string
+ * @returns {bool} True if integer literal format, false if float
+ */
+IsIntegerLiteral text: str :: bool {
+    count = text.ln
+    i = 0
+    wh i < count {
+        ch = text[i]
+        if ch == "." || ch == "e" || ch == "E" {
+            -> false
+        }
+        i++
+    }
+    -> true
+}
+
+/**
+ * Infers the semantic TypeKind of an expression AST node and annotates it.
+ *
+ * @param {Checker} checker - The active semantic checker instance
+ * @param {ASTNode} expr - The expression AST node to evaluate and annotate
+ * @returns {TypeKind} Inferred TypeKind variant
+ */
+InferExpression checker: Checker, expr: ASTNode :: TypeKind {
+    k = expr.kind
+    if k == NodeKind.NumExpr {
+        kind = TypeKind.Num
+        if expr.val.ln > 0 {
+            isInt = IsIntegerLiteral(expr.val)
+            if isInt {
+                kind = TypeKind.I64
+            }
+        }
+        expr.inferredType = kind
+        -> kind
+    }
+    if k == NodeKind.StrExpr {
+        expr.inferredType = TypeKind.Str
+        -> TypeKind.Str
+    }
+    if k == NodeKind.BoolExpr {
+        expr.inferredType = TypeKind.Bool
+        -> TypeKind.Bool
+    }
+    if k == NodeKind.NilExpr {
+        expr.inferredType = TypeKind.Nil
+        -> TypeKind.Nil
+    }
+    if k == NodeKind.UndExpr {
+        expr.inferredType = TypeKind.Und
+        -> TypeKind.Und
+    }
+    if k == NodeKind.BigIntExpr {
+        expr.inferredType = TypeKind.I64
+        -> TypeKind.I64
+    }
+    if k == NodeKind.IdentExpr {
+        symName = expr.name
+        foundSym = checker.resolveSymbol(symName)
+        if foundSym.name.ln > 0 {
+            expr.inferredType = foundSym.typeKind
+            if expr.typeAnnotation.ln == 0 {
+                expr.typeAnnotation = foundSym.typeName
+            }
+            -> foundSym.typeKind
+        }
+        checker.addError("E0202", "Undefined identifier '" + symName + "'", expr.line, expr.col, symName.ln, "check variable spelling or define variable")
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.ArrExpr {
+        elemKind = TypeKind.Unknown
+        isFirst = true
+        fr child of expr.children {
+            curElemKind = InferExpression(checker, child)
+            if isFirst {
+                elemKind = curElemKind
+                isFirst = false
+            }
+        }
+        expr.inferredType = TypeKind.Arr
+        -> TypeKind.Arr
+    }
+    if k == NodeKind.ObjLitExpr {
+        fr child of expr.children {
+            InferExpression(checker, child)
+        }
+        fCount = expr.fields.ln
+        matchedStruct = ""
+        fr tItem of checker.types {
+            if tItem.kind == TypeKind.Obj && tItem.fields.ln == fCount && fCount > 0 {
+                allMatched = true
+                fr fld, f of expr.fields {
+                    if fld.name != tItem.fields[f] {
+                        allMatched = false
+                        brk
+                    }
+                }
+                if allMatched {
+                    matchedStruct = tItem.name
+                    brk
+                }
+            }
+        }
+        if matchedStruct.ln > 0 {
+            expr.typeAnnotation = matchedStruct
+        }
+        expr.inferredType = TypeKind.Obj
+        -> TypeKind.Obj
+    }
+    if k == NodeKind.UnaryExpr {
+        opKind = TypeKind.Unknown
+        if expr.children.ln > 0 {
+            opKind = InferExpression(checker, expr.children[0])
+        }
+        if expr.op == "!" || expr.op == "not" {
+            expr.inferredType = TypeKind.Bool
+            -> TypeKind.Bool
+        }
+        if expr.op == "-" || expr.op == "+" || expr.op == "++" || expr.op == "--" {
+            if !(IsNumericType opKind) && opKind != TypeKind.Unknown {
+                checker.addError("E0303", "Unary operator '" + expr.op + "' requires numeric operand, got " + (TypeKindToStr opKind), expr.line, expr.col, expr.op.ln, "provide a numeric expression")
+            }
+            expr.inferredType = opKind
+            -> opKind
+        }
+        if expr.op == "~" {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        expr.inferredType = opKind
+        -> opKind
+    }
+    if k == NodeKind.BinaryExpr {
+        leftKind = TypeKind.Unknown
+        rightKind = TypeKind.Unknown
+        if expr.children.ln > 0 {
+            leftKind = InferExpression(checker, expr.children[0])
+        }
+        if expr.children.ln > 1 {
+            rightKind = InferExpression(checker, expr.children[1])
+        }
+        if expr.op == "+" && (leftKind == TypeKind.Str || rightKind == TypeKind.Str) {
+            expr.inferredType = TypeKind.Str
+            -> TypeKind.Str
+        }
+        if expr.op == "+" || expr.op == "-" || expr.op == "*" || expr.op == "/" || expr.op == "%" || expr.op == "**" {
+            if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
+                if !(IsNumericType leftKind) || !(IsNumericType rightKind) {
+                    checker.addError("E0304", "Arithmetic operator '" + expr.op + "' requires numeric operands, got " + (TypeKindToStr leftKind) + " and " + (TypeKindToStr rightKind), expr.line, expr.col, expr.op.ln, "convert operands to numbers")
+                }
+            }
+            if leftKind == TypeKind.Num || rightKind == TypeKind.Num {
+                expr.inferredType = TypeKind.Num
+                -> TypeKind.Num
+            }
+            if leftKind == TypeKind.I64 || rightKind == TypeKind.I64 {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            expr.inferredType = leftKind
+            -> leftKind
+        }
+        if expr.op == "&" || expr.op == "|" || expr.op == "^" || expr.op == "<<" || expr.op == ">>" || expr.op == ">>>" {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        if expr.op == "==" || expr.op == "!=" {
+            if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
+                isCompat = (AreTypesCompatible leftKind, rightKind) || (AreTypesCompatible rightKind, leftKind)
+                if !isCompat {
+                    checker.addError("E0305", "Cannot compare incompatible types " + (TypeKindToStr leftKind) + " and " + (TypeKindToStr rightKind), expr.line, expr.col, expr.op.ln, "ensure compared types match")
+                }
+            }
+            expr.inferredType = TypeKind.Bool
+            -> TypeKind.Bool
+        }
+        if expr.op == "<" || expr.op == ">" || expr.op == "<=" || expr.op == ">=" {
+            if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
+                isNumComp = (IsNumericType leftKind) && (IsNumericType rightKind)
+                isStrComp = (leftKind == TypeKind.Str) && (rightKind == TypeKind.Str)
+                if !isNumComp && !isStrComp {
+                    checker.addError("E0305", "Comparison operator '" + expr.op + "' requires comparable types, got " + (TypeKindToStr leftKind) + " and " + (TypeKindToStr rightKind), expr.line, expr.col, expr.op.ln, "ensure operands are both numeric or strings")
+                }
+            }
+            expr.inferredType = TypeKind.Bool
+            -> TypeKind.Bool
+        }
+        if expr.op == "&&" || expr.op == "||" || expr.op == "and" || expr.op == "or" {
+            expr.inferredType = TypeKind.Bool
+            -> TypeKind.Bool
+        }
+        if expr.op == "??" {
+            expr.inferredType = leftKind
+            -> leftKind
+        }
+        if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" {
+            if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
+                isCompat = AreTypesCompatible leftKind, rightKind
+                if !isCompat {
+                    checker.addError("E0306", "Cannot assign value of type " + (TypeKindToStr rightKind) + " to target of type " + (TypeKindToStr leftKind), expr.line, expr.col, expr.op.ln, "ensure assigned value matches variable type")
+                }
+            }
+            expr.inferredType = leftKind
+            -> leftKind
+        }
+        expr.inferredType = leftKind
+        -> leftKind
+    }
+    if k == NodeKind.PropExpr {
+        if expr.children.ln == 0 {
+            expr.inferredType = TypeKind.Unknown
+            -> TypeKind.Unknown
+        }
+        targetNode = expr.children[0]
+        targetKind = InferExpression(checker, targetNode)
+        propName = expr.name
+        if (targetKind == TypeKind.Arr || targetKind == TypeKind.Str) && (propName == "ln" || propName == "length") {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        typeName = targetNode.typeAnnotation
+        if typeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
+            foundSym = checker.resolveSymbol(targetNode.name)
+            typeName = foundSym.typeName
+        }
+        if typeName.ln > 0 {
+            typeInfo = checker.resolveType(typeName)
+            if typeInfo.kind != TypeKind.Unknown {
+                foundField = false
+                resKind = TypeKind.Unknown
+                fr fldName, idx of typeInfo.fields {
+                    if fldName == propName {
+                        foundField = true
+                        if idx < typeInfo.fieldTypes.ln {
+                            resKind = typeInfo.fieldTypes[idx]
+                        }
+                        brk
+                    }
+                }
+                if foundField {
+                    expr.inferredType = resKind
+                    -> resKind
+                }
+                checker.addError("E0302", "Property '" + propName + "' does not exist on type '" + typeName + "'", expr.line, expr.col, propName.ln, "check member spelling or add field to " + typeName)
+                expr.inferredType = TypeKind.Unknown
+                -> TypeKind.Unknown
+            }
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.IndexExpr {
+        if expr.children.ln < 2 {
+            expr.inferredType = TypeKind.Unknown
+            -> TypeKind.Unknown
+        }
+        tKind = InferExpression(checker, expr.children[0])
+        iKind = InferExpression(checker, expr.children[1])
+        if !(IsNumericType iKind) && iKind != TypeKind.Unknown {
+            checker.addError("E0307", "Index expression must be numeric, got " + (TypeKindToStr iKind), expr.line, expr.col, 1, "use an integer index")
+        }
+        if tKind == TypeKind.Str {
+            expr.inferredType = TypeKind.Str
+            -> TypeKind.Str
+        }
+        if tKind == TypeKind.Arr {
+            expr.inferredType = TypeKind.Num
+            -> TypeKind.Num
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.CallExpr {
+        if expr.children.ln == 0 {
+            expr.inferredType = TypeKind.Unknown
+            -> TypeKind.Unknown
+        }
+        calleeNode = expr.children[0]
+        argCount = expr.children.ln - 1
+        isFirstChild = true
+        fr child of expr.children {
+            if isFirstChild {
+                isFirstChild = false
+            } els {
+                InferExpression(checker, child)
+            }
+        }
+        if calleeNode.kind == NodeKind.IdentExpr {
+            calleeName = calleeNode.name
+            if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "err" || calleeName == "panic" {
+                expr.inferredType = TypeKind.Void
+                -> TypeKind.Void
+            }
+            fnSym = checker.resolveSymbol(calleeName)
+            if fnSym.name.ln > 0 {
+                fnInfo = checker.resolveType(fnSym.typeName)
+                if fnInfo.kind == TypeKind.Func {
+                    expectedParamCount = fnInfo.fields.ln
+                    if argCount != expectedParamCount {
+                        checker.addError("E0308", "Function '" + calleeName + "' expects " + expectedParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                    }
+                    fr fieldStr, pIdx of fnInfo.fields {
+                        if pIdx < argCount {
+                            expectedKind = StrToTypeKind(fieldStr)
+                            argNode = expr.children[pIdx + 1]
+                            if !(AreTypesCompatible expectedKind, argNode.inferredType) && argNode.inferredType != TypeKind.Unknown {
+                                checker.addError("E0306", "Argument " + (pIdx + 1) + " of '" + calleeName + "' expects " + (TypeKindToStr expectedKind) + ", got " + (TypeKindToStr argNode.inferredType), argNode.line, argNode.col, 1, "pass a compatible argument type")
+                            }
+                        }
+                    }
+                    expr.inferredType = fnInfo.elemType
+                    -> fnInfo.elemType
+                }
+                expr.inferredType = fnSym.typeKind
+                -> fnSym.typeKind
+            }
+        }
+        calleeKind = InferExpression(checker, calleeNode)
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.MethodCallExpr {
+        isFirstMethodChild = true
+        fr child of expr.children {
+            if isFirstMethodChild {
+                isFirstMethodChild = false
+                InferExpression(checker, child)
+            } els {
+                InferExpression(checker, child)
+            }
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.CastExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        targetKind = StrToTypeKind(expr.typeAnnotation)
+        expr.inferredType = targetKind
+        -> targetKind
+    }
+    if k == NodeKind.BorrowExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        expr.inferredType = TypeKind.Ptr
+        -> TypeKind.Ptr
+    }
+    if k == NodeKind.TernaryExpr {
+        if expr.children.ln >= 3 {
+            InferExpression(checker, expr.children[0])
+            thenKind = InferExpression(checker, expr.children[1])
+            elseKind = InferExpression(checker, expr.children[2])
+            if AreTypesCompatible(thenKind, elseKind) {
+                expr.inferredType = thenKind
+                -> thenKind
+            }
+            if AreTypesCompatible(elseKind, thenKind) {
+                expr.inferredType = elseKind
+                -> elseKind
+            }
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.AwaitExpr {
+        if expr.children.ln > 0 {
+            awKind = InferExpression(checker, expr.children[0])
+            expr.inferredType = awKind
+            -> awKind
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    expr.inferredType = TypeKind.Unknown
+    -> TypeKind.Unknown
+}
+
+/**
+ * Validates and type-checks a statement AST node within the current lexical scope.
+ *
+ * Handles variable declarations, control flow branches, loops, and pattern matching.
+ *
+ * @param {Checker} checker - The active semantic checker instance
+ * @param {ASTNode} stmt - The statement AST node to validate
+ * @returns {void}
+ */
+InferStatement checker: Checker, stmt: ASTNode :: void {
+    k = stmt.kind
+    if k == NodeKind.VarDecl {
+        initKind = TypeKind.Unknown
+        if stmt.children.ln > 0 {
+            initKind = InferExpression(checker, stmt.children[0])
+        }
+        declaredKind = TypeKind.Unknown
+        if stmt.typeAnnotation.ln > 0 {
+            declaredKind = StrToTypeKind(stmt.typeAnnotation)
+            if initKind != TypeKind.Unknown && !(AreTypesCompatible declaredKind, initKind) {
+                checker.addError("E0306", "Variable '" + stmt.name + "' declared as " + (TypeKindToStr declaredKind) + " but initialized with incompatible " + (TypeKindToStr initKind), stmt.line, stmt.col, stmt.name.ln, "ensure initializer matches declared type")
+            }
+        }
+        finalKind = declaredKind
+        if finalKind == TypeKind.Unknown {
+            finalKind = initKind
+        }
+        tName = stmt.typeAnnotation
+        if tName.ln == 0 {
+            tName = TypeKindToStr(finalKind)
+        }
+        symVar = Symbol.create(stmt.name, finalKind, tName, stmt.isBorrow, true, checker.currentLevel(), stmt.line, stmt.col)
+        checker.defineSymbol(symVar)
+        stmt.inferredType = finalKind
+        ->
+    }
+    if k == NodeKind.ExprStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        ->
+    }
+    if k == NodeKind.BlockStmt {
+        checker.enterScope()
+        fr child of stmt.children {
+            InferStatement(checker, child)
+        }
+        checker.exitScope()
+        ->
+    }
+    if k == NodeKind.IfStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        if stmt.children.ln > 1 {
+            InferStatement(checker, stmt.children[1])
+        }
+        if stmt.children.ln > 2 {
+            InferStatement(checker, stmt.children[2])
+        }
+        ->
+    }
+    if k == NodeKind.WhStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        if stmt.children.ln > 1 {
+            InferStatement(checker, stmt.children[1])
+        }
+        ->
+    }
+    if k == NodeKind.FrInStmt || k == NodeKind.FrOfStmt {
+        collKind = TypeKind.Unknown
+        if stmt.children.ln > 0 {
+            collKind = InferExpression(checker, stmt.children[0])
+        }
+        checker.enterScope()
+        itemKind = TypeKind.Num
+        if collKind == TypeKind.Str {
+            itemKind = TypeKind.Str
+        }
+        symLoop = Symbol.create(stmt.name, itemKind, (TypeKindToStr itemKind), false, true, checker.currentLevel(), stmt.line, stmt.col)
+        checker.defineSymbol(symLoop)
+        if stmt.children.ln > 1 {
+            InferStatement(checker, stmt.children[1])
+        }
+        checker.exitScope()
+        ->
+    }
+    if k == NodeKind.RetStmt {
+        if stmt.children.ln > 0 {
+            retKind = InferExpression(checker, stmt.children[0])
+            stmt.inferredType = retKind
+        } els {
+            stmt.inferredType = TypeKind.Void
+        }
+        ->
+    }
+    if k == NodeKind.TryCthStmt {
+        if stmt.children.ln > 0 {
+            InferStatement(checker, stmt.children[0])
+        }
+        if stmt.children.ln > 1 {
+            checker.enterScope()
+            errSym = Symbol.create(stmt.name, TypeKind.Str, "str", false, true, checker.currentLevel(), stmt.line, stmt.col)
+            checker.defineSymbol(errSym)
+            InferStatement(checker, stmt.children[1])
+            checker.exitScope()
+        }
+        if stmt.children.ln > 2 {
+            InferStatement(checker, stmt.children[2])
+        }
+        ->
+    }
+    if k == NodeKind.SwStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        isFirstSwChild = true
+        fr child of stmt.children {
+            if isFirstSwChild {
+                isFirstSwChild = false
+            } els {
+                InferStatement(checker, child)
+            }
+        }
+        ->
+    }
+    InferDeclaration(checker, stmt)
+}
+
+/**
+ * Validates and registers top-level declarations (types, objects, functions, enums, imports).
+ *
+ * Populates the symbol table and type registry with declared entities and checks method bodies.
+ *
+ * @param {Checker} checker - The active semantic checker instance
+ * @param {ASTNode} decl - The declaration AST node to process
+ * @returns {void}
+ */
+InferDeclaration checker: Checker, decl: ASTNode :: void {
+    k = decl.kind
+    if k == NodeKind.TypeDecl {
+        tInfo = TypeInfo.createObject(decl.name)
+        fr fEntry of decl.fields {
+            fKind = StrToTypeKind(fEntry.valStr)
+            tInfo.addField(fEntry.name, fKind)
+        }
+        checker.registerType(tInfo)
+        ->
+    }
+    if k == NodeKind.ObjDecl {
+        tInfo = TypeInfo.createObject(decl.name)
+        fr fEntry of decl.fields {
+            fKind = StrToTypeKind(fEntry.valStr)
+            tInfo.addField(fEntry.name, fKind)
+        }
+        checker.registerType(tInfo)
+        ctorSym = Symbol.create(decl.name, TypeKind.Obj, decl.name, false, true, 0, decl.line, decl.col)
+        checker.defineSymbol(ctorSym)
+        fr mNode of decl.children {
+            retKind = TypeKind.Void
+            if mNode.typeAnnotation.ln > 0 {
+                retKind = StrToTypeKind(mNode.typeAnnotation)
+            }
+            paramTypeNames: str[] = []
+            fr pItem of mNode.params {
+                paramTypeNames.psh(pItem.typeAnnotation)
+            }
+            fnTypeName = "fn_" + mNode.name
+            fnTypeInfo = TypeInfo.createFunc(retKind, mNode.typeAnnotation, paramTypeNames)
+            fnTypeInfo.name = fnTypeName
+            checker.registerType(fnTypeInfo)
+
+            checker.enterScope()
+            selfSym = Symbol.create("self", TypeKind.Obj, decl.name, false, true, checker.currentLevel(), mNode.line, mNode.col)
+            checker.defineSymbol(selfSym)
+
+            fr param of mNode.params {
+                pKind = StrToTypeKind(param.typeAnnotation)
+                pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+                checker.defineSymbol(pSym)
+            }
+            fr bStmt of mNode.children {
+                InferStatement(checker, bStmt)
+            }
+            checker.exitScope()
+        }
+        ->
+    }
+    if k == NodeKind.FuncDecl {
+        retKind = TypeKind.Void
+        if decl.typeAnnotation.ln > 0 {
+            retKind = StrToTypeKind(decl.typeAnnotation)
+        }
+        paramTypeNames: str[] = []
+        fr pItem of decl.params {
+            paramTypeNames.psh(pItem.typeAnnotation)
+        }
+        fnTypeName = "fn_" + decl.name
+        fnTypeInfo = TypeInfo.createFunc(retKind, decl.typeAnnotation, paramTypeNames)
+        fnTypeInfo.name = fnTypeName
+        checker.registerType(fnTypeInfo)
+
+        fnSym = Symbol.create(decl.name, TypeKind.Func, fnTypeName, false, true, checker.currentLevel(), decl.line, decl.col)
+        checker.defineSymbol(fnSym)
+
+        checker.enterScope()
+        fr param of decl.params {
+            pKind = StrToTypeKind(param.typeAnnotation)
+            pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+            checker.defineSymbol(pSym)
+        }
+        fr bStmt of decl.children {
+            InferStatement(checker, bStmt)
+        }
+        checker.exitScope()
+        ->
+    }
+    if k == NodeKind.EnumDecl {
+        eInfo = TypeInfo.createEnum(decl.name)
+        checker.registerType(eInfo)
+        eSym = Symbol.create(decl.name, TypeKind.Enum, decl.name, false, true, 0, decl.line, decl.col)
+        checker.defineSymbol(eSym)
+        ->
+    }
+    if k == NodeKind.ImportDecl {
+        fr symEntry of decl.fields {
+            if !(checker.hasSymbol(symEntry.name)) {
+                impSym = Symbol.create(symEntry.name, TypeKind.Obj, symEntry.name, false, true, 0, symEntry.line, symEntry.col)
+                checker.defineSymbol(impSym)
+            }
+        }
+        ->
+    }
+    if k == NodeKind.VarDecl {
+        InferStatement(checker, decl)
+        ->
+    }
+}
+
+/**
+ * Traverses a top-level program AST node, running complete semantic validation on all declarations and statements.
+ *
+ * @param {Checker} checker - The active semantic checker instance
+ * @param {ASTNode} program - Root ProgramDecl AST node
+ * @returns {void}
+ */
+InferProgram checker: Checker, program: ASTNode :: void {
+    // Pass 1: Pre-register all top-level functions, types, enums, and imports
+    fr child of program.children {
+        if child.isDecl() {
+            k = child.kind
+            if k == NodeKind.FuncDecl {
+                retKind = TypeKind.Void
+                if child.typeAnnotation.ln > 0 {
+                    retKind = StrToTypeKind(child.typeAnnotation)
+                }
+                paramTypeNames: str[] = []
+                fr pItem of child.params {
+                    paramTypeNames.psh(pItem.typeAnnotation)
+                }
+                fnTypeName = "fn_" + child.name
+                fnTypeInfo = TypeInfo.createFunc(retKind, child.typeAnnotation, paramTypeNames)
+                fnTypeInfo.name = fnTypeName
+                checker.registerType(fnTypeInfo)
+                fnSym = Symbol.create(child.name, TypeKind.Func, fnTypeName, false, true, 0, child.line, child.col)
+                checker.defineSymbol(fnSym)
+            } els if k == NodeKind.TypeDecl {
+                tInfo = TypeInfo.createObject(child.name)
+                checker.registerType(tInfo)
+            } els if k == NodeKind.EnumDecl {
+                eInfo = TypeInfo.createEnum(child.name)
+                checker.registerType(eInfo)
+                eSym = Symbol.create(child.name, TypeKind.Enum, child.name, false, true, 0, child.line, child.col)
+                checker.defineSymbol(eSym)
+            } els if k == NodeKind.ImportDecl {
+                fr symEntry of child.fields {
+                    if !(checker.hasSymbol(symEntry.name)) {
+                        impSym = Symbol.create(symEntry.name, TypeKind.Obj, symEntry.name, false, true, 0, symEntry.line, symEntry.col)
+                        checker.defineSymbol(impSym)
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 2: Validate function and method bodies and statements
+    fr child of program.children {
+        if child.isDecl() {
+            if child.kind == NodeKind.FuncDecl {
+                checker.enterScope()
+                fr param of child.params {
+                    pKind = StrToTypeKind(param.typeAnnotation)
+                    pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+                    checker.defineSymbol(pSym)
+                }
+                fr bStmt of child.children {
+                    InferStatement(checker, bStmt)
+                }
+                checker.exitScope()
+            } els if child.kind != NodeKind.ImportDecl && child.kind != NodeKind.EnumDecl {
+                InferDeclaration(checker, child)
+            }
+        } els {
+            InferStatement(checker, child)
+        }
+    }
+}

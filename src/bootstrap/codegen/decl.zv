@@ -1,0 +1,439 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Object Layout & Struct Properties Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/decl.zv
+ *
+ * Implements 64-bit uniform slot object memory layout, struct field offset
+ * computation in declaration order (8 bytes per field), heap instantiation of
+ * object literals via @malloc with exact byte count, automatic integer and
+ * enum widening (zext i8 to i64), property access, and property mutation.
+ * =============================================================================
+ */
+
+imp str, arr
+imp TypeKind frm ../types
+imp ASTNode, NodeKind, FieldEntry frm ../ast
+imp Codegen frm codegen
+imp boxValueToI64, unboxValueFromI64 frm codegen/array
+
+/**
+ * Metadata descriptor for a single field within a struct or object type.
+ */
+type StructField = {
+    name: str;
+    offset: num;
+    byteOffset: num;
+    typeKind: TypeKind;
+    typeName: str;
+};
+
+/**
+ * Creates a StructField descriptor.
+ *
+ * @param {str} name - Field property identifier
+ * @param {num} offset - 64-bit word slot index (0, 1, 2, ...)
+ * @param {TypeKind} typeKind - Semantic type kind of the field
+ * @param {str} typeName - Type name annotation string
+ * @returns {StructField} Initialized StructField descriptor
+ */
+createStructField name: str, offset: num, typeKind: TypeKind, typeName: str :: StructField {
+    bOff: num = offset * 8
+    field: StructField = {
+        name,
+        offset,
+        byteOffset: bOff,
+        typeKind,
+        typeName
+    }
+    -> field
+}
+
+/**
+ * Resolves a type annotation string into its corresponding semantic TypeKind.
+ *
+ * @param {str} typeName - Type annotation identifier
+ * @returns {TypeKind} Inferred TypeKind variant
+ */
+resolveFieldTypeKind typeName: str :: TypeKind {
+    nameLen: num = typeName.ln
+    if nameLen >= 2 {
+        subSuffix: str = typeName.sub nameLen - 2, 2
+        if subSuffix == "[]" {
+            -> TypeKind.Arr
+        }
+    }
+    -> sw typeName {
+        "num"    => TypeKind.Num
+        "double" => TypeKind.Num
+        "f64"    => TypeKind.Num
+        "i64"    => TypeKind.I64
+        "u64"    => TypeKind.I64
+        "i32"    => TypeKind.I32
+        "u32"    => TypeKind.I32
+        "i16"    => TypeKind.I16
+        "u16"    => TypeKind.I16
+        "i8"     => TypeKind.I8
+        "u8"     => TypeKind.I8
+        "byte"   => TypeKind.I8
+        "bool"   => TypeKind.Bool
+        "str"    => TypeKind.Str
+        "void"   => TypeKind.Void
+        "ptr"    => TypeKind.Ptr
+        "arr"    => TypeKind.Arr
+        "enum"   => TypeKind.Enum
+        "und"    => TypeKind.Und
+        "nil"    => TypeKind.Nil
+        _        => TypeKind.Obj
+    }
+}
+
+/**
+ * Represents the computed memory layout for a named struct or object record type.
+ */
+obj StructLayout {
+    typeName: str,
+    fields: StructField[],
+    fieldCount: num,
+    totalBytes: num,
+
+    /**
+     * Initializes a new StructLayout descriptor.
+     *
+     * @param {str} typeName - Name of the struct or type
+     * @param {StructField[]} fields - Ordered sequence of struct fields
+     * @returns {StructLayout} Initialized StructLayout object
+     */
+    create: typeName: str, fields: StructField[] :: StructLayout => {
+        count: num = fields.ln
+        bytes: num = (count == 0) ? 8 : count * 8
+        -> StructLayout {
+            typeName,
+            fields,
+            fieldCount: count,
+            totalBytes: bytes
+        }
+    },
+
+    /**
+     * Finds a StructField descriptor by property name.
+     *
+     * @param {str} name - Field identifier to lookup
+     * @returns {StructField} Found StructField or not-found sentinel
+     */
+    getField: name: str :: StructField => {
+        fr fld of self.fields {
+            if fld.name == name {
+                -> fld
+            }
+        }
+        emptyKind: TypeKind = TypeKind.Unknown
+        notFound: StructField = createStructField "", -1, emptyKind, ""
+        -> notFound
+    },
+
+    /**
+     * Returns the 64-bit word slot index for a given field name.
+     *
+     * @param {str} name - Field property identifier
+     * @returns {num} Word offset index (0, 1, 2, ...) or -1 if not found
+     */
+    getOffset: name: str :: num => {
+        fld: StructField = self.getField name
+        -> fld.offset
+    },
+
+    /**
+     * Returns the byte offset for a given field name.
+     *
+     * @param {str} name - Field property identifier
+     * @returns {num} Byte offset (0, 8, 16, ...) or -1 if not found
+     */
+    getByteOffset: name: str :: num => {
+        fld: StructField = self.getField name
+        -> fld.byteOffset
+    },
+
+    /**
+     * Checks whether the struct contains a field with the specified name.
+     *
+     * @param {str} name - Field identifier
+     * @returns {bool} True if field exists, false otherwise
+     */
+    hasField: name: str :: bool => {
+        fld: StructField = self.getField name
+        -> fld.offset >= 0
+    },
+
+    /**
+     * Returns the semantic TypeKind of a field.
+     *
+     * @param {str} name - Field identifier
+     * @returns {TypeKind} Inferred TypeKind or TypeKind.Unknown
+     */
+    getFieldType: name: str :: TypeKind => {
+        fld: StructField = self.getField name
+        -> fld.typeKind
+    }
+}
+
+/**
+ * Registry maintaining declared struct, record, and object type layouts.
+ */
+obj StructLayoutRegistry {
+    layouts: StructLayout[],
+    dynamicFields: str[],
+
+    /**
+     * Initializes an empty StructLayoutRegistry coordinator instance.
+     *
+     * @returns {StructLayoutRegistry} Initialized registry instance
+     */
+    create: :: StructLayoutRegistry => {
+        emptyLayouts: StructLayout[] = []
+        emptyDynFields: str[] = []
+        -> StructLayoutRegistry {
+            layouts: emptyLayouts,
+            dynamicFields: emptyDynFields
+        }
+    },
+
+    /**
+     * Registers a new struct layout from explicit field names and type kinds.
+     *
+     * @param {str} typeName - Struct / type identifier
+     * @param {str[]} fieldNames - Field property names in declaration order
+     * @param {TypeKind[]} fieldTypes - Field semantic types
+     * @returns {StructLayout} Constructed and registered StructLayout
+     */
+    registerLayout: typeName: str, fieldNames: str[], fieldTypes: TypeKind[] :: StructLayout => {
+        builtFields: StructField[] = []
+        curIdx: num = 0
+        fr fName of fieldNames {
+            fType: TypeKind = fieldTypes[curIdx]
+            fDesc: StructField = createStructField fName, curIdx, fType, ""
+            builtFields.psh fDesc
+            curIdx++
+        }
+        layout: StructLayout = StructLayout.create typeName, builtFields
+        self.layouts.psh layout
+        -> layout
+    },
+
+    /**
+     * Registers a struct layout from a parsed TypeDecl or ObjDecl ASTNode.
+     *
+     * @param {ASTNode} node - Declaration AST node
+     * @returns {StructLayout} Constructed and registered StructLayout
+     */
+    registerFromAST: node: ASTNode :: StructLayout => {
+        builtFields: StructField[] = []
+        curIdx: num = 0
+        fr fEntry of node.fields {
+            fType: TypeKind = resolveFieldTypeKind fEntry.valStr
+            fDesc: StructField = createStructField fEntry.name, curIdx, fType, fEntry.valStr
+            builtFields.psh fDesc
+            curIdx++
+        }
+        layout: StructLayout = StructLayout.create node.name, builtFields
+        self.layouts.psh layout
+        -> layout
+    },
+
+    /**
+     * Looks up a registered StructLayout by type name.
+     *
+     * @param {str} typeName - Struct / object identifier
+     * @returns {StructLayout} Found layout or empty fallback layout
+     */
+    getLayout: typeName: str :: StructLayout => {
+        fr item of self.layouts {
+            if item.typeName == typeName {
+                -> item
+            }
+        }
+        emptyFields: StructField[] = []
+        fallback: StructLayout = StructLayout.create typeName, emptyFields
+        -> fallback
+    },
+
+    /**
+     * Looks up the word offset for a property within a named struct.
+     * If typeName is empty or field not found, registers/returns a dynamic field offset.
+     *
+     * @param {str} typeName - Struct / object type name
+     * @param {str} fieldName - Property identifier
+     * @returns {num} Word offset index (0, 1, 2, ...)
+     */
+    getFieldOffset: typeName: str, fieldName: str :: num => {
+        if typeName.ln > 0 {
+            layout: StructLayout = self.getLayout typeName
+            off: num = layout.getOffset fieldName
+            if off >= 0 {
+                -> off
+            }
+        }
+        fIdx: num = 0
+        fr df of self.dynamicFields {
+            if df == fieldName {
+                -> fIdx
+            }
+            fIdx++
+        }
+        self.dynamicFields.psh fieldName
+        -> fIdx
+    },
+
+    /**
+     * Looks up the TypeKind of a property within a named struct.
+     *
+     * @param {str} typeName - Struct / object type name
+     * @param {str} fieldName - Property identifier
+     * @returns {TypeKind} Field TypeKind or TypeKind.Unknown
+     */
+    getFieldType: typeName: str, fieldName: str :: TypeKind => {
+        layout: StructLayout = self.getLayout typeName
+        -> layout.getFieldType fieldName
+    }
+}
+
+/**
+ * Manages LLVM code generation for object literal allocations, property loads, and property stores.
+ */
+obj ObjectCodegen {
+    codegen: Codegen,
+    registry: StructLayoutRegistry,
+
+    /**
+     * Initializes a new ObjectCodegen coordinator instance.
+     *
+     * @param {Codegen} codegen - LLVM module coordinator
+     * @param {StructLayoutRegistry} registry - Struct layout registry
+     * @returns {ObjectCodegen} Initialized ObjectCodegen instance
+     */
+    create: codegen: Codegen, registry: StructLayoutRegistry :: ObjectCodegen => {
+        -> ObjectCodegen {
+            codegen,
+            registry
+        }
+    },
+
+    /**
+     * Emits exact-payload heap allocation for an object literal ({ key: val, ... }),
+     * correctly widening integers and enums (zext i8 to i64) into 64-bit slots.
+     *
+     * @param {str} typeName - Name of the struct type (or empty string for anonymous object)
+     * @param {str[]} fieldNames - Field property names
+     * @param {str[]} valRegs - SSA registers holding field values
+     * @param {TypeKind[]} valTypes - Inferred semantic type kind of each field
+     * @returns {str} SSA register holding pointer to heap-allocated object
+     */
+    emitObjectLit: typeName: str, fieldNames: str[], valRegs: str[], valTypes: TypeKind[] :: str => {
+        count: num = fieldNames.ln
+        maxOffset: num = count
+        fr fName of fieldNames {
+            curOff: num = 0
+            if typeName.ln > 0 {
+                curOff = self.registry.getFieldOffset typeName, fName
+            } els {
+                curOff = self.registry.getFieldOffset "", fName
+            }
+            if curOff >= maxOffset {
+                maxOffset = curOff + 1
+            }
+        }
+        totalBytes: num = (maxOffset == 0) ? 8 : maxOffset * 8
+
+        rawPtr: str = self.codegen.newReg
+        self.codegen.emit `${rawPtr} = call ptr @malloc(i64 ${totalBytes})`
+
+        fieldIdx: num = 0
+        fr fName of fieldNames {
+            valReg: str = valRegs[fieldIdx]
+            valType: TypeKind = valTypes[fieldIdx]
+            boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+
+            offset: num = fieldIdx
+            if typeName.ln > 0 {
+                regOffset: num = self.registry.getFieldOffset typeName, fName
+                if regOffset >= 0 {
+                    offset = regOffset
+                }
+            } els {
+                offset = self.registry.getFieldOffset "", fName
+            }
+
+            gepReg: str = self.codegen.newReg
+            self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${rawPtr}, i64 ${offset}`
+            self.codegen.emit `store i64 ${boxedVal}, ptr ${gepReg}`
+            fieldIdx++
+        }
+
+        -> rawPtr
+    },
+
+    /**
+     * Emits property read access (obj.prop or obj?.prop), unboxing into native LLVM type.
+     *
+     * @param {str} objPtrReg - SSA register holding pointer to object
+     * @param {num} fieldOffset - Word offset index of field (0, 1, 2, ...)
+     * @param {TypeKind} targetType - Semantic type to unbox into
+     * @param {bool} isOptional - True if optional navigation (obj?.prop)
+     * @returns {str} SSA register holding unboxed native value
+     */
+    emitGetProperty: objPtrReg: str, fieldOffset: num, targetType: TypeKind, isOptional: bool :: str => {
+        if isOptional {
+            slot: str = self.codegen.newReg
+            self.codegen.emit `${slot} = alloca i64`
+
+            isNull: str = self.codegen.newReg
+            self.codegen.emit `${isNull} = icmp eq ptr ${objPtrReg}, null`
+
+            nilLbl: str = self.codegen.newLabel "opt_prop_nil"
+            loadLbl: str = self.codegen.newLabel "opt_prop_load"
+            mergeLbl: str = self.codegen.newLabel "opt_prop_merge"
+
+            self.codegen.emit `br i1 ${isNull}, label %${nilLbl}, label %${loadLbl}`
+
+            self.codegen.emitLabel nilLbl
+            self.codegen.emit `store i64 0, ptr ${slot}`
+            self.codegen.emit `br label %${mergeLbl}`
+
+            self.codegen.emitLabel loadLbl
+            gep: str = self.codegen.newReg
+            self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
+            valReg: str = self.codegen.newReg
+            self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+            self.codegen.emit `store i64 ${valReg}, ptr ${slot}`
+            self.codegen.emit `br label %${mergeLbl}`
+
+            self.codegen.emitLabel mergeLbl
+            rawVal: str = self.codegen.newReg
+            self.codegen.emit `${rawVal} = load i64, ptr ${slot}`
+            unboxedVal: str = unboxValueFromI64 self.codegen, rawVal, targetType
+            -> unboxedVal
+        }
+
+        gep: str = self.codegen.newReg
+        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+        unboxedVal: str = unboxValueFromI64 self.codegen, valReg, targetType
+        -> unboxedVal
+    },
+
+    /**
+     * Emits property mutation (obj.prop = val), boxing value into 64-bit slot.
+     *
+     * @param {str} objPtrReg - SSA register holding pointer to object
+     * @param {num} fieldOffset - Word offset index of field (0, 1, 2, ...)
+     * @param {str} valReg - SSA register holding value to store
+     * @param {TypeKind} valType - Semantic type of value
+     * @returns {void}
+     */
+    emitSetProperty: objPtrReg: str, fieldOffset: num, valReg: str, valType: TypeKind :: void => {
+        boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+        gep: str = self.codegen.newReg
+        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
+        self.codegen.emit `store i64 ${boxedVal}, ptr ${gep}`
+    }
+}

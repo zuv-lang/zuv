@@ -1,3 +1,3 @@
 name: zuv
 version: 0.6.0
-entry: src/main.zv
+entry: src/bootstrap/main.zv

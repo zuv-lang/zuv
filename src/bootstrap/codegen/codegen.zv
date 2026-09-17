@@ -1,0 +1,271 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — LLVM IR Code Generation Coordinator
+ * Path: sub_projects/zuv/src/bootstrap/codegen/codegen.zv
+ * =============================================================================
+ *
+ * Implements the core LLVM IR module coordinator for Phase 4:
+ * - `obj StringConstant`: Tracks pooled and deduplicated static string literals
+ * - `obj Codegen`: Manages target triple, data layout, global constants, functions, and buffers
+ * - Deterministic SSA register generation (`newReg` -> `%r0`, `%r1`, ...)
+ * - Control-flow branch label generation (`newLabel` -> `if_then_0`, `wh_body_1`, ...)
+ * - Static string constant pooling and deduplication (`addStringConstant`)
+ * - Instruction buffering (`emit`, `emitRaw`, `emitLabel`, `startFunction`, `finishFunction`)
+ * - Complete module assembly (`getModuleIR`)
+ */
+
+imp str, arr
+imp Token, TokenType frm ../tokens
+imp ASTNode, NodeKind frm ../ast
+imp TypeInfo, TypeKind, TypeKindToStr frm ../types
+
+/**
+ * Tracks a pooled and deduplicated static string literal constant in LLVM IR.
+ */
+obj StringConstant {
+    id: num,
+    globalName: str,
+    val: str,
+    escaped: str,
+    byteLen: num,
+
+    /**
+     * Creates an initialized StringConstant record descriptor.
+     *
+     * @param {num} id - Numeric index in pool
+     * @param {str} globalName - Global LLVM identifier (@str_N)
+     * @param {str} val - Raw unescaped string contents
+     * @param {str} escaped - LLVM-escaped byte string representation
+     * @param {num} byteLen - Length of string in bytes excluding null terminator
+     * @returns {StringConstant} Initialized string constant object
+     */
+    create: id: num, globalName: str, val: str, escaped: str, byteLen: num :: StringConstant => {
+        -> {
+            id,
+            globalName,
+            val,
+            escaped,
+            byteLen
+        }
+    }
+}
+
+/**
+ * Escapes characters in a string for LLVM IR string constant representation.
+ *
+ * @param {str} text - Raw string text
+ * @returns {str} Escaped string representation for LLVM IR
+ */
+EscapeStringForLLVM text: str :: str {
+    count: num = text.ln
+    escaped: str = ""
+    i: num = 0
+    wh i < count {
+        ch: str = text[i]
+        if ch == "\"" {
+            escaped = escaped + "\\22"
+        } els if ch == "\\" {
+            escaped = escaped + "\\5C"
+        } els if ch == "\n" {
+            escaped = escaped + "\\0A"
+        } els if ch == "\r" {
+            escaped = escaped + "\\0D"
+        } els if ch == "\t" {
+            escaped = escaped + "\\09"
+        } els {
+            escaped = escaped + ch
+        }
+        i++
+    }
+    -> escaped
+}
+
+/**
+ * Measures the byte length of a string in LLVM IR constant format.
+ *
+ * @param {str} text - Raw string text
+ * @returns {num} Byte count
+ */
+MeasureStringBytes text: str :: num {
+    -> text.ln
+}
+
+/**
+ * Coordinates LLVM IR module emission, register/label counters, string pooling, and buffer assembly.
+ */
+obj Codegen {
+    header: str,
+    funcs: str,
+    currentBlock: str,
+    regCounter: num,
+    labelCounter: num,
+    strConstants: StringConstant[],
+    targetTriple: str,
+    dataLayout: str,
+    isRelease: bool,
+
+    /**
+     * Creates a new LLVM module code generation coordinator.
+     *
+     * @param {str} targetTriple - Target triple architecture (e.g. "x86_64-pc-windows-msvc")
+     * @param {bool} isRelease - True if optimizing for release mode
+     * @returns {Codegen} Initialized Codegen coordinator
+     */
+    create: targetTriple: str, isRelease: bool :: Codegen => {
+        triple = targetTriple
+        if triple.ln == 0 {
+            triple = "x86_64-pc-windows-msvc"
+        }
+        layout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+        emptyHeader = ";; ModuleID = 'zuv_module'\nsource_filename = \"zuv_bootstrap\"\ntarget datalayout = \"" + layout + "\"\ntarget triple = \"" + triple + "\"\n\n"
+        emptyStrConsts: StringConstant[] = []
+
+        -> {
+            header: emptyHeader,
+            funcs: "",
+            currentBlock: "",
+            regCounter: 0,
+            labelCounter: 0,
+            strConstants: emptyStrConsts,
+            targetTriple: triple,
+            dataLayout: layout,
+            isRelease
+        }
+    },
+
+    /**
+     * Allocates and returns a new unique SSA virtual register identifier (%r0, %r1, ...).
+     *
+     * @returns {str} SSA register identifier string
+     */
+    newReg: :: str => {
+        r = `%r${self.regCounter}`
+        self.regCounter = self.regCounter + 1
+        -> r
+    },
+
+    /**
+     * Allocates and returns a new unique control-flow branch label (prefix_0, prefix_1, ...).
+     *
+     * @param {str} prefix - Label name prefix (e.g. "if_then", "wh_body", "merge")
+     * @returns {str} Control-flow label string
+     */
+    newLabel: prefix: str :: str => {
+        l = `${prefix}_${self.labelCounter}`
+        self.labelCounter = self.labelCounter + 1
+        -> l
+    },
+
+    /**
+     * Resets register and label counters between top-level function bodies.
+     *
+     * @returns {void}
+     */
+    resetLocalCounters: :: void => {
+        self.regCounter = 0
+        self.labelCounter = 0
+    },
+
+    /**
+     * Pools a static string literal, returning its global constant identifier (@str_N).
+     *
+     * If the string has already been pooled, returns the existing global identifier without duplication.
+     *
+     * @param {str} text - Raw string literal to pool
+     * @returns {str} Global constant symbol name (@str_N)
+     */
+    addStringConstant: text: str :: str => {
+        fr sc of self.strConstants {
+            if sc.val == text {
+                -> sc.globalName
+            }
+        }
+
+        id: num = self.strConstants.ln
+        globalName = `@str_${id}`
+        esc = EscapeStringForLLVM text
+        bLen = MeasureStringBytes text
+        constRec = StringConstant.create id, globalName, text, esc, bLen
+        self.strConstants.psh constRec
+
+        totalLen = bLen + 1
+        decl = `${globalName} = private unnamed_addr constant [${totalLen} x i8] c"${esc}\\00", align 1\n`
+        self.header = self.header + decl
+        -> globalName
+    },
+
+    /**
+     * Appends an indented instruction to the active basic block buffer.
+     *
+     * @param {str} inst - LLVM IR instruction line
+     * @returns {void}
+     */
+    emit: inst: str :: void => {
+        self.currentBlock = self.currentBlock + "  " + inst + "\n"
+    },
+
+    /**
+     * Appends an unindented raw string to the active basic block buffer (e.g. comments, raw blocks).
+     *
+     * @param {str} text - Raw text to append
+     * @returns {void}
+     */
+    emitRaw: text: str :: void => {
+        self.currentBlock = self.currentBlock + text + "\n"
+    },
+
+    /**
+     * Emits a basic block target label into the active instruction buffer.
+     *
+     * @param {str} labelName - Basic block label name
+     * @returns {void}
+     */
+    emitLabel: labelName: str :: void => {
+        self.currentBlock = self.currentBlock + "\n" + labelName + ":\n"
+    },
+
+    /**
+     * Begins emitting a new function definition with a header signature.
+     *
+     * @param {str} headerSig - Full LLVM function declaration line (e.g. "define i64 @main() {")
+     * @returns {void}
+     */
+    startFunction: headerSig: str :: void => {
+        self.currentBlock = headerSig + "\nentry:\n"
+    },
+
+    /**
+     * Closes the current function definition and flushes its instruction buffer into the funcs section.
+     *
+     * @returns {void}
+     */
+    finishFunction: :: void => {
+        self.currentBlock = self.currentBlock + "}\n\n"
+        self.funcs = self.funcs + self.currentBlock
+        self.currentBlock = ""
+    },
+
+    /**
+     * Emits a global extern declaration into the module header.
+     *
+     * @param {str} decl - External function declaration (e.g. "declare ptr @malloc(i64)")
+     * @returns {void}
+     */
+    emitExtern: decl: str :: void => {
+        if !(self.header.cnt decl) {
+            self.header = self.header + decl + "\n"
+        }
+    },
+
+    /**
+     * Assembles and returns the complete, linkable LLVM IR module string.
+     *
+     * @returns {str} Complete LLVM IR module representation
+     */
+    getModuleIR: :: str => {
+        if self.currentBlock.ln > 0 {
+            -> self.header + "\n" + self.funcs + self.currentBlock
+        }
+        -> self.header + "\n" + self.funcs
+    }
+}

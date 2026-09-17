@@ -1,0 +1,351 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Semantic Type System Definitions
+ * Path: sub_projects/zuv/src/bootstrap/types.zv
+ * Defines all semantic type kinds, TypeInfo schema, and type compatibility helpers.
+ * =============================================================================
+ */
+
+imp str, arr
+
+enum TypeKind {
+    Unknown,
+    Void,
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    Num,
+    Str,
+    Ptr,
+    Arr,
+    Obj,
+    Enum,
+    Func,
+    Und,
+    Nil
+}
+
+obj TypeInfo {
+    kind: TypeKind,
+    name: str,
+    elemType: TypeKind,
+    elemTypeName: str,
+    fields: str[],
+    fieldTypes: TypeKind[],
+    isRef: bool,
+
+    /**
+     * Creates a primitive TypeInfo descriptor.
+     *
+     * @param {TypeKind} kind - The primitive type kind
+     * @param {str} name - Canonical primitive name string
+     * @returns {TypeInfo} Initialized primitive type descriptor
+     */
+    createPrimitive: kind: TypeKind, name: str :: TypeInfo => {
+        -> {
+            kind,
+            name,
+            elemType: TypeKind.Unknown,
+            elemTypeName: "",
+            fields: [],
+            fieldTypes: [],
+            isRef: false
+        }
+    },
+
+    /**
+     * Creates an array TypeInfo descriptor.
+     *
+     * @param {TypeKind} elemKind - Element type kind
+     * @param {str} elemName - Element type name string
+     * @returns {TypeInfo} Initialized array type descriptor
+     */
+    createArray: elemKind: TypeKind, elemName: str :: TypeInfo => {
+        -> {
+            kind: TypeKind.Arr,
+            name: elemName + "[]",
+            elemType: elemKind,
+            elemTypeName: elemName,
+            fields: [],
+            fieldTypes: [],
+            isRef: true
+        }
+    },
+
+    /**
+     * Creates an object / struct TypeInfo descriptor.
+     *
+     * @param {str} name - Struct / object type name
+     * @returns {TypeInfo} Initialized object type descriptor
+     */
+    createObject: name: str :: TypeInfo => {
+        -> {
+            kind: TypeKind.Obj,
+            name,
+            elemType: TypeKind.Unknown,
+            elemTypeName: "",
+            fields: [],
+            fieldTypes: [],
+            isRef: true
+        }
+    },
+
+    /**
+     * Creates a function TypeInfo descriptor.
+     *
+     * @param {TypeKind} returnKind - Return value type kind
+     * @param {str} returnTypeName - Return value type name
+     * @param {str[]} paramTypeNames - Array of parameter type names
+     * @returns {TypeInfo} Initialized function type descriptor
+     */
+    createFunc: returnKind: TypeKind, returnTypeName: str, paramTypeNames: str[] :: TypeInfo => {
+        -> {
+            kind: TypeKind.Func,
+            name: "fn()->" + returnTypeName,
+            elemType: returnKind,
+            elemTypeName: returnTypeName,
+            fields: paramTypeNames,
+            fieldTypes: [],
+            isRef: false
+        }
+    },
+
+    /**
+     * Creates a pointer / borrow reference TypeInfo descriptor.
+     *
+     * @param {TypeKind} elemKind - Pointee type kind
+     * @param {str} elemName - Pointee type name
+     * @returns {TypeInfo} Initialized pointer type descriptor
+     */
+    createPointer: elemKind: TypeKind, elemName: str :: TypeInfo => {
+        -> {
+            kind: TypeKind.Ptr,
+            name: "&" + elemName,
+            elemType: elemKind,
+            elemTypeName: elemName,
+            fields: [],
+            fieldTypes: [],
+            isRef: true
+        }
+    },
+
+    /**
+     * Creates an enum TypeInfo descriptor.
+     *
+     * @param {str} name - Enum name
+     * @returns {TypeInfo} Initialized enum type descriptor
+     */
+    createEnum: name: str :: TypeInfo => {
+        -> {
+            kind: TypeKind.Enum,
+            name,
+            elemType: TypeKind.I32,
+            elemTypeName: "i32",
+            fields: [],
+            fieldTypes: [],
+            isRef: false
+        }
+    },
+
+    /**
+     * Appends a named field and its type to this object type descriptor.
+     *
+     * @param {str} fieldName - Member field identifier
+     * @param {TypeKind} fieldType - Member field TypeKind
+     * @returns {void}
+     */
+    addField: fieldName: str, fieldType: TypeKind :: void => {
+        self.fields.psh fieldName
+        self.fieldTypes.psh fieldType
+    },
+
+    /**
+     * Checks if this type represents an integer type.
+     *
+     * @returns {bool} True if integer type, false otherwise
+     */
+    isInteger: :: bool => {
+        -> IsIntegerType self.kind
+    },
+
+    /**
+     * Checks if this type represents a numeric type (integer or float).
+     *
+     * @returns {bool} True if numeric type, false otherwise
+     */
+    isNumeric: :: bool => {
+        -> IsNumericType self.kind
+    },
+
+    /**
+     * Checks if this type represents a pointer or reference type.
+     *
+     * @returns {bool} True if pointer / ref type, false otherwise
+     */
+    isPointer: :: bool => {
+        -> IsPointerType self.kind
+    },
+
+    /**
+     * Checks if this type represents a primitive value type.
+     *
+     * @returns {bool} True if primitive, false otherwise
+     */
+    isPrimitive: :: bool => {
+        -> IsPrimitiveType self.kind
+    },
+
+    /**
+     * Returns the string representation of this TypeInfo descriptor.
+     *
+     * @returns {str} Canonical type name
+     */
+    toString: :: str => {
+        -> self.name
+    }
+}
+
+/**
+ * Converts a TypeKind enum variant to its canonical string representation.
+ *
+ * @param {TypeKind} kind - The type kind enum variant to convert
+ * @returns {str} The canonical string representation
+ */
+TypeKindToStr kind: TypeKind :: str => sw kind {
+    TypeKind.Unknown => "unknown"
+    TypeKind.Void    => "void"
+    TypeKind.Bool    => "bool"
+    TypeKind.I8      => "i8"
+    TypeKind.I16     => "i16"
+    TypeKind.I32     => "i32"
+    TypeKind.I64     => "i64"
+    TypeKind.Num     => "num"
+    TypeKind.Str     => "str"
+    TypeKind.Ptr     => "ptr"
+    TypeKind.Arr     => "arr"
+    TypeKind.Obj     => "obj"
+    TypeKind.Enum    => "enum"
+    TypeKind.Func    => "func"
+    TypeKind.Und     => "und"
+    TypeKind.Nil     => "nil"
+    _                => "unknown"
+}
+
+/**
+ * Checks whether a given TypeKind represents an integer type.
+ *
+ * @param {TypeKind} kind - The type kind to evaluate
+ * @returns {bool} True if the type is an integer type, false otherwise
+ */
+IsIntegerType kind: TypeKind :: bool => sw kind {
+    TypeKind.I8  => true
+    TypeKind.I16 => true
+    TypeKind.I32 => true
+    TypeKind.I64 => true
+    _            => false
+}
+
+/**
+ * Checks whether a given TypeKind represents a numeric type (integer or float).
+ *
+ * @param {TypeKind} kind - The type kind to evaluate
+ * @returns {bool} True if the type is numeric, false otherwise
+ */
+IsNumericType kind: TypeKind :: bool => sw kind {
+    TypeKind.I8  => true
+    TypeKind.I16 => true
+    TypeKind.I32 => true
+    TypeKind.I64 => true
+    TypeKind.Num => true
+    _            => false
+}
+
+/**
+ * Checks whether a given TypeKind represents a pointer or heap reference type.
+ *
+ * @param {TypeKind} kind - The type kind to evaluate
+ * @returns {bool} True if the type is a pointer, array, or object reference
+ */
+IsPointerType kind: TypeKind :: bool => sw kind {
+    TypeKind.Ptr => true
+    TypeKind.Arr => true
+    TypeKind.Obj => true
+    TypeKind.Str => true
+    _            => false
+}
+
+/**
+ * Checks whether a given TypeKind is a primitive value type.
+ *
+ * @param {TypeKind} kind - The type kind to evaluate
+ * @returns {bool} True if primitive, false otherwise
+ */
+IsPrimitiveType kind: TypeKind :: bool => sw kind {
+    TypeKind.Void => true
+    TypeKind.Bool => true
+    TypeKind.I8   => true
+    TypeKind.I16  => true
+    TypeKind.I32  => true
+    TypeKind.I64  => true
+    TypeKind.Num  => true
+    TypeKind.Str  => true
+    TypeKind.Und  => true
+    TypeKind.Nil  => true
+    _             => false
+}
+
+/**
+ * Checks whether two types are compatible for assignment or parameter passing.
+ *
+ * @param {TypeKind} target - The destination type kind
+ * @param {TypeKind} source - The source expression type kind
+ * @returns {bool} True if assignment is sound, false otherwise
+ */
+AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
+    if target == source {
+        -> true
+    }
+    if target == TypeKind.Num && (source == TypeKind.I64 || source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
+        -> true
+    }
+    if target == TypeKind.I64 && (source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
+        -> true
+    }
+    if target == TypeKind.I32 && (source == TypeKind.I16 || source == TypeKind.I8) {
+        -> true
+    }
+    if target == TypeKind.I16 && source == TypeKind.I8 {
+        -> true
+    }
+    if (target == TypeKind.Ptr || target == TypeKind.Obj || target == TypeKind.Arr) && (source == TypeKind.Nil || source == TypeKind.Und) {
+        -> true
+    }
+    -> false
+}
+
+/**
+ * Resolves a type annotation name string to its corresponding TypeKind enum variant.
+ *
+ * @param {str} typeName - Type name annotation string (e.g. "num", "str", "bool", "i64")
+ * @returns {TypeKind} Corresponding TypeKind variant
+ */
+StrToTypeKind typeName: str :: TypeKind => sw typeName {
+    "num"    => TypeKind.Num
+    "double" => TypeKind.Num
+    "f64"    => TypeKind.Num
+    "i64"    => TypeKind.I64
+    "i32"    => TypeKind.I32
+    "i16"    => TypeKind.I16
+    "i8"     => TypeKind.I8
+    "bool"   => TypeKind.Bool
+    "str"    => TypeKind.Str
+    "void"   => TypeKind.Void
+    "ptr"    => TypeKind.Ptr
+    "und"    => TypeKind.Und
+    "nil"    => TypeKind.Nil
+    _        => TypeKind.Obj
+}
+
+

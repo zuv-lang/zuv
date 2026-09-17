@@ -122,7 +122,7 @@ jobs:
           }
           if (Test-Path "./bootstrap/${{ matrix.bin }}") {
             Write-Host "Building self-hosting compiler using bootstrap compiler..."
-            & "./bootstrap/${{ matrix.bin }}" build src/main.zv -o "./bin/${{ matrix.bin }}"
+            & "./bootstrap/${{ matrix.bin }}" build src/bootstrap/main.zv -o "./bin/${{ matrix.bin }}"
             if ($LASTEXITCODE -ne 0) {
               Write-Error "Failed to build self-hosting compiler."
               exit 1
@@ -146,7 +146,7 @@ jobs:
             & "./bin/${{ matrix.bin }}" --help
 
             Write-Host "`n=== 2. Running Static & Syntax Verification (zuv check) ==="
-            & "./bin/${{ matrix.bin }}" check src/main.zv
+            & "./bin/${{ matrix.bin }}" check src/bootstrap/main.zv
 
             Write-Host "`n=== 3. Executing Full Self-Hosting Test Suite (zuv test) ==="
             & "./bin/${{ matrix.bin }}" test
@@ -156,5 +156,5 @@ jobs:
             }
           } else {
             Write-Host "Verifying pure Zuv source files..."
-            Get-ChildItem -Path "src" -Filter "*.zv" | ForEach-Object { Write-Host " - $($_.Name) OK" }
+            Get-ChildItem -Path "src/bootstrap" -Recurse -Filter "*.zv" | ForEach-Object { Write-Host " - $($_.Name) OK" }
           }

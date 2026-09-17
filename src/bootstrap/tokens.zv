@@ -1,0 +1,531 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Token Definitions
+ * Path: sub_projects/zuv/src/bootstrap/tokens.zv
+ * Defines all lexical token kinds, token structure, and classification helpers.
+ * =============================================================================
+ */
+
+imp str, arr
+
+enum TokenType {
+    // Special
+    TOK_EOF,
+    TOK_ILLEGAL,
+
+    // Identifiers & Literals
+    TOK_IDENT,
+    TOK_NUMBER,
+    TOK_BIGINT,
+    TOK_STRING,
+    TOK_TEMPLATE_STRING,
+
+    // Output & Diagnostic Keywords
+    TOK_PRNT,
+    TOK_LOG,
+    TOK_WARN,
+    TOK_INFO,
+    TOK_NAN,
+    TOK_INFINITY,
+
+    // Control Flow & Declaration Keywords
+    TOK_RET,
+    TOK_ELS,
+    TOK_IMP,
+    TOK_FRM,
+    TOK_WRK,
+    TOK_WH,
+    TOK_FOR,
+    TOK_OF,
+    TOK_IN,
+    TOK_BRK,
+    TOK_CONT,
+    TOK_DN,
+    TOK_TRUE,
+    TOK_FALSE,
+    TOK_NIL,
+    TOK_UND,
+    TOK_IF,
+    TOK_AND,
+    TOK_OR,
+    TOK_NOT,
+    TOK_MATCH,
+    TOK_OK,
+    TOK_ERR,
+    TOK_FAT_ARROW,
+    TOK_QUESTION,
+    TOK_NULLISH,
+    TOK_OPT_DOT,
+    TOK_ASYNC,
+    TOK_ASYNC_ST,
+    TOK_AWAIT,
+    TOK_TYP,
+    TOK_SIZEOF,
+    TOK_SZ,
+    TOK_SYM,
+    TOK_ENUM,
+    TOK_AS,
+    TOK_AMP,
+    TOK_AMP_LET,
+    TOK_PIPE,
+    TOK_CARET,
+    TOK_TILDE,
+    TOK_SHL,
+    TOK_SHR,
+    TOK_USHR,
+    TOK_EXTERN,
+    TOK_TRY,
+    TOK_CTH,
+    TOK_FIN,
+    TOK_THROW,
+    TOK_PANIC,
+    TOK_NEW,
+    TOK_UNSAFE,
+    TOK_PUB,
+    TOK_LET,
+    TOK_FN,
+    TOK_STRUCT,
+
+    // Types
+    TOK_TYPE_NUM,
+    TOK_TYPE_BOOL,
+    TOK_TYPE_STR,
+    TOK_TYPE_VOID,
+
+    // Operators
+    TOK_ASSIGN,
+    TOK_PLUS,
+    TOK_PLUS_EQ,
+    TOK_INC,
+    TOK_MINUS,
+    TOK_MINUS_EQ,
+    TOK_DEC,
+    TOK_ASTERISK,
+    TOK_STAR_EQ,
+    TOK_POW,
+    TOK_POW_EQ,
+    TOK_SLASH,
+    TOK_SLASH_EQ,
+    TOK_PERCENT,
+    TOK_PERCENT_EQ,
+    TOK_AMP_EQ,
+    TOK_PIPE_EQ,
+    TOK_CARET_EQ,
+    TOK_EQ,
+    TOK_NOT_EQ,
+    TOK_LT,
+    TOK_GT,
+    TOK_LTE,
+    TOK_GTE,
+    TOK_ARROW,
+
+    // Delimiters
+    TOK_LPAREN,
+    TOK_RPAREN,
+    TOK_LBRACE,
+    TOK_RBRACE,
+    TOK_LBRACKET,
+    TOK_RBRACKET,
+    TOK_DOT,
+    TOK_ELLIPSIS,
+    TOK_COMMA,
+    TOK_COLON,
+    TOK_COLON_COLON,
+    TOK_SEMICOLON,
+    TOK_AT,
+    TOK_MACRO,
+    TOK_HASH
+}
+
+obj Token {
+    kind: TokenType,
+    val: str,
+    line: num,
+    col: num,
+    len: num,
+
+    create: kind: TokenType, val: str, line: num, col: num, len: num :: Token => {
+        -> {
+            kind,
+            val,
+            line,
+            col,
+            len
+        }
+    },
+
+    toString: :: str => {
+        -> TokenTypeToStr self.kind
+    },
+
+    isKeyword: :: bool => {
+        -> IsKeyword self.kind
+    },
+
+    isOperator: :: bool => {
+        -> IsOperator self.kind
+    },
+
+    isLiteral: :: bool => {
+        -> IsLiteral self.kind
+    },
+
+    isDelimiter: :: bool => {
+        -> IsDelimiter self.kind
+    }
+}
+
+/**
+ * Converts a TokenType enum variant to its canonical string representation.
+ *
+ * @param {TokenType} kind - The token kind to stringify
+ * @returns {str} The canonical string representation
+ */
+TokenTypeToStr kind: TokenType :: str => sw kind {
+    TokenType.TOK_EOF             => "EOF"
+    TokenType.TOK_ILLEGAL         => "ILLEGAL"
+    TokenType.TOK_IDENT           => "IDENT"
+    TokenType.TOK_NUMBER          => "NUMBER"
+    TokenType.TOK_BIGINT          => "BIGINT"
+    TokenType.TOK_STRING          => "STRING"
+    TokenType.TOK_TEMPLATE_STRING => "TEMPLATE_STRING"
+    TokenType.TOK_PRNT            => "prnt"
+    TokenType.TOK_LOG             => "lg"
+    TokenType.TOK_WARN            => "wrn"
+    TokenType.TOK_INFO            => "inf"
+    TokenType.TOK_NAN             => "nan"
+    TokenType.TOK_INFINITY        => "Infinity"
+    TokenType.TOK_RET             => "ret"
+    TokenType.TOK_ELS             => "els"
+    TokenType.TOK_IMP             => "imp"
+    TokenType.TOK_FRM             => "frm"
+    TokenType.TOK_WRK             => "wrk"
+    TokenType.TOK_WH              => "wh"
+    TokenType.TOK_FOR             => "fr"
+    TokenType.TOK_OF              => "of"
+    TokenType.TOK_IN              => "in"
+    TokenType.TOK_BRK             => "brk"
+    TokenType.TOK_CONT            => "cont"
+    TokenType.TOK_DN              => "dn"
+    TokenType.TOK_TRUE            => "true"
+    TokenType.TOK_FALSE           => "false"
+    TokenType.TOK_NIL             => "nil"
+    TokenType.TOK_UND             => "und"
+    TokenType.TOK_IF              => "if"
+    TokenType.TOK_AND             => "and"
+    TokenType.TOK_OR              => "or"
+    TokenType.TOK_NOT             => "not"
+    TokenType.TOK_MATCH           => "mch"
+    TokenType.TOK_OK              => "ok"
+    TokenType.TOK_ERR             => "err"
+    TokenType.TOK_FAT_ARROW       => "=>"
+    TokenType.TOK_QUESTION        => "?"
+    TokenType.TOK_NULLISH         => "??"
+    TokenType.TOK_OPT_DOT         => "?."
+    TokenType.TOK_ASYNC           => "async"
+    TokenType.TOK_ASYNC_ST        => "asyncST"
+    TokenType.TOK_AWAIT           => "await"
+    TokenType.TOK_TYP             => "typ"
+    TokenType.TOK_SIZEOF          => "sizeof"
+    TokenType.TOK_SZ              => "sz"
+    TokenType.TOK_SYM             => "sym"
+    TokenType.TOK_ENUM            => "enum"
+    TokenType.TOK_AS              => "as"
+    TokenType.TOK_AMP             => "&"
+    TokenType.TOK_AMP_LET         => "&let"
+    TokenType.TOK_PIPE            => "|"
+    TokenType.TOK_CARET           => "^"
+    TokenType.TOK_TILDE           => "~"
+    TokenType.TOK_SHL             => "<<"
+    TokenType.TOK_SHR             => ">>"
+    TokenType.TOK_USHR            => ">>>"
+    TokenType.TOK_EXTERN          => "extern"
+    TokenType.TOK_TRY             => "try"
+    TokenType.TOK_CTH             => "cth"
+    TokenType.TOK_FIN             => "fin"
+    TokenType.TOK_THROW           => "thr"
+    TokenType.TOK_PANIC           => "panic"
+    TokenType.TOK_NEW             => "new"
+    TokenType.TOK_UNSAFE          => "unsafe"
+    TokenType.TOK_PUB             => "pub"
+    TokenType.TOK_LET             => "let"
+    TokenType.TOK_FN              => "fn"
+    TokenType.TOK_STRUCT          => "obj"
+    TokenType.TOK_TYPE_NUM        => "num"
+    TokenType.TOK_TYPE_BOOL       => "bool"
+    TokenType.TOK_TYPE_STR        => "str"
+    TokenType.TOK_TYPE_VOID       => "void"
+    TokenType.TOK_ASSIGN          => "="
+    TokenType.TOK_PLUS            => "+"
+    TokenType.TOK_PLUS_EQ         => "+="
+    TokenType.TOK_INC             => "++"
+    TokenType.TOK_MINUS           => "-"
+    TokenType.TOK_MINUS_EQ        => "-="
+    TokenType.TOK_DEC             => "--"
+    TokenType.TOK_ASTERISK        => "*"
+    TokenType.TOK_STAR_EQ         => "*="
+    TokenType.TOK_POW             => "**"
+    TokenType.TOK_POW_EQ          => "**="
+    TokenType.TOK_SLASH           => "/"
+    TokenType.TOK_SLASH_EQ        => "/="
+    TokenType.TOK_PERCENT         => "%"
+    TokenType.TOK_PERCENT_EQ      => "%="
+    TokenType.TOK_AMP_EQ          => "&="
+    TokenType.TOK_PIPE_EQ         => "|="
+    TokenType.TOK_CARET_EQ        => "^="
+    TokenType.TOK_EQ              => "=="
+    TokenType.TOK_NOT_EQ          => "!="
+    TokenType.TOK_LT              => "<"
+    TokenType.TOK_GT              => ">"
+    TokenType.TOK_LTE             => "<="
+    TokenType.TOK_GTE             => ">="
+    TokenType.TOK_ARROW           => "->"
+    TokenType.TOK_LPAREN          => "("
+    TokenType.TOK_RPAREN          => ")"
+    TokenType.TOK_LBRACE          => "{"
+    TokenType.TOK_RBRACE          => "}"
+    TokenType.TOK_LBRACKET        => "["
+    TokenType.TOK_RBRACKET        => "]"
+    TokenType.TOK_DOT             => "."
+    TokenType.TOK_ELLIPSIS        => "..."
+    TokenType.TOK_COMMA           => ","
+    TokenType.TOK_COLON           => ":"
+    TokenType.TOK_COLON_COLON     => "::"
+    TokenType.TOK_SEMICOLON       => ";"
+    TokenType.TOK_AT              => "@"
+    TokenType.TOK_MACRO           => "macro"
+    TokenType.TOK_HASH            => "#"
+    _                             => "UNKNOWN"
+}
+
+/**
+ * Determines whether a given TokenType is a reserved keyword.
+ *
+ * @param {TokenType} kind - The token kind to evaluate
+ * @returns {bool} True if the token is a keyword, false otherwise
+ */
+IsKeyword kind: TokenType :: bool => sw kind {
+    TokenType.TOK_PRNT      => true
+    TokenType.TOK_LOG       => true
+    TokenType.TOK_WARN      => true
+    TokenType.TOK_INFO      => true
+    TokenType.TOK_NAN       => true
+    TokenType.TOK_INFINITY  => true
+    TokenType.TOK_RET       => true
+    TokenType.TOK_ELS       => true
+    TokenType.TOK_IMP       => true
+    TokenType.TOK_FRM       => true
+    TokenType.TOK_WRK       => true
+    TokenType.TOK_WH        => true
+    TokenType.TOK_FOR       => true
+    TokenType.TOK_OF        => true
+    TokenType.TOK_IN        => true
+    TokenType.TOK_BRK       => true
+    TokenType.TOK_CONT      => true
+    TokenType.TOK_DN        => true
+    TokenType.TOK_TRUE      => true
+    TokenType.TOK_FALSE     => true
+    TokenType.TOK_NIL       => true
+    TokenType.TOK_UND       => true
+    TokenType.TOK_IF        => true
+    TokenType.TOK_AND       => true
+    TokenType.TOK_OR        => true
+    TokenType.TOK_NOT       => true
+    TokenType.TOK_MATCH     => true
+    TokenType.TOK_OK        => true
+    TokenType.TOK_ERR       => true
+    TokenType.TOK_ASYNC     => true
+    TokenType.TOK_ASYNC_ST  => true
+    TokenType.TOK_AWAIT     => true
+    TokenType.TOK_TYP       => true
+    TokenType.TOK_SIZEOF    => true
+    TokenType.TOK_SZ        => true
+    TokenType.TOK_SYM       => true
+    TokenType.TOK_ENUM      => true
+    TokenType.TOK_AS        => true
+    TokenType.TOK_EXTERN    => true
+    TokenType.TOK_TRY       => true
+    TokenType.TOK_CTH       => true
+    TokenType.TOK_FIN       => true
+    TokenType.TOK_THROW     => true
+    TokenType.TOK_PANIC     => true
+    TokenType.TOK_NEW       => true
+    TokenType.TOK_UNSAFE    => true
+    TokenType.TOK_PUB       => true
+    TokenType.TOK_LET       => true
+    TokenType.TOK_FN        => true
+    TokenType.TOK_STRUCT    => true
+    TokenType.TOK_MACRO     => true
+    TokenType.TOK_TYPE_NUM  => true
+    TokenType.TOK_TYPE_BOOL => true
+    TokenType.TOK_TYPE_STR  => true
+    TokenType.TOK_TYPE_VOID => true
+    _                       => false
+}
+
+/**
+ * Determines whether a given TokenType is an operator.
+ *
+ * @param {TokenType} kind - The token kind to evaluate
+ * @returns {bool} True if the token is an operator, false otherwise
+ */
+IsOperator kind: TokenType :: bool => sw kind {
+    TokenType.TOK_PLUS       => true
+    TokenType.TOK_PLUS_EQ    => true
+    TokenType.TOK_INC        => true
+    TokenType.TOK_MINUS      => true
+    TokenType.TOK_MINUS_EQ   => true
+    TokenType.TOK_DEC        => true
+    TokenType.TOK_ASTERISK   => true
+    TokenType.TOK_STAR_EQ    => true
+    TokenType.TOK_POW        => true
+    TokenType.TOK_POW_EQ     => true
+    TokenType.TOK_SLASH      => true
+    TokenType.TOK_SLASH_EQ   => true
+    TokenType.TOK_PERCENT    => true
+    TokenType.TOK_PERCENT_EQ => true
+    TokenType.TOK_AMP        => true
+    TokenType.TOK_AMP_EQ     => true
+    TokenType.TOK_PIPE       => true
+    TokenType.TOK_PIPE_EQ    => true
+    TokenType.TOK_CARET      => true
+    TokenType.TOK_CARET_EQ   => true
+    TokenType.TOK_TILDE      => true
+    TokenType.TOK_SHL        => true
+    TokenType.TOK_SHR        => true
+    TokenType.TOK_USHR       => true
+    TokenType.TOK_ASSIGN     => true
+    TokenType.TOK_EQ         => true
+    TokenType.TOK_NOT_EQ     => true
+    TokenType.TOK_LT         => true
+    TokenType.TOK_GT         => true
+    TokenType.TOK_LTE        => true
+    TokenType.TOK_GTE        => true
+    TokenType.TOK_AND        => true
+    TokenType.TOK_OR         => true
+    TokenType.TOK_NOT        => true
+    TokenType.TOK_NULLISH    => true
+    TokenType.TOK_QUESTION   => true
+    TokenType.TOK_OPT_DOT    => true
+    TokenType.TOK_ARROW      => true
+    TokenType.TOK_FAT_ARROW  => true
+    _                        => false
+}
+
+/**
+ * Determines whether a given TokenType represents a literal value or identifier.
+ *
+ * @param {TokenType} kind - The token kind to evaluate
+ * @returns {bool} True if the token is a literal or identifier, false otherwise
+ */
+IsLiteral kind: TokenType :: bool => sw kind {
+    TokenType.TOK_IDENT           => true
+    TokenType.TOK_NUMBER          => true
+    TokenType.TOK_BIGINT          => true
+    TokenType.TOK_STRING          => true
+    TokenType.TOK_TEMPLATE_STRING => true
+    TokenType.TOK_TRUE            => true
+    TokenType.TOK_FALSE           => true
+    TokenType.TOK_NIL             => true
+    TokenType.TOK_UND             => true
+    _                             => false
+}
+
+/**
+ * Determines whether a given TokenType is a syntactic delimiter or punctuation mark.
+ *
+ * @param {TokenType} kind - The token kind to evaluate
+ * @returns {bool} True if the token is a delimiter, false otherwise
+ */
+IsDelimiter kind: TokenType :: bool => sw kind {
+    TokenType.TOK_LPAREN      => true
+    TokenType.TOK_RPAREN      => true
+    TokenType.TOK_LBRACE      => true
+    TokenType.TOK_RBRACE      => true
+    TokenType.TOK_LBRACKET    => true
+    TokenType.TOK_RBRACKET    => true
+    TokenType.TOK_COLON       => true
+    TokenType.TOK_COLON_COLON => true
+    TokenType.TOK_SEMICOLON   => true
+    TokenType.TOK_COMMA       => true
+    TokenType.TOK_DOT         => true
+    TokenType.TOK_ELLIPSIS    => true
+    TokenType.TOK_AT          => true
+    TokenType.TOK_HASH        => true
+    _                         => false
+}
+
+/**
+ * Looks up a textual string and returns its corresponding reserved keyword TokenType,
+ * or TOK_IDENT if the string is not a recognized keyword.
+ *
+ * @param {str} text - The token text to check
+ * @returns {TokenType} The resolved TokenType enum variant
+ */
+LookupKeyword text: str :: TokenType => sw text {
+    "let"      => TokenType.TOK_LET
+    "fn"       => TokenType.TOK_FN
+    "obj"      => TokenType.TOK_STRUCT
+    "enum"     => TokenType.TOK_ENUM
+    "pub"      => TokenType.TOK_PUB
+    "extern"   => TokenType.TOK_EXTERN
+    "ffi"      => TokenType.TOK_EXTERN
+    "if"       => TokenType.TOK_IF
+    "els"      => TokenType.TOK_ELS
+    "wh"       => TokenType.TOK_WH
+    "fr"       => TokenType.TOK_FOR
+    "in"       => TokenType.TOK_IN
+    "of"       => TokenType.TOK_OF
+    "sw"       => TokenType.TOK_MATCH
+    "mch"      => TokenType.TOK_MATCH
+    "ret"      => TokenType.TOK_RET
+    "brk"      => TokenType.TOK_BRK
+    "cont"     => TokenType.TOK_CONT
+    "dn"       => TokenType.TOK_DN
+    "try"      => TokenType.TOK_TRY
+    "cth"      => TokenType.TOK_CTH
+    "fin"      => TokenType.TOK_FIN
+    "thr"      => TokenType.TOK_THROW
+    "panic"    => TokenType.TOK_PANIC
+    "imp"      => TokenType.TOK_IMP
+    "frm"      => TokenType.TOK_FRM
+    "from"     => TokenType.TOK_FRM
+    "asc"      => TokenType.TOK_ASYNC
+    "async"    => TokenType.TOK_ASYNC
+    "ascST"    => TokenType.TOK_ASYNC_ST
+    "asyncST"  => TokenType.TOK_ASYNC_ST
+    "awt"      => TokenType.TOK_AWAIT
+    "await"    => TokenType.TOK_AWAIT
+    "wrk"      => TokenType.TOK_WRK
+    "worker"   => TokenType.TOK_WRK
+    "typ"      => TokenType.TOK_TYP
+    "type"     => TokenType.TOK_TYP
+    "sizeof"   => TokenType.TOK_SIZEOF
+    "sz"       => TokenType.TOK_SZ
+    "sym"      => TokenType.TOK_SYM
+    "as"       => TokenType.TOK_AS
+    "new"      => TokenType.TOK_NEW
+    "nw"       => TokenType.TOK_NEW
+    "unsafe"   => TokenType.TOK_UNSAFE
+    "macro"    => TokenType.TOK_MACRO
+    "prnt"     => TokenType.TOK_PRNT
+    "lg"       => TokenType.TOK_LOG
+    "wrn"      => TokenType.TOK_WARN
+    "inf"      => TokenType.TOK_INFO
+    "nan"      => TokenType.TOK_NAN
+    "Infinity" => TokenType.TOK_INFINITY
+    "ok"       => TokenType.TOK_OK
+    "err"      => TokenType.TOK_ERR
+    "true"     => TokenType.TOK_TRUE
+    "yes"      => TokenType.TOK_TRUE
+    "false"    => TokenType.TOK_FALSE
+    "no"       => TokenType.TOK_FALSE
+    "nil"      => TokenType.TOK_NIL
+    "und"      => TokenType.TOK_UND
+    "num"      => TokenType.TOK_TYPE_NUM
+    "bool"     => TokenType.TOK_TYPE_BOOL
+    "str"      => TokenType.TOK_TYPE_STR
+    "void"     => TokenType.TOK_TYPE_VOID
+    _          => TokenType.TOK_IDENT
+}
+

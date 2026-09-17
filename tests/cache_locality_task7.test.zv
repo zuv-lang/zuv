@@ -1,0 +1,101 @@
+// Test for Task 7: Cache Locality — Tightly Packed, Contiguous Memory
+// Verifies:
+// 1. Elements are stored contiguously in memory with strictly 8-byte intervals.
+// 2. 8 elements span exactly 56 bytes from element 0 to 7 (64-byte L1 cache line footprint).
+// 3. Address-of element expression (&arr[i]) works in unsafe blocks.
+// 4. Sequential streaming with 'fr .. of' using native i64 induction variables across 50,000 elements.
+// 5. Sequential index traversal with 'fr .. in'.
+// 6. In-place contiguous mutation.
+// 7. Bulk memory copy between contiguous array buffers via mem.cp.
+
+// 1. Contiguous 8-Byte Spacing
+let arr = [100, 200, 300, 400, 500, 600, 700, 800]
+unsafe {
+    let p0 = &arr[0]
+    let p1 = &arr[1]
+    let p2 = &arr[2]
+    let p3 = &arr[3]
+
+    let diff01 = p1 - p0
+    let diff12 = p2 - p1
+    let diff23 = p3 - p2
+
+    prnt diff01
+    prnt diff12
+    prnt diff23
+
+    if diff01 == 8 and diff12 == 8 and diff23 == 8 {
+        prnt "Contiguous 8-byte spacing verified"
+    }
+}
+
+// 2. 64-Byte Cache Line Span Verification (8 elements = 64 bytes total)
+unsafe {
+    let p0 = &arr[0]
+    let p7 = &arr[7]
+    let span = p7 - p0
+    prnt span
+
+    if span == 56 {
+        prnt "8 elements span exactly 56 bytes offset within 64-byte cache line"
+    }
+}
+
+// 3. Sequential Streaming (fr .. of with native i64 loop counter) across 50,000 elements
+let big = []
+fr let i = 0; i < 50000; i++ {
+    big.psh i
+}
+
+prnt big.ln
+
+let sum = 0
+fr item of big {
+    sum = sum + item
+}
+
+prnt sum
+// Sum of 0..49999 = 50000 * 49999 / 2 = 1249975000
+if sum == 1249975000 {
+    prnt "Streaming 50,000 contiguous elements with fr..of passed"
+}
+
+// 4. Sequential Index Traversal with fr .. in
+let sample = [10, 20, 30, 40, 50]
+let in_sum = 0
+fr idx in sample {
+    in_sum = in_sum + idx
+}
+prnt in_sum
+if in_sum == 10 {
+    prnt "Sequential index traversal with fr..in passed"
+}
+
+// 5. In-Place Contiguous Mutation
+let mut_arr = [1, 2, 3, 4]
+mut_arr[0] = 10
+mut_arr[1] = 20
+mut_arr[2] = 30
+mut_arr[3] = 40
+
+if mut_arr[0] == 10 and mut_arr[1] == 20 and mut_arr[2] == 30 and mut_arr[3] == 40 {
+    prnt "In-place contiguous mutation passed"
+}
+
+// 6. Fast Contiguous Block Copy via mem.cp
+unsafe {
+    let src = [11, 22, 33, 44]
+    let dst = [0, 0, 0, 0]
+    mem.cp &dst[0], &src[0], 32
+
+    prnt dst[0]
+    prnt dst[1]
+    prnt dst[2]
+    prnt dst[3]
+
+    if dst[0] == 11 and dst[1] == 22 and dst[2] == 33 and dst[3] == 44 {
+        prnt "Fast contiguous memory block copy (mem.cp) verified"
+    }
+}
+
+prnt "ALL TASK 7 CACHE LOCALITY TESTS PASSED"

@@ -1,0 +1,774 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Expression Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr.zv
+ *
+ * Implements SSA virtual register evaluation for all Zuv expression forms:
+ * - Literals: numbers, deduplicated pooled strings (@str_N), booleans, nil, und, BigInt
+ * - Scoped identifier loading from alloca stack slots or direct SSA registers
+ * - Unary prefix/postfix operators: -, !, ~, ++, --
+ * - Binary arithmetic, bitwise, comparison, logical, and assignment operators
+ * - Function and method call dispatch with ABI argument type formatting
+ * - Bounds-checked array indexing, property loads, and property mutations
+ * - Array and object literal instantiation via runtime helpers
+ * - Explicit type cast lowering and ternary conditional branch merging
+ * =============================================================================
+ */
+
+imp str, arr
+imp TypeKind frm ../types
+imp ASTNode, NodeKind, FieldEntry frm ../ast
+imp Codegen frm codegen/codegen
+imp llvmType, llvmStackType, isPointerType, isIntegerType, isFloatType, selectBinaryOp, selectCmpOp, selectCastOp, selectDefaultValue frm codegen/types
+imp ArrayCodegen, boxValueToI64, unboxValueFromI64, ArraySpreadPart frm codegen/array
+imp ObjectCodegen, StructLayoutRegistry, resolveFieldTypeKind frm codegen/decl
+
+/**
+ * Result descriptor produced by evaluating an expression AST node.
+ */
+type ExprResult = {
+    reg: str;
+    typeKind: TypeKind;
+};
+
+/**
+ * Symbol entry in the active function or block lexical scope.
+ */
+type ScopeSymbol = {
+    name: str;
+    reg: str;
+    typeKind: TypeKind;
+    isPtr: bool;
+    isAlloca: bool;
+};
+
+/**
+ * Coordinates expression evaluation and virtual register emission.
+ */
+obj ExprCodegen {
+    codegen: Codegen,
+    symbols: ScopeSymbol[],
+    objGen: ObjectCodegen,
+    arrGen: ArrayCodegen,
+
+    /**
+     * Initializes a new ExprCodegen coordinator.
+     *
+     * @param {Codegen} codegen - LLVM module coordinator
+     * @param {ObjectCodegen} objGen - Object and struct layout coordinator
+     * @param {ArrayCodegen} arrGen - Array runtime coordinator
+     * @returns {ExprCodegen} Initialized ExprCodegen instance
+     */
+    create: codegen: Codegen, objGen: ObjectCodegen, arrGen: ArrayCodegen :: ExprCodegen => {
+        emptySymbols: ScopeSymbol[] = []
+        -> {
+            codegen,
+            symbols: emptySymbols,
+            objGen,
+            arrGen
+        }
+    },
+
+    /**
+     * Registers a named symbol into the lexical scope table.
+     *
+     * @param {str} name - Variable or parameter identifier
+     * @param {str} reg - Allocated SSA register or alloca pointer
+     * @param {TypeKind} typeKind - Semantic type of the symbol
+     * @param {bool} isPtr - True if reference pointer
+     * @param {bool} isAlloca - True if stack-allocated alloca slot
+     * @returns {void}
+     */
+    addSymbol: name: str, reg: str, typeKind: TypeKind, isPtr: bool, isAlloca: bool :: void => {
+        self.symbols.psh {
+            name,
+            reg,
+            typeKind,
+            isPtr,
+            isAlloca
+        }
+    },
+
+    /**
+     * Resolves a symbol by identifier from the scoped symbol table (innermost match).
+     *
+     * @param {str} name - Variable identifier to look up
+     * @returns {ScopeSymbol} Found symbol or empty record
+     */
+    findSymbol: name: str :: ScopeSymbol => {
+        found: ScopeSymbol = {
+            name: "",
+            reg: "",
+            typeKind: TypeKind.Unknown,
+            isPtr: false,
+            isAlloca: false
+        }
+        fr item of self.symbols {
+            if item.name == name {
+                found = item
+            }
+        }
+        -> found
+    },
+
+    /**
+     * Master expression evaluator routing AST nodes to specialized emitters.
+     *
+     * @param {ASTNode} node - Target expression AST node
+     * @returns {ExprResult} Computed SSA register and type descriptor
+     */
+    emitExpr: node: ASTNode :: ExprResult => sw node.kind {
+        NodeKind.NumExpr        => self.emitNum node
+        NodeKind.StrExpr        => self.emitStr node
+        NodeKind.BoolExpr       => self.emitBool node
+        NodeKind.NilExpr        => self.emitNil node
+        NodeKind.UndExpr        => self.emitUnd node
+        NodeKind.BigIntExpr     => self.emitBigInt node
+        NodeKind.IdentExpr      => self.emitIdent node
+        NodeKind.UnaryExpr      => self.emitUnary node
+        NodeKind.BinaryExpr     => self.emitBinary node
+        NodeKind.CallExpr       => self.emitCall node
+        NodeKind.MethodCallExpr => self.emitMethodCall node
+        NodeKind.IndexExpr      => self.emitIndex node
+        NodeKind.PropExpr       => self.emitProp node
+        NodeKind.ArrExpr        => self.emitArr node
+        NodeKind.ObjLitExpr     => self.emitObjLit node
+        NodeKind.CastExpr       => self.emitCast node
+        NodeKind.TernaryExpr    => self.emitTernary node
+        _                       => self.emitDefault node
+    },
+
+    /**
+     * Emits a numeric literal constant into a new virtual register.
+     *
+     * @param {ASTNode} node - Numeric literal AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitNum: node: ASTNode :: ExprResult => {
+        valStr: str = node.val
+        if valStr.ln == 0 {
+            valStr = `${node.numVal}`
+        }
+        resReg: str = self.codegen.newReg
+        targetKind: TypeKind = node.inferredType
+        if targetKind == TypeKind.Unknown {
+            targetKind = TypeKind.I64
+        }
+        if isFloatType targetKind {
+            fStr: str = valStr
+            hasDot: bool = fStr.cnt "."
+            hasExp: bool = fStr.cnt "e"
+            if !hasDot && !hasExp {
+                fStr = fStr + ".0"
+            }
+            self.codegen.emit `${resReg} = fadd double 0.0, ${fStr}`
+            fRes: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> fRes
+        }
+        itype: str = llvmType targetKind
+        self.codegen.emit `${resReg} = add ${itype} 0, ${valStr}`
+        iRes: ExprResult = { reg: resReg, typeKind: targetKind }
+        -> iRes
+    },
+
+    /**
+     * Pools a static string literal and emits an element pointer register.
+     *
+     * @param {ASTNode} node - String literal AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitStr: node: ASTNode :: ExprResult => {
+        strConst: str = self.codegen.addStringConstant node.val
+        gepReg: str = self.codegen.newReg
+        self.codegen.emit `${gepReg} = getelementptr inbounds i8, ptr ${strConst}, i64 0`
+        res: ExprResult = { reg: gepReg, typeKind: TypeKind.Str }
+        -> res
+    },
+
+    /**
+     * Emits a boolean literal constant.
+     *
+     * @param {ASTNode} node - Boolean literal AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitBool: node: ASTNode :: ExprResult => {
+        bVal: str = node.boolVal ? "true" : "false"
+        resReg: str = self.codegen.newReg
+        self.codegen.emit `${resReg} = and i1 ${bVal}, true`
+        res: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+        -> res
+    },
+
+    /**
+     * Emits a nil literal constant (i64 0).
+     *
+     * @param {ASTNode} node - Nil literal AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitNil: node: ASTNode :: ExprResult => {
+        resReg: str = self.codegen.newReg
+        self.codegen.emit `${resReg} = add i64 0, 0`
+        res: ExprResult = { reg: resReg, typeKind: TypeKind.Nil }
+        -> res
+    },
+
+    /**
+     * Emits an undefined literal constant (i64 0).
+     *
+     * @param {ASTNode} node - Undefined literal AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitUnd: node: ASTNode :: ExprResult => {
+        resReg: str = self.codegen.newReg
+        self.codegen.emit `${resReg} = add i64 0, 0`
+        res: ExprResult = { reg: resReg, typeKind: TypeKind.Und }
+        -> res
+    },
+
+    /**
+     * Emits a BigInt integer literal.
+     *
+     * @param {ASTNode} node - BigInt literal AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitBigInt: node: ASTNode :: ExprResult => {
+        valStr: str = node.val.ln > 0 ? node.val : "0"
+        resReg: str = self.codegen.newReg
+        self.codegen.emit `${resReg} = add i64 0, ${valStr}`
+        res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+        -> res
+    },
+
+    /**
+     * Emits identifier resolution, loading from alloca stack slot if applicable.
+     *
+     * @param {ASTNode} node - Identifier AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitIdent: node: ASTNode :: ExprResult => {
+        foundSym = self.findSymbol node.name
+        if foundSym.isAlloca {
+            stType: str = llvmStackType foundSym.typeKind
+            loadReg: str = self.codegen.newReg
+            self.codegen.emit `${loadReg} = load ${stType}, ptr ${foundSym.reg}`
+            res: ExprResult = { reg: loadReg, typeKind: foundSym.typeKind }
+            -> res
+        }
+        if foundSym.reg.ln > 0 {
+            res: ExprResult = { reg: foundSym.reg, typeKind: foundSym.typeKind }
+            -> res
+        }
+        fallbackReg: str = `%${node.name}`
+        fRes: ExprResult = { reg: fallbackReg, typeKind: node.inferredType }
+        -> fRes
+    },
+
+    /**
+     * Emits a unary operation (-, !, ~, ++, --).
+     *
+     * @param {ASTNode} node - Unary expression AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitUnary: node: ASTNode :: ExprResult => {
+        op: str = node.op
+        operandRes: ExprResult = self.emitExpr node.children[0]
+
+        if op == "-" || op == "neg" {
+            resReg: str = self.codegen.newReg
+            if operandRes.typeKind == TypeKind.Num {
+                self.codegen.emit `${resReg} = fsub double 0.0, ${operandRes.reg}`
+                fRes: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+                -> fRes
+            }
+            itype: str = llvmType operandRes.typeKind
+            self.codegen.emit `${resReg} = sub ${itype} 0, ${operandRes.reg}`
+            iRes: ExprResult = { reg: resReg, typeKind: operandRes.typeKind }
+            -> iRes
+        }
+
+        if op == "!" || op == "not" {
+            resReg: str = self.codegen.newReg
+            if operandRes.typeKind == TypeKind.Bool {
+                self.codegen.emit `${resReg} = xor i1 ${operandRes.reg}, true`
+                bRes: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+                -> bRes
+            }
+            if isPointerType operandRes.typeKind {
+                self.codegen.emit `${resReg} = icmp eq ptr ${operandRes.reg}, null`
+                pRes: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+                -> pRes
+            }
+            itype: str = llvmType operandRes.typeKind
+            self.codegen.emit `${resReg} = icmp eq ${itype} ${operandRes.reg}, 0`
+            cRes: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+            -> cRes
+        }
+
+        if op == "~" {
+            resReg: str = self.codegen.newReg
+            itype: str = llvmType operandRes.typeKind
+            self.codegen.emit `${resReg} = xor ${itype} ${operandRes.reg}, -1`
+            tRes: ExprResult = { reg: resReg, typeKind: operandRes.typeKind }
+            -> tRes
+        }
+
+        if op == "++" || op == "--" {
+            childNode: ASTNode = node.children[0]
+            if childNode.kind == NodeKind.IdentExpr {
+                foundSym = self.findSymbol childNode.name
+                if foundSym.isAlloca {
+                    stType: str = llvmStackType foundSym.typeKind
+                    curReg: str = operandRes.reg
+                    nextReg: str = self.codegen.newReg
+                    deltaOp: str = (op == "++") ? "add" : "sub"
+                    self.codegen.emit `${nextReg} = ${deltaOp} ${stType} ${curReg}, 1`
+                    self.codegen.emit `store ${stType} ${nextReg}, ptr ${foundSym.reg}`
+                    retReg: str = node.isPrefix ? nextReg : curReg
+                    res: ExprResult = { reg: retReg, typeKind: foundSym.typeKind }
+                    -> res
+                }
+            }
+        }
+
+        -> operandRes
+    },
+
+    /**
+     * Emits a binary operation (arithmetic, bitwise, comparison, logical, assignment).
+     *
+     * @param {ASTNode} node - Binary expression AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitBinary: node: ASTNode :: ExprResult => {
+        op: str = node.op
+
+        if op == "=" {
+            rightRes: ExprResult = self.emitExpr node.children[1]
+            targetNode: ASTNode = node.children[0]
+            if targetNode.kind == NodeKind.IdentExpr {
+                foundSym = self.findSymbol targetNode.name
+                if foundSym.isAlloca {
+                    stType: str = llvmStackType foundSym.typeKind
+                    self.codegen.emit `store ${stType} ${rightRes.reg}, ptr ${foundSym.reg}`
+                }
+            } els if targetNode.kind == NodeKind.IndexExpr {
+                arrNode: ASTNode = targetNode.children[0]
+                idxNode: ASTNode = targetNode.children[1]
+                arrRes: ExprResult = self.emitExpr arrNode
+                idxRes: ExprResult = self.emitExpr idxNode
+                self.arrGen.emitSetElement arrRes.reg, idxRes.reg, rightRes.reg, rightRes.typeKind, node.line
+            } els if targetNode.kind == NodeKind.PropExpr {
+                objNode: ASTNode = targetNode.children[0]
+                propName: str = targetNode.name
+                objRes: ExprResult = self.emitExpr objNode
+                off: num = self.objGen.registry.getFieldOffset "", propName
+                if off < 0 {
+                    off = 0
+                }
+                self.objGen.emitSetProperty objRes.reg, off, rightRes.reg, rightRes.typeKind
+            }
+            -> rightRes
+        }
+
+        leftRes: ExprResult = self.emitExpr node.children[0]
+        rightRes: ExprResult = self.emitExpr node.children[1]
+
+        if op == "&&" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = and i1 ${leftRes.reg}, ${rightRes.reg}`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+            -> res
+        }
+
+        if op == "||" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = or i1 ${leftRes.reg}, ${rightRes.reg}`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+            -> res
+        }
+
+        if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" {
+            cmpInst: str = selectCmpOp op, leftRes.typeKind
+            ltype: str = llvmType leftRes.typeKind
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = ${cmpInst} ${ltype} ${leftRes.reg}, ${rightRes.reg}`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+            -> res
+        }
+
+        binInst: str = selectBinaryOp op, leftRes.typeKind
+        ltype: str = llvmType leftRes.typeKind
+        resReg: str = self.codegen.newReg
+        self.codegen.emit `${resReg} = ${binInst} ${ltype} ${leftRes.reg}, ${rightRes.reg}`
+        res: ExprResult = { reg: resReg, typeKind: leftRes.typeKind }
+        -> res
+    },
+
+    /**
+     * Emits a function call expression.
+     *
+     * @param {ASTNode} node - Call expression AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitCall: node: ASTNode :: ExprResult => {
+        calleeNode: ASTNode = node.children[0]
+        calleeName: str = calleeNode.name.ln > 0 ? calleeNode.name : calleeNode.val
+
+        argRegs: str[] = []
+        argTypes: TypeKind[] = []
+        isCallee: bool = true
+        fr child of node.children {
+            if isCallee {
+                isCallee = false
+                cont
+            }
+            cRes: ExprResult = self.emitExpr child
+            argRegs.psh cRes.reg
+            argTypes.psh cRes.typeKind
+        }
+
+        argsStr: str = ""
+        first: bool = true
+        argIdx: num = 0
+        fr aReg of argRegs {
+            aType: TypeKind = argTypes[argIdx]
+            tStr: str = llvmType aType
+            if !first {
+                argsStr = argsStr + ", "
+            }
+            argsStr = argsStr + tStr + " " + aReg
+            first = false
+            argIdx++
+        }
+
+        if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "err" {
+            fmtStr: str = "%s\n"
+            if calleeName == "wrn" {
+                fmtStr = "[WARN] %s\n"
+            } els if calleeName == "err" {
+                fmtStr = "[ERR] %s\n"
+            }
+            fmtConst: str = self.codegen.addStringConstant fmtStr
+            if argRegs.ln > 0 {
+                firstArgReg: str = argRegs[0]
+                firstArgType: TypeKind = argTypes[0]
+                if firstArgType == TypeKind.Str || firstArgType == TypeKind.Ptr {
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
+                } els if firstArgType == TypeKind.I64 || firstArgType == TypeKind.Num {
+                    numFmt: str = self.codegen.addStringConstant "%lld\n"
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
+                } els {
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
+                }
+            } els {
+                emptyFmt: str = self.codegen.addStringConstant "\n"
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${emptyFmt})`
+            }
+            vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
+            -> vRes
+        }
+
+        retType: TypeKind = node.inferredType
+        if retType == TypeKind.Unknown {
+            retType = TypeKind.I64
+        }
+        if retType == TypeKind.Void {
+            self.codegen.emit `call void @${calleeName}(${argsStr})`
+            vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
+            -> vRes
+        }
+        retTypeStr: str = llvmType retType
+        callReg: str = self.codegen.newReg
+        self.codegen.emit `${callReg} = call ${retTypeStr} @${calleeName}(${argsStr})`
+        res: ExprResult = { reg: callReg, typeKind: retType }
+        -> res
+    },
+
+    /**
+     * Emits a method call expression (.psh, .pop, or general receiver method).
+     *
+     * @param {ASTNode} node - Method call AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitMethodCall: node: ASTNode :: ExprResult => {
+        targetNode: ASTNode = node.children[0]
+        methodName: str = node.name
+
+        if methodName == "psh" || methodName == "push" {
+            arrRes: ExprResult = self.emitExpr targetNode
+            valRes: ExprResult = self.emitExpr node.children[1]
+            varSlot: str = ""
+            if targetNode.kind == NodeKind.IdentExpr {
+                foundSym = self.findSymbol targetNode.name
+                if foundSym.isAlloca {
+                    varSlot = foundSym.reg
+                }
+            }
+            lenReg: str = self.arrGen.emitPush arrRes.reg, valRes.reg, valRes.typeKind, varSlot
+            res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if methodName == "pp" || methodName == "pop" {
+            arrRes: ExprResult = self.emitExpr targetNode
+            popType: TypeKind = node.inferredType
+            if popType == TypeKind.Unknown {
+                popType = TypeKind.I64
+            }
+            valReg: str = self.arrGen.emitPop arrRes.reg, popType, node.line
+            res: ExprResult = { reg: valReg, typeKind: popType }
+            -> res
+        }
+
+        targetRes: ExprResult = self.emitExpr targetNode
+        argsStr: str = "ptr " + targetRes.reg
+        isTarget: bool = true
+        fr child of node.children {
+            if isTarget {
+                isTarget = false
+                cont
+            }
+            cRes: ExprResult = self.emitExpr child
+            tStr: str = llvmType cRes.typeKind
+            argsStr = argsStr + ", " + tStr + " " + cRes.reg
+        }
+
+        retType: TypeKind = node.inferredType
+        if retType == TypeKind.Unknown {
+            retType = TypeKind.I64
+        }
+        retTypeStr: str = llvmType retType
+        callReg: str = self.codegen.newReg
+        self.codegen.emit `${callReg} = call ${retTypeStr} @${methodName}(${argsStr})`
+        res: ExprResult = { reg: callReg, typeKind: retType }
+        -> res
+    },
+
+    /**
+     * Emits array indexing access (arr[idx]).
+     *
+     * @param {ASTNode} node - Index expression AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitIndex: node: ASTNode :: ExprResult => {
+        targetNode: ASTNode = node.children[0]
+        idxNode: ASTNode = node.children[1]
+        targetRes: ExprResult = self.emitExpr targetNode
+        idxRes: ExprResult = self.emitExpr idxNode
+
+        elemVal: str = self.arrGen.emitGetElement targetRes.reg, idxRes.reg, false, node.line
+        targetKind: TypeKind = node.inferredType
+        if targetKind == TypeKind.Unknown {
+            targetKind = TypeKind.I64
+        }
+        unboxedVal: str = unboxValueFromI64 self.codegen, elemVal, targetKind
+        res: ExprResult = { reg: unboxedVal, typeKind: targetKind }
+        -> res
+    },
+
+    /**
+     * Emits member property access (obj.prop or arr.ln).
+     *
+     * @param {ASTNode} node - Property access AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitProp: node: ASTNode :: ExprResult => {
+        targetNode: ASTNode = node.children[0]
+        propName: str = node.name
+        targetRes: ExprResult = self.emitExpr targetNode
+
+        if propName == "ln" || propName == "length" {
+            lenReg: str = self.arrGen.emitLength targetRes.reg
+            res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        off: num = self.objGen.registry.getFieldOffset "", propName
+        if off < 0 {
+            off = 0
+        }
+        targetPropKind: TypeKind = node.inferredType
+        if targetPropKind == TypeKind.Unknown {
+            targetPropKind = TypeKind.I64
+        }
+        valReg: str = self.objGen.emitGetProperty targetRes.reg, off, targetPropKind, false
+        res: ExprResult = { reg: valReg, typeKind: targetPropKind }
+        -> res
+    },
+
+    /**
+     * Emits an array literal expression.
+     *
+     * @param {ASTNode} node - Array literal AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitArr: node: ASTNode :: ExprResult => {
+        hasSpread: bool = false
+        fr ch of node.children {
+            if ch.kind == NodeKind.UnaryExpr && ch.op == "..." {
+                hasSpread = true
+            }
+        }
+        if hasSpread {
+            parts: ArraySpreadPart[] = []
+            fr elem of node.children {
+                if elem.kind == NodeKind.UnaryExpr && elem.op == "..." {
+                    spRes: ExprResult = self.emitExpr elem.children[0]
+                    spLen: str = self.arrGen.emitLength spRes.reg
+                    spPart: ArraySpreadPart = {
+                        isSpread: true,
+                        valReg: spRes.reg,
+                        valType: spRes.typeKind,
+                        lenReg: spLen
+                    }
+                    parts.psh spPart
+                } els {
+                    elemRes: ExprResult = self.emitExpr elem
+                    singlePart: ArraySpreadPart = {
+                        isSpread: false,
+                        valReg: elemRes.reg,
+                        valType: elemRes.typeKind,
+                        lenReg: ""
+                    }
+                    parts.psh singlePart
+                }
+            }
+            arrPtr: str = self.arrGen.emitArraySpread parts
+            res: ExprResult = { reg: arrPtr, typeKind: TypeKind.Arr }
+            -> res
+        }
+
+        elemRegs: str[] = []
+        elemTypes: TypeKind[] = []
+        fr elem of node.children {
+            elemRes: ExprResult = self.emitExpr elem
+            elemRegs.psh elemRes.reg
+            elemTypes.psh elemRes.typeKind
+        }
+        arrPtr: str = self.arrGen.emitArrayLit elemRegs, elemTypes
+        res: ExprResult = { reg: arrPtr, typeKind: TypeKind.Arr }
+        -> res
+    },
+
+    /**
+     * Emits an object literal heap allocation.
+     *
+     * @param {ASTNode} node - Object literal AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitObjLit: node: ASTNode :: ExprResult => {
+        fieldNames: str[] = []
+        valRegs: str[] = []
+        valTypes: TypeKind[] = []
+        childIdx: num = 0
+        fr fEntry of node.fields {
+            if childIdx < node.children.ln {
+                childRes: ExprResult = self.emitExpr node.children[childIdx]
+                fieldNames.psh fEntry.name
+                valRegs.psh childRes.reg
+                valTypes.psh childRes.typeKind
+            }
+            childIdx++
+        }
+        objPtr: str = self.objGen.emitObjectLit node.name, fieldNames, valRegs, valTypes
+        res: ExprResult = { reg: objPtr, typeKind: TypeKind.Obj }
+        -> res
+    },
+
+    /**
+     * Emits an explicit type cast expression.
+     *
+     * @param {ASTNode} node - Cast expression AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitCast: node: ASTNode :: ExprResult => {
+        targetNode: ASTNode = node.children[0]
+        targetRes: ExprResult = self.emitExpr targetNode
+        toType: TypeKind = node.inferredType
+        if toType == TypeKind.Unknown {
+            toType = resolveFieldTypeKind node.typeAnnotation
+        }
+        if toType == TypeKind.Unknown {
+            toType = TypeKind.I64
+        }
+
+        castOp: str = selectCastOp targetRes.typeKind, toType
+        if castOp.ln > 0 {
+            castReg: str = self.codegen.newReg
+            fromTypeStr: str = llvmType targetRes.typeKind
+            toTypeStr: str = llvmType toType
+            self.codegen.emit `${castReg} = ${castOp} ${fromTypeStr} ${targetRes.reg} to ${toTypeStr}`
+            res: ExprResult = { reg: castReg, typeKind: toType }
+            -> res
+        }
+        -> targetRes
+    },
+
+    /**
+     * Emits a ternary conditional expression with alloca merging.
+     *
+     * @param {ASTNode} node - Ternary expression AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitTernary: node: ASTNode :: ExprResult => {
+        condNode: ASTNode = node.children[0]
+        thenNode: ASTNode = node.children[1]
+        elseNode: ASTNode = node.children[2]
+
+        condRes: ExprResult = self.emitExpr condNode
+        thenLbl: str = self.codegen.newLabel "tern_then"
+        elseLbl: str = self.codegen.newLabel "tern_else"
+        mergeLbl: str = self.codegen.newLabel "tern_merge"
+
+        retType: TypeKind = thenNode.inferredType
+        if retType == TypeKind.Unknown {
+            retType = elseNode.inferredType
+        }
+        if retType == TypeKind.Unknown {
+            retType = TypeKind.I64
+        }
+        stType: str = llvmStackType retType
+        slotReg: str = self.codegen.newReg
+        self.codegen.emit `${slotReg} = alloca ${stType}`
+        self.codegen.emit `br i1 ${condRes.reg}, label %${thenLbl}, label %${elseLbl}`
+
+        self.codegen.emitLabel thenLbl
+        thenRes: ExprResult = self.emitExpr thenNode
+        self.codegen.emit `store ${stType} ${thenRes.reg}, ptr ${slotReg}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        self.codegen.emitLabel elseLbl
+        elseRes: ExprResult = self.emitExpr elseNode
+        self.codegen.emit `store ${stType} ${elseRes.reg}, ptr ${slotReg}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        self.codegen.emitLabel mergeLbl
+        outReg: str = self.codegen.newReg
+        self.codegen.emit `${outReg} = load ${stType}, ptr ${slotReg}`
+        res: ExprResult = { reg: outReg, typeKind: retType }
+        -> res
+    },
+
+    /**
+     * Fallback emitter for unhandled node expressions.
+     *
+     * @param {ASTNode} node - AST node
+     * @returns {ExprResult} Result descriptor
+     */
+    emitDefault: node: ASTNode :: ExprResult => {
+        resReg: str = self.codegen.newReg
+        if node.inferredType == TypeKind.Num {
+            self.codegen.emit `${resReg} = fadd double 0.0, 0.0`
+            fRes: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> fRes
+        }
+        if isPointerType node.inferredType {
+            pRes: ExprResult = { reg: "null", typeKind: node.inferredType }
+            -> pRes
+        }
+        itype: str = llvmType node.inferredType
+        self.codegen.emit `${resReg} = add ${itype} 0, 0`
+        iRes: ExprResult = { reg: resReg, typeKind: node.inferredType }
+        -> iRes
+    }
+}
