@@ -114,8 +114,8 @@ obj Checker {
 
         // Primitive types registry
         initTypes: TypeInfo[] = []
-        tNum = TypeInfo.createPrimitive TypeKind.Double, "num"
-        tDbl = TypeInfo.createPrimitive TypeKind.Double, "double"
+        tNum = TypeInfo.createPrimitive TypeKind.Num, "num"
+        tDbl = TypeInfo.createPrimitive TypeKind.Num, "double"
         tI32 = TypeInfo.createPrimitive TypeKind.I32, "i32"
         tI64 = TypeInfo.createPrimitive TypeKind.I64, "i64"
         tStr = TypeInfo.createPrimitive TypeKind.Str, "str"

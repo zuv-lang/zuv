@@ -135,7 +135,7 @@ obj ASTNode {
     },
 
     /**
-     * Creates a numeric literal expression node (defaults to TypeKind.Double).
+     * Creates a numeric literal expression node (defaults to TypeKind.Num).
      *
      * @param {num} val - Number value
      * @param {num} line - Source line number
@@ -145,7 +145,7 @@ obj ASTNode {
     createNum: val: num, line: num, col: num :: ASTNode => {
         node = ASTNode.createBase NodeKind.NumExpr, line, col
         node.numVal = val
-        node.inferredType = TypeKind.Double
+        node.inferredType = TypeKind.Num
         -> node
     },
 

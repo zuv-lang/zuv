@@ -42,10 +42,7 @@ IsIntegerLiteral text: str -> bool {
 }
 
 /**
- * Traverses an expression AST node bottom-up, inferring and attaching its concrete TypeKind.
- *
- * Annotates `expr.inferredType` in place and returns the inferred TypeKind enum variant.
- * Enforces strict typing rules, struct member verification, and reports semantic diagnostics.
+ * Infers the semantic TypeKind of an expression AST node and annotates it.
  *
  * @param {Checker} checker - The active semantic checker instance
  * @param {ASTNode} expr - The expression AST node to evaluate and annotate
@@ -54,7 +51,7 @@ IsIntegerLiteral text: str -> bool {
 InferExpression checker: Checker, expr: ASTNode -> TypeKind {
     let k = expr.kind
     if k == NodeKind.NumExpr {
-        let kind = TypeKind.Double
+        let kind = TypeKind.Num
         if expr.val.ln > 0 {
             let isInt = IsIntegerLiteral(expr.val)
             if isInt {
@@ -180,9 +177,9 @@ InferExpression checker: Checker, expr: ASTNode -> TypeKind {
                     checker.addError("E0304", "Arithmetic operator '" + expr.op + "' requires numeric operands, got " + (TypeKindToStr leftKind) + " and " + (TypeKindToStr rightKind), expr.line, expr.col, expr.op.ln, "convert operands to numbers")
                 }
             }
-            if leftKind == TypeKind.Double || rightKind == TypeKind.Double {
-                expr.inferredType = TypeKind.Double
-                -> TypeKind.Double
+            if leftKind == TypeKind.Num || rightKind == TypeKind.Num {
+                expr.inferredType = TypeKind.Num
+                -> TypeKind.Num
             }
             if leftKind == TypeKind.I64 || rightKind == TypeKind.I64 {
                 expr.inferredType = TypeKind.I64
@@ -295,8 +292,8 @@ InferExpression checker: Checker, expr: ASTNode -> TypeKind {
             -> TypeKind.Str
         }
         if tKind == TypeKind.Arr {
-            expr.inferredType = TypeKind.Double
-            -> TypeKind.Double
+            expr.inferredType = TypeKind.Num
+            -> TypeKind.Num
         }
         expr.inferredType = TypeKind.Unknown
         -> TypeKind.Unknown
@@ -485,7 +482,7 @@ InferStatement checker: Checker, stmt: ASTNode -> void {
             collKind = InferExpression(checker, stmt.children[0])
         }
         checker.enterScope()
-        let itemKind = TypeKind.Double
+        let itemKind = TypeKind.Num
         if collKind == TypeKind.Str {
             itemKind = TypeKind.Str
         }

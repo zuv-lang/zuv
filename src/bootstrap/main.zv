@@ -21,6 +21,7 @@ imp InferExpression, InferStatement, InferDeclaration, InferProgram frm checker/
 imp BorrowChecker, BorrowVar, BorrowScope, ReferenceAlias, BorrowCheckProgram, BorrowCheckStatement, BorrowCheckExpression frm checker/borrow
 imp Codegen, StringConstant frm codegen/codegen
 imp ExternManager, ExternFuncInfo, ToLLVMExternType, FormatExternDeclare frm codegen/extern
+imp llvmType, llvmBoxedType, isIntegerType, isFloatType, isPointerType, selectBinaryOp, selectCmpOp, selectCastOp, selectBinaryOpForExpr, selectCmpOpForExpr, emitBinaryInstruction, emitCmpInstruction, emitCastInstruction frm codegen/types
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -34,19 +35,19 @@ main {
     }
 
     // 2. Type System Verification via TypeInfo factories and helpers
-    tDbl = TypeKind.Double
+    tNum = TypeKind.Num
     tI32 = TypeKind.I32
-    dblType = TypeInfo.createPrimitive tDbl, "double"
-    prnt `2. Type kind: ${dblType.toString} (isNumeric: ${dblType.isNumeric})`
-    compat: bool = AreTypesCompatible tDbl, tI32
+    numType = TypeInfo.createPrimitive tNum, "num"
+    prnt `2. Type kind: ${numType.toString} (isNumeric: ${numType.isNumeric})`
+    compat: bool = AreTypesCompatible tNum, tI32
     if compat {
-        prnt "   Type compatibility: i32 -> double OK"
+        prnt "   Type compatibility: i32 -> num OK"
     }
     parsedKind = StrToTypeKind "i64"
     ptrType = TypeInfo.createPointer parsedKind, "i64"
     prnt `   Pointer type: ${ptrType.toString} (isPointer: ${ptrType.isPointer})`
     fnParams: str[] = ["num", "num"]
-    fnType = TypeInfo.createFunc TypeKind.Double, "num", fnParams
+    fnType = TypeInfo.createFunc TypeKind.Num, "num", fnParams
     prnt `   Function type: ${fnType.toString}`
 
     // 3. AST Verification via ASTNode factories and methods
@@ -273,7 +274,7 @@ main {
     hasPrnt: bool = checker.hasSymbol "prnt"
     prnt `    Global builtins present: os=${hasOs}, prnt=${hasPrnt}`
 
-    symVar = Symbol.create "counter", TypeKind.Double, "num", false, true, 0, 1, 1
+    symVar = Symbol.create "counter", TypeKind.Num, "num", false, true, 0, 1, 1
     defRoot: bool = checker.defineSymbol symVar
     prnt `    Defined root symbol 'counter': ${defRoot}`
 
@@ -344,8 +345,8 @@ main {
 
     // 11.3 Struct Member Verification (E0302 on invalid field)
     pointType = TypeInfo.createObject "Point"
-    pointType.addField "x", TypeKind.Double
-    pointType.addField "y", TypeKind.Double
+    pointType.addField "x", TypeKind.Num
+    pointType.addField "y", TypeKind.Num
     cInfer.registerType pointType
 
     symPointVar = Symbol.create "pt", TypeKind.Obj, "Point", false, true, 0, 1, 1
@@ -365,7 +366,7 @@ main {
     }
 
     // 11.4 Function Call Signature & Parameter Validation (E0308 on arg count mismatch)
-    fnAddType = TypeInfo.createFunc TypeKind.Double, "num", ["num", "num"]
+    fnAddType = TypeInfo.createFunc TypeKind.Num, "num", ["num", "num"]
     fnAddType.name = "fn_add"
     cInfer.registerType fnAddType
     symFnAdd = Symbol.create "add", TypeKind.Func, "fn_add", false, true, 0, 1, 1
@@ -525,4 +526,37 @@ main {
     libs = extMgr.getExternLibs
     prnt `    Deduplication rejection: emitted=${emittedDup}, totalFuncs=${extMgr.getFuncCount}`
     prnt `    Tracked extern libraries count: ${libs.ln} (k32=${extMgr.hasLib "kernel32.lib"}, user32=${extMgr.hasLib "user32.dll"})`
+
+    // 15. LLVM Type Mapping & Zero Name-Guessing Instruction Selection (Phase 4 Task 4.3)
+    prnt "15. LLVM Type Mapping & Zero Name-Guessing Instruction Selection:"
+    prnt `    Type mappings: void=${llvmType TypeKind.Void}, bool=${llvmType TypeKind.Bool}, i8=${llvmType TypeKind.I8}, enum=${llvmType TypeKind.Enum}, i32=${llvmType TypeKind.I32}, i64=${llvmType TypeKind.I64}`
+    prnt `    Pointer mappings: str=${llvmType TypeKind.Str}, ptr=${llvmType TypeKind.Ptr}, arr=${llvmType TypeKind.Arr}, obj=${llvmType TypeKind.Obj}`
+
+    // Arithmetic selection (zero name-guessing)
+    numAdd = selectBinaryOp "+", TypeKind.Num
+    i64Add = selectBinaryOp "+", TypeKind.I64
+    i64And = selectBinaryOp "&", TypeKind.I64
+    prnt `    Instruction selection: num(+)=${numAdd}, i64(+)=${i64Add}, i64(&)=${i64And}`
+
+    // Comparison selection
+    numCmp = selectCmpOp "<", TypeKind.Num
+    i64Cmp = selectCmpOp "<", TypeKind.I64
+    prnt `    Comparison selection: num(<)='${numCmp}', i64(<)='${i64Cmp}'`
+
+    // Cast operations
+    castZext = selectCastOp TypeKind.I8, TypeKind.I64
+    castFptosi = selectCastOp TypeKind.Num, TypeKind.I64
+    castSitofp = selectCastOp TypeKind.I64, TypeKind.Num
+    castPtrToInt = selectCastOp TypeKind.Ptr, TypeKind.I64
+    prnt `    Cast selection: i8->i64=${castZext}, num->i64=${castFptosi}, i64->num=${castSitofp}, ptr->i64=${castPtrToInt}`
+
+    // AST node direct type inspection
+    astAddOp = selectBinaryOpForExpr "+", numLitNode
+    astFloatOp = selectBinaryOpForExpr "+", floatLitNode
+    prnt `    AST direct type dispatch: numLit(i64)=${astAddOp}, floatLit(num)=${astFloatOp}`
+
+    // Emitted instruction strings
+    binInstr = emitBinaryInstruction "+", "%r0", "%r1", TypeKind.Num, "%r2"
+    castInstr = emitCastInstruction "%val", TypeKind.I8, TypeKind.I64, "%res"
+    prnt `    Emitted instructions: [${binInstr}], [${castInstr}]`
 }

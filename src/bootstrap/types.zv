@@ -16,7 +16,7 @@ enum TypeKind {
     I16,
     I32,
     I64,
-    Double,
+    Num,
     Str,
     Ptr,
     Arr,
@@ -221,7 +221,7 @@ TypeKindToStr kind: TypeKind :: str => sw kind {
     TypeKind.I16     => "i16"
     TypeKind.I32     => "i32"
     TypeKind.I64     => "i64"
-    TypeKind.Double  => "double"
+    TypeKind.Num     => "num"
     TypeKind.Str     => "str"
     TypeKind.Ptr     => "ptr"
     TypeKind.Arr     => "arr"
@@ -254,12 +254,12 @@ IsIntegerType kind: TypeKind :: bool => sw kind {
  * @returns {bool} True if the type is numeric, false otherwise
  */
 IsNumericType kind: TypeKind :: bool => sw kind {
-    TypeKind.I8     => true
-    TypeKind.I16    => true
-    TypeKind.I32    => true
-    TypeKind.I64    => true
-    TypeKind.Double => true
-    _               => false
+    TypeKind.I8  => true
+    TypeKind.I16 => true
+    TypeKind.I32 => true
+    TypeKind.I64 => true
+    TypeKind.Num => true
+    _            => false
 }
 
 /**
@@ -283,17 +283,17 @@ IsPointerType kind: TypeKind :: bool => sw kind {
  * @returns {bool} True if primitive, false otherwise
  */
 IsPrimitiveType kind: TypeKind :: bool => sw kind {
-    TypeKind.Void   => true
-    TypeKind.Bool   => true
-    TypeKind.I8     => true
-    TypeKind.I16    => true
-    TypeKind.I32    => true
-    TypeKind.I64    => true
-    TypeKind.Double => true
-    TypeKind.Str    => true
-    TypeKind.Und    => true
-    TypeKind.Nil    => true
-    _               => false
+    TypeKind.Void => true
+    TypeKind.Bool => true
+    TypeKind.I8   => true
+    TypeKind.I16  => true
+    TypeKind.I32  => true
+    TypeKind.I64  => true
+    TypeKind.Num  => true
+    TypeKind.Str  => true
+    TypeKind.Und  => true
+    TypeKind.Nil  => true
+    _             => false
 }
 
 /**
@@ -307,7 +307,7 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
     if target == source {
         -> true
     }
-    if target == TypeKind.Double && (source == TypeKind.I64 || source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
+    if target == TypeKind.Num && (source == TypeKind.I64 || source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
         -> true
     }
     if target == TypeKind.I64 && (source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
@@ -332,9 +332,9 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
  * @returns {TypeKind} Corresponding TypeKind variant
  */
 StrToTypeKind typeName: str :: TypeKind => sw typeName {
-    "num"    => TypeKind.Double
-    "double" => TypeKind.Double
-    "f64"    => TypeKind.Double
+    "num"    => TypeKind.Num
+    "double" => TypeKind.Num
+    "f64"    => TypeKind.Num
     "i64"    => TypeKind.I64
     "i32"    => TypeKind.I32
     "i16"    => TypeKind.I16
