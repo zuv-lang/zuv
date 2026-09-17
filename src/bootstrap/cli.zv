@@ -83,7 +83,7 @@ emitDirectObjectFile ir: str, outputObjPath: str, isRelease: bool, targetTriple:
     LLVMInitializeAArch64AsmPrinter()
     LLVMInitializeAArch64AsmParser()
 
-    let resolvedTriple: str = "x86_64-pc-windows-msvc"
+    resolvedTriple: str = "x86_64-pc-windows-msvc"
     if targetTriple.ln > 0 {
         resolvedTriple = targetTriple
     }
@@ -119,7 +119,7 @@ emitDirectObjectFile ir: str, outputObjPath: str, isRelease: bool, targetTriple:
         }
         target: ptr = zuv_ptr_deref targetPtr
 
-        let optLevel: num = (isRelease ? 3 : 0)
+        optLevel: num = (isRelease ? 3 : 0)
         tm: ptr = LLVMCreateTargetMachine(target, resolvedTriple, "generic", "", optLevel, 0, 0)
         emitRes: num = LLVMTargetMachineEmitToFile(tm, mod, outputObjPath, 1, outMsg)
         if emitRes != 0 {
@@ -189,7 +189,7 @@ ResolveTargetTriple alias: str :: str => sw alias {
  * @returns {num} 0 on successful linkage, non-zero on failure
  */
 linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool :: num {
-    let lldBin: str = "lld-link"
+    lldBin: str = "lld-link"
     if fE "D:/LLVM/bin/lld-link.exe" {
         lldBin = "D:/LLVM/bin/lld-link.exe"
     } els if fE "lld-link.exe" {
@@ -198,15 +198,15 @@ linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool :: num {
         lldBin = "bin/lld-link.exe"
     }
 
-    let isDll: bool = isCdylib
+    isDll: bool = isCdylib
     if StrEndsWith(outExePath, ".dll") || StrEndsWith(outExePath, ".DLL") {
         isDll = true
     }
 
-    let dllFlags: str = "-stack:33554432"
+    dllFlags: str = "-subsystem:console -stack:33554432"
     if isDll {
-        let outLibPath: str = outExePath
-        let exeLen: num = outExePath.ln
+        outLibPath: str = outExePath
+        exeLen: num = outExePath.ln
         if StrEndsWith(outLibPath, ".dll") || StrEndsWith(outLibPath, ".DLL") {
             outLibPath = outLibPath.slc(0, exeLen - 4) + ".lib"
         } els {
@@ -272,7 +272,7 @@ obj Cli {
             ret
         }
 
-        let startIdx: num = 1
+        startIdx: num = 1
         firstArg: str = self.args[1]
         if StrEndsWith(firstArg, ".zv") || firstArg == "main.zv" {
             startIdx = 2
@@ -284,7 +284,7 @@ obj Cli {
         }
 
         leadArg: str = self.args[startIdx]
-        let posIndex: num = startIdx
+        posIndex: num = startIdx
 
         // Check if leading argument is a flag or subcommand
         if leadArg == "-v" || leadArg == "--version" || leadArg == "version" {
@@ -301,7 +301,7 @@ obj Cli {
             self.subcommand = leadArg
             posIndex = startIdx + 1
         } els if StrEndsWith(leadArg, ".zv") {
-            self.subcommand = "build"
+            self.subcommand = "run"
             self.targetFile = leadArg
             posIndex = startIdx + 1
         } els {
@@ -310,7 +310,7 @@ obj Cli {
         }
 
         // Process flags and positional parameters
-        let i: num = posIndex
+        i: num = posIndex
         wh i < total {
             arg: str = self.args[i]
             if arg == "-o" && i + 1 < total {
@@ -462,8 +462,8 @@ obj Cli {
         prnt " ZUV CHECKALL v0.6.0 (Bootstrap Static & Type Checker)"
         prnt ""
         testFiles: str[] = sF "tests", ".zv"
-        let passCount: num = 0
-        let failCount: num = 0
+        passCount: num = 0
+        failCount: num = 0
 
         fr testPath of testFiles {
             res: num = self.handleCheck(testPath)
@@ -545,7 +545,7 @@ obj Cli {
             if child.kind == NodeKind.ImportDecl {
                 modPath: str = child.val
                 if modPath.ln > 0 && modPath != "os" && modPath != "fs" && modPath != "str" && modPath != "arr" && modPath != "time" {
-                    let fullPath: str = modPath + ".zv"
+                    fullPath: str = modPath + ".zv"
                     if !(fE fullPath) {
                         fullPath = "tests/" + modPath + ".zv"
                     }
@@ -600,28 +600,35 @@ obj Cli {
         rtGen.emitAll()
         extMgr.emitCRuntimeDecls(cg)
 
-        let targetExe: str = self.outputFile
+        targetExe: str = self.outputFile
         if targetExe.ln == 0 {
             targetExe = (self.isCdylib ? "output.dll" : "output.exe")
         }
 
         // Emit functions and statements
+        topLevelStmts: ASTNode[] = []
+        hasExplicitMain: bool = false
+        mainNode: ASTNode = ASTNode.createNil(0, 0)
+
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.TypeDecl || topNode.kind == NodeKind.ObjDecl {
+                regLayouts.registerFromAST(topNode)
+            } els if topNode.kind == NodeKind.ExternDecl {
+                extMgr.emitExternDeclNode(topNode, cg)
+            } els if topNode.kind == NodeKind.FuncDecl {
+                if topNode.name == "main" {
+                    hasExplicitMain = true
+                    mainNode = topNode
+                }
+            } els {
+                topLevelStmts.psh(topNode)
+            }
+        }
+
+        // Emit custom functions (excluding main)
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
-                if topNode.name == "main" {
-                    cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
-                    rtGen.emitInitCrashHandlerCall()
-                    stmtGen.setReturnType(TypeKind.I32)
-                    if topNode.children.ln > 0 {
-                        bodyBlock: ASTNode = topNode.children[0]
-                        fr bodyStmt of bodyBlock.children {
-                            stmtGen.emitStmt(bodyStmt)
-                        }
-                    }
-                    cg.emit("ret i32 0")
-                    cg.finishFunction()
-                } els {
-                    // Custom function definition
+                if topNode.name != "main" {
                     retLLVM: str = (topNode.typeAnnotation.ln > 0 && topNode.typeAnnotation != "void" ? "i64" : "void")
                     cg.startFunction("define " + retLLVM + " @" + topNode.name + "() {")
                     if topNode.children.ln > 0 {
@@ -637,23 +644,40 @@ obj Cli {
                     }
                     cg.finishFunction()
                 }
-            } els if topNode.kind == NodeKind.TypeDecl || topNode.kind == NodeKind.ObjDecl {
-                // Register struct layout
-                layout: StructLayout = StructLayout.create(topNode.name)
-                fr fEntry of topNode.fields {
-                    fKind: TypeKind = resolveFieldTypeKind(fEntry.valStr)
-                    layout.addField(fEntry.name, fKind, fEntry.valStr)
-                }
-                regLayouts.registerLayout(layout)
-            } els if topNode.kind == NodeKind.ExternDecl {
-                extMgr.emitExternDeclNode(topNode, cg)
             }
+        }
+
+        // Emit @main function
+        if hasExplicitMain {
+            cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
+            rtGen.emitInitCrashHandlerCall()
+            stmtGen.setReturnType(TypeKind.I32)
+            fr topStmt of topLevelStmts {
+                stmtGen.emitStmt(topStmt)
+            }
+            if mainNode.children.ln > 0 {
+                bodyBlock: ASTNode = mainNode.children[0]
+                fr bodyStmt of bodyBlock.children {
+                    stmtGen.emitStmt(bodyStmt)
+                }
+            }
+            cg.emit("ret i32 0")
+            cg.finishFunction()
+        } els if !(self.isCdylib) {
+            cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
+            rtGen.emitInitCrashHandlerCall()
+            stmtGen.setReturnType(TypeKind.I32)
+            fr topStmt of topLevelStmts {
+                stmtGen.emitStmt(topStmt)
+            }
+            cg.emit("ret i32 0")
+            cg.finishFunction()
         }
 
         moduleIR: str = cg.getModuleIR()
 
         if self.emitLlvm {
-            let llvmOut: str = targetExe
+            llvmOut: str = targetExe
             if !(StrEndsWith(llvmOut, ".ll")) {
                 llvmOut = llvmOut + ".ll"
             }
@@ -700,7 +724,7 @@ obj Cli {
      * @returns {num} Exit code of the executed target binary
      */
     handleRun: file: str :: num => {
-        let exeName: str = self.outputFile
+        exeName: str = self.outputFile
         if exeName.ln == 0 {
             exeName = "output.exe"
             self.outputFile = exeName
@@ -709,8 +733,15 @@ obj Cli {
         if buildRes != 0 {
             -> buildRes
         }
+        if !(self.isQuiet) {
+            prnt "[zuv run] Executing " + exeName + "..."
+            prnt "-------------------------------------------"
+        }
         runCmd: str = ".\\" + exeName
         runRes: num = sh runCmd
+        if !(self.isQuiet) {
+            prnt "-------------------------------------------"
+        }
         -> runRes
     },
 
@@ -727,8 +758,8 @@ obj Cli {
         prnt "Total test suites discovered: " + testFiles.ln
         prnt ""
 
-        let passCount: num = 0
-        let failCount: num = 0
+        passCount: num = 0
+        failCount: num = 0
         startMs = nw
 
         fr tFile of testFiles {

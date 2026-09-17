@@ -96,7 +96,7 @@ obj ExprCodegen {
      * @returns {ScopeSymbol} Found symbol or empty record
      */
     findSymbol: name: str :: ScopeSymbol => {
-        let found: ScopeSymbol = {
+        found: ScopeSymbol = {
             name: "",
             reg: "",
             typeKind: TypeKind.Unknown,
@@ -145,17 +145,17 @@ obj ExprCodegen {
      * @returns {ExprResult} Result descriptor
      */
     emitNum: node: ASTNode :: ExprResult => {
-        let valStr: str = node.val
+        valStr: str = node.val
         if valStr.ln == 0 {
             valStr = `${node.numVal}`
         }
         resReg: str = self.codegen.newReg
-        let targetKind: TypeKind = node.inferredType
+        targetKind: TypeKind = node.inferredType
         if targetKind == TypeKind.Unknown {
             targetKind = TypeKind.I64
         }
         if isFloatType targetKind {
-            let fStr: str = valStr
+            fStr: str = valStr
             hasDot: bool = fStr.cnt "."
             hasExp: bool = fStr.cnt "e"
             if !hasDot && !hasExp {
@@ -361,7 +361,7 @@ obj ExprCodegen {
                 objNode: ASTNode = targetNode.children[0]
                 propName: str = targetNode.name
                 objRes: ExprResult = self.emitExpr objNode
-                let off: num = self.objGen.registry.getFieldOffset "", propName
+                off: num = self.objGen.registry.getFieldOffset "", propName
                 if off < 0 {
                     off = 0
                 }
@@ -416,7 +416,7 @@ obj ExprCodegen {
 
         argRegs: str[] = []
         argTypes: TypeKind[] = []
-        let isCallee: bool = true
+        isCallee: bool = true
         fr child of node.children {
             if isCallee {
                 isCallee = false
@@ -427,9 +427,9 @@ obj ExprCodegen {
             argTypes.psh cRes.typeKind
         }
 
-        let argsStr: str = ""
-        let first: bool = true
-        let argIdx: num = 0
+        argsStr: str = ""
+        first: bool = true
+        argIdx: num = 0
         fr aReg of argRegs {
             aType: TypeKind = argTypes[argIdx]
             tStr: str = llvmType aType
@@ -442,7 +442,7 @@ obj ExprCodegen {
         }
 
         if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "err" {
-            let fmtStr: str = "%s\n"
+            fmtStr: str = "%s\n"
             if calleeName == "wrn" {
                 fmtStr = "[WARN] %s\n"
             } els if calleeName == "err" {
@@ -468,7 +468,7 @@ obj ExprCodegen {
             -> vRes
         }
 
-        let retType: TypeKind = node.inferredType
+        retType: TypeKind = node.inferredType
         if retType == TypeKind.Unknown {
             retType = TypeKind.I64
         }
@@ -497,7 +497,7 @@ obj ExprCodegen {
         if methodName == "psh" || methodName == "push" {
             arrRes: ExprResult = self.emitExpr targetNode
             valRes: ExprResult = self.emitExpr node.children[1]
-            let varSlot: str = ""
+            varSlot: str = ""
             if targetNode.kind == NodeKind.IdentExpr {
                 foundSym = self.findSymbol targetNode.name
                 if foundSym.isAlloca {
@@ -511,7 +511,7 @@ obj ExprCodegen {
 
         if methodName == "pp" || methodName == "pop" {
             arrRes: ExprResult = self.emitExpr targetNode
-            let popType: TypeKind = node.inferredType
+            popType: TypeKind = node.inferredType
             if popType == TypeKind.Unknown {
                 popType = TypeKind.I64
             }
@@ -521,8 +521,8 @@ obj ExprCodegen {
         }
 
         targetRes: ExprResult = self.emitExpr targetNode
-        let argsStr: str = "ptr " + targetRes.reg
-        let isTarget: bool = true
+        argsStr: str = "ptr " + targetRes.reg
+        isTarget: bool = true
         fr child of node.children {
             if isTarget {
                 isTarget = false
@@ -533,7 +533,7 @@ obj ExprCodegen {
             argsStr = argsStr + ", " + tStr + " " + cRes.reg
         }
 
-        let retType: TypeKind = node.inferredType
+        retType: TypeKind = node.inferredType
         if retType == TypeKind.Unknown {
             retType = TypeKind.I64
         }
@@ -557,7 +557,7 @@ obj ExprCodegen {
         idxRes: ExprResult = self.emitExpr idxNode
 
         elemVal: str = self.arrGen.emitGetElement targetRes.reg, idxRes.reg, false, node.line
-        let targetKind: TypeKind = node.inferredType
+        targetKind: TypeKind = node.inferredType
         if targetKind == TypeKind.Unknown {
             targetKind = TypeKind.I64
         }
@@ -583,11 +583,11 @@ obj ExprCodegen {
             -> res
         }
 
-        let off: num = self.objGen.registry.getFieldOffset "", propName
+        off: num = self.objGen.registry.getFieldOffset "", propName
         if off < 0 {
             off = 0
         }
-        let targetPropKind: TypeKind = node.inferredType
+        targetPropKind: TypeKind = node.inferredType
         if targetPropKind == TypeKind.Unknown {
             targetPropKind = TypeKind.I64
         }
@@ -603,14 +603,14 @@ obj ExprCodegen {
      * @returns {ExprResult} Result descriptor
      */
     emitArr: node: ASTNode :: ExprResult => {
-        let hasSpread: bool = false
+        hasSpread: bool = false
         fr ch of node.children {
             if ch.kind == NodeKind.UnaryExpr && ch.op == "..." {
                 hasSpread = true
             }
         }
         if hasSpread {
-            let parts: ArraySpreadPart[] = []
+            parts: ArraySpreadPart[] = []
             fr elem of node.children {
                 if elem.kind == NodeKind.UnaryExpr && elem.op == "..." {
                     spRes: ExprResult = self.emitExpr elem.children[0]
@@ -638,8 +638,8 @@ obj ExprCodegen {
             -> res
         }
 
-        let elemRegs: str[] = []
-        let elemTypes: TypeKind[] = []
+        elemRegs: str[] = []
+        elemTypes: TypeKind[] = []
         fr elem of node.children {
             elemRes: ExprResult = self.emitExpr elem
             elemRegs.psh elemRes.reg
@@ -657,10 +657,10 @@ obj ExprCodegen {
      * @returns {ExprResult} Result descriptor
      */
     emitObjLit: node: ASTNode :: ExprResult => {
-        let fieldNames: str[] = []
-        let valRegs: str[] = []
-        let valTypes: TypeKind[] = []
-        let childIdx: num = 0
+        fieldNames: str[] = []
+        valRegs: str[] = []
+        valTypes: TypeKind[] = []
+        childIdx: num = 0
         fr fEntry of node.fields {
             if childIdx < node.children.ln {
                 childRes: ExprResult = self.emitExpr node.children[childIdx]
@@ -684,7 +684,7 @@ obj ExprCodegen {
     emitCast: node: ASTNode :: ExprResult => {
         targetNode: ASTNode = node.children[0]
         targetRes: ExprResult = self.emitExpr targetNode
-        let toType: TypeKind = node.inferredType
+        toType: TypeKind = node.inferredType
         if toType == TypeKind.Unknown {
             toType = resolveFieldTypeKind node.typeAnnotation
         }
@@ -720,7 +720,7 @@ obj ExprCodegen {
         elseLbl: str = self.codegen.newLabel "tern_else"
         mergeLbl: str = self.codegen.newLabel "tern_merge"
 
-        let retType: TypeKind = thenNode.inferredType
+        retType: TypeKind = thenNode.inferredType
         if retType == TypeKind.Unknown {
             retType = elseNode.inferredType
         }

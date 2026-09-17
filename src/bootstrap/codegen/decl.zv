@@ -181,6 +181,7 @@ obj StructLayout {
  */
 obj StructLayoutRegistry {
     layouts: StructLayout[],
+    dynamicFields: str[],
 
     /**
      * Initializes an empty StructLayoutRegistry coordinator instance.
@@ -189,8 +190,10 @@ obj StructLayoutRegistry {
      */
     create: :: StructLayoutRegistry => {
         emptyLayouts: StructLayout[] = []
+        emptyDynFields: str[] = []
         -> StructLayoutRegistry {
-            layouts: emptyLayouts
+            layouts: emptyLayouts,
+            dynamicFields: emptyDynFields
         }
     },
 
@@ -204,7 +207,7 @@ obj StructLayoutRegistry {
      */
     registerLayout: typeName: str, fieldNames: str[], fieldTypes: TypeKind[] :: StructLayout => {
         builtFields: StructField[] = []
-        let curIdx: num = 0
+        curIdx: num = 0
         fr fName of fieldNames {
             fType: TypeKind = fieldTypes[curIdx]
             fDesc: StructField = createStructField fName, curIdx, fType, ""
@@ -224,7 +227,7 @@ obj StructLayoutRegistry {
      */
     registerFromAST: node: ASTNode :: StructLayout => {
         builtFields: StructField[] = []
-        let curIdx: num = 0
+        curIdx: num = 0
         fr fEntry of node.fields {
             fType: TypeKind = resolveFieldTypeKind fEntry.valStr
             fDesc: StructField = createStructField fEntry.name, curIdx, fType, fEntry.valStr
@@ -255,14 +258,29 @@ obj StructLayoutRegistry {
 
     /**
      * Looks up the word offset for a property within a named struct.
+     * If typeName is empty or field not found, registers/returns a dynamic field offset.
      *
      * @param {str} typeName - Struct / object type name
      * @param {str} fieldName - Property identifier
-     * @returns {num} Word offset index (0, 1, 2, ...) or -1 if not found
+     * @returns {num} Word offset index (0, 1, 2, ...)
      */
     getFieldOffset: typeName: str, fieldName: str :: num => {
-        layout: StructLayout = self.getLayout typeName
-        -> layout.getOffset fieldName
+        if typeName.ln > 0 {
+            layout: StructLayout = self.getLayout typeName
+            off: num = layout.getOffset fieldName
+            if off >= 0 {
+                -> off
+            }
+        }
+        fIdx: num = 0
+        fr df of self.dynamicFields {
+            if df == fieldName {
+                -> fIdx
+            }
+            fIdx++
+        }
+        self.dynamicFields.psh fieldName
+        -> fIdx
     },
 
     /**
@@ -311,23 +329,37 @@ obj ObjectCodegen {
      */
     emitObjectLit: typeName: str, fieldNames: str[], valRegs: str[], valTypes: TypeKind[] :: str => {
         count: num = fieldNames.ln
-        totalBytes: num = (count == 0) ? 8 : count * 8
+        maxOffset: num = count
+        fr fName of fieldNames {
+            curOff: num = 0
+            if typeName.ln > 0 {
+                curOff = self.registry.getFieldOffset typeName, fName
+            } els {
+                curOff = self.registry.getFieldOffset "", fName
+            }
+            if curOff >= maxOffset {
+                maxOffset = curOff + 1
+            }
+        }
+        totalBytes: num = (maxOffset == 0) ? 8 : maxOffset * 8
 
         rawPtr: str = self.codegen.newReg
         self.codegen.emit `${rawPtr} = call ptr @malloc(i64 ${totalBytes})`
 
-        let fieldIdx: num = 0
+        fieldIdx: num = 0
         fr fName of fieldNames {
             valReg: str = valRegs[fieldIdx]
             valType: TypeKind = valTypes[fieldIdx]
             boxedVal: str = boxValueToI64 self.codegen, valReg, valType
 
-            let offset: num = fieldIdx
+            offset: num = fieldIdx
             if typeName.ln > 0 {
                 regOffset: num = self.registry.getFieldOffset typeName, fName
                 if regOffset >= 0 {
                     offset = regOffset
                 }
+            } els {
+                offset = self.registry.getFieldOffset "", fName
             }
 
             gepReg: str = self.codegen.newReg

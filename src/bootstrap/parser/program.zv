@@ -28,7 +28,7 @@ imp ParseStatement, ParseBlockStmt frm stmt
 IsFuncDecl parser: Parser :: bool {
     cTok: Token = parser.cur
     curLine: num = cTok.line
-    let offset: num = 1
+    offset: num = 1
     wh true {
         tok: Token = parser.peekAhead offset
         if tok.kind == TokenType.TOK_EOF || tok.line != curLine {

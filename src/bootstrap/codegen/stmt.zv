@@ -91,12 +91,12 @@ obj StmtCodegen {
      * @returns {void}
      */
     emitVarDecl: node: ASTNode :: void => {
-        let varType: TypeKind = node.inferredType
+        varType: TypeKind = node.inferredType
         if varType == TypeKind.Unknown {
             varType = resolveFieldTypeKind node.typeAnnotation
         }
-        let initReg: str = ""
-        let hasInit: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
+        initReg: str = ""
+        hasInit: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
 
         if hasInit {
             initRes: ExprResult = self.exprGen.emitExpr node.children[0]
@@ -159,7 +159,7 @@ obj StmtCodegen {
         mergeLbl: str = self.codegen.newLabel "if_merge"
 
         hasElse: bool = (node.children.ln > 2 && node.children[2].kind != NodeKind.NilExpr)
-        let targetElseLbl: str = mergeLbl
+        targetElseLbl: str = mergeLbl
         if hasElse {
             targetElseLbl = elseLbl
         }
@@ -222,7 +222,7 @@ obj StmtCodegen {
         self.codegen.emit `${idxSlot} = alloca i64`
         self.codegen.emit `store i64 0, ptr ${idxSlot}`
 
-        let itemType: TypeKind = node.inferredType
+        itemType: TypeKind = node.inferredType
         if itemType == TypeKind.Unknown {
             itemType = TypeKind.I64
         }
@@ -291,22 +291,22 @@ obj StmtCodegen {
         defaultLbl: str = self.codegen.newLabel "sw_def"
         mergeLbl: str = self.codegen.newLabel "sw_merge"
 
-        let caseLabels: str[] = []
-        let armIdx: num = 0
+        caseLabels: str[] = []
+        armIdx: num = 0
         fr arm of node.cases {
             cLbl: str = self.codegen.newLabel `sw_case_${armIdx}`
             caseLabels.psh cLbl
             armIdx++
         }
 
-        let swTable: str = `switch i64 ${boxedTarget}, label %${defaultLbl} [\n`
-        let defArmIdx: num = -1
-        let caseIdx: num = 0
+        swTable: str = `switch i64 ${boxedTarget}, label %${defaultLbl} [\n`
+        defArmIdx: num = -1
+        caseIdx: num = 0
         fr arm of node.cases {
             if arm.litText == "_" || arm.patternKind == "_" {
                 defArmIdx = caseIdx
             } els {
-                let tagVal: str = arm.litText
+                tagVal: str = arm.litText
                 if tagVal.ln == 0 {
                     tagVal = `${caseIdx}`
                 }
@@ -318,8 +318,8 @@ obj StmtCodegen {
         swTable = swTable + "  ]"
         self.codegen.emitRaw swTable
 
-        let childArmIdx: num = 1
-        let labelArmIdx: num = 0
+        childArmIdx: num = 1
+        labelArmIdx: num = 0
         fr arm of node.cases {
             cLbl: str = caseLabels[labelArmIdx]
             self.codegen.emitLabel cLbl
@@ -350,7 +350,7 @@ obj StmtCodegen {
      * @returns {void}
      */
     emitRet: node: ASTNode :: void => {
-        let hasVal: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
+        hasVal: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
 
         if hasVal {
             retRes: ExprResult = self.exprGen.emitExpr node.children[0]

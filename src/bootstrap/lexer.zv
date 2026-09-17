@@ -193,7 +193,7 @@ obj Lexer {
                 // Skip multi-line comment
                 self.advance
                 self.advance
-                let inComment: bool = true
+                inComment: bool = true
                 wh self.pos < self.len && inComment {
                     if self.cur == "*" && self.peek == "/" {
                         self.advance
@@ -219,7 +219,7 @@ obj Lexer {
         startLine: num = self.line
         startCol: num = self.col
         self.advance // Skip opening quote
-        let val: str = ""
+        val: str = ""
 
         wh self.pos < self.len && self.cur != quote {
             ch: str = self.cur
@@ -256,7 +256,7 @@ obj Lexer {
             self.advance // Skip closing quote
         }
 
-        let tokLen: num = self.col - startCol
+        tokLen: num = self.col - startCol
         if tokLen < 1 {
             tokLen = 1
         }
@@ -274,7 +274,7 @@ obj Lexer {
         startLine: num = self.line
         startCol: num = self.col - 1 // Include 'r' prefix in column
         self.advance // Skip opening quote
-        let val: str = ""
+        val: str = ""
 
         wh self.pos < self.len && self.cur != quote {
             val = val + self.cur
@@ -285,7 +285,7 @@ obj Lexer {
             self.advance // Skip closing quote
         }
 
-        let tokLen: num = self.col - startCol
+        tokLen: num = self.col - startCol
         if tokLen < 1 {
             tokLen = 1
         }
@@ -302,7 +302,7 @@ obj Lexer {
         startLine: num = self.line
         startCol: num = self.col
         self.advance // Skip opening backtick
-        let val: str = ""
+        val: str = ""
 
         wh self.pos < self.len && self.cur != "`" {
             ch: str = self.cur
@@ -337,7 +337,7 @@ obj Lexer {
             self.advance // Skip closing backtick
         }
 
-        let tokLen: num = self.col - startCol
+        tokLen: num = self.col - startCol
         if tokLen < 1 {
             tokLen = 1
         }
@@ -392,7 +392,7 @@ obj Lexer {
             }
         }
 
-        let hasDot: bool = false
+        hasDot: bool = false
         wh (IsDigit self.cur) || (self.cur == "." && !hasDot && (IsDigit self.peek)) {
             if self.cur == "." {
                 hasDot = true
@@ -403,7 +403,7 @@ obj Lexer {
         // Scientific exponent: 1e5, 1.5E-2, 10e+3
         if self.cur == "e" || self.cur == "E" {
             next: str = self.peek
-            let expOk: bool = IsDigit next
+            expOk: bool = IsDigit next
             if !expOk && (next == "+" || next == "-") {
                 afterSign: str = self.peekAhead 2
                 expOk = IsDigit afterSign
@@ -812,7 +812,7 @@ obj Lexer {
      */
     tokenizeAll: :: Token[] => {
         tokens: Token[] = []
-        let done: bool = false
+        done: bool = false
         wh !done {
             tok = self.scanToken
             tokens.psh tok

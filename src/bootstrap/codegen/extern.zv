@@ -54,8 +54,8 @@ ToLLVMExternType typeStr: str :: str {
  * @returns {str} Formatted LLVM IR declare statement
  */
 FormatExternDeclare retType: str, name: str, paramTypes: str[], isVarArg: bool :: str {
-    let paramsStr = ""
-    let first = true
+    paramsStr = ""
+    first = true
     fr pType of paramTypes {
         if !first {
             paramsStr = paramsStr + ", "
@@ -173,10 +173,10 @@ obj ExternManager {
         self.declaredFuncs.psh name
         self.addLib libName
 
-        let declStr = FormatExternDeclare retType, name, paramTypes, isVarArg
+        declStr = FormatExternDeclare retType, name, paramTypes, isVarArg
         codegen.emitExtern declStr
 
-        let info = ExternFuncInfo {
+        info = ExternFuncInfo {
             name: name,
             libName: libName,
             retType: retType,
@@ -228,14 +228,14 @@ obj ExternManager {
         if node.kind != NodeKind.ExternDecl {
             -> 0
         }
-        let libName = node.val
-        let emittedCount = 0
+        libName = node.val
+        emittedCount = 0
 
         fr fnChild of node.children {
-            let fnName = fnChild.name
-            let retType = ToLLVMExternType fnChild.typeAnnotation
-            let paramTypes: str[] = []
-            let isVarArg = false
+            fnName = fnChild.name
+            retType = ToLLVMExternType fnChild.typeAnnotation
+            paramTypes: str[] = []
+            isVarArg = false
 
             // Special Win32 Sleep ABI handling: Sleep ms: num -> void (ms is DWORD / i32)
             if fnName == "Sleep" && fnChild.params.ln > 0 {
@@ -245,13 +245,13 @@ obj ExternManager {
                     if p.isRest {
                         isVarArg = true
                     } els {
-                        let pType = ToLLVMExternType p.typeAnnotation
+                        pType = ToLLVMExternType p.typeAnnotation
                         paramTypes.psh pType
                     }
                 }
             }
 
-            let decl = self.emitFunctionDecl fnName, libName, retType, paramTypes, isVarArg, codegen
+            decl = self.emitFunctionDecl fnName, libName, retType, paramTypes, isVarArg, codegen
             if decl.ln > 0 {
                 emittedCount++
             }

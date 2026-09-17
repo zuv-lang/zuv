@@ -194,9 +194,9 @@ obj BorrowChecker {
                 }
             }
 
-            let survivingAliases: ReferenceAlias[] = []
+            survivingAliases: ReferenceAlias[] = []
             fr alias of self.aliases {
-                let refVar: BorrowVar = self.getVar alias.refName
+                refVar: BorrowVar = self.getVar alias.refName
                 if refVar.name.ln == 0 || refVar.scopeLevel != topIdx {
                     survivingAliases.psh alias
                 }
@@ -257,9 +257,9 @@ obj BorrowChecker {
      * @returns {BorrowVar} Found BorrowVar or sentinel createNotFound
      */
     getVar: name: str :: BorrowVar => {
-        let revScopes: BorrowScope[] = []
+        revScopes: BorrowScope[] = []
         fr sc of self.scopes {
-            let nextRev: BorrowScope[] = [sc]
+            nextRev: BorrowScope[] = [sc]
             fr r of revScopes {
                 nextRev.psh r
             }
@@ -283,11 +283,11 @@ obj BorrowChecker {
      * @returns {bool} True if updated successfully, false if not found
      */
     updateVar: updated: BorrowVar :: bool => {
-        let scopeIdx: num = 0
+        scopeIdx: num = 0
         fr sc of self.scopes {
             if sc.level == updated.scopeLevel {
-                let newVars: BorrowVar[] = []
-                let found: bool = false
+                newVars: BorrowVar[] = []
+                found: bool = false
                 fr v of sc.vars {
                     if v.name == updated.name && not found {
                         newVars.psh updated
@@ -314,11 +314,11 @@ obj BorrowChecker {
      * @returns {str} Root target identifier name, or refName if not an alias
      */
     resolveReferenceTarget: refName: str :: str => {
-        let current: str = refName
-        let resolved: str = refName
-        let hops: num[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        current: str = refName
+        resolved: str = refName
+        hops: num[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         fr step of hops {
-            let foundHop: bool = false
+            foundHop: bool = false
             fr alias of self.aliases {
                 if alias.refName == current {
                     current = alias.targetName
@@ -350,7 +350,7 @@ obj BorrowChecker {
                 self.addError "E0202", "Cannot borrow moved value: '" + actualTarget + "'", line, col, actualTarget.ln, "value was moved earlier"
                 -> false
             }
-            let refLevel: num = self.currentLevel
+            refLevel: num = self.currentLevel
             refVar: BorrowVar = self.getVar refName
             if refVar.name.ln > 0 {
                 refLevel = refVar.scopeLevel
@@ -473,9 +473,9 @@ obj BorrowChecker {
      * @returns {str} Formatted multi-line diagnostic error report
      */
     formatErrors: :: str => {
-        let out: str = ""
+        out: str = ""
         fr d of self.errors {
-            let f: str = d.format self.source
+            f: str = d.format self.source
             out = out + f + "\n"
         }
         -> out
@@ -490,7 +490,7 @@ obj BorrowChecker {
  * @returns {void}
  */
 BorrowCheckExpression checker: BorrowChecker, expr: ASTNode :: void {
-    let k = expr.kind
+    k = expr.kind
     if k == NodeKind.IdentExpr {
         checker.checkUse expr.val, expr.line, expr.col
         ->
@@ -498,7 +498,7 @@ BorrowCheckExpression checker: BorrowChecker, expr: ASTNode :: void {
     if k == NodeKind.BinaryExpr {
         if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" {
             if expr.children.ln > 0 {
-                let left = expr.children[0]
+                left = expr.children[0]
                 if left.kind == NodeKind.IdentExpr {
                     checker.checkMutation left.val, left.line, left.col
                 }
@@ -516,7 +516,7 @@ BorrowCheckExpression checker: BorrowChecker, expr: ASTNode :: void {
     if k == NodeKind.UnaryExpr {
         if expr.op == "++" || expr.op == "--" {
             if expr.children.ln > 0 {
-                let operand = expr.children[0]
+                operand = expr.children[0]
                 if operand.kind == NodeKind.IdentExpr {
                     checker.checkMutation operand.val, operand.line, operand.col
                 }
@@ -530,7 +530,7 @@ BorrowCheckExpression checker: BorrowChecker, expr: ASTNode :: void {
     }
     if k == NodeKind.BorrowExpr {
         if expr.children.ln > 0 {
-            let targetNode = expr.children[0]
+            targetNode = expr.children[0]
             if targetNode.kind == NodeKind.IdentExpr {
                 checker.checkUse targetNode.val, expr.line, expr.col
             } els {
@@ -552,12 +552,12 @@ BorrowCheckExpression checker: BorrowChecker, expr: ASTNode :: void {
  * @returns {void}
  */
 BorrowCheckStatement checker: BorrowChecker, stmt: ASTNode :: void {
-    let k = stmt.kind
+    k = stmt.kind
     if k == NodeKind.VarDecl {
         if stmt.isBorrow {
-            let targetName: str = ""
+            targetName: str = ""
             if stmt.children.ln > 0 {
-                let initNode = stmt.children[0]
+                initNode = stmt.children[0]
                 if initNode.kind == NodeKind.BorrowExpr && initNode.children.ln > 0 {
                     targetName = initNode.children[0].val
                 } els if initNode.kind == NodeKind.IdentExpr {

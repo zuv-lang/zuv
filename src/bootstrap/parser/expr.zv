@@ -123,7 +123,7 @@ ParseObjectLiteral parser: Parser :: ASTNode {
     childExprs: ASTNode[] = []
 
     wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
-        let isSpread: bool = false
+        isSpread: bool = false
         if parser.matchToken TokenType.TOK_ELLIPSIS {
             isSpread = true
         }
@@ -132,7 +132,7 @@ ParseObjectLiteral parser: Parser :: ASTNode {
         parser.advance
         kName: str = kTok.val
 
-        let valNode = ASTNode.createNil kTok.line, kTok.col
+        valNode = ASTNode.createNil kTok.line, kTok.col
         if parser.matchToken TokenType.TOK_COLON {
             valNode = ParseExpression parser, 1
         } els {
@@ -365,7 +365,7 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
 
     // Binary Infix Operations (+, -, *, /, %, ==, !=, <, >, <=, >=, &&, ||, ??, =, +=, -=, etc.)
     parser.advance // consume binary operator
-    let nextMinPrec: num = prec
+    nextMinPrec: num = prec
     // Right-associative operators (assignment, pow) keep the same precedence level
     if opTok.kind == TokenType.TOK_ASSIGN || opTok.kind == TokenType.TOK_POW ||
        opTok.kind == TokenType.TOK_PLUS_EQ || opTok.kind == TokenType.TOK_MINUS_EQ {
@@ -386,7 +386,7 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
  * @returns {ASTNode} Parsed expression AST node
  */
 ParseExpression parser: Parser, minPrec: num :: ASTNode {
-    let left: ASTNode = ParsePrefixExpr parser
+    left: ASTNode = ParsePrefixExpr parser
 
     wh !(parser.isAtEnd) {
         curPrec: num = GetTokenPrecedence parser.cur.kind

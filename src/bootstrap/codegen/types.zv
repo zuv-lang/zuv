@@ -392,8 +392,8 @@ selectCastOpForExpr expr: ASTNode, toKind: TypeKind :: str {
  * @returns {str} Formatted instruction (e.g. "%r2 = fadd double %r0, %r1")
  */
 emitBinaryInstruction op: str, leftReg: str, rightReg: str, typeKind: TypeKind, resReg: str :: str {
-    let instr = selectBinaryOp op, typeKind
-    let typeName = llvmType typeKind
+    instr = selectBinaryOp op, typeKind
+    typeName = llvmType typeKind
     -> resReg + " = " + instr + " " + typeName + " " + leftReg + ", " + rightReg
 }
 
@@ -408,8 +408,8 @@ emitBinaryInstruction op: str, leftReg: str, rightReg: str, typeKind: TypeKind, 
  * @returns {str} Formatted instruction (e.g. "%r2 = fcmp olt double %r0, %r1")
  */
 emitCmpInstruction op: str, leftReg: str, rightReg: str, typeKind: TypeKind, resReg: str :: str {
-    let instr = selectCmpOp op, typeKind
-    let typeName = llvmType typeKind
+    instr = selectCmpOp op, typeKind
+    typeName = llvmType typeKind
     -> resReg + " = " + instr + " " + typeName + " " + leftReg + ", " + rightReg
 }
 
@@ -423,9 +423,9 @@ emitCmpInstruction op: str, leftReg: str, rightReg: str, typeKind: TypeKind, res
  * @returns {str} Formatted instruction (e.g. "%res = zext i8 %val to i64")
  */
 emitCastInstruction valReg: str, fromKind: TypeKind, toKind: TypeKind, resReg: str :: str {
-    let castOp = selectCastOp fromKind, toKind
-    let fromType = llvmType fromKind
-    let toType = llvmType toKind
+    castOp = selectCastOp fromKind, toKind
+    fromType = llvmType fromKind
+    toType = llvmType toKind
     if castOp.ln == 0 {
         -> resReg + " = bitcast " + fromType + " " + valReg + " to " + toType
     }

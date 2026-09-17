@@ -15,6 +15,17 @@ imp Diagnostic frm ../diagnostics
 imp ASTNode, NodeKind, ProgramDeclAST frm ../ast
 imp TypeInfo, TypeKind frm ../types
 
+obj ParserScope {
+    names: str[],
+
+    create: :: ParserScope => {
+        emptyNames: str[] = []
+        -> ParserScope {
+            names: emptyNames
+        }
+    }
+}
+
 /**
  * Stateful recursive descent parser coordinator.
  *
@@ -28,6 +39,7 @@ obj Parser {
     file: str,
     source: str,
     errors: Diagnostic[],
+    scopes: ParserScope[],
 
     /**
      * Creates and initializes a new Parser instance for the provided tokens.
@@ -40,13 +52,16 @@ obj Parser {
     create: tokens: Token[], file: str, source: str :: Parser => {
         totalTokens: num = tokens.ln
         errs: Diagnostic[] = []
+        initScope: ParserScope = ParserScope.create()
+        initScopes: ParserScope[] = [initScope]
         -> {
             tokens,
             pos: 0,
             len: totalTokens,
             file,
             source,
-            errors: errs
+            errors: errs,
+            scopes: initScopes
         }
     },
 
@@ -261,7 +276,7 @@ obj Parser {
      * @returns {str} Combined formatted error string
      */
     formatErrors: :: str => {
-        let res: str = ""
+        res: str = ""
         fr diag of self.errors {
             formatted: str = diag.format self.source
             if res == "" {
@@ -271,5 +286,56 @@ obj Parser {
             }
         }
         -> res
+    },
+
+    /**
+     * Enters a new lexical scope level.
+     */
+    enterScope: :: void => {
+        sc: ParserScope = ParserScope.create()
+        self.scopes.psh sc
+    },
+
+    /**
+     * Exits the current lexical scope level, preserving root scope.
+     */
+    exitScope: :: void => {
+        if self.scopes.ln > 1 {
+            self.scopes.pop
+        }
+    },
+
+    /**
+     * Registers a variable identifier in the current innermost scope.
+     *
+     * @param {str} name - Variable identifier name
+     */
+    addVar: name: str :: void => {
+        if self.scopes.ln > 0 {
+            topIdx: num = self.scopes.ln - 1
+            curSc: ParserScope = self.scopes[topIdx]
+            curSc.names.psh name
+            self.scopes[topIdx] = curSc
+        }
+    },
+
+    /**
+     * Checks if a variable identifier has been declared in any active scope.
+     *
+     * @param {str} name - Variable identifier name to find
+     * @returns {bool} True if declared, false otherwise
+     */
+    hasVar: name: str :: bool => {
+        sIdx: num = self.scopes.ln
+        wh sIdx > 0 {
+            sIdx = sIdx - 1
+            sc: ParserScope = self.scopes[sIdx]
+            fr n of sc.names {
+                if n == name {
+                    -> true
+                }
+            }
+        }
+        -> false
     }
 }

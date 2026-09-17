@@ -77,9 +77,9 @@ ExtractSourceLine sourceText: str, targetLine: num :: str {
     if totalLen == 0 || targetLine < 1 {
         -> ""
     }
-    let curLine: num = 1
-    let startIdx: num = 0
-    let found: str = ""
+    curLine: num = 1
+    startIdx: num = 0
+    found: str = ""
     fr i = 0; i < totalLen; i++ {
         ch: str = sourceText.chr i
         if ch == "\n" {
@@ -104,7 +104,7 @@ ExtractSourceLine sourceText: str, targetLine: num :: str {
  * @returns {str} Space padding string
  */
 BuildSpaces count: num :: str {
-    let spaces: str = ""
+    spaces: str = ""
     fr i = 0; i < count; i++ {
         spaces = spaces + " "
     }
@@ -118,8 +118,8 @@ BuildSpaces count: num :: str {
  * @returns {str} Caret underline string
  */
 BuildCarets spanLen: num :: str {
-    let caretsStr: str = ""
-    let count: num = spanLen
+    caretsStr: str = ""
+    count: num = spanLen
     if count < 1 {
         count = 1
     }
@@ -153,7 +153,7 @@ FormatDiagnostic diag: Diagnostic, sourceText: str :: str {
     srcLine: str = ExtractSourceLine sourceText, diag.line
     snippet: str = " " + lineStr + " | " + srcLine + "\n"
 
-    let padCount: num = diag.col - 1
+    padCount: num = diag.col - 1
     if padCount < 0 {
         padCount = 0
     }
@@ -161,7 +161,7 @@ FormatDiagnostic diag: Diagnostic, sourceText: str :: str {
     carets: str = BuildCarets diag.len
     underline: str = "   | " + pad + carets + "\n"
 
-    let out: str = header + loc + gutter + snippet + underline
+    out: str = header + loc + gutter + snippet + underline
     if diag.help != "" {
         helpNote: str = "   |\n   = help: " + diag.help + "\n"
         out = out + helpNote
@@ -186,7 +186,7 @@ FormatWarning diag: Diagnostic, sourceText: str :: str {
     srcLine: str = ExtractSourceLine sourceText, diag.line
     snippet: str = " " + lineStr + " | " + srcLine + "\n"
 
-    let padCount: num = diag.col - 1
+    padCount: num = diag.col - 1
     if padCount < 0 {
         padCount = 0
     }
@@ -194,7 +194,7 @@ FormatWarning diag: Diagnostic, sourceText: str :: str {
     carets: str = BuildCarets diag.len
     underline: str = "   | " + pad + carets + "\n"
 
-    let out: str = header + loc + gutter + snippet + underline
+    out: str = header + loc + gutter + snippet + underline
     if diag.help != "" {
         helpNote: str = "   |\n   = help: " + diag.help + "\n"
         out = out + helpNote

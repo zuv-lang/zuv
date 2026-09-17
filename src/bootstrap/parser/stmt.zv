@@ -40,7 +40,7 @@ ParseExpr parser: Parser :: ASTNode {
         -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
     }
 
-    let left = ASTNode.createNil tok.line, tok.col
+    left = ASTNode.createNil tok.line, tok.col
 
     // Primary Expressions
     if tok.kind == TokenType.TOK_NUMBER {
@@ -98,7 +98,7 @@ ParseExpr parser: Parser :: ASTNode {
                 cont
             }
             fTok: Token = parser.advance
-            let valNode = ASTNode.createIdent fTok.val, fTok.line, fTok.col
+            valNode = ASTNode.createIdent fTok.val, fTok.line, fTok.col
             if parser.matchToken TokenType.TOK_COLON {
                 valNode = ParseExpr parser
             }
@@ -210,7 +210,7 @@ ParseJuxtaposedArgs parser: Parser, callee: ASTNode :: ASTNode {
     }
 
     args: ASTNode[] = []
-    let loopTok: Token = parser.cur
+    loopTok: Token = parser.cur
     wh !(parser.isAtEnd) && loopTok.line == callee.line &&
        loopTok.kind != TokenType.TOK_SEMICOLON &&
        loopTok.kind != TokenType.TOK_RBRACE &&
@@ -241,7 +241,7 @@ ParseJuxtaposedArgs parser: Parser, callee: ASTNode :: ASTNode {
  * @returns {ASTNode} VarDecl AST node
  */
 ParseVarDecl parser: Parser :: ASTNode {
-    let isBorrow: bool = false
+    isBorrow: bool = false
     startTok: Token = parser.cur
 
     if parser.matchToken TokenType.TOK_AMP_LET {
@@ -251,7 +251,7 @@ ParseVarDecl parser: Parser :: ASTNode {
     }
 
     nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected variable name identifier"
-    let typeAnnot: str = ""
+    typeAnnot: str = ""
 
     if parser.matchToken TokenType.TOK_COLON {
         tTok: Token = parser.cur
@@ -268,7 +268,7 @@ ParseVarDecl parser: Parser :: ASTNode {
         }
     }
 
-    let initExpr = ASTNode.createNil nameTok.line, nameTok.col
+    initExpr = ASTNode.createNil nameTok.line, nameTok.col
     if parser.matchToken TokenType.TOK_ASSIGN {
         rawExpr: ASTNode = ParseExpr parser
         initExpr = ParseJuxtaposedArgs parser, rawExpr
@@ -278,6 +278,7 @@ ParseVarDecl parser: Parser :: ASTNode {
         // optional trailing semicolon
     }
 
+    parser.addVar nameTok.val
     -> ASTNode.createVarDecl nameTok.val, typeAnnot, isBorrow, initExpr, startTok.line, startTok.col
 }
 
@@ -291,7 +292,7 @@ ParseIfStmt parser: Parser :: ASTNode {
     ifTok: Token = parser.consume TokenType.TOK_IF, "Expected 'if'"
     condNode: ASTNode = ParseExpr parser
     thenBlock: ASTNode = ParseBlockStmt parser
-    let elseBlock = ASTNode.createNil ifTok.line, ifTok.col
+    elseBlock = ASTNode.createNil ifTok.line, ifTok.col
 
     if parser.matchToken TokenType.TOK_ELS {
         if parser.check TokenType.TOK_IF {
@@ -334,7 +335,10 @@ ParseForStmt parser: Parser :: ASTNode {
             itemTok: Token = parser.advance
             parser.advance // consume 'in'
             iterExpr: ASTNode = ParseExpr parser
+            parser.enterScope()
+            parser.addVar itemTok.val
             bodyBlock: ASTNode = ParseBlockStmt parser
+            parser.exitScope()
             node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
             node.name = itemTok.val
             node.children = [iterExpr, bodyBlock]
@@ -343,7 +347,10 @@ ParseForStmt parser: Parser :: ASTNode {
             itemTok: Token = parser.advance
             parser.advance // consume 'of'
             iterExpr: ASTNode = ParseExpr parser
+            parser.enterScope()
+            parser.addVar itemTok.val
             bodyBlock: ASTNode = ParseBlockStmt parser
+            parser.exitScope()
             node = ASTNode.createBase NodeKind.FrOfStmt, frTok.line, frTok.col
             node.name = itemTok.val
             node.children = [iterExpr, bodyBlock]
@@ -376,7 +383,7 @@ ParseForStmt parser: Parser :: ASTNode {
  */
 ParseReturnStmt parser: Parser :: ASTNode {
     retTok: Token = parser.advance // consume '->' or 'ret'
-    let retExpr = ASTNode.createNil retTok.line, retTok.col
+    retExpr = ASTNode.createNil retTok.line, retTok.col
 
     if !(parser.check TokenType.TOK_SEMICOLON) && !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
         rawExpr: ASTNode = ParseExpr parser
@@ -445,9 +452,12 @@ ParseTryStmt parser: Parser :: ASTNode {
 
     parser.consume TokenType.TOK_CTH, "Expected 'cth' after try block"
     errVarTok: Token = parser.consume TokenType.TOK_IDENT, "Expected error variable identifier in catch"
+    parser.enterScope()
+    parser.addVar errVarTok.val
     catchBlock: ASTNode = ParseBlockStmt parser
+    parser.exitScope()
 
-    let finBlock = ASTNode.createNil tryTok.line, tryTok.col
+    finBlock = ASTNode.createNil tryTok.line, tryTok.col
     if parser.matchToken TokenType.TOK_FIN {
         finBlock = ParseBlockStmt parser
     }
@@ -473,15 +483,14 @@ ParseMatchStmt parser: Parser :: ASTNode {
     parser.consume TokenType.TOK_LBRACE, "Expected '{' before match arms"
 
     wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
-        if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+        if parser.matchToken TokenType.TOK_SEMICOLON {
             cont
         }
 
         patExpr: ASTNode = ParseExpr parser
+        parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after match pattern"
 
-        parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after pattern"
-
-        let armBody = ASTNode.createNil patExpr.line, patExpr.col
+        armBody = ASTNode.createNil patExpr.line, patExpr.col
         if parser.check TokenType.TOK_LBRACE {
             armBody = ParseBlockStmt parser
         } els {
@@ -509,13 +518,14 @@ ParseMatchStmt parser: Parser :: ASTNode {
 }
 
 /**
- * Parses a braced block statement (`{ stmt1; stmt2; ... }`).
+ * Parses a braced block of statements (`{ stmt1; stmt2 }`).
  *
  * @param {Parser} parser - Parser coordinator instance
  * @returns {ASTNode} BlockStmt AST node
  */
 ParseBlockStmt parser: Parser :: ASTNode {
     lbrace: Token = parser.consume TokenType.TOK_LBRACE, "Expected '{' to begin block"
+    parser.enterScope()
     stmts: ASTNode[] = []
 
     wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
@@ -527,6 +537,7 @@ ParseBlockStmt parser: Parser :: ASTNode {
     }
 
     parser.consume TokenType.TOK_RBRACE, "Expected '}' to end block"
+    parser.exitScope()
     -> ASTNode.createBlock stmts, lbrace.line, lbrace.col
 }
 
@@ -543,6 +554,38 @@ ParseExpressionStmt parser: Parser :: ASTNode {
         // optional trailing semicolon
     }
     -> ASTNode.createExprStmt expr, expr.line, expr.col
+}
+
+/**
+ * Checks if the current token position begins a typed variable declaration:
+ * `ident: Type = expr`
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {bool} True if lookahead indicates `ident: Type = expr`
+ */
+IsTypedVarDecl parser: Parser :: bool {
+    cTok: Token = parser.cur
+    if cTok.kind != TokenType.TOK_IDENT || parser.peek.kind != TokenType.TOK_COLON {
+        -> false
+    }
+    curLine: num = cTok.line
+    offset: num = 2
+    wh true {
+        tok: Token = parser.peekAhead offset
+        if tok.kind == TokenType.TOK_EOF || tok.line != curLine {
+            brk
+        }
+        if tok.kind == TokenType.TOK_ASSIGN {
+            -> true
+        }
+        if tok.kind == TokenType.TOK_COLON_COLON || tok.kind == TokenType.TOK_ARROW ||
+           tok.kind == TokenType.TOK_FAT_ARROW || tok.kind == TokenType.TOK_LBRACE ||
+           tok.kind == TokenType.TOK_SEMICOLON {
+            brk
+        }
+        offset = offset + 1
+    }
+    -> false
 }
 
 /**
@@ -586,6 +629,48 @@ ParseStatement parser: Parser :: ASTNode {
     }
     if curTok.kind == TokenType.TOK_LBRACE {
         -> ParseBlockStmt parser
+    }
+
+    // Implicit variable declaration without 'let': ident = expr (when not previously declared)
+    if curTok.kind == TokenType.TOK_IDENT && parser.peek.kind == TokenType.TOK_ASSIGN {
+        if !(parser.hasVar curTok.val) {
+            nameTok: Token = parser.advance
+            parser.advance // consume '='
+            rawExpr: ASTNode = ParseExpr parser
+            initExpr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
+            if parser.matchToken TokenType.TOK_SEMICOLON {
+                // optional trailing semicolon
+            }
+            parser.addVar nameTok.val
+            emptyType: str = ""
+            -> ASTNode.createVarDecl nameTok.val, emptyType, false, initExpr, curTok.line, curTok.col
+        }
+    }
+
+    // Typed variable declaration without 'let': ident: Type = expr
+    if IsTypedVarDecl parser {
+        nameTok: Token = parser.advance
+        parser.advance // consume ':'
+        typeTok: Token = parser.cur
+        typeAnnot: str = typeTok.val
+        parser.advance
+        wh parser.check TokenType.TOK_LBRACKET {
+            if parser.checkPeek TokenType.TOK_RBRACKET {
+                parser.advance
+                parser.advance
+                typeAnnot = typeAnnot + "[]"
+            } els {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_ASSIGN, "Expected '=' in variable declaration"
+        rawExpr: ASTNode = ParseExpr parser
+        initExpr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            // optional trailing semicolon
+        }
+        parser.addVar nameTok.val
+        -> ASTNode.createVarDecl nameTok.val, typeAnnot, false, initExpr, curTok.line, curTok.col
     }
 
     -> ParseExpressionStmt parser

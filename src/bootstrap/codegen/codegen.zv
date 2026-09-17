@@ -57,11 +57,11 @@ obj StringConstant {
  * @returns {str} Escaped string representation for LLVM IR
  */
 EscapeStringForLLVM text: str :: str {
-    let count: num = text.ln
-    let escaped: str = ""
-    let i: num = 0
+    count: num = text.ln
+    escaped: str = ""
+    i: num = 0
     wh i < count {
-        let ch: str = text[i]
+        ch: str = text[i]
         if ch == "\"" {
             escaped = escaped + "\\22"
         } els if ch == "\\" {
@@ -112,13 +112,13 @@ obj Codegen {
      * @returns {Codegen} Initialized Codegen coordinator
      */
     create: targetTriple: str, isRelease: bool :: Codegen => {
-        let triple = targetTriple
+        triple = targetTriple
         if triple.ln == 0 {
             triple = "x86_64-pc-windows-msvc"
         }
-        let layout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
-        let emptyHeader = ";; ModuleID = 'zuv_module'\nsource_filename = \"zuv_bootstrap\"\ntarget datalayout = \"" + layout + "\"\ntarget triple = \"" + triple + "\"\n\n"
-        let emptyStrConsts: StringConstant[] = []
+        layout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+        emptyHeader = ";; ModuleID = 'zuv_module'\nsource_filename = \"zuv_bootstrap\"\ntarget datalayout = \"" + layout + "\"\ntarget triple = \"" + triple + "\"\n\n"
+        emptyStrConsts: StringConstant[] = []
 
         -> {
             header: emptyHeader,
@@ -181,15 +181,15 @@ obj Codegen {
             }
         }
 
-        let id: num = self.strConstants.ln
-        let globalName = `@str_${id}`
-        let esc = EscapeStringForLLVM text
-        let bLen = MeasureStringBytes text
-        let constRec = StringConstant.create id, globalName, text, esc, bLen
+        id: num = self.strConstants.ln
+        globalName = `@str_${id}`
+        esc = EscapeStringForLLVM text
+        bLen = MeasureStringBytes text
+        constRec = StringConstant.create id, globalName, text, esc, bLen
         self.strConstants.psh constRec
 
-        let totalLen = bLen + 1
-        let decl = `${globalName} = private unnamed_addr constant [${totalLen} x i8] c"${esc}\\00", align 1\n`
+        totalLen = bLen + 1
+        decl = `${globalName} = private unnamed_addr constant [${totalLen} x i8] c"${esc}\\00", align 1\n`
         self.header = self.header + decl
         -> globalName
     },

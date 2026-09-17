@@ -2,6 +2,10 @@
 
 pt = { x: 12, y: 34 }
 
+x=19
+lg x
+x=10
+lg x
 lg "Testing Anonymous Object Literal x:"
 lg pt.x
 

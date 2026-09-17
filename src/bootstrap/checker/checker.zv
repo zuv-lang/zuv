@@ -211,7 +211,7 @@ obj Checker {
 
     resolveSymbol: name: str :: Symbol => {
         totalScopes: num = self.scopes.ln
-        let sIdx: num = 0
+        sIdx: num = 0
         wh sIdx < totalScopes {
             curRevIdx: num = totalScopes - 1 - sIdx
             sc: Scope = self.scopes[curRevIdx]
@@ -279,7 +279,7 @@ obj Checker {
     },
 
     formatErrors: :: str => {
-        let res: str = ""
+        res: str = ""
         fr diag of self.errors {
             formatted: str = diag.format self.source
             if res == "" {

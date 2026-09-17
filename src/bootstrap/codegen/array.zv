@@ -264,7 +264,7 @@ obj ArrayCodegen {
         self.codegen.emit `${arrPtr} = getelementptr inbounds i64, ptr ${rawPtr}, i64 1`
         self.codegen.emit `store i64 ${count}, ptr ${arrPtr}`
 
-        let elemIdx: num = 0
+        elemIdx: num = 0
         fr valReg of elemRegs {
             valType: TypeKind = elemTypes[elemIdx]
             boxedVal: str = boxValueToI64 self.codegen, valReg, valType
@@ -549,7 +549,7 @@ obj ArrayCodegen {
      * @returns {str} SSA register holding pointer to assembled array
      */
     emitArraySpread: parts: ArraySpreadPart[] :: str => {
-        let literalCount: num = 0
+        literalCount: num = 0
         fr p of parts {
             if !p.isSpread {
                 literalCount++

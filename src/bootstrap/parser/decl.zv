@@ -31,13 +31,13 @@ imp ParseStatement, ParseBlockStmt, ParseMatchStmt, ParseExpr frm stmt
  * @returns {str} The parsed type signature string
  */
 ParseTypeString parser: Parser :: str {
-    let isPtr: bool = false
+    isPtr: bool = false
     if parser.matchToken TokenType.TOK_AMP {
         isPtr = true
     }
 
     curTok: Token = parser.cur
-    let baseType: str = curTok.val
+    baseType: str = curTok.val
     parser.advance
 
     // Check for array dimensions: T[] or T[][]
@@ -66,8 +66,8 @@ ParseTypeString parser: Parser :: str {
  * @returns {Param[]} Array of parsed parameter records
  */
 ParseParamList parser: Parser :: Param[] {
-    let params: Param[] = []
-    let hasParen: bool = false
+    params: Param[] = []
+    hasParen: bool = false
 
     if parser.matchToken TokenType.TOK_LPAREN {
         hasParen = true
@@ -78,15 +78,15 @@ ParseParamList parser: Parser :: Param[] {
     }
 
     wh !(parser.isAtEnd) {
-        let isRest: bool = false
+        isRest: bool = false
         if parser.matchToken TokenType.TOK_ELLIPSIS {
             isRest = true
         }
 
         pTok: Token = parser.consume TokenType.TOK_IDENT, "Expected parameter identifier"
         pName: str = pTok.val
-        let pType: str = ""
-        let isOpt: bool = false
+        pType: str = ""
+        isOpt: bool = false
 
         if parser.matchToken TokenType.TOK_QUESTION {
             isOpt = true
@@ -189,7 +189,7 @@ ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
 IsMethodMember parser: Parser :: bool {
     cTok: Token = parser.cur
     curLine: num = cTok.line
-    let offset: num = 0
+    offset: num = 0
     wh true {
         tok: Token = parser.peekAhead offset
         if tok.kind == TokenType.TOK_EOF || tok.line != curLine {
@@ -240,8 +240,8 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
             // Check if member is a method or a field
             if IsMethodMember parser {
                 // Method definition: method: params :: Ret => { ... }
-                let mParams: Param[] = []
-                let mRet: str = "void"
+                mParams: Param[] = []
+                mRet: str = "void"
 
                 if !(parser.check TokenType.TOK_FAT_ARROW) && !(parser.check TokenType.TOK_COLON_COLON) {
                     mParams = ParseParamList parser
@@ -256,6 +256,12 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
                 mNode = ASTNode.createFuncDecl mName, mRet, false, true, mTok.line, mTok.col
                 mNode.params = mParams
 
+                parser.enterScope()
+                parser.addVar "self"
+                fr p of mParams {
+                    parser.addVar p.name
+                }
+
                 if parser.check TokenType.TOK_LBRACE {
                     mBody: ASTNode = ParseBlockStmt parser
                     mNode.children.psh mBody
@@ -266,6 +272,8 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
                     mExpr: ASTNode = ParseExpr parser
                     mNode.children.psh mExpr
                 }
+
+                parser.exitScope()
 
                 node.children.psh mNode
             } els {
@@ -317,18 +325,23 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
     nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected function name identifier"
     name: str = nameTok.val
 
-    let params: Param[] = []
+    params: Param[] = []
     if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_ARROW) && !(parser.check TokenType.TOK_FAT_ARROW) {
         params = ParseParamList parser
     }
 
-    let returnType: str = "void"
+    returnType: str = "void"
     if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) {
         returnType = ParseTypeString parser
     }
 
     node = ASTNode.createFuncDecl name, returnType, isAsync, isPub, nameTok.line, nameTok.col
     node.params = params
+
+    parser.enterScope()
+    fr p of params {
+        parser.addVar p.name
+    }
 
     if parser.matchToken TokenType.TOK_FAT_ARROW {
         if parser.check TokenType.TOK_LBRACE {
@@ -345,6 +358,8 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
         bodyBlock: ASTNode = ParseBlockStmt parser
         node.children.psh bodyBlock
     }
+
+    parser.exitScope()
 
     -> node
 }
@@ -378,7 +393,7 @@ ParseEnumDecl parser: Parser, isPub: bool :: ASTNode {
 
         vTok: Token = parser.consume TokenType.TOK_IDENT, "Expected enum variant identifier"
         vName: str = vTok.val
-        let vVal: str = ""
+        vVal: str = ""
 
         if parser.matchToken TokenType.TOK_ASSIGN {
             valTok: Token = parser.advance
@@ -411,7 +426,7 @@ ParseEnumDecl parser: Parser, isPub: bool :: ASTNode {
  */
 ParseExternDecl parser: Parser :: ASTNode {
     extTok: Token = parser.advance // consume 'extern' / 'ffi'
-    let libName: str = "c"
+    libName: str = "c"
 
     if parser.check TokenType.TOK_STRING {
         sTok: Token = parser.advance
@@ -450,7 +465,7 @@ ParseExternDecl parser: Parser :: ASTNode {
 ParseImportDecl parser: Parser :: ASTNode {
     impTok: Token = parser.advance // consume 'imp'
     symbols: str[] = []
-    let modulePath: str = ""
+    modulePath: str = ""
 
     // Parse imported symbol names
     wh (parser.check TokenType.TOK_IDENT) || (parser.check TokenType.TOK_TYPE_STR) || (parser.check TokenType.TOK_TYPE_NUM) || (parser.check TokenType.TOK_TYPE_BOOL) {
@@ -466,7 +481,7 @@ ParseImportDecl parser: Parser :: ASTNode {
 
     if parser.matchToken TokenType.TOK_FRM {
         // imp sym1, sym2 frm path
-        let pathStr: str = ""
+        pathStr: str = ""
         wh (parser.check TokenType.TOK_IDENT) || (parser.check TokenType.TOK_DOT) || (parser.check TokenType.TOK_SLASH) || (parser.check TokenType.TOK_STRING) {
             partTok: Token = parser.advance
             pathStr = pathStr + partTok.val
@@ -507,12 +522,12 @@ ParseImportDecl parser: Parser :: ASTNode {
  * @returns {ASTNode} Parsed declaration AST node
  */
 ParseDeclaration parser: Parser :: ASTNode {
-    let isPub: bool = false
+    isPub: bool = false
     if parser.matchToken TokenType.TOK_PUB {
         isPub = true
     }
 
-    let isAsync: bool = false
+    isAsync: bool = false
     if (parser.matchToken TokenType.TOK_ASYNC) || (parser.matchToken TokenType.TOK_ASYNC_ST) {
         isAsync = true
     }
