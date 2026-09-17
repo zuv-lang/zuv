@@ -192,8 +192,8 @@ zuv --help
 ## 🛠️ Building & Running the Self-Hosting Compiler
 
 ### Prerequisites
-- **Windows** with [LLVM](https://llvm.org/releases/) installed (e.g. `D:\LLVM`)
-- **lld-link.exe** — comes with LLVM, used by `zuv.exe` for native linking
+- **Windows** with [LLVM 22.1.8](https://llvm.org/releases/) installed (e.g. `D:\LLVM`)
+- **lld-link.exe** — comes with LLVM (v22.1.8), used by `zuv.exe` for native linking
 
 ---
 
