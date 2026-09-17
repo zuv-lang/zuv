@@ -261,6 +261,9 @@ obj Codegen {
      * @returns {str} Complete LLVM IR module representation
      */
     getModuleIR: :: str => {
+        if self.currentBlock.ln > 0 {
+            -> self.header + "\n" + self.funcs + self.currentBlock
+        }
         -> self.header + "\n" + self.funcs
     }
 }

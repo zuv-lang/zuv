@@ -1,9 +1,645 @@
 /*
  * =============================================================================
- * Zuv Bootstrap Compiler — Array Code Generation
+ * Zuv Bootstrap Compiler — Rust-Style Vector Runtime & Array Code Generation
  * Path: sub_projects/zuv/src/bootstrap/codegen/array.zv
+ *
+ * Implements Rust-style vector layout, zero-cost empty array sentinel,
+ * geometric doubling growth via @realloc, bounds-checked indexing, and
+ * fast bulk memcpy array spreads according to arrayfix.md.
  * =============================================================================
  */
 
 imp str, arr
+imp TypeKind frm ../types
+imp Codegen frm codegen
+imp isPointerType frm codegen/types
 
+/**
+ * Metadata descriptor for an element or spread segment within an array literal.
+ */
+type ArraySpreadPart = {
+    isSpread: bool,
+    valReg: str,
+    valType: TypeKind,
+    lenReg: str
+};
+
+/**
+ * Array memory layout constants (in 64-bit words) relative to user data pointer.
+ *
+ * Header layout:
+ * - Word -1 (raw offset 0): Capacity (64-bit unsigned integer)
+ * - Word  0 (raw offset 1): Length   (64-bit unsigned integer) <- Array pointer
+ * - Word 1..N: Elements (each 8 bytes / 64-bit slot)
+ */
+
+/**
+ * Returns the offset (in 64-bit words) of the capacity header relative to array pointer.
+ *
+ * @returns {num} Capacity word offset (-1)
+ */
+arrayCapOffset :: num => -1
+
+/**
+ * Returns the offset (in 64-bit words) of the length header relative to array pointer.
+ *
+ * @returns {num} Length word offset (0)
+ */
+arrayLenOffset :: num => 0
+
+/**
+ * Returns the offset (in 64-bit words) of the first element relative to array pointer.
+ *
+ * @returns {num} First element word offset (1)
+ */
+arrayDataOffset :: num => 1
+
+/**
+ * Returns the number of header words (capacity + length).
+ *
+ * @returns {num} Header word count (2)
+ */
+arrayHeaderWords :: num => 2
+
+/**
+ * Returns the byte size of each 64-bit array word slot.
+ *
+ * @returns {num} Word byte size (8)
+ */
+arrayWordBytes :: num => 8
+
+/**
+ * Returns the default initial allocation capacity for dynamic arrays.
+ *
+ * @returns {num} Initial capacity (4)
+ */
+arrayInitialCap :: num => 4
+
+/**
+ * Selects the LLVM zero-extension prefix operation for storing an integer in a 64-bit slot.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind of source integer
+ * @returns {str} LLVM extension prefix (e.g. "zext i1", "zext i8") or empty string
+ */
+selectZextOp typeKind: TypeKind :: str => sw typeKind {
+    TypeKind.Bool => "zext i1"
+    TypeKind.I8   => "zext i8"
+    TypeKind.Enum => "zext i8"
+    TypeKind.I16  => "zext i16"
+    TypeKind.I32  => "zext i32"
+    _             => ""
+}
+
+/**
+ * Selects the LLVM target integer type string for unboxing a 64-bit slot into a smaller scalar.
+ *
+ * @param {TypeKind} targetType - Semantic type to truncate into
+ * @returns {str} LLVM destination scalar type (e.g. "i1", "i8", "i16", "i32") or empty string
+ */
+selectTruncDst targetType: TypeKind :: str => sw targetType {
+    TypeKind.Bool => "i1"
+    TypeKind.I8   => "i8"
+    TypeKind.Enum => "i8"
+    TypeKind.I16  => "i16"
+    TypeKind.I32  => "i32"
+    _             => ""
+}
+
+/**
+ * Boxes an SSA register value into a uniform 64-bit word for array element storage.
+ *
+ * @param {Codegen} codegen - LLVM module coordinator
+ * @param {str} valReg - Source SSA register containing value
+ * @param {TypeKind} typeKind - Inferred semantic type kind of value
+ * @returns {str} SSA register holding 64-bit boxed value
+ */
+boxValueToI64 codegen: Codegen, valReg: str, typeKind: TypeKind :: str {
+    if typeKind == TypeKind.I64 {
+        -> valReg
+    }
+    if typeKind == TypeKind.Num {
+        convReg: str = codegen.newReg
+        codegen.emit `${convReg} = bitcast double ${valReg} to i64`
+        -> convReg
+    }
+    if isPointerType typeKind {
+        ptrReg: str = codegen.newReg
+        codegen.emit `${ptrReg} = ptrtoint ptr ${valReg} to i64`
+        -> ptrReg
+    }
+    zextOp: str = selectZextOp typeKind
+    if zextOp.ln > 0 {
+        zextReg: str = codegen.newReg
+        codegen.emit `${zextReg} = ${zextOp} ${valReg} to i64`
+        -> zextReg
+    }
+    -> valReg
+}
+
+/**
+ * Unboxes a uniform 64-bit array element word back into its native LLVM type.
+ *
+ * @param {Codegen} codegen - LLVM module coordinator
+ * @param {str} valReg - SSA register containing 64-bit stored value
+ * @param {TypeKind} targetType - Target semantic type to unbox into
+ * @returns {str} SSA register holding unboxed native value
+ */
+unboxValueFromI64 codegen: Codegen, valReg: str, targetType: TypeKind :: str {
+    if targetType == TypeKind.I64 {
+        -> valReg
+    }
+    if targetType == TypeKind.Num {
+        numReg: str = codegen.newReg
+        codegen.emit `${numReg} = bitcast i64 ${valReg} to double`
+        -> numReg
+    }
+    if isPointerType targetType {
+        ptrReg: str = codegen.newReg
+        codegen.emit `${ptrReg} = inttoptr i64 ${valReg} to ptr`
+        -> ptrReg
+    }
+    dstType: str = selectTruncDst targetType
+    if dstType.ln > 0 {
+        truncReg: str = codegen.newReg
+        codegen.emit `${truncReg} = trunc i64 ${valReg} to ${dstType}`
+        -> truncReg
+    }
+    -> valReg
+}
+
+/**
+ * Emits an inline array bounds check instruction guard (icmp ult i64 %idx, %len).
+ *
+ * @param {Codegen} codegen - LLVM module coordinator
+ * @param {str} arrPtrReg - Pointer to array header (points to len)
+ * @param {str} idxReg - SSA register holding 64-bit index
+ * @param {num} lineNum - Source line number for diagnostic reporting
+ * @returns {void}
+ */
+emitArrayBoundsCheck codegen: Codegen, arrPtrReg: str, idxReg: str, lineNum: num :: void {
+    lenReg: str = codegen.newReg
+    codegen.emit `${lenReg} = load i64, ptr ${arrPtrReg}`
+    inBounds: str = codegen.newReg
+    codegen.emit `${inBounds} = icmp ult i64 ${idxReg}, ${lenReg}`
+
+    okLbl: str = codegen.newLabel "arr_bchk_ok"
+    failLbl: str = codegen.newLabel "arr_bchk_fail"
+    codegen.emit `br i1 ${inBounds}, label %${okLbl}, label %${failLbl}`
+
+    codegen.emitLabel failLbl
+    codegen.emit "call void @exit(i32 101)"
+    codegen.emit "unreachable"
+
+    codegen.emitLabel okLbl
+}
+
+/**
+ * Manages code generation for array allocations, bounds checks, dynamic growth, and spreads.
+ */
+obj ArrayCodegen {
+    codegen: Codegen,
+    globalsEmitted: bool,
+
+    /**
+     * Initializes a new ArrayCodegen coordinator instance.
+     *
+     * @param {Codegen} codegen - LLVM module coordinator
+     * @returns {ArrayCodegen} Initialized ArrayCodegen object
+     */
+    create: codegen: Codegen :: ArrayCodegen => {
+        -> ArrayCodegen {
+            codegen,
+            globalsEmitted: false
+        }
+    },
+
+    /**
+     * Emits zero-cost empty array sentinel and runtime symbols into the module header.
+     *
+     * @returns {void}
+     */
+    emitRuntimeGlobals: :: void => {
+        if self.globalsEmitted {
+            -> und
+        }
+        self.codegen.emitExtern "@_zuv_empty_arr = internal constant [2 x i64] [i64 0, i64 0]"
+        self.codegen.emitExtern "@zuv_err_oob = private unnamed_addr constant [21 x i8] c\"index out of bounds\\00\", align 1"
+        self.globalsEmitted = true
+    },
+
+    /**
+     * Emits a zero-heap-allocation empty array literal ([]), returning a pointer to the static sentinel.
+     *
+     * @returns {str} SSA register holding pointer to empty array
+     */
+    emitEmptyArray: :: str => {
+        self.emitRuntimeGlobals
+        empPtr: str = self.codegen.newReg
+        self.codegen.emit `${empPtr} = getelementptr inbounds [2 x i64], ptr @_zuv_empty_arr, i64 0, i64 1`
+        -> empPtr
+    },
+
+    /**
+     * Emits an exact-payload array literal ([x, y, z]) allocating (count + 2) * 8 bytes on the heap.
+     *
+     * @param {str[]} elemRegs - SSA registers holding element values
+     * @param {TypeKind[]} elemTypes - Inferred semantic type kind of each element
+     * @returns {str} SSA register holding pointer to array
+     */
+    emitArrayLit: elemRegs: str[], elemTypes: TypeKind[] :: str => {
+        count: num = elemRegs.ln
+        if count == 0 {
+            -> self.emitEmptyArray
+        }
+
+        self.emitRuntimeGlobals
+        words: num = count + 2
+        totalBytes: num = words * 8
+
+        rawPtr: str = self.codegen.newReg
+        self.codegen.emit `${rawPtr} = call ptr @malloc(i64 ${totalBytes})`
+        self.codegen.emit `store i64 ${count}, ptr ${rawPtr}`
+
+        arrPtr: str = self.codegen.newReg
+        self.codegen.emit `${arrPtr} = getelementptr inbounds i64, ptr ${rawPtr}, i64 1`
+        self.codegen.emit `store i64 ${count}, ptr ${arrPtr}`
+
+        let elemIdx: num = 0
+        fr valReg of elemRegs {
+            valType: TypeKind = elemTypes[elemIdx]
+            boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+            offset: num = elemIdx + 1
+            gepReg: str = self.codegen.newReg
+            self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${offset}`
+            self.codegen.emit `store i64 ${boxedVal}, ptr ${gepReg}`
+            elemIdx++
+        }
+
+        -> arrPtr
+    },
+
+    /**
+     * Emits length inquiry for an array (loading 64-bit integer at Word 0).
+     *
+     * @param {str} arrPtrReg - Array pointer SSA register
+     * @returns {str} SSA register holding length as i64
+     */
+    emitLength: arrPtrReg: str :: str => {
+        lenReg: str = self.codegen.newReg
+        self.codegen.emit `${lenReg} = load i64, ptr ${arrPtrReg}`
+        -> lenReg
+    },
+
+    /**
+     * Emits capacity inquiry for an array (loading 64-bit integer at Word -1).
+     *
+     * @param {str} arrPtrReg - Array pointer SSA register
+     * @returns {str} SSA register holding capacity as i64
+     */
+    emitCapacity: arrPtrReg: str :: str => {
+        capPtr: str = self.codegen.newReg
+        self.codegen.emit `${capPtr} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 -1`
+        capReg: str = self.codegen.newReg
+        self.codegen.emit `${capReg} = load i64, ptr ${capPtr}`
+        -> capReg
+    },
+
+    /**
+     * Emits bounds-checked array element access (arr[idx]), returning 64-bit loaded value.
+     *
+     * @param {str} arrPtrReg - Array pointer SSA register
+     * @param {str} idxReg - 64-bit integer index SSA register
+     * @param {bool} isOptional - True if optional indexing (arr?[idx])
+     * @param {num} lineNum - Source line number for diagnostic reporting
+     * @returns {str} SSA register holding element value
+     */
+    emitGetElement: arrPtrReg: str, idxReg: str, isOptional: bool, lineNum: num :: str => {
+        if isOptional {
+            slot: str = self.codegen.newReg
+            self.codegen.emit `${slot} = alloca i64`
+
+            emptyPtr: str = self.emitEmptyArray
+            isEmp: str = self.codegen.newReg
+            self.codegen.emit `${isEmp} = icmp eq ptr ${arrPtrReg}, ${emptyPtr}`
+            isNull: str = self.codegen.newReg
+            self.codegen.emit `${isNull} = icmp eq ptr ${arrPtrReg}, null`
+            isInvalid: str = self.codegen.newReg
+            self.codegen.emit `${isInvalid} = or i1 ${isEmp}, ${isNull}`
+
+            nilLbl: str = self.codegen.newLabel "opt_idx_nil"
+            checkLbl: str = self.codegen.newLabel "opt_idx_chk"
+            loadLbl: str = self.codegen.newLabel "opt_idx_load"
+            mergeLbl: str = self.codegen.newLabel "opt_idx_merge"
+
+            self.codegen.emit `br i1 ${isInvalid}, label %${nilLbl}, label %${checkLbl}`
+
+            self.codegen.emitLabel nilLbl
+            self.codegen.emit `store i64 0, ptr ${slot}`
+            self.codegen.emit `br label %${mergeLbl}`
+
+            self.codegen.emitLabel checkLbl
+            lenReg: str = self.emitLength arrPtrReg
+            inBounds: str = self.codegen.newReg
+            self.codegen.emit `${inBounds} = icmp ult i64 ${idxReg}, ${lenReg}`
+            self.codegen.emit `br i1 ${inBounds}, label %${loadLbl}, label %${nilLbl}`
+
+            self.codegen.emitLabel loadLbl
+            elemIdx: str = self.codegen.newReg
+            self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+            gep: str = self.codegen.newReg
+            self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdx}`
+            valReg: str = self.codegen.newReg
+            self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+            self.codegen.emit `store i64 ${valReg}, ptr ${slot}`
+            self.codegen.emit `br label %${mergeLbl}`
+
+            self.codegen.emitLabel mergeLbl
+            res: str = self.codegen.newReg
+            self.codegen.emit `${res} = load i64, ptr ${slot}`
+            -> res
+        }
+
+        emitArrayBoundsCheck self.codegen, arrPtrReg, idxReg, lineNum
+        elemIdx: str = self.codegen.newReg
+        self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+        gep: str = self.codegen.newReg
+        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdx}`
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+        -> valReg
+    },
+
+    /**
+     * Emits bounds-checked array element mutation (arr[idx] = val).
+     *
+     * @param {str} arrPtrReg - Array pointer SSA register
+     * @param {str} idxReg - 64-bit integer index SSA register
+     * @param {str} valReg - SSA register holding value to store
+     * @param {TypeKind} valType - Inferred semantic type of value
+     * @param {num} lineNum - Source line number for diagnostic reporting
+     * @returns {void}
+     */
+    emitSetElement: arrPtrReg: str, idxReg: str, valReg: str, valType: TypeKind, lineNum: num :: void => {
+        emitArrayBoundsCheck self.codegen, arrPtrReg, idxReg, lineNum
+        boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+        elemIdx: str = self.codegen.newReg
+        self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+        gep: str = self.codegen.newReg
+        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdx}`
+        self.codegen.emit `store i64 ${boxedVal}, ptr ${gep}`
+    },
+
+    /**
+     * Emits dynamic array push (.psh / .push) with geometric doubling growth ($2\times$).
+     *
+     * @param {str} arrPtrReg - Array pointer SSA register
+     * @param {str} valReg - SSA register holding value to push
+     * @param {TypeKind} valType - Inferred semantic type of value
+     * @param {str} varSlotReg - Optional variable alloca slot for writeback upon reallocation
+     * @returns {str} SSA register holding new length of array
+     */
+    emitPush: arrPtrReg: str, valReg: str, valType: TypeKind, varSlotReg: str :: str => {
+        self.emitRuntimeGlobals
+        boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+
+        emptyPtr: str = self.emitEmptyArray
+        isEmp: str = self.codegen.newReg
+        self.codegen.emit `${isEmp} = icmp eq ptr ${arrPtrReg}, ${emptyPtr}`
+        isNull: str = self.codegen.newReg
+        self.codegen.emit `${isNull} = icmp eq ptr ${arrPtrReg}, null`
+        needAlloc: str = self.codegen.newReg
+        self.codegen.emit `${needAlloc} = or i1 ${isEmp}, ${isNull}`
+
+        allocLbl: str = self.codegen.newLabel "psh_alloc"
+        checkCapLbl: str = self.codegen.newLabel "psh_chk_cap"
+        growLbl: str = self.codegen.newLabel "psh_grow"
+        appendLbl: str = self.codegen.newLabel "psh_append"
+        mergeLbl: str = self.codegen.newLabel "psh_merge"
+
+        retSlot: str = self.codegen.newReg
+        self.codegen.emit `${retSlot} = alloca i64`
+        self.codegen.emit `br i1 ${needAlloc}, label %${allocLbl}, label %${checkCapLbl}`
+
+        // Case 1: Fresh allocation from empty/null array
+        self.codegen.emitLabel allocLbl
+        freshRaw: str = self.codegen.newReg
+        self.codegen.emit `${freshRaw} = call ptr @malloc(i64 48)`
+        self.codegen.emit `store i64 4, ptr ${freshRaw}`
+        freshArr: str = self.codegen.newReg
+        self.codegen.emit `${freshArr} = getelementptr inbounds i64, ptr ${freshRaw}, i64 1`
+        self.codegen.emit `store i64 1, ptr ${freshArr}`
+        firstElem: str = self.codegen.newReg
+        self.codegen.emit `${firstElem} = getelementptr inbounds i64, ptr ${freshArr}, i64 1`
+        self.codegen.emit `store i64 ${boxedVal}, ptr ${firstElem}`
+        if varSlotReg.ln > 0 {
+            self.codegen.emit `store ptr ${freshArr}, ptr ${varSlotReg}`
+        }
+        self.codegen.emit `store i64 1, ptr ${retSlot}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        // Case 2: Check capacity vs length
+        self.codegen.emitLabel checkCapLbl
+        curLen: str = self.emitLength arrPtrReg
+        curCap: str = self.emitCapacity arrPtrReg
+        needGrow: str = self.codegen.newReg
+        self.codegen.emit `${needGrow} = icmp sge i64 ${curLen}, ${curCap}`
+        self.codegen.emit `br i1 ${needGrow}, label %${growLbl}, label %${appendLbl}`
+
+        // Case 3: Geometric doubling (new_cap = (curCap == 0) ? 4 : curCap * 2)
+        self.codegen.emitLabel growLbl
+        isZeroCap: str = self.codegen.newReg
+        self.codegen.emit `${isZeroCap} = icmp sle i64 ${curCap}, 0`
+        doubleCap: str = self.codegen.newReg
+        self.codegen.emit `${doubleCap} = mul i64 ${curCap}, 2`
+        newCap: str = self.codegen.newReg
+        self.codegen.emit `${newCap} = select i1 ${isZeroCap}, i64 4, i64 ${doubleCap}`
+        newSlots: str = self.codegen.newReg
+        self.codegen.emit `${newSlots} = add i64 ${newCap}, 2`
+        newBytes: str = self.codegen.newReg
+        self.codegen.emit `${newBytes} = mul i64 ${newSlots}, 8`
+        oldRaw: str = self.codegen.newReg
+        self.codegen.emit `${oldRaw} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 -1`
+        newRaw: str = self.codegen.newReg
+        self.codegen.emit `${newRaw} = call ptr @realloc(ptr ${oldRaw}, i64 ${newBytes})`
+        self.codegen.emit `store i64 ${newCap}, ptr ${newRaw}`
+        reallocArr: str = self.codegen.newReg
+        self.codegen.emit `${reallocArr} = getelementptr inbounds i64, ptr ${newRaw}, i64 1`
+        nextIdxGrow: str = self.codegen.newReg
+        self.codegen.emit `${nextIdxGrow} = add i64 ${curLen}, 1`
+        gepGrow: str = self.codegen.newReg
+        self.codegen.emit `${gepGrow} = getelementptr inbounds i64, ptr ${reallocArr}, i64 ${nextIdxGrow}`
+        self.codegen.emit `store i64 ${boxedVal}, ptr ${gepGrow}`
+        self.codegen.emit `store i64 ${nextIdxGrow}, ptr ${reallocArr}`
+        if varSlotReg.ln > 0 {
+            self.codegen.emit `store ptr ${reallocArr}, ptr ${varSlotReg}`
+        }
+        self.codegen.emit `store i64 ${nextIdxGrow}, ptr ${retSlot}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        // Case 4: Append in existing spare capacity
+        self.codegen.emitLabel appendLbl
+        nextIdx: str = self.codegen.newReg
+        self.codegen.emit `${nextIdx} = add i64 ${curLen}, 1`
+        gepAppend: str = self.codegen.newReg
+        self.codegen.emit `${gepAppend} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${nextIdx}`
+        self.codegen.emit `store i64 ${boxedVal}, ptr ${gepAppend}`
+        self.codegen.emit `store i64 ${nextIdx}, ptr ${arrPtrReg}`
+        self.codegen.emit `store i64 ${nextIdx}, ptr ${retSlot}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        // Merge: Return new array length
+        self.codegen.emitLabel mergeLbl
+        resLen: str = self.codegen.newReg
+        self.codegen.emit `${resLen} = load i64, ptr ${retSlot}`
+        -> resLen
+    },
+
+    /**
+     * Emits array pop (.pp / .pop), returning the last element and decrementing length.
+     *
+     * @param {str} arrPtrReg - Array pointer SSA register
+     * @returns {str} SSA register holding popped value (or 0 if underflow)
+     */
+    emitPop: arrPtrReg: str :: str => {
+        emptyPtr: str = self.emitEmptyArray
+        isEmp: str = self.codegen.newReg
+        self.codegen.emit `${isEmp} = icmp eq ptr ${arrPtrReg}, ${emptyPtr}`
+        isNull: str = self.codegen.newReg
+        self.codegen.emit `${isNull} = icmp eq ptr ${arrPtrReg}, null`
+        isInvalid: str = self.codegen.newReg
+        self.codegen.emit `${isInvalid} = or i1 ${isEmp}, ${isNull}`
+
+        popSlot: str = self.codegen.newReg
+        self.codegen.emit `${popSlot} = alloca i64`
+        self.codegen.emit `store i64 0, ptr ${popSlot}`
+
+        popChkLbl: str = self.codegen.newLabel "pop_chk"
+        popDoLbl: str = self.codegen.newLabel "pop_do"
+        popEndLbl: str = self.codegen.newLabel "pop_end"
+
+        self.codegen.emit `br i1 ${isInvalid}, label %${popEndLbl}, label %${popChkLbl}`
+
+        self.codegen.emitLabel popChkLbl
+        curLen: str = self.emitLength arrPtrReg
+        canPop: str = self.codegen.newReg
+        self.codegen.emit `${canPop} = icmp sgt i64 ${curLen}, 0`
+        self.codegen.emit `br i1 ${canPop}, label %${popDoLbl}, label %${popEndLbl}`
+
+        self.codegen.emitLabel popDoLbl
+        gep: str = self.codegen.newReg
+        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${curLen}`
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+        self.codegen.emit `store i64 ${valReg}, ptr ${popSlot}`
+        newLen: str = self.codegen.newReg
+        self.codegen.emit `${newLen} = sub i64 ${curLen}, 1`
+        self.codegen.emit `store i64 ${newLen}, ptr ${arrPtrReg}`
+        self.codegen.emit `br label %${popEndLbl}`
+
+        self.codegen.emitLabel popEndLbl
+        resVal: str = self.codegen.newReg
+        self.codegen.emit `${resVal} = load i64, ptr ${popSlot}`
+        -> resVal
+    },
+
+    /**
+     * Emits fast bulk block copy for array spread ([...a, ...b]) using @llvm.memcpy.
+     *
+     * @param {ArraySpreadPart[]} parts - Sequence of spread segments and single literals
+     * @returns {str} SSA register holding pointer to assembled array
+     */
+    emitArraySpread: parts: ArraySpreadPart[] :: str => {
+        let literalCount: num = 0
+        fr p of parts {
+            if !p.isSpread {
+                literalCount++
+            }
+        }
+
+        totLenSlot: str = self.codegen.newReg
+        self.codegen.emit `${totLenSlot} = alloca i64`
+        self.codegen.emit `store i64 ${literalCount}, ptr ${totLenSlot}`
+
+        fr p of parts {
+            if p.isSpread {
+                sLen: str = self.emitLength p.valReg
+                prevTot: str = self.codegen.newReg
+                self.codegen.emit `${prevTot} = load i64, ptr ${totLenSlot}`
+                newTot: str = self.codegen.newReg
+                self.codegen.emit `${newTot} = add i64 ${prevTot}, ${sLen}`
+                self.codegen.emit `store i64 ${newTot}, ptr ${totLenSlot}`
+            }
+        }
+
+        finalTot: str = self.codegen.newReg
+        self.codegen.emit `${finalTot} = load i64, ptr ${totLenSlot}`
+
+        isZero: str = self.codegen.newReg
+        self.codegen.emit `${isZero} = icmp eq i64 ${finalTot}, 0`
+
+        emptyLbl: str = self.codegen.newLabel "sp_empty"
+        allocLbl: str = self.codegen.newLabel "sp_alloc"
+        doneLbl: str = self.codegen.newLabel "sp_done"
+
+        retSlot: str = self.codegen.newReg
+        self.codegen.emit `${retSlot} = alloca ptr`
+        self.codegen.emit `br i1 ${isZero}, label %${emptyLbl}, label %${allocLbl}`
+
+        self.codegen.emitLabel emptyLbl
+        empPtr: str = self.emitEmptyArray
+        self.codegen.emit `store ptr ${empPtr}, ptr ${retSlot}`
+        self.codegen.emit `br label %${doneLbl}`
+
+        self.codegen.emitLabel allocLbl
+        allocSlots: str = self.codegen.newReg
+        self.codegen.emit `${allocSlots} = add i64 ${finalTot}, 2`
+        allocBytes: str = self.codegen.newReg
+        self.codegen.emit `${allocBytes} = mul i64 ${allocSlots}, 8`
+        rawPtr: str = self.codegen.newReg
+        self.codegen.emit `${rawPtr} = call ptr @malloc(i64 ${allocBytes})`
+        self.codegen.emit `store i64 ${finalTot}, ptr ${rawPtr}`
+        arrPtr: str = self.codegen.newReg
+        self.codegen.emit `${arrPtr} = getelementptr inbounds i64, ptr ${rawPtr}, i64 1`
+        self.codegen.emit `store i64 ${finalTot}, ptr ${arrPtr}`
+
+        curWriteIdx: str = self.codegen.newReg
+        self.codegen.emit `${curWriteIdx} = alloca i64`
+        self.codegen.emit `store i64 1, ptr ${curWriteIdx}`
+
+        fr p of parts {
+            if p.isSpread {
+                sLen: str = self.emitLength p.valReg
+                curIdx: str = self.codegen.newReg
+                self.codegen.emit `${curIdx} = load i64, ptr ${curWriteIdx}`
+                dstGep: str = self.codegen.newReg
+                self.codegen.emit `${dstGep} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${curIdx}`
+                srcElemGep: str = self.codegen.newReg
+                self.codegen.emit `${srcElemGep} = getelementptr inbounds i64, ptr ${p.valReg}, i64 1`
+                copyBytes: str = self.codegen.newReg
+                self.codegen.emit `${copyBytes} = mul i64 ${sLen}, 8`
+                self.codegen.emit `call ptr @memcpy(ptr ${dstGep}, ptr ${srcElemGep}, i64 ${copyBytes})`
+                nextIdx: str = self.codegen.newReg
+                self.codegen.emit `${nextIdx} = add i64 ${curIdx}, ${sLen}`
+                self.codegen.emit `store i64 ${nextIdx}, ptr ${curWriteIdx}`
+            } els {
+                curIdx: str = self.codegen.newReg
+                self.codegen.emit `${curIdx} = load i64, ptr ${curWriteIdx}`
+                dstGep: str = self.codegen.newReg
+                self.codegen.emit `${dstGep} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${curIdx}`
+                boxedVal: str = boxValueToI64 self.codegen, p.valReg, p.valType
+                self.codegen.emit `store i64 ${boxedVal}, ptr ${dstGep}`
+                nextIdx: str = self.codegen.newReg
+                self.codegen.emit `${nextIdx} = add i64 ${curIdx}, 1`
+                self.codegen.emit `store i64 ${nextIdx}, ptr ${curWriteIdx}`
+            }
+        }
+
+        self.codegen.emit `store ptr ${arrPtr}, ptr ${retSlot}`
+        self.codegen.emit `br label %${doneLbl}`
+
+        self.codegen.emitLabel doneLbl
+        resPtr: str = self.codegen.newReg
+        self.codegen.emit `${resPtr} = load ptr, ptr ${retSlot}`
+        -> resPtr
+    }
+}

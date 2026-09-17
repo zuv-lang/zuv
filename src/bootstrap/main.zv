@@ -22,6 +22,7 @@ imp BorrowChecker, BorrowVar, BorrowScope, ReferenceAlias, BorrowCheckProgram, B
 imp Codegen, StringConstant frm codegen/codegen
 imp ExternManager, ExternFuncInfo, ToLLVMExternType, FormatExternDeclare frm codegen/extern
 imp llvmType, llvmBoxedType, isIntegerType, isFloatType, isPointerType, selectBinaryOp, selectCmpOp, selectCastOp, selectBinaryOpForExpr, selectCmpOpForExpr, emitBinaryInstruction, emitCmpInstruction, emitCastInstruction frm codegen/types
+imp ArrayCodegen, ArraySpreadPart, arrayCapOffset, arrayLenOffset, arrayDataOffset, arrayHeaderWords, arrayWordBytes, arrayInitialCap, boxValueToI64, unboxValueFromI64, emitArrayBoundsCheck frm codegen/array
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -559,4 +560,72 @@ main {
     binInstr = emitBinaryInstruction "+", "%r0", "%r1", TypeKind.Num, "%r2"
     castInstr = emitCastInstruction "%val", TypeKind.I8, TypeKind.I64, "%res"
     prnt `    Emitted instructions: [${binInstr}], [${castInstr}]`
+
+    // 16. Rust-Style Vector Runtime & Array Codegen Verification (Phase 4 Task 4.4)
+    prnt "16. Rust-Style Vector Runtime & Array Codegen Verification:"
+
+    // 16.1 Layout constants
+    capOff: num = arrayCapOffset
+    lenOff: num = arrayLenOffset
+    dataOff: num = arrayDataOffset
+    hdrWords: num = arrayHeaderWords
+    wBytes: num = arrayWordBytes
+    initCap: num = arrayInitialCap
+    prnt `    Layout: capOffset=${capOff}, lenOffset=${lenOff}, dataOffset=${dataOff}, headerWords=${hdrWords}, wordBytes=${wBytes}, initialCap=${initCap}`
+
+    // 16.2 Runtime globals & zero-cost empty array []
+    cgArr = Codegen.create "x86_64-pc-windows-msvc", false
+    arrGen = ArrayCodegen.create cgArr
+    arrGen.emitRuntimeGlobals
+    empArrPtr = arrGen.emitEmptyArray
+    prnt `    Zero-cost empty array []: pointer=${empArrPtr}, globalsEmitted=${arrGen.globalsEmitted}`
+
+    // 16.3 Array literal [10, 20, 30] allocation
+    elemRegs: str[] = ["%r10", "%r20", "%r30"]
+    elemTypes: TypeKind[] = [TypeKind.I64, TypeKind.I64, TypeKind.I64]
+    arrLitPtr = arrGen.emitArrayLit elemRegs, elemTypes
+    prnt `    Array literal [10, 20, 30]: arrPtr=${arrLitPtr}`
+
+    // 16.4 Length & capacity inquiries
+    lenRes = arrGen.emitLength arrLitPtr
+    capRes = arrGen.emitCapacity arrLitPtr
+    prnt `    Array metadata: lenReg=${lenRes}, capReg=${capRes}`
+
+    // 16.5 Bounds-checked indexing & mutation
+    getRes = arrGen.emitGetElement arrLitPtr, "%idx", false, 42
+    arrGen.emitSetElement arrLitPtr, "%idx", "%newVal", TypeKind.I64, 43
+    prnt `    Bounds-checked indexing: getReg=${getRes}`
+
+    // 16.6 Dynamic push (.psh) with 2x geometric growth
+    pushLen = arrGen.emitPush arrLitPtr, "%elemVal", TypeKind.I64, "%slotVar"
+    prnt `    Array push (.psh): newLenReg=${pushLen}`
+
+    // 16.7 Dynamic pop (.pp)
+    popVal = arrGen.emitPop arrLitPtr
+    prnt `    Array pop (.pp): poppedValReg=${popVal}`
+
+    // 16.8 Array spread [...a, x, ...b] bulk copy via @memcpy
+    spPart1: ArraySpreadPart = { isSpread: true, valReg: "%arrA", valType: TypeKind.Arr, lenReg: "" }
+    spPart2: ArraySpreadPart = { isSpread: false, valReg: "%elemX", valType: TypeKind.I64, lenReg: "" }
+    spPart3: ArraySpreadPart = { isSpread: true, valReg: "%arrB", valType: TypeKind.Arr, lenReg: "" }
+    spreadParts: ArraySpreadPart[] = [spPart1, spPart2, spPart3]
+    spreadPtr = arrGen.emitArraySpread spreadParts
+    prnt `    Array spread [...a, x, ...b]: spreadArrPtr=${spreadPtr}`
+
+    // 16.9 Value boxing and unboxing
+    boxedNum = boxValueToI64 cgArr, "%numVal", TypeKind.Num
+    unboxedNum = unboxValueFromI64 cgArr, boxedNum, TypeKind.Num
+    boxedBool = boxValueToI64 cgArr, "%bVal", TypeKind.Bool
+    unboxedBool = unboxValueFromI64 cgArr, boxedBool, TypeKind.Bool
+    boxedPtr = boxValueToI64 cgArr, "%pVal", TypeKind.Str
+    unboxedPtr = unboxValueFromI64 cgArr, boxedPtr, TypeKind.Str
+    prnt `    Boxing/unboxing: num(${boxedNum} -> ${unboxedNum}), bool(${boxedBool} -> ${unboxedBool}), ptr(${boxedPtr} -> ${unboxedPtr})`
+
+    // 16.10 Module IR verification for array operations
+    arrModuleIR = cgArr.getModuleIR
+    hasEmptyArrSym = arrModuleIR.cnt "@_zuv_empty_arr"
+    hasMallocCall = arrModuleIR.cnt "@malloc"
+    hasReallocCall = arrModuleIR.cnt "@realloc"
+    hasMemcpyCall = arrModuleIR.cnt "@memcpy"
+    prnt `    Module array IR: hasEmptyArr=${hasEmptyArrSym}, hasMalloc=${hasMallocCall}, hasRealloc=${hasReallocCall}, hasMemcpy=${hasMemcpyCall}`
 }
