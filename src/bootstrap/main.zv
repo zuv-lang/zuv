@@ -24,6 +24,8 @@ imp ExternManager, ExternFuncInfo, ToLLVMExternType, FormatExternDeclare frm cod
 imp llvmType, llvmBoxedType, isIntegerType, isFloatType, isPointerType, selectBinaryOp, selectCmpOp, selectCastOp, selectBinaryOpForExpr, selectCmpOpForExpr, emitBinaryInstruction, emitCmpInstruction, emitCastInstruction frm codegen/types
 imp ArrayCodegen, ArraySpreadPart, arrayCapOffset, arrayLenOffset, arrayDataOffset, arrayHeaderWords, arrayWordBytes, arrayInitialCap, boxValueToI64, unboxValueFromI64, emitArrayBoundsCheck frm codegen/array
 imp StructField, StructLayout, StructLayoutRegistry, ObjectCodegen, createStructField, resolveFieldTypeKind frm codegen/decl
+imp ExprCodegen, ExprResult, ScopeSymbol frm codegen/expr
+imp StmtCodegen frm codegen/stmt
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -689,4 +691,97 @@ main {
     hasObjGep: bool = objModuleIR.cnt "getelementptr inbounds i64"
     hasObjZext: bool = objModuleIR.cnt "zext i8"
     prnt `    Module obj IR: hasMalloc=${hasObjMalloc}, hasGep=${hasObjGep}, hasZextI8=${hasObjZext}`
+
+    // 18. Statement & Expression Code Generation Verification
+    prnt "18. Statement & Expression Code Generation Verification"
+
+    // 18.1 Coordinators initialization
+    cgStmt = Codegen.create "x86_64-pc-windows-msvc", false
+    regLayoutsStmt = StructLayoutRegistry.create
+    objGenStmt = ObjectCodegen.create cgStmt, regLayoutsStmt
+    arrGenStmt = ArrayCodegen.create cgStmt
+    exprGen = ExprCodegen.create cgStmt, objGenStmt, arrGenStmt
+    stmtGen = StmtCodegen.create cgStmt, exprGen
+    cgStmt.startFunction "define i64 @test_pipeline() {"
+    stmtGen.setReturnType TypeKind.I64
+
+    // 18.2 Variable Declaration (let a: i64 = 10)
+    astInitA = ASTNode.createNum 10, 1, 1
+    astInitA.inferredType = TypeKind.I64
+    astVarA = ASTNode.createVarDecl "a", "i64", false, astInitA, 1, 1
+    stmtGen.emitStmt astVarA
+    symA: ScopeSymbol = exprGen.findSymbol "a"
+    prnt `    VarDecl a: i64: slot=${symA.reg}, isAlloca=${symA.isAlloca}`
+
+    // 18.3 Binary Expression (a + 5)
+    astIdentA = ASTNode.createIdent "a", 2, 1
+    astIdentA.inferredType = TypeKind.I64
+    astNum5 = ASTNode.createNum 5, 2, 5
+    astNum5.inferredType = TypeKind.I64
+    astBinAdd = ASTNode.createBinary "+", astIdentA, astNum5, 2, 3
+    astBinAdd.inferredType = TypeKind.I64
+    addRes: ExprResult = exprGen.emitExpr astBinAdd
+    prnt `    Binary add (a + 5): reg=${addRes.reg}, typeKind=${addRes.typeKind}`
+
+    // 18.4 If/Else Branching (if a > 0 { ret (a + 5) } els { ret 0 })
+    astNum0 = ASTNode.createNum 0, 3, 5
+    astNum0.inferredType = TypeKind.I64
+    astCmp = ASTNode.createBinary ">", astIdentA, astNum0, 3, 3
+    astCmp.inferredType = TypeKind.I64
+    astThenRet = ASTNode.createRet astBinAdd, 4, 5
+    astThenBlock = ASTNode.createBlock [astThenRet], 4, 1
+    astElseRet = ASTNode.createRet astNum0, 6, 5
+    astElseBlock = ASTNode.createBlock [astElseRet], 6, 1
+    astIfStmt = ASTNode.createIf astCmp, astThenBlock, astElseBlock, 3, 1
+    stmtGen.emitStmt astIfStmt
+    prnt "    If-Else branching: OK"
+
+    // 18.5 While Loop (wh a > 0 { a = a - 1 })
+    astNum1 = ASTNode.createNum 1, 8, 5
+    astNum1.inferredType = TypeKind.I64
+    astSub = ASTNode.createBinary "-", astIdentA, astNum1, 8, 3
+    astSub.inferredType = TypeKind.I64
+    astAssignA = ASTNode.createBinary "=", astIdentA, astSub, 8, 1
+    astAssignStmt = ASTNode.createExprStmt astAssignA, 8, 1
+    astWhBody = ASTNode.createBlock [astAssignStmt], 8, 1
+    astWhStmt = ASTNode.createWh astCmp, astWhBody, 7, 1
+    stmtGen.emitStmt astWhStmt
+    prnt "    While loop: OK"
+
+    // 18.6 For-of Array Iteration (fr item of [1, 2] { ... })
+    elem1 = ASTNode.createNum 1, 9, 1
+    elem1.inferredType = TypeKind.I64
+    elem2 = ASTNode.createNum 2, 9, 3
+    elem2.inferredType = TypeKind.I64
+    astFrArrLit = ASTNode.createArr [elem1, elem2], 9, 1
+    astFrArrLit.inferredType = TypeKind.Arr
+    astFrBody = ASTNode.createBlock [], 10, 1
+    astFrOf = ASTNode.createBase NodeKind.FrOfStmt, 9, 1
+    astFrOf.name = "item"
+    astFrOf.inferredType = TypeKind.I64
+    astFrOf.children = [astFrArrLit, astFrBody]
+    stmtGen.emitStmt astFrOf
+    prnt "    For-of loop: OK"
+
+    // 18.7 Pattern Matching Switch (sw a { 0 => ..., 1 => ..., _ => ... })
+    arm0: MatchArm = { patternKind: "0", varName: "0", litText: "0", line: 11, col: 1 }
+    arm1: MatchArm = { patternKind: "1", varName: "1", litText: "1", line: 12, col: 1 }
+    armDef: MatchArm = { patternKind: "_", varName: "_", litText: "_", line: 13, col: 1 }
+    astSwitchStmt = ASTNode.createBase NodeKind.SwStmt, 11, 1
+    astSwitchStmt.children = [astIdentA, astThenBlock, astElseBlock, astThenBlock]
+    astSwitchStmt.cases = [arm0, arm1, armDef]
+    stmtGen.emitStmt astSwitchStmt
+    prnt "    Pattern match switch (LLVM switch i64): OK"
+
+    // 18.8 Return with widening & Module IR verification
+    boolRetVal = ASTNode.createBool true, 14, 5
+    astRetBool = ASTNode.createRet boolRetVal, 14, 1
+    stmtGen.emitStmt astRetBool
+    cgStmt.finishFunction
+    moduleStmtIR: str = cgStmt.getModuleIR
+    hasSwitch: bool = moduleStmtIR.cnt "switch i64"
+    hasZextBool: bool = moduleStmtIR.cnt "zext i1"
+    hasBrCond: bool = moduleStmtIR.cnt "br i1"
+    prnt `    Module stmt IR: hasSwitch=${hasSwitch}, hasZextI1=${hasZextBool}, hasBrI1=${hasBrCond}`
 }
+
