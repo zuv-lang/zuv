@@ -165,6 +165,11 @@ obj ExternManager {
         if self.isDeclared name {
             -> ""
         }
+        symName: str = "@" + name + "("
+        if codegen.header.cnt symName {
+            self.declaredFuncs.psh name
+            -> ""
+        }
         self.declaredFuncs.psh name
         self.addLib libName
 

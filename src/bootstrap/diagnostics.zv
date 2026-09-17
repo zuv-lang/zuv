@@ -70,23 +70,28 @@ obj Diagnostic {
  * @returns {str} Extracted line content without trailing newline
  */
 ExtractSourceLine sourceText: str, targetLine: num :: str {
+    if sourceText == und || sourceText == nil {
+        -> ""
+    }
+    totalLen: num = sourceText.ln
+    if totalLen == 0 || targetLine < 1 {
+        -> ""
+    }
     let curLine: num = 1
     let startIdx: num = 0
-    totalLen: num = sourceText.ln
     let found: str = ""
     fr i = 0; i < totalLen; i++ {
         ch: str = sourceText.chr i
         if ch == "\n" {
             if curLine == targetLine {
                 found = sourceText.slc startIdx, i
-                i = totalLen
+                -> found
             }
             curLine++
-            startIdx = i
-            startIdx++
+            startIdx = i + 1
         }
     }
-    if curLine == targetLine {
+    if curLine == targetLine && startIdx <= totalLen {
         found = sourceText.slc startIdx, totalLen
     }
     -> found

@@ -351,7 +351,7 @@ obj RuntimeCodegen {
             br i1 %is_null, label %print_unk, label %print_sym
 
         print_sym:
-            ; Print formatted frame: "  %2d: %s\n       at %s:%d (+0x%llx)"
+            ; Print formatted frame
             %fn_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 1
             %fn_name = load ptr, ptr %fn_name_ptr
             %file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 2
@@ -533,7 +533,7 @@ obj RuntimeCodegen {
             br i1 %is_null, label %fmt_unk, label %fmt_sym
 
         fmt_sym:
-            ; Known symbol: append "  %2d: %s\n       at %s:%d (+0x%llx)"
+            ; Known symbol frame
             %fn_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 1
             %fn_name = load ptr, ptr %fn_name_ptr
             %file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 2

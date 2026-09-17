@@ -276,5 +276,18 @@ obj Checker {
 
     hasErrors: :: bool => {
         -> self.errors.ln > 0
+    },
+
+    formatErrors: :: str => {
+        let res: str = ""
+        fr diag of self.errors {
+            formatted: str = diag.format self.source
+            if res == "" {
+                res = formatted
+            } els {
+                res = res + "\n\n" + formatted
+            }
+        }
+        -> res
     }
 }

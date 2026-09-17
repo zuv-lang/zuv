@@ -19,6 +19,7 @@ imp ASTNode, NodeKind, Param, FieldEntry frm ../ast
 imp TypeInfo, TypeKind frm ../types
 imp Diagnostic frm ../diagnostics
 imp Parser frm parser
+imp ParseStatement, ParseBlockStmt, ParseMatchStmt, ParseExpr frm stmt
 
 /**
  * Parses a type annotation string from the token stream.
@@ -138,6 +139,14 @@ ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
     if parser.matchToken TokenType.TOK_LBRACE {
         // Record schema definition: { field1: type; field2: type; }
         wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+            if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+                cont
+            }
+            if !(parser.check TokenType.TOK_IDENT) {
+                errTok: Token = parser.advance
+                parser.addError "E0102", "Expected field identifier in type record, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
+                cont
+            }
             fTok: Token = parser.consume TokenType.TOK_IDENT, "Expected field identifier in type record"
             parser.consume TokenType.TOK_COLON, "Expected ':' after field name"
             fType: str = ParseTypeString parser
@@ -170,6 +179,34 @@ ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
 }
 
 /**
+ * Scans ahead on the current line to check if an object member is a method definition.
+ *
+ * Checks if a '=>' token appears on the same line before a semicolon or closing brace.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {bool} True if lookahead finds '=>' on the current line
+ */
+IsMethodMember parser: Parser :: bool {
+    cTok: Token = parser.cur
+    curLine: num = cTok.line
+    let offset: num = 0
+    wh true {
+        tok: Token = parser.peekAhead offset
+        if tok.kind == TokenType.TOK_EOF || tok.line != curLine {
+            brk
+        }
+        if tok.kind == TokenType.TOK_FAT_ARROW {
+            -> true
+        }
+        if tok.kind == TokenType.TOK_SEMICOLON || tok.kind == TokenType.TOK_RBRACE {
+            brk
+        }
+        offset = offset + 1
+    }
+    -> false
+}
+
+/**
  * Parses an object / struct declaration (`obj Name { field: Type, method: => { ... } }`).
  *
  * @param {Parser} parser - Parser coordinator instance
@@ -190,15 +227,21 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
             cont
         }
 
+        if !(parser.check TokenType.TOK_IDENT) {
+            errTok: Token = parser.advance
+            parser.addError "E0102", "Expected member name in object declaration, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
+            cont
+        }
+
         mTok: Token = parser.consume TokenType.TOK_IDENT, "Expected member name in object declaration"
         mName: str = mTok.val
 
         if parser.matchToken TokenType.TOK_COLON {
             // Check if member is a method or a field
-            if (parser.check TokenType.TOK_FAT_ARROW) || (parser.check TokenType.TOK_COLON_COLON) || (parser.check TokenType.TOK_LPAREN) {
+            if IsMethodMember parser {
                 // Method definition: method: params :: Ret => { ... }
                 let mParams: Param[] = []
-                let mRet: str = ""
+                let mRet: str = "void"
 
                 if !(parser.check TokenType.TOK_FAT_ARROW) && !(parser.check TokenType.TOK_COLON_COLON) {
                     mParams = ParseParamList parser
@@ -212,6 +255,18 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
 
                 mNode = ASTNode.createFuncDecl mName, mRet, false, true, mTok.line, mTok.col
                 mNode.params = mParams
+
+                if parser.check TokenType.TOK_LBRACE {
+                    mBody: ASTNode = ParseBlockStmt parser
+                    mNode.children.psh mBody
+                } els if parser.check TokenType.TOK_MATCH {
+                    mMatch: ASTNode = ParseMatchStmt parser
+                    mNode.children.psh mMatch
+                } els {
+                    mExpr: ASTNode = ParseExpr parser
+                    mNode.children.psh mExpr
+                }
+
                 node.children.psh mNode
             } els {
                 // Field definition: field: Type
@@ -276,9 +331,19 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
     node.params = params
 
     if parser.matchToken TokenType.TOK_FAT_ARROW {
-        // Arrow function expression body
-        bodyNode = ASTNode.createBlock [], nameTok.line, nameTok.col
-        node.children.psh bodyNode
+        if parser.check TokenType.TOK_LBRACE {
+            bodyBlock: ASTNode = ParseBlockStmt parser
+            node.children.psh bodyBlock
+        } els if parser.check TokenType.TOK_MATCH {
+            matchNode: ASTNode = ParseMatchStmt parser
+            node.children.psh matchNode
+        } els {
+            exprNode: ASTNode = ParseExpr parser
+            node.children.psh exprNode
+        }
+    } els if parser.check TokenType.TOK_LBRACE {
+        bodyBlock: ASTNode = ParseBlockStmt parser
+        node.children.psh bodyBlock
     }
 
     -> node
@@ -302,6 +367,12 @@ ParseEnumDecl parser: Parser, isPub: bool :: ASTNode {
 
     wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
         if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+            cont
+        }
+
+        if !(parser.check TokenType.TOK_IDENT) {
+            errTok: Token = parser.advance
+            parser.addError "E0102", "Expected enum variant identifier, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
             cont
         }
 

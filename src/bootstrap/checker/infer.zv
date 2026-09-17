@@ -566,7 +566,32 @@ InferDeclaration checker: Checker, decl: ASTNode -> void {
         let ctorSym = Symbol.create(decl.name, TypeKind.Obj, decl.name, false, true, 0, decl.line, decl.col)
         checker.defineSymbol(ctorSym)
         fr mNode of decl.children {
-            InferDeclaration(checker, mNode)
+            let retKind = TypeKind.Void
+            if mNode.typeAnnotation.ln > 0 {
+                retKind = StrToTypeKind(mNode.typeAnnotation)
+            }
+            let paramTypeNames: str[] = []
+            fr pItem of mNode.params {
+                paramTypeNames.psh(pItem.typeAnnotation)
+            }
+            let fnTypeName = "fn_" + mNode.name
+            let fnTypeInfo = TypeInfo.createFunc(retKind, mNode.typeAnnotation, paramTypeNames)
+            fnTypeInfo.name = fnTypeName
+            checker.registerType(fnTypeInfo)
+
+            checker.enterScope()
+            let selfSym = Symbol.create("self", TypeKind.Obj, decl.name, false, true, checker.currentLevel(), mNode.line, mNode.col)
+            checker.defineSymbol(selfSym)
+
+            fr param of mNode.params {
+                let pKind = StrToTypeKind(param.typeAnnotation)
+                let pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+                checker.defineSymbol(pSym)
+            }
+            fr bStmt of mNode.children {
+                InferStatement(checker, bStmt)
+            }
+            checker.exitScope()
         }
         ->
     }
@@ -608,8 +633,10 @@ InferDeclaration checker: Checker, decl: ASTNode -> void {
     }
     if k == NodeKind.ImportDecl {
         fr symEntry of decl.fields {
-            let impSym = Symbol.create(symEntry.name, TypeKind.Obj, symEntry.name, false, true, 0, symEntry.line, symEntry.col)
-            checker.defineSymbol(impSym)
+            if !(checker.hasSymbol(symEntry.name)) {
+                let impSym = Symbol.create(symEntry.name, TypeKind.Obj, symEntry.name, false, true, 0, symEntry.line, symEntry.col)
+                checker.defineSymbol(impSym)
+            }
         }
         ->
     }
@@ -627,9 +654,61 @@ InferDeclaration checker: Checker, decl: ASTNode -> void {
  * @returns {void}
  */
 InferProgram checker: Checker, program: ASTNode -> void {
+    // Pass 1: Pre-register all top-level functions, types, enums, and imports
     fr child of program.children {
         if child.isDecl() {
-            InferDeclaration(checker, child)
+            let k = child.kind
+            if k == NodeKind.FuncDecl {
+                let retKind = TypeKind.Void
+                if child.typeAnnotation.ln > 0 {
+                    retKind = StrToTypeKind(child.typeAnnotation)
+                }
+                let paramTypeNames: str[] = []
+                fr pItem of child.params {
+                    paramTypeNames.psh(pItem.typeAnnotation)
+                }
+                let fnTypeName = "fn_" + child.name
+                let fnTypeInfo = TypeInfo.createFunc(retKind, child.typeAnnotation, paramTypeNames)
+                fnTypeInfo.name = fnTypeName
+                checker.registerType(fnTypeInfo)
+                let fnSym = Symbol.create(child.name, TypeKind.Func, fnTypeName, false, true, 0, child.line, child.col)
+                checker.defineSymbol(fnSym)
+            } els if k == NodeKind.TypeDecl {
+                let tInfo = TypeInfo.createObject(child.name)
+                checker.registerType(tInfo)
+            } els if k == NodeKind.EnumDecl {
+                let eInfo = TypeInfo.createEnum(child.name)
+                checker.registerType(eInfo)
+                let eSym = Symbol.create(child.name, TypeKind.Enum, child.name, false, true, 0, child.line, child.col)
+                checker.defineSymbol(eSym)
+            } els if k == NodeKind.ImportDecl {
+                fr symEntry of child.fields {
+                    if !(checker.hasSymbol(symEntry.name)) {
+                        let impSym = Symbol.create(symEntry.name, TypeKind.Obj, symEntry.name, false, true, 0, symEntry.line, symEntry.col)
+                        checker.defineSymbol(impSym)
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 2: Validate function and method bodies and statements
+    fr child of program.children {
+        if child.isDecl() {
+            if child.kind == NodeKind.FuncDecl {
+                checker.enterScope()
+                fr param of child.params {
+                    let pKind = StrToTypeKind(param.typeAnnotation)
+                    let pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+                    checker.defineSymbol(pSym)
+                }
+                fr bStmt of child.children {
+                    InferStatement(checker, bStmt)
+                }
+                checker.exitScope()
+            } els if child.kind != NodeKind.ImportDecl && child.kind != NodeKind.EnumDecl {
+                InferDeclaration(checker, child)
+            }
         } els {
             InferStatement(checker, child)
         }

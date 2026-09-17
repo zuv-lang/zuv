@@ -252,7 +252,9 @@ obj Codegen {
      * @returns {void}
      */
     emitExtern: decl: str :: void => {
-        self.header = self.header + decl + "\n"
+        if !(self.header.cnt decl) {
+            self.header = self.header + decl + "\n"
+        }
     },
 
     /**

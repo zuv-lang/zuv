@@ -85,6 +85,38 @@ ParseExpr parser: Parser :: ASTNode {
         arrNode = ASTNode.createBase NodeKind.ArrExpr, lbTok.line, lbTok.col
         arrNode.children = elems
         left = arrNode
+    } els if tok.kind == TokenType.TOK_LBRACE {
+        // Object literal: { key1: val1, key2, ... }
+        lbTok: Token = parser.advance
+        objNode = ASTNode.createBase NodeKind.ObjLitExpr, lbTok.line, lbTok.col
+        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+            if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+                cont
+            }
+            if !(parser.check TokenType.TOK_IDENT) && !(parser.check TokenType.TOK_STRING) {
+                parser.advance
+                cont
+            }
+            fTok: Token = parser.advance
+            let valNode = ASTNode.createIdent fTok.val, fTok.line, fTok.col
+            if parser.matchToken TokenType.TOK_COLON {
+                valNode = ParseExpr parser
+            }
+            entry: FieldEntry = {
+                name: fTok.val,
+                valStr: fTok.val,
+                isSpread: false,
+                line: fTok.line,
+                col: fTok.col
+            }
+            objNode.fields.psh entry
+            objNode.children.psh valNode
+            if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+                // optional delimiter
+            }
+        }
+        parser.consume TokenType.TOK_RBRACE, "Expected '}' after object literal"
+        left = objNode
     } els if tok.kind == TokenType.TOK_LPAREN {
         // Parenthesized expression: (expr)
         parser.advance
@@ -107,6 +139,25 @@ ParseExpr parser: Parser :: ASTNode {
             idxExpr: ASTNode = ParseExpr parser
             parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
             left = ASTNode.createIndex left, idxExpr, left.line, left.col
+        } els if parser.matchToken TokenType.TOK_LPAREN {
+            // Function or method call with parentheses: left(arg1, arg2)
+            args: ASTNode[] = []
+            wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+                argNode: ASTNode = ParseExpr parser
+                args.psh argNode
+                if parser.matchToken TokenType.TOK_COMMA {
+                    // continue
+                } els {
+                    brk
+                }
+            }
+            parser.consume TokenType.TOK_RPAREN, "Expected ')' after call arguments"
+            if left.kind == NodeKind.PropExpr {
+                target = left.children[0]
+                left = ASTNode.createMethodCall target, left.name, args, left.line, left.col
+            } els {
+                left = ASTNode.createCall left, args, left.line, left.col
+            }
         } els if parser.matchToken TokenType.TOK_INC {
             left = ASTNode.createUnary "++", left, false, left.line, left.col
         } els if parser.matchToken TokenType.TOK_DEC {
@@ -131,6 +182,56 @@ ParseExpr parser: Parser :: ASTNode {
     }
 
     -> left
+}
+
+/**
+ * Parses juxtaposed (parenthesis-free) arguments on the same line for an identifier or property call.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {ASTNode} callee - Callee identifier or member access node
+ * @returns {ASTNode} CallExpr or MethodCallExpr if arguments present, or original callee
+ */
+ParseJuxtaposedArgs parser: Parser, callee: ASTNode :: ASTNode {
+    if callee.kind != NodeKind.IdentExpr && callee.kind != NodeKind.PropExpr {
+        -> callee
+    }
+    curTok: Token = parser.cur
+    if parser.isAtEnd || curTok.line != callee.line {
+        -> callee
+    }
+    if curTok.kind == TokenType.TOK_SEMICOLON || curTok.kind == TokenType.TOK_RBRACE ||
+       curTok.kind == TokenType.TOK_RPAREN || curTok.kind == TokenType.TOK_RBRACKET ||
+       curTok.kind == TokenType.TOK_COMMA || curTok.kind == TokenType.TOK_ASSIGN ||
+       curTok.kind == TokenType.TOK_PLUS_EQ || curTok.kind == TokenType.TOK_MINUS_EQ ||
+       curTok.kind == TokenType.TOK_COLON || curTok.kind == TokenType.TOK_COLON_COLON ||
+       curTok.kind == TokenType.TOK_FAT_ARROW || curTok.kind == TokenType.TOK_ARROW ||
+       curTok.kind == TokenType.TOK_LBRACE {
+        -> callee
+    }
+
+    args: ASTNode[] = []
+    let loopTok: Token = parser.cur
+    wh !(parser.isAtEnd) && loopTok.line == callee.line &&
+       loopTok.kind != TokenType.TOK_SEMICOLON &&
+       loopTok.kind != TokenType.TOK_RBRACE &&
+       loopTok.kind != TokenType.TOK_RPAREN &&
+       loopTok.kind != TokenType.TOK_RBRACKET &&
+       loopTok.kind != TokenType.TOK_LBRACE {
+        argExpr: ASTNode = ParseExpr parser
+        args.psh argExpr
+        if parser.matchToken TokenType.TOK_COMMA {
+            // continue
+        } els {
+            brk
+        }
+        loopTok = parser.cur
+    }
+
+    if callee.kind == NodeKind.PropExpr {
+        target = callee.children[0]
+        -> ASTNode.createMethodCall target, callee.name, args, callee.line, callee.col
+    }
+    -> ASTNode.createCall callee, args, callee.line, callee.col
 }
 
 /**
@@ -169,7 +270,8 @@ ParseVarDecl parser: Parser :: ASTNode {
 
     let initExpr = ASTNode.createNil nameTok.line, nameTok.col
     if parser.matchToken TokenType.TOK_ASSIGN {
-        initExpr = ParseExpr parser
+        rawExpr: ASTNode = ParseExpr parser
+        initExpr = ParseJuxtaposedArgs parser, rawExpr
     }
 
     if parser.matchToken TokenType.TOK_SEMICOLON {
@@ -277,7 +379,8 @@ ParseReturnStmt parser: Parser :: ASTNode {
     let retExpr = ASTNode.createNil retTok.line, retTok.col
 
     if !(parser.check TokenType.TOK_SEMICOLON) && !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
-        retExpr = ParseExpr parser
+        rawExpr: ASTNode = ParseExpr parser
+        retExpr = ParseJuxtaposedArgs parser, rawExpr
     }
 
     if parser.matchToken TokenType.TOK_SEMICOLON {
@@ -370,25 +473,28 @@ ParseMatchStmt parser: Parser :: ASTNode {
     parser.consume TokenType.TOK_LBRACE, "Expected '{' before match arms"
 
     wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
-        patTok: Token = parser.cur
-        parser.advance // consume pattern token (IDENT, NUMBER, STRING, or '_')
+        if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+            cont
+        }
+
+        patExpr: ASTNode = ParseExpr parser
 
         parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after pattern"
 
-        let armBody = ASTNode.createNil patTok.line, patTok.col
+        let armBody = ASTNode.createNil patExpr.line, patExpr.col
         if parser.check TokenType.TOK_LBRACE {
             armBody = ParseBlockStmt parser
         } els {
             exprArm: ASTNode = ParseExpr parser
-            armBody = ASTNode.createBlock [exprArm], patTok.line, patTok.col
+            armBody = ASTNode.createBlock [exprArm], patExpr.line, patExpr.col
         }
 
         arm: MatchArm = {
-            patternKind: patTok.val,
-            varName: patTok.val,
-            litText: patTok.val,
-            line: patTok.line,
-            col: patTok.col
+            patternKind: patExpr.val,
+            varName: patExpr.name,
+            litText: patExpr.val,
+            line: patExpr.line,
+            col: patExpr.col
         }
         node.cases.psh arm
         node.children.psh armBody
@@ -431,7 +537,8 @@ ParseBlockStmt parser: Parser :: ASTNode {
  * @returns {ASTNode} ExprStmt AST node
  */
 ParseExpressionStmt parser: Parser :: ASTNode {
-    expr: ASTNode = ParseExpr parser
+    rawExpr: ASTNode = ParseExpr parser
+    expr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
     if parser.matchToken TokenType.TOK_SEMICOLON {
         // optional trailing semicolon
     }

@@ -1,10 +1,632 @@
 /*
  * =============================================================================
- * Zuv Bootstrap Compiler — Command-Line Interface Driver
+ * Zuv Bootstrap Compiler — Command-Line Interface Driver & Pipeline
  * Path: sub_projects/zuv/src/bootstrap/cli.zv
  * =============================================================================
+ *
+ * Implements the command-line interface driver for the bootstrap compiler:
+ * - Parses subcommands: build, run, test, check, checkall, verify, version, help
+ * - Parses flags: -o, --release, --target, --emit-llvm, --cdylib, --quiet, --verbose
+ * - Resolves friendly target triple aliases
+ * - Orchestrates the full compilation pipeline: Lexer -> Parser -> Checker -> Codegen -> LLD
  */
 
 imp os, fs, str, arr, time
+imp Token, TokenType frm tokens
+imp TypeInfo, TypeKind frm types
+imp ASTNode, NodeKind frm ast
+imp Diagnostic frm diagnostics
+imp Lexer frm lexer
+imp Parser frm parser/parser
+imp ParseProgram frm parser/program
+imp Checker frm checker/checker
+imp InferProgram frm checker/infer
+imp BorrowChecker, BorrowCheckProgram frm checker/borrow
+imp Codegen frm codegen/codegen
+imp ExternManager frm codegen/extern
+imp llvmType, isFloatType, isIntegerType frm codegen/types
+imp ObjectCodegen, StructLayout, StructLayoutRegistry, resolveFieldTypeKind frm codegen/decl
+imp ArrayCodegen frm codegen/array
+imp ExprCodegen frm codegen/expr
+imp StmtCodegen frm codegen/stmt
+imp RuntimeCodegen frm codegen/runtime
 
-// CLI handlers will be implemented in Phase 5
+/**
+ * Checks whether a string ends with a given suffix string.
+ *
+ * @param {str} text - Input text string
+ * @param {str} suffix - Target suffix to inspect
+ * @returns {bool} True if text ends with suffix, false otherwise
+ */
+StrEndsWith text: str, suffix: str :: bool {
+    tLen: num = text.ln
+    sLen: num = suffix.ln
+    if sLen > tLen || sLen == 0 {
+        -> false
+    }
+    subStr: str = text.slc(tLen - sLen, tLen)
+    -> subStr == suffix
+}
+
+/**
+ * Resolves a friendly target name alias to its canonical LLVM target triple.
+ *
+ * @param {str} alias - Target alias name (e.g. 'win64', 'linux-x64', 'macos-arm64')
+ * @returns {str} Canonical LLVM target triple string
+ */
+ResolveTargetTriple alias: str :: str => sw alias {
+    "win64"         => "x86_64-pc-windows-msvc"
+    "windows-x64"   => "x86_64-pc-windows-msvc"
+    "linux-x64"     => "x86_64-unknown-linux-gnu"
+    "linux-amd64"   => "x86_64-unknown-linux-gnu"
+    "linux-arm64"   => "aarch64-unknown-linux-gnu"
+    "linux-aarch64" => "aarch64-unknown-linux-gnu"
+    "macos-arm64"   => "arm64-apple-darwin"
+    "darwin-arm64"  => "arm64-apple-darwin"
+    "macos-x64"     => "x86_64-apple-darwin"
+    "darwin-x64"    => "x86_64-apple-darwin"
+    _               => (alias.ln > 0 ? alias : "x86_64-pc-windows-msvc")
+}
+
+/**
+ * Command-Line Interface controller coordinating argument parsing, diagnostics, and compilation stages.
+ */
+obj Cli {
+    args: str[],
+    subcommand: str,
+    targetFile: str,
+    outputFile: str,
+    targetTriple: str,
+    targetAlias: str,
+    isRelease: bool,
+    emitLlvm: bool,
+    isCdylib: bool,
+    isQuiet: bool,
+    isVerbose: bool,
+
+    /**
+     * Creates and initializes a new Cli coordinator instance with command line arguments.
+     *
+     * @param {str[]} rawArgs - Raw arguments array from os.args
+     * @returns {Cli} Initialized Cli instance
+     */
+    create: rawArgs: str[] :: Cli => {
+        cli: Cli = {
+            args: rawArgs,
+            subcommand: "",
+            targetFile: "",
+            outputFile: "",
+            targetTriple: "x86_64-pc-windows-msvc",
+            targetAlias: "",
+            isRelease: false,
+            emitLlvm: false,
+            isCdylib: false,
+            isQuiet: false,
+            isVerbose: false
+        }
+        cli.parseArgs()
+        -> cli
+    },
+
+    /**
+     * Parses the command-line argument tokens into subcommands, target files, and compiler flags.
+     *
+     * @returns {void}
+     */
+    parseArgs: :: void => {
+        total: num = self.args.ln
+        if total <= 1 {
+            self.subcommand = "help"
+            ret
+        }
+
+        let startIdx: num = 1
+        firstArg: str = self.args[1]
+        if StrEndsWith(firstArg, ".zv") || firstArg == "main.zv" {
+            startIdx = 2
+        }
+
+        if startIdx >= total {
+            self.subcommand = "help"
+            ret
+        }
+
+        leadArg: str = self.args[startIdx]
+        let posIndex: num = startIdx
+
+        // Check if leading argument is a flag or subcommand
+        if leadArg == "-v" || leadArg == "--version" || leadArg == "version" {
+            self.subcommand = "version"
+            ret
+        }
+        if leadArg == "-h" || leadArg == "--help" || leadArg == "help" {
+            self.subcommand = "help"
+            ret
+        }
+
+        if leadArg == "build" || leadArg == "run" || leadArg == "check" ||
+           leadArg == "checkall" || leadArg == "test" || leadArg == "verify" {
+            self.subcommand = leadArg
+            posIndex = startIdx + 1
+        } els if StrEndsWith(leadArg, ".zv") {
+            self.subcommand = "build"
+            self.targetFile = leadArg
+            posIndex = startIdx + 1
+        } els {
+            self.subcommand = "help"
+            ret
+        }
+
+        // Process flags and positional parameters
+        let i: num = posIndex
+        wh i < total {
+            arg: str = self.args[i]
+            if arg == "-o" && i + 1 < total {
+                i = i + 1
+                self.outputFile = self.args[i]
+            } els if arg == "-r" || arg == "--release" {
+                self.isRelease = true
+            } els if arg == "-S" || arg == "--emit-llvm" {
+                self.emitLlvm = true
+            } els if arg == "-l" || arg == "--lib" || arg == "--cdylib" {
+                self.isCdylib = true
+            } els if arg == "-q" || arg == "--quiet" {
+                self.isQuiet = true
+            } els if arg == "-V" || arg == "--verbose" {
+                self.isVerbose = true
+            } els if (arg == "-t" || arg == "--target") && i + 1 < total {
+                i = i + 1
+                self.targetAlias = self.args[i]
+                self.targetTriple = ResolveTargetTriple(self.targetAlias)
+            } els if (self.targetFile.ln == 0) && !(arg.slc(0, 1) == "-") {
+                self.targetFile = arg
+            }
+            i = i + 1
+        }
+
+        if (self.subcommand == "build" || self.subcommand == "run" || self.subcommand == "check") && self.targetFile.ln == 0 {
+            if fE "src/main.zv" {
+                self.targetFile = "src/main.zv"
+            } els {
+                if fE "main.zv" {
+                    self.targetFile = "main.zv"
+                }
+            }
+        }
+    },
+
+    /**
+     * Executes the parsed command and returns an operating system exit code.
+     *
+     * @returns {num} Process exit status code (0 for success, non-zero for failure)
+     */
+    run: :: num => sw self.subcommand {
+        "version"  => self.handleVersion()
+        "help"     => self.handleHelp()
+        "check"    => self.handleCheck(self.targetFile)
+        "checkall" => self.handleCheckAll()
+        "test"     => self.handleTest()
+        "verify"   => self.handleVerify()
+        "build"    => self.handleBuild(self.targetFile)
+        "run"      => self.handleRun(self.targetFile)
+        _          => self.handleHelp()
+    },
+
+    /**
+     * Displays compiler name, version, and architecture information.
+     *
+     * @returns {num} Exit code 0
+     */
+    handleVersion: :: num => {
+        prnt "Zuv Bootstrap Compiler v0.6.0 (LLVM Backend)"
+        prnt "Host Target: x86_64-pc-windows-msvc"
+        prnt "Copyright (c) 2026 Zuv Language Project"
+        -> 0
+    },
+
+    /**
+     * Displays comprehensive CLI usage and options documentation.
+     *
+     * @returns {num} Exit code 0
+     */
+    handleHelp: :: num => {
+        prnt "Usage: zuv [SUBCOMMAND] [OPTIONS] [FILE]"
+        prnt ""
+        prnt "Subcommands:"
+        prnt "  build <file>       Compile a Zuv source file into a native binary"
+        prnt "  run <file>         Compile and execute a Zuv source file"
+        prnt "  check <file>       Run lexing, parsing, and type checking without code generation"
+        prnt "  checkall           Run static type checking across all test suites"
+        prnt "  test               Execute the full Zuv compiler test suite"
+        prnt "  verify             Run the 19-stage bootstrap compiler pipeline verification"
+        prnt "  version            Show compiler version information"
+        prnt "  help               Display this help text"
+        prnt ""
+        prnt "Options:"
+        prnt "  -o <path>          Specify output executable/library path"
+        prnt "  -r, --release      Enable release mode optimizations (-O3)"
+        prnt "  -S, --emit-llvm    Emit LLVM IR (.ll) rather than linking executable"
+        prnt "  -l, --cdylib       Produce a shared C dynamic library (.dll)"
+        prnt "  -t, --target <t>   Target triple or alias (win64, linux-x64, macos-arm64)"
+        prnt "  -q, --quiet        Suppress informational compiler output"
+        prnt "  -V, --verbose      Enable detailed diagnostic and pipeline output"
+        prnt "  -v, --version      Display compiler version and exit"
+        prnt "  -h, --help         Display this help message and exit"
+        -> 0
+    },
+
+    /**
+     * Checks a single source file for syntax, semantic, and borrow checker errors.
+     *
+     * @param {str} file - Target source file path
+     * @returns {num} 0 if checks pass, 1 if diagnostics are recorded
+     */
+    handleCheck: file: str :: num => {
+        if !(fE file) {
+            prnt "error: source file not found: " + file
+            -> 1
+        }
+        code: str = rF file
+        lex = Lexer.create(code)
+        tokens: Token[] = lex.tokenizeAll()
+
+        parser = Parser.create(tokens, file, code)
+        prog: ASTNode = ParseProgram(parser)
+        if parser.hasErrors() {
+            prnt parser.formatErrors()
+            prnt " FAIL " + file + " (Parser Errors)"
+            -> 1
+        }
+
+        checker = Checker.create file, code
+        InferProgram checker, prog
+        if checker.hasErrors() {
+            prnt checker.formatErrors()
+            prnt " FAIL " + file + " (Type/Semantic Errors)"
+            -> 1
+        }
+
+        borrow = BorrowChecker.create(file, code)
+        BorrowCheckProgram(borrow, prog)
+        if borrow.hasErrors() {
+            prnt borrow.formatErrors()
+            prnt " FAIL " + file + " (Borrow Errors)"
+            -> 1
+        }
+
+        if !(self.isQuiet) {
+            prnt " PASS " + file
+        }
+        -> 0
+    },
+
+    /**
+     * Scans tests/ directory and performs semantic checking across all discovered Zuv test files.
+     *
+     * @returns {num} 0 if all files pass, 1 if any failure occurred
+     */
+    handleCheckAll: :: num => {
+        prnt ""
+        prnt " ZUV CHECKALL v0.6.0 (Bootstrap Static & Type Checker)"
+        prnt ""
+        testFiles: str[] = sF "tests", ".zv"
+        let passCount: num = 0
+        let failCount: num = 0
+
+        fr testPath of testFiles {
+            res: num = self.handleCheck(testPath)
+            if res == 0 {
+                passCount = passCount + 1
+            } els {
+                failCount = failCount + 1
+            }
+        }
+
+        totalFiles: num = passCount + failCount
+        prnt ""
+        if failCount == 0 {
+            prnt " Checked Files: " + passCount + " passed (" + totalFiles + ")"
+            prnt "        Status: " + passCount + " passed"
+        } els {
+            prnt " Checked Files: " + failCount + " failed, " + passCount + " passed (" + totalFiles + ")"
+            prnt "        Status: " + failCount + " failed, " + passCount + " passed"
+        }
+        prnt ""
+        -> (failCount > 0 ? 1 : 0)
+    },
+
+    /**
+     * Executes the comprehensive 19-stage bootstrap compiler pipeline verification suite.
+     *
+     * @returns {num} Exit code from verify runner
+     */
+    handleVerify: :: num => {
+        prnt "Running Zuv Bootstrap 19-Stage Verification Suite..."
+        if !(fE "verify.exe") {
+            buildRes: num = sh ".\\zuv.exe build sub_projects/zuv/src/bootstrap/verify.zv -o verify.exe"
+            if buildRes != 0 {
+                prnt "error: failed to build verify.exe"
+                -> buildRes
+            }
+        }
+        runRes: num = sh ".\\verify.exe"
+        -> runRes
+    },
+
+    /**
+     * Compiles a Zuv source file into an LLVM IR module or linked executable.
+     *
+     * @param {str} file - Target source file path
+     * @returns {num} 0 if build succeeded, non-zero on failure
+     */
+    handleBuild: file: str :: num => {
+        if !(fE file) {
+            prnt "error: source file not found: " + file
+            -> 1
+        }
+        code: str = rF file
+        if !(self.isQuiet) {
+            prnt "==========================================="
+            prnt "     Zuv Bootstrap Compiler [BUILD]        "
+            prnt "==========================================="
+            prnt "Compiling target file: " + file
+            if self.isRelease {
+                prnt "Optimization: Release Mode (-O3 Native)"
+            } els {
+                prnt "Optimization: Debug Mode"
+            }
+        }
+
+        lex = Lexer.create(code)
+        tokens: Token[] = lex.tokenizeAll()
+
+        parser = Parser.create(tokens, file, code)
+        prog: ASTNode = ParseProgram(parser)
+        if parser.hasErrors() {
+            prnt parser.formatErrors()
+            -> 1
+        }
+
+        // Import resolution: parse imported local .zv modules and prepend declarations
+        importedNodes: ASTNode[] = []
+        fr child of prog.children {
+            if child.kind == NodeKind.ImportDecl {
+                modPath: str = child.val
+                if modPath.ln > 0 && modPath != "os" && modPath != "fs" && modPath != "str" && modPath != "arr" && modPath != "time" {
+                    let fullPath: str = modPath + ".zv"
+                    if !(fE fullPath) {
+                        fullPath = "tests/" + modPath + ".zv"
+                    }
+                    if fE fullPath {
+                        modCode: str = rF fullPath
+                        modLex = Lexer.create(modCode)
+                        modTokens: Token[] = modLex.tokenizeAll()
+                        modParser = Parser.create(modTokens, fullPath, modCode)
+                        modProg: ASTNode = ParseProgram(modParser)
+                        fr modChild of modProg.children {
+                            importedNodes.psh modChild
+                        }
+                    }
+                }
+            }
+        }
+        if importedNodes.ln > 0 {
+            allChildren: ASTNode[] = []
+            fr impItem of importedNodes {
+                allChildren.psh impItem
+            }
+            fr origItem of prog.children {
+                allChildren.psh origItem
+            }
+            prog.children = allChildren
+        }
+
+        checker = Checker.create file, code
+        InferProgram checker, prog
+        if checker.hasErrors() {
+            prnt checker.formatErrors()
+            -> 1
+        }
+
+        borrow = BorrowChecker.create(file, code)
+        BorrowCheckProgram(borrow, prog)
+        if borrow.hasErrors() {
+            prnt borrow.formatErrors()
+            -> 1
+        }
+
+        // LLVM Codegen
+        cg = Codegen.create(self.targetTriple, self.isRelease)
+        regLayouts = StructLayoutRegistry.create()
+        objGen = ObjectCodegen.create(cg, regLayouts)
+        arrGen = ArrayCodegen.create(cg)
+        exprGen = ExprCodegen.create(cg, objGen, arrGen)
+        stmtGen = StmtCodegen.create(cg, exprGen)
+        rtGen = RuntimeCodegen.create(cg)
+        extMgr = ExternManager.create()
+
+        rtGen.emitAll()
+        extMgr.emitCRuntimeDecls(cg)
+
+        let targetExe: str = self.outputFile
+        if targetExe.ln == 0 {
+            targetExe = (self.isCdylib ? "output.dll" : "output.exe")
+        }
+
+        // Emit functions and statements
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.FuncDecl {
+                if topNode.name == "main" {
+                    cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
+                    rtGen.emitInitCrashHandlerCall()
+                    stmtGen.setReturnType(TypeKind.I32)
+                    if topNode.children.ln > 0 {
+                        bodyBlock: ASTNode = topNode.children[0]
+                        fr bodyStmt of bodyBlock.children {
+                            stmtGen.emitStmt(bodyStmt)
+                        }
+                    }
+                    cg.emit("ret i32 0")
+                    cg.finishFunction()
+                } els {
+                    // Custom function definition
+                    retLLVM: str = (topNode.typeAnnotation.ln > 0 && topNode.typeAnnotation != "void" ? "i64" : "void")
+                    cg.startFunction("define " + retLLVM + " @" + topNode.name + "() {")
+                    if topNode.children.ln > 0 {
+                        bodyBlock: ASTNode = topNode.children[0]
+                        fr bodyStmt of bodyBlock.children {
+                            stmtGen.emitStmt(bodyStmt)
+                        }
+                    }
+                    if retLLVM == "void" {
+                        cg.emit("ret void")
+                    } els {
+                        cg.emit("ret i64 0")
+                    }
+                    cg.finishFunction()
+                }
+            } els if topNode.kind == NodeKind.TypeDecl || topNode.kind == NodeKind.ObjDecl {
+                // Register struct layout
+                layout: StructLayout = StructLayout.create(topNode.name)
+                fr fEntry of topNode.fields {
+                    fKind: TypeKind = resolveFieldTypeKind(fEntry.valStr)
+                    layout.addField(fEntry.name, fKind, fEntry.valStr)
+                }
+                regLayouts.registerLayout(layout)
+            } els if topNode.kind == NodeKind.ExternDecl {
+                extMgr.emitExternDeclNode(topNode, cg)
+            }
+        }
+
+        moduleIR: str = cg.getModuleIR()
+
+        if self.emitLlvm {
+            let llvmOut: str = targetExe
+            if !(StrEndsWith(llvmOut, ".ll")) {
+                llvmOut = llvmOut + ".ll"
+            }
+            wF llvmOut, moduleIR
+            if !(self.isQuiet) {
+                prnt "[zuv build] Emitted LLVM IR to " + llvmOut
+            }
+            -> 0
+        }
+
+        // Link executable via clang / lld-link
+        tmpLl: str = "_zuv_tmp.ll"
+        wF tmpLl, moduleIR
+
+        let clangBin: str = "D:/LLVM/bin/clang.exe"
+        if !(fE clangBin) {
+            clangBin = "clang.exe"
+        }
+
+        let optFlag: str = "-O0"
+        if self.isRelease {
+            optFlag = "-O3"
+        }
+        let libFlag: str = ""
+        if self.isCdylib {
+            libFlag = "-shared"
+        }
+
+        cmd: str = clangBin + " " + optFlag + " " + libFlag + " \"" + tmpLl + "\" -o \"" + targetExe + "\" -target " + self.targetTriple + " -Wno-override-module"
+        linkRes: num = sh cmd
+
+        if fE tmpLl {
+            rmF tmpLl
+        }
+
+        if linkRes == 0 {
+            if !(self.isQuiet) {
+                prnt "[zuv build] Successfully generated " + targetExe
+            }
+            -> 0
+        }
+
+        prnt "[zuv build] Compilation failed during linking (exit code " + linkRes + ")"
+        -> 1
+    },
+
+    /**
+     * Compiles a Zuv source file and immediately runs the resulting binary.
+     *
+     * @param {str} file - Target source file path
+     * @returns {num} Exit code of the executed target binary
+     */
+    handleRun: file: str :: num => {
+        let exeName: str = self.outputFile
+        if exeName.ln == 0 {
+            exeName = "output.exe"
+            self.outputFile = exeName
+        }
+        buildRes: num = self.handleBuild(file)
+        if buildRes != 0 {
+            -> buildRes
+        }
+        runCmd: str = ".\\" + exeName
+        runRes: num = sh runCmd
+        -> runRes
+    },
+
+    /**
+     * Discovers all *.test.zv files in tests/ and runs each as an automated test case.
+     *
+     * @returns {num} 0 if all tests pass, 1 if any test fails
+     */
+    handleTest: :: num => {
+        prnt ""
+        prnt " ZUV TEST v0.6.0 (Bootstrap Automated Test Runner)"
+        prnt ""
+        testFiles: str[] = sF "tests", ".test.zv"
+        prnt "Total test suites discovered: " + testFiles.ln
+        prnt ""
+
+        let passCount: num = 0
+        let failCount: num = 0
+        startMs = nw
+
+        fr tFile of testFiles {
+            caseStart = nw
+            tmpExe: str = "test_run_temp.exe"
+            if fE tmpExe {
+                rmF tmpExe
+            }
+            buildCmd: str = ".\\zuv.exe build \"" + tFile + "\" -o \"" + tmpExe + "\" -q"
+            bRes: num = sh buildCmd
+            if bRes != 0 || !(fE tmpExe) {
+                elapsedFail = nw - caseStart
+                prnt " FAIL " + tFile + " (" + elapsedFail + "ms) [Compilation Failed]"
+                failCount = failCount + 1
+            } els {
+                rCmd: str = ".\\" + tmpExe
+                rRes: num = sh rCmd
+                elapsedPass = nw - caseStart
+                if rRes == 0 {
+                    prnt " PASS " + tFile + " (" + elapsedPass + "ms)"
+                    passCount = passCount + 1
+                } els {
+                    prnt " FAIL " + tFile + " (" + elapsedPass + "ms) [Exit code " + rRes + "]"
+                    failCount = failCount + 1
+                }
+            }
+            if fE tmpExe {
+                rmF tmpExe
+            }
+        }
+
+        totalElapsed = nw - startMs
+        totalCases: num = passCount + failCount
+        prnt ""
+        if failCount == 0 {
+            prnt " Test Files: " + passCount + " passed (" + totalCases + ")"
+            prnt "      Tests: " + passCount + " passed"
+        } els {
+            prnt " Test Files: " + failCount + " failed, " + passCount + " passed (" + totalCases + ")"
+            prnt "      Tests: " + failCount + " failed, " + passCount + " passed"
+        }
+        prnt "   Duration: " + totalElapsed + "ms"
+        prnt ""
+        -> (failCount > 0 ? 1 : 0)
+    }
+}

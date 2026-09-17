@@ -1,0 +1,88 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Top-Level Program & Module Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/program.zv
+ * =============================================================================
+ *
+ * Implements full-file parsing into a root `ProgramDecl` AST node.
+ * Coordinates top-level declarations (functions, objects, types, enums, extern,
+ * imports) and statements while maintaining strict unidirectional module imports.
+ */
+
+imp str, arr
+imp Token, TokenType frm ../tokens
+imp ASTNode, NodeKind frm ../ast
+imp Diagnostic frm ../diagnostics
+imp Parser frm parser
+imp ParseDeclaration frm decl
+imp ParseStatement, ParseBlockStmt frm stmt
+
+/**
+ * Scans lookahead tokens on the current line to determine if an identifier begins a function declaration.
+ *
+ * Checks if the identifier is followed on the same line by '::', '->', '=>', or '{'.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {bool} True if lookahead indicates a function declaration
+ */
+IsFuncDecl parser: Parser :: bool {
+    cTok: Token = parser.cur
+    curLine: num = cTok.line
+    let offset: num = 1
+    wh true {
+        tok: Token = parser.peekAhead offset
+        if tok.kind == TokenType.TOK_EOF || tok.line != curLine {
+            brk
+        }
+        if tok.kind == TokenType.TOK_COLON_COLON || tok.kind == TokenType.TOK_ARROW || tok.kind == TokenType.TOK_FAT_ARROW || tok.kind == TokenType.TOK_LBRACE {
+            -> true
+        }
+        if tok.kind == TokenType.TOK_SEMICOLON || tok.kind == TokenType.TOK_ASSIGN {
+            brk
+        }
+        offset = offset + 1
+    }
+    -> false
+}
+
+/**
+ * Parses an entire source file token stream into a root ProgramDecl AST node.
+ *
+ * Loops until reaching end of file (TOK_EOF), consuming declarations and statements.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Root ProgramDecl AST node containing all parsed AST elements
+ */
+ParseProgram parser: Parser :: ASTNode {
+    progNode: ASTNode = ASTNode.createBase NodeKind.ProgramDecl, 1, 1
+
+    wh !(parser.isAtEnd) {
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            cont
+        }
+        curTok: Token = parser.cur
+        if curTok.kind == TokenType.TOK_EOF {
+            brk
+        }
+
+        if curTok.kind == TokenType.TOK_PUB || curTok.kind == TokenType.TOK_ASYNC ||
+           curTok.kind == TokenType.TOK_ASYNC_ST || curTok.kind == TokenType.TOK_TYP ||
+           curTok.kind == TokenType.TOK_STRUCT || curTok.kind == TokenType.TOK_ENUM ||
+           curTok.kind == TokenType.TOK_EXTERN || curTok.kind == TokenType.TOK_IMP ||
+           curTok.kind == TokenType.TOK_FN {
+            declNode: ASTNode = ParseDeclaration parser
+            progNode.children.psh declNode
+        } els if curTok.kind == TokenType.TOK_IDENT && (curTok.val == "type" || curTok.val == "obj") {
+            declNode: ASTNode = ParseDeclaration parser
+            progNode.children.psh declNode
+        } els if curTok.kind == TokenType.TOK_IDENT && IsFuncDecl(parser) {
+            declNode: ASTNode = ParseDeclaration parser
+            progNode.children.psh declNode
+        } els {
+            stmtNode: ASTNode = ParseStatement parser
+            progNode.children.psh stmtNode
+        }
+    }
+
+    -> progNode
+}

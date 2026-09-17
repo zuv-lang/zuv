@@ -441,6 +441,33 @@ obj ExprCodegen {
             argIdx++
         }
 
+        if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "err" {
+            let fmtStr: str = "%s\n"
+            if calleeName == "wrn" {
+                fmtStr = "[WARN] %s\n"
+            } els if calleeName == "err" {
+                fmtStr = "[ERR] %s\n"
+            }
+            fmtConst: str = self.codegen.addStringConstant fmtStr
+            if argRegs.ln > 0 {
+                firstArgReg: str = argRegs[0]
+                firstArgType: TypeKind = argTypes[0]
+                if firstArgType == TypeKind.Str || firstArgType == TypeKind.Ptr {
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
+                } els if firstArgType == TypeKind.I64 || firstArgType == TypeKind.Num {
+                    numFmt: str = self.codegen.addStringConstant "%lld\n"
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
+                } els {
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
+                }
+            } els {
+                emptyFmt: str = self.codegen.addStringConstant "\n"
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${emptyFmt})`
+            }
+            vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
+            -> vRes
+        }
+
         let retType: TypeKind = node.inferredType
         if retType == TypeKind.Unknown {
             retType = TypeKind.I64

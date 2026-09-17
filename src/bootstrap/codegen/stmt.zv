@@ -354,7 +354,11 @@ obj StmtCodegen {
 
         if hasVal {
             retRes: ExprResult = self.exprGen.emitExpr node.children[0]
-            if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I8 {
+            if self.returnType == TypeKind.I32 && retRes.typeKind == TypeKind.I64 {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = trunc i64 ${retRes.reg} to i32`
+                self.codegen.emit `ret i32 ${tReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I8 {
                 wReg: str = self.codegen.newReg
                 self.codegen.emit `${wReg} = zext i8 ${retRes.reg} to i64`
                 self.codegen.emit `ret i64 ${wReg}`
@@ -363,7 +367,7 @@ obj StmtCodegen {
                 self.codegen.emit `${wReg} = zext i1 ${retRes.reg} to i64`
                 self.codegen.emit `ret i64 ${wReg}`
             } els {
-                retTypeStr: str = llvmType retRes.typeKind
+                retTypeStr: str = llvmType self.returnType
                 self.codegen.emit `ret ${retTypeStr} ${retRes.reg}`
             }
         } els {
