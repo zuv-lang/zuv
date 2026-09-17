@@ -19,6 +19,7 @@ imp ParseExpression frm parser/expr
 imp Checker, Symbol, Scope frm checker/checker
 imp InferExpression, InferStatement, InferDeclaration, InferProgram frm checker/infer
 imp BorrowChecker, BorrowVar, BorrowScope, ReferenceAlias, BorrowCheckProgram, BorrowCheckStatement, BorrowCheckExpression frm checker/borrow
+imp Codegen, StringConstant frm codegen/codegen
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -450,6 +451,42 @@ main {
     prnt `    'a' activeBorrows after scope exit: ${aAfterScope.activeBorrows}`
     canMutateAfterExit: bool = bCheckScope.checkMutation "a", 5, 1
     prnt `    Mutation 'a = 200' after inner scope ended permitted: ${canMutateAfterExit}`
+
+    // 13. LLVM Module Coordinator Verification (Phase 4 Task 4.1)
+    prnt "13. LLVM Module Coordinator Verification:"
+    cg = Codegen.create "x86_64-pc-windows-msvc", false
+
+    // 13.1 Register Allocation
+    r0 = cg.newReg
+    r1 = cg.newReg
+    r2 = cg.newReg
+    prnt `    Allocated registers: ${r0}, ${r1}, ${r2} (sequential: ${r0 == "%r0" && r1 == "%r1" && r2 == "%r2"})`
+
+    // 13.2 Label Generation
+    l0 = cg.newLabel "if_then"
+    l1 = cg.newLabel "if_else"
+    l2 = cg.newLabel "merge"
+    prnt `    Allocated labels: ${l0}, ${l1}, ${l2}`
+
+    // 13.3 String Pooling and Deduplication
+    s0 = cg.addStringConstant "hello world"
+    s0Dup = cg.addStringConstant "hello world"
+    s1 = cg.addStringConstant "compiler\nstep"
+    prnt `    String constants: s0=${s0}, s0Dup=${s0Dup} (deduplicated: ${s0 == s0Dup}), s1=${s1}`
+    prnt `    Total pooled strings count: ${cg.strConstants.ln}`
+
+    // 13.4 Basic Block & Function Assembly
+    cg.startFunction "define i64 @test_func(i64 %a, i64 %b) {"
+    cg.emit "%res = add i64 %a, %b"
+    cg.emitLabel "ret_block"
+    cg.emit "ret i64 %res"
+    cg.finishFunction
+
+    moduleIR = cg.getModuleIR
+    hasTriple = moduleIR.cnt "x86_64-pc-windows-msvc"
+    hasStrConst = moduleIR.cnt "@str_0"
+    hasFunc = moduleIR.cnt "@test_func"
+    prnt `    Module IR generated: length=${moduleIR.ln}, hasTriple=${hasTriple}, hasStrConst=${hasStrConst}, hasFunc=${hasFunc}`
 }
 
 
