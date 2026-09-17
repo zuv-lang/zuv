@@ -17,6 +17,7 @@ imp ParseDeclaration frm parser/decl
 imp ParseStatement frm parser/stmt
 imp ParseExpression frm parser/expr
 imp Checker, Symbol, Scope frm checker/checker
+imp InferExpression, InferStatement, InferDeclaration, InferProgram frm checker/infer
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -78,11 +79,8 @@ main {
     scannedTokens: Token[] = lex.tokenizeAll
     count: num = scannedTokens.ln
     prnt `   Tokenized ${count} tokens successfully`
-    let i: num = 0
-    wh i < count {
-        tokItem: Token = scannedTokens[i]
+    fr tokItem, i of scannedTokens {
         prnt `   Token ${i}: ${tokItem.toString} ('${tokItem.val}')`
-        i++
     }
 
     // 6. Parser Coordinator Verification (Phase 2 Task 2.2)
@@ -300,6 +298,91 @@ main {
     checker.registerType customPoint
     resolvedPoint: TypeInfo = checker.resolveType "Point"
     prnt `    Custom type resolution: '${resolvedPoint.name}' (kind: ${resolvedPoint.kind})`
+
+    // 11. Type Inference & AST Annotation Verification (Phase 3 Task 3.2)
+    prnt "11. Type Inference & AST Annotation Verification:"
+    cInfer = Checker.create "infer_test.zv", ""
+
+    // 11.1 Literal Inferences
+    numLitNode = ASTNode.createNum 42, 1, 1
+    numLitNode.val = "42"
+    inferredNumKind = InferExpression cInfer, numLitNode
+    prnt `    Inferred NumExpr (42): kind=${TypeKindToStr inferredNumKind}, annotated=${TypeKindToStr numLitNode.inferredType}`
+
+    floatLitNode = ASTNode.createNum 3.14, 1, 1
+    floatLitNode.val = "3.14"
+    inferredFloatKind = InferExpression cInfer, floatLitNode
+    prnt `    Inferred NumExpr (3.14): kind=${TypeKindToStr inferredFloatKind}, annotated=${TypeKindToStr floatLitNode.inferredType}`
+
+    strLitNode = ASTNode.createStr "hello", 1, 1
+    inferredStrKind = InferExpression cInfer, strLitNode
+    prnt `    Inferred StrExpr ('hello'): kind=${TypeKindToStr inferredStrKind}, annotated=${TypeKindToStr strLitNode.inferredType}`
+
+    boolLitNode = ASTNode.createBool true, 1, 1
+    inferredBoolKind = InferExpression cInfer, boolLitNode
+    prnt `    Inferred BoolExpr (true): kind=${TypeKindToStr inferredBoolKind}, annotated=${TypeKindToStr boolLitNode.inferredType}`
+
+    arrLitNode = ASTNode.createArr [numLitNode, floatLitNode], 1, 1
+    inferredArrKind = InferExpression cInfer, arrLitNode
+    prnt `    Inferred ArrExpr ([42, 3.14]): kind=${TypeKindToStr inferredArrKind}, annotated=${TypeKindToStr arrLitNode.inferredType}`
+
+    // 11.2 Binary Expression Inference (Arithmetic & String Coercion)
+    binAddNode = ASTNode.createBinary "+", numLitNode, floatLitNode, 1, 1
+    inferredAddKind = InferExpression cInfer, binAddNode
+    prnt `    Inferred Binary '+' (42 + 3.14): kind=${TypeKindToStr inferredAddKind}`
+
+    binConcatNode = ASTNode.createBinary "+", strLitNode, numLitNode, 1, 1
+    inferredConcatKind = InferExpression cInfer, binConcatNode
+    prnt `    Inferred Binary '+' ('hello' + 42): kind=${TypeKindToStr inferredConcatKind}`
+
+    binCmpNode = ASTNode.createBinary "<", numLitNode, floatLitNode, 1, 1
+    inferredCmpKind = InferExpression cInfer, binCmpNode
+    prnt `    Inferred Binary '<' (42 < 3.14): kind=${TypeKindToStr inferredCmpKind}`
+
+    // 11.3 Struct Member Verification (E0302 on invalid field)
+    pointType = TypeInfo.createObject "Point"
+    pointType.addField "x", TypeKind.Double
+    pointType.addField "y", TypeKind.Double
+    cInfer.registerType pointType
+
+    symPointVar = Symbol.create "pt", TypeKind.Obj, "Point", false, true, 0, 1, 1
+    cInfer.defineSymbol symPointVar
+
+    ptIdent = ASTNode.createIdent "pt", 1, 1
+    validPropNode = ASTNode.createProp ptIdent, "x", 1, 1
+    inferredPropKind = InferExpression cInfer, validPropNode
+    prnt `    Inferred Struct Property 'pt.x': kind=${TypeKindToStr inferredPropKind}, errors=${cInfer.errors.ln}`
+
+    invalidPropNode = ASTNode.createProp ptIdent, "z", 1, 1
+    inferredInvalidKind = InferExpression cInfer, invalidPropNode
+    prnt `    Inferred Invalid Property 'pt.z': kind=${TypeKindToStr inferredInvalidKind}, errors=${cInfer.errors.ln}`
+    if cInfer.errors.ln > 0 {
+        lastErr = cInfer.errors[cInfer.errors.ln - 1]
+        prnt `    Reported Diagnostic: ${lastErr.code} - ${lastErr.message}`
+    }
+
+    // 11.4 Function Call Signature & Parameter Validation (E0308 on arg count mismatch)
+    fnAddType = TypeInfo.createFunc TypeKind.Double, "num", ["num", "num"]
+    fnAddType.name = "fn_add"
+    cInfer.registerType fnAddType
+    symFnAdd = Symbol.create "add", TypeKind.Func, "fn_add", false, true, 0, 1, 1
+    cInfer.defineSymbol symFnAdd
+
+    addIdent = ASTNode.createIdent "add", 1, 1
+    callArgs: ASTNode[] = [numLitNode, floatLitNode]
+    validCallNode = ASTNode.createCall addIdent, callArgs, 1, 1
+    inferredCallKind = InferExpression cInfer, validCallNode
+    prnt `    Inferred Function Call 'add(42, 3.14)': kind=${TypeKindToStr inferredCallKind}`
+
+    singleArg: ASTNode[] = [numLitNode]
+    invalidCallNode = ASTNode.createCall addIdent, singleArg, 1, 1
+    errsBeforeCall = cInfer.errors.ln
+    inferredInvalidCall = InferExpression cInfer, invalidCallNode
+    prnt `    Function Call with missing arg 'add(42)': errors logged=${cInfer.errors.ln > errsBeforeCall}`
+    if cInfer.errors.ln > errsBeforeCall {
+        callErr = cInfer.errors[cInfer.errors.ln - 1]
+        prnt `    Reported Diagnostic: ${callErr.code} - ${callErr.message}`
+    }
 }
 
 

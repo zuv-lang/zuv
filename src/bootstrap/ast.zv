@@ -281,7 +281,7 @@ obj ASTNode {
     createCall: callee: ASTNode, args: ASTNode[], line: num, col: num :: ASTNode => {
         node = ASTNode.createBase NodeKind.CallExpr, line, col
         node.children = [callee]
-        fr arg in args {
+        fr arg of args {
             node.children.psh arg
         }
         -> node
@@ -301,7 +301,7 @@ obj ASTNode {
         node = ASTNode.createBase NodeKind.MethodCallExpr, line, col
         node.name = methodName
         node.children = [target]
-        fr arg in args {
+        fr arg of args {
             node.children.psh arg
         }
         -> node

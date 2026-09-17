@@ -262,17 +262,13 @@ obj Parser {
      */
     formatErrors: :: str => {
         let res: str = ""
-        count: num = self.errors.ln
-        let i: num = 0
-        wh i < count {
-            diag: Diagnostic = self.errors[i]
+        fr diag of self.errors {
             formatted: str = diag.format self.source
             if res == "" {
                 res = formatted
             } els {
                 res = res + "\n\n" + formatted
             }
-            i++
         }
         -> res
     }

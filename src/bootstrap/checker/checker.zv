@@ -180,13 +180,10 @@ obj Checker {
      */
     currentLevel: :: num => {
         total: num = self.scopes.ln
-        let lvl: num = 0
-        let i: num = 1
-        wh i < total {
-            lvl++
-            i++
+        if total <= 1 {
+            -> 0
         }
-        -> lvl
+        -> total - 1
     },
 
     defineSymbol: targetSym: Symbol :: bool => {
@@ -196,10 +193,7 @@ obj Checker {
         topIdx: num = self.scopes.ln - 1
         curScope: Scope = self.scopes[topIdx]
         symList: Symbol[] = curScope.symbols
-        count: num = symList.ln
-        let i: num = 0
-        wh i < count {
-            existing: Symbol = symList[i]
+        fr existing of symList {
             if existing.name == targetSym.name {
                 sLine: num = targetSym.line
                 sCol: num = targetSym.col
@@ -207,7 +201,6 @@ obj Checker {
                 self.addError "E0301", "Variable '" + targetSym.name + "' is already declared in the current scope", sLine, sCol, sLen, "consider reusing or renaming variable"
                 -> false
             }
-            i++
         }
         targetSym.scopeLevel = topIdx
         symList.psh targetSym
@@ -223,15 +216,10 @@ obj Checker {
             curRevIdx: num = totalScopes - 1 - sIdx
             sc: Scope = self.scopes[curRevIdx]
             syms: Symbol[] = sc.symbols
-            totalSyms: num = syms.ln
-            let j: num = 0
-            wh j < totalSyms {
-                curSymIdx: num = totalSyms - 1 - j
-                sItem: Symbol = syms[curSymIdx]
+            fr sItem of syms {
                 if sItem.name == name {
                     -> sItem
                 }
-                j++
             }
             sIdx++
         }
@@ -253,14 +241,10 @@ obj Checker {
         topIdx: num = totalScopes - 1
         curScope: Scope = self.scopes[topIdx]
         syms: Symbol[] = curScope.symbols
-        count: num = syms.ln
-        let i: num = 0
-        wh i < count {
-            sItem: Symbol = syms[i]
+        fr sItem of syms {
             if sItem.name == name {
                 -> true
             }
-            i++
         }
         -> false
     },
@@ -270,14 +254,10 @@ obj Checker {
     },
 
     resolveType: name: str :: TypeInfo => {
-        count: num = self.types.ln
-        let i: num = 0
-        wh i < count {
-            typeItem: TypeInfo = self.types[i]
+        fr typeItem of self.types {
             if typeItem.name == name {
                 -> typeItem
             }
-            i++
         }
         unkKind = TypeKind.Unknown
         unkType = TypeInfo.createPrimitive unkKind, name

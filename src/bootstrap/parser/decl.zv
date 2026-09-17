@@ -409,7 +409,7 @@ ParseImportDecl parser: Parser :: ASTNode {
     }
 
     node = ASTNode.createImportDecl modulePath, impTok.line, impTok.col
-    fr symName in symbols {
+    fr symName of symbols {
         entry: FieldEntry = {
             name: symName,
             valStr: symName,
