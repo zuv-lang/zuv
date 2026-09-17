@@ -23,6 +23,7 @@ imp Codegen, StringConstant frm codegen/codegen
 imp ExternManager, ExternFuncInfo, ToLLVMExternType, FormatExternDeclare frm codegen/extern
 imp llvmType, llvmBoxedType, isIntegerType, isFloatType, isPointerType, selectBinaryOp, selectCmpOp, selectCastOp, selectBinaryOpForExpr, selectCmpOpForExpr, emitBinaryInstruction, emitCmpInstruction, emitCastInstruction frm codegen/types
 imp ArrayCodegen, ArraySpreadPart, arrayCapOffset, arrayLenOffset, arrayDataOffset, arrayHeaderWords, arrayWordBytes, arrayInitialCap, boxValueToI64, unboxValueFromI64, emitArrayBoundsCheck frm codegen/array
+imp StructField, StructLayout, StructLayoutRegistry, ObjectCodegen, createStructField, resolveFieldTypeKind frm codegen/decl
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -628,4 +629,64 @@ main {
     hasReallocCall = arrModuleIR.cnt "@realloc"
     hasMemcpyCall = arrModuleIR.cnt "@memcpy"
     prnt `    Module array IR: hasEmptyArr=${hasEmptyArrSym}, hasMalloc=${hasMallocCall}, hasRealloc=${hasReallocCall}, hasMemcpy=${hasMemcpyCall}`
+
+    // 17. Object Layout & Struct Properties Verification (Phase 4 Task 4.5)
+    prnt "17. Object Layout & Struct Properties Verification:"
+    cgObj = Codegen.create "obj_test.zv", "x86_64-pc-windows-msvc", false
+    regLayouts = StructLayoutRegistry.create
+    objGen = ObjectCodegen.create cgObj, regLayouts
+
+    // 17.1 Struct layout & declaration-order offsets (8 bytes per field)
+    pointFields: str[] = ["x", "y"]
+    pointTypes: TypeKind[] = [TypeKind.Num, TypeKind.Num]
+    ptLayout: StructLayout = regLayouts.registerLayout "Point", pointFields, pointTypes
+    xOff: num = ptLayout.getOffset "x"
+    yOff: num = ptLayout.getOffset "y"
+    xByteOff: num = ptLayout.getByteOffset "x"
+    yByteOff: num = ptLayout.getByteOffset "y"
+    ptBytes: num = ptLayout.totalBytes
+    prnt `    Point layout: x(word=${xOff}, byte=${xByteOff}), y(word=${yOff}, byte=${yByteOff}), totalBytes=${ptBytes}`
+
+    // 17.2 Multi-field layout with enums and strings
+    userFields: str[] = ["name", "age", "role"]
+    userTypes: TypeKind[] = [TypeKind.Str, TypeKind.Num, TypeKind.Enum]
+    userLayout: StructLayout = regLayouts.registerLayout "User", userFields, userTypes
+    nameOff: num = userLayout.getOffset "name"
+    ageOff: num = userLayout.getOffset "age"
+    roleOff: num = userLayout.getOffset "role"
+    userBytes: num = userLayout.totalBytes
+    prnt `    User layout: name=${nameOff}, age=${ageOff}, role=${roleOff}, totalBytes=${userBytes}`
+
+    // 17.3 Object literal instantiation allocating exact bytes (count * 8)
+    ptFieldNames: str[] = ["x", "y"]
+    ptValRegs: str[] = ["%r_x", "%r_y"]
+    ptValTypes: TypeKind[] = [TypeKind.Num, TypeKind.Num]
+    ptPtr: str = objGen.emitObjectLit "Point", ptFieldNames, ptValRegs, ptValTypes
+    prnt `    Object literal Point { x, y }: objPtr=${ptPtr}`
+
+    // 17.4 Property access (loading & unboxing)
+    xVal: str = objGen.emitGetProperty ptPtr, xOff, TypeKind.Num, false
+    prnt `    Property read pt.x: valReg=${xVal}`
+
+    // 17.5 Property mutation (boxing & storing)
+    objGen.emitSetProperty ptPtr, yOff, "%newY", TypeKind.Num
+    prnt "    Property mutation pt.y = %newY: OK"
+
+    // 17.6 Integer & enum widening (zext i8 to i64)
+    uFieldNames: str[] = ["name", "age", "role"]
+    uValRegs: str[] = ["%r_name", "%r_age", "%r_role"]
+    uValTypes: TypeKind[] = [TypeKind.Str, TypeKind.Num, TypeKind.Enum]
+    uPtr: str = objGen.emitObjectLit "User", uFieldNames, uValRegs, uValTypes
+    prnt `    User literal with enum widening: userPtr=${uPtr}`
+
+    // 17.7 Optional chaining property access (pt?.x)
+    optVal: str = objGen.emitGetProperty ptPtr, xOff, TypeKind.Num, true
+    prnt `    Optional property read pt?.x: optValReg=${optVal}`
+
+    // 17.8 Module IR verification for object operations
+    objModuleIR: str = cgObj.getModuleIR
+    hasObjMalloc: bool = objModuleIR.cnt "@malloc"
+    hasObjGep: bool = objModuleIR.cnt "getelementptr inbounds i64"
+    hasObjZext: bool = objModuleIR.cnt "zext i8"
+    prnt `    Module obj IR: hasMalloc=${hasObjMalloc}, hasGep=${hasObjGep}, hasZextI8=${hasObjZext}`
 }
