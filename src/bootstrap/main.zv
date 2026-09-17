@@ -26,6 +26,7 @@ imp ArrayCodegen, ArraySpreadPart, arrayCapOffset, arrayLenOffset, arrayDataOffs
 imp StructField, StructLayout, StructLayoutRegistry, ObjectCodegen, createStructField, resolveFieldTypeKind frm codegen/decl
 imp ExprCodegen, ExprResult, ScopeSymbol frm codegen/expr
 imp StmtCodegen frm codegen/stmt
+imp RuntimeCodegen, FunctionDescriptor frm codegen/runtime
 
 main {
     prnt "=== Zuv Bootstrap Compiler v0.6.0 (Phase 1 & Phase 2 Foundations) ==="
@@ -783,5 +784,49 @@ main {
     hasZextBool: bool = moduleStmtIR.cnt "zext i1"
     hasBrCond: bool = moduleStmtIR.cnt "br i1"
     prnt `    Module stmt IR: hasSwitch=${hasSwitch}, hasZextI1=${hasZextBool}, hasBrI1=${hasBrCond}`
+
+    // 19. Runtime & Crash Handling Verification (Phase 4 Task 4.7)
+    prnt "19. Runtime & Crash Handling Verification"
+
+    // 19.1 Coordinator & RuntimeCodegen initialization
+    cgRt = Codegen.create "x86_64-pc-windows-msvc", false
+    rtGen = RuntimeCodegen.create cgRt
+    prnt "    RuntimeCodegen instance created: OK"
+
+    // 19.2 Register function descriptors for symbol resolution
+    rtGen.registerFunction "main", "main", "main.zv", 30
+    rtGen.registerFunction "test_pipeline", "test_pipeline", "pipeline.zv", 1
+    fnCount: num = rtGen.funcDescs.ln
+    prnt `    Registered ${fnCount} function descriptors for backtrace`
+
+    // 19.3 Emit complete runtime suite
+    rtGen.emitAll
+    prnt "    Emitted complete runtime suite: OK"
+
+    // 19.4 Emit test function calling runtime handlers
+    cgRt.startFunction "define i64 @test_runtime_calls() {"
+    rtGen.emitInitCrashHandlerCall
+    rtGen.emitDumpStackCall
+    btReg: str = rtGen.emitBacktraceCall
+    rtGen.emitBoundsCheckCall "%arrPtr", "%idxVal", "test.zv", 42
+    rtGen.emitPanicCall "Explicit test panic", "test.zv", 99
+    cgRt.finishFunction
+
+    // 19.5 Inspect and verify emitted LLVM IR
+    rtModuleIR: str = cgRt.getModuleIR
+    hasPanic: bool = rtModuleIR.cnt "@zuv_panic"
+    hasExit101: bool = rtModuleIR.cnt "@exit(i32 101)"
+    hasCrashHandler: bool = rtModuleIR.cnt "@zuv_crash_handler"
+    hasInitCrash: bool = rtModuleIR.cnt "@zuv_init_crash_handler"
+    hasBoundsCheck: bool = rtModuleIR.cnt "@zuv_check_bounds"
+    hasWalkStack: bool = rtModuleIR.cnt "@zuv_walk_stack"
+    hasBacktrace: bool = rtModuleIR.cnt "@zuv_backtrace"
+    hasVectored: bool = rtModuleIR.cnt "@AddVectoredExceptionHandler"
+    hasRtlCapture: bool = rtModuleIR.cnt "@RtlCaptureStackBackTrace"
+    hasFuncDescs: bool = rtModuleIR.cnt "@zuv_fn_descs"
+    prnt "    Module runtime IR checks:"
+    prnt `      hasPanic=${hasPanic}, hasExit101=${hasExit101}, hasCrashHandler=${hasCrashHandler}`
+    prnt `      hasBoundsCheck=${hasBoundsCheck}, hasWalkStack=${hasWalkStack}, hasBacktrace=${hasBacktrace}`
+    prnt `      hasInitCrash=${hasInitCrash}, hasVectored=${hasVectored}, hasRtlCapture=${hasRtlCapture}, hasFuncDescs=${hasFuncDescs}`
 }
 
