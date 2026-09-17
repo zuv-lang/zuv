@@ -1,10 +1,10 @@
 // C Foreign Function Interface (FFI) with .lib and Dynamic FFI Test Suite
-extern "msvcrt.lib" puts s: str -> num
+extern "msvcrt.lib" puts s: str :: num
 extern "kernel32.lib" {
-    GetCurrentProcessId -> num
-    Sleep ms: num -> void
+    GetCurrentProcessId :: num
+    Sleep ms: num :: void
 }
-extern "user32.lib" GetSystemMetrics nIndex: num -> num
+extern "user32.lib" GetSystemMetrics nIndex: num :: num
 
 // 1. Call C runtime function directly via .lib
 puts "=== Native C FFI (.lib) Test Output ==="

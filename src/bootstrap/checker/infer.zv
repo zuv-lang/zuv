@@ -28,7 +28,7 @@ imp Checker, Symbol, Scope frm checker
  * @param {str} text - Number literal string
  * @returns {bool} True if integer literal format, false if float
  */
-IsIntegerLiteral text: str -> bool {
+IsIntegerLiteral text: str :: bool {
     let count = text.ln
     let i = 0
     wh i < count {
@@ -48,7 +48,7 @@ IsIntegerLiteral text: str -> bool {
  * @param {ASTNode} expr - The expression AST node to evaluate and annotate
  * @returns {TypeKind} Inferred TypeKind variant
  */
-InferExpression checker: Checker, expr: ASTNode -> TypeKind {
+InferExpression checker: Checker, expr: ASTNode :: TypeKind {
     let k = expr.kind
     if k == NodeKind.NumExpr {
         let kind = TypeKind.Num
@@ -414,7 +414,7 @@ InferExpression checker: Checker, expr: ASTNode -> TypeKind {
  * @param {ASTNode} stmt - The statement AST node to validate
  * @returns {void}
  */
-InferStatement checker: Checker, stmt: ASTNode -> void {
+InferStatement checker: Checker, stmt: ASTNode :: void {
     let k = stmt.kind
     if k == NodeKind.VarDecl {
         let initKind = TypeKind.Unknown
@@ -545,7 +545,7 @@ InferStatement checker: Checker, stmt: ASTNode -> void {
  * @param {ASTNode} decl - The declaration AST node to process
  * @returns {void}
  */
-InferDeclaration checker: Checker, decl: ASTNode -> void {
+InferDeclaration checker: Checker, decl: ASTNode :: void {
     let k = decl.kind
     if k == NodeKind.TypeDecl {
         let tInfo = TypeInfo.createObject(decl.name)
@@ -653,7 +653,7 @@ InferDeclaration checker: Checker, decl: ASTNode -> void {
  * @param {ASTNode} program - Root ProgramDecl AST node
  * @returns {void}
  */
-InferProgram checker: Checker, program: ASTNode -> void {
+InferProgram checker: Checker, program: ASTNode :: void {
     // Pass 1: Pre-register all top-level functions, types, enums, and imports
     fr child of program.children {
         if child.isDecl() {

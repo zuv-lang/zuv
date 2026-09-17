@@ -56,7 +56,7 @@ obj StringConstant {
  * @param {str} text - Raw string text
  * @returns {str} Escaped string representation for LLVM IR
  */
-EscapeStringForLLVM text: str -> str {
+EscapeStringForLLVM text: str :: str {
     let count: num = text.ln
     let escaped: str = ""
     let i: num = 0
@@ -86,7 +86,7 @@ EscapeStringForLLVM text: str -> str {
  * @param {str} text - Raw string text
  * @returns {num} Byte count
  */
-MeasureStringBytes text: str -> num {
+MeasureStringBytes text: str :: num {
     -> text.ln
 }
 

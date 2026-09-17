@@ -31,6 +31,118 @@ imp ExprCodegen frm codegen/expr
 imp StmtCodegen frm codegen/stmt
 imp RuntimeCodegen frm codegen/runtime
 
+extern "LLVMCore.lib" {
+    LLVMInitializeX86TargetInfo :: void
+    LLVMInitializeX86Target :: void
+    LLVMInitializeX86TargetMC :: void
+    LLVMInitializeX86AsmPrinter :: void
+    LLVMInitializeX86AsmParser :: void
+
+    LLVMInitializeAArch64TargetInfo :: void
+    LLVMInitializeAArch64Target :: void
+    LLVMInitializeAArch64TargetMC :: void
+    LLVMInitializeAArch64AsmPrinter :: void
+    LLVMInitializeAArch64AsmParser :: void
+
+    LLVMContextCreate :: ptr
+    LLVMContextDispose ctx: ptr :: void
+    LLVMCreateMemoryBufferWithMemoryRange data: str, len: num, name: str, reqNull: num :: ptr
+    LLVMParseIRInContext ctx: ptr, memBuf: ptr, outMod: ptr, outMsg: ptr :: num
+    LLVMDisposeModule mod: ptr :: void
+}
+
+extern "LLVMTarget.lib" {
+    LLVMGetTargetFromTriple triple: str, target: ptr, errMsg: ptr :: num
+    LLVMCreateTargetMachine target: ptr, triple: str, cpu: str, feat: str, opt: num, reloc: num, codeModel: num :: ptr
+    LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename: str, codegenType: num, errMsg: ptr :: num
+    LLVMDisposeTargetMachine tm: ptr :: void
+}
+
+
+/**
+ * Emits a native machine code object file (.obj) directly from LLVM IR in-process.
+ *
+ * Uses the embedded LLVM TargetMachine and CodeGen libraries without external clang drivers.
+ *
+ * @param {str} ir - Complete LLVM IR module text
+ * @param {str} outputObjPath - Target .obj output file path
+ * @param {bool} isRelease - True to enable -O3 optimizations, false for -O0
+ * @param {str} targetTriple - Target architecture triple string
+ * @returns {num} 0 on success, non-zero on compilation error
+ */
+emitDirectObjectFile ir: str, outputObjPath: str, isRelease: bool, targetTriple: str :: num {
+    LLVMInitializeX86TargetInfo()
+    LLVMInitializeX86Target()
+    LLVMInitializeX86TargetMC()
+    LLVMInitializeX86AsmPrinter()
+    LLVMInitializeX86AsmParser()
+
+    LLVMInitializeAArch64TargetInfo()
+    LLVMInitializeAArch64Target()
+    LLVMInitializeAArch64TargetMC()
+    LLVMInitializeAArch64AsmPrinter()
+    LLVMInitializeAArch64AsmParser()
+
+    let resolvedTriple: str = "x86_64-pc-windows-msvc"
+    if targetTriple.ln > 0 {
+        resolvedTriple = targetTriple
+    }
+
+    fullIr: str = "target triple = \"" + resolvedTriple + "\"\n" + ir
+
+    unsafe {
+        ctx: ptr = LLVMContextCreate()
+        memBuf: ptr = LLVMCreateMemoryBufferWithMemoryRange(fullIr, fullIr.ln, "zuv_ir", 0)
+
+        outMod: ptr = malloc 8
+        outMsg: ptr = malloc 8
+        parseRes: num = LLVMParseIRInContext(ctx, memBuf, outMod, outMsg)
+        if parseRes != 0 {
+            prnt "[LLVM Error] In-process IR parse failed"
+            LLVMContextDispose ctx
+            free outMod
+            free outMsg
+            -> 1
+        }
+        mod: ptr = zuv_ptr_deref outMod
+
+        targetPtr: ptr = malloc 8
+        tRes: num = LLVMGetTargetFromTriple(resolvedTriple, targetPtr, outMsg)
+        if tRes != 0 {
+            prnt "[LLVM Error] Target lookup failed for: " + resolvedTriple
+            LLVMDisposeModule mod
+            LLVMContextDispose ctx
+            free outMod
+            free outMsg
+            free targetPtr
+            -> 1
+        }
+        target: ptr = zuv_ptr_deref targetPtr
+
+        let optLevel: num = (isRelease ? 3 : 0)
+        tm: ptr = LLVMCreateTargetMachine(target, resolvedTriple, "generic", "", optLevel, 0, 0)
+        emitRes: num = LLVMTargetMachineEmitToFile(tm, mod, outputObjPath, 1, outMsg)
+        if emitRes != 0 {
+            prnt "[LLVM Error] Object code emission failed"
+            LLVMDisposeTargetMachine tm
+            LLVMDisposeModule mod
+            LLVMContextDispose ctx
+            free outMod
+            free outMsg
+            free targetPtr
+            -> 1
+        }
+
+        LLVMDisposeTargetMachine tm
+        LLVMDisposeModule mod
+        LLVMContextDispose ctx
+        free outMod
+        free outMsg
+        free targetPtr
+        -> 0
+    }
+}
+
 /**
  * Checks whether a string ends with a given suffix string.
  *
@@ -66,6 +178,46 @@ ResolveTargetTriple alias: str :: str => sw alias {
     "macos-x64"     => "x86_64-apple-darwin"
     "darwin-x64"    => "x86_64-apple-darwin"
     _               => (alias.ln > 0 ? alias : "x86_64-pc-windows-msvc")
+}
+
+/**
+ * Links a compiled object file (.obj) into an executable or shared library using lld-link.
+ *
+ * @param {str} objPath - Path to input .obj file
+ * @param {str} outExePath - Destination binary path (.exe or .dll)
+ * @param {bool} isCdylib - True to build a shared library (.dll), false for standalone executable
+ * @returns {num} 0 on successful linkage, non-zero on failure
+ */
+linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool :: num {
+    let lldBin: str = "lld-link"
+    if fE "D:/LLVM/bin/lld-link.exe" {
+        lldBin = "D:/LLVM/bin/lld-link.exe"
+    } els if fE "lld-link.exe" {
+        lldBin = "lld-link.exe"
+    } els if fE "bin/lld-link.exe" {
+        lldBin = "bin/lld-link.exe"
+    }
+
+    let isDll: bool = isCdylib
+    if StrEndsWith(outExePath, ".dll") || StrEndsWith(outExePath, ".DLL") {
+        isDll = true
+    }
+
+    let dllFlags: str = "-stack:33554432"
+    if isDll {
+        let outLibPath: str = outExePath
+        let exeLen: num = outExePath.ln
+        if StrEndsWith(outLibPath, ".dll") || StrEndsWith(outLibPath, ".DLL") {
+            outLibPath = outLibPath.slc(0, exeLen - 4) + ".lib"
+        } els {
+            outLibPath = outLibPath + ".lib"
+        }
+        dllFlags = "-dll -implib:\"" + outLibPath + "\" -noentry -defaultlib:ucrt -defaultlib:vcruntime"
+    }
+
+    cmd: str = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" " + dllFlags + " -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -defaultlib:ws2_32 -nologo"
+    res: num = sh cmd
+    -> res
 }
 
 /**
@@ -512,30 +664,23 @@ obj Cli {
             -> 0
         }
 
-        // Link executable via clang / lld-link
-        tmpLl: str = "_zuv_tmp.ll"
-        wF tmpLl, moduleIR
-
-        let clangBin: str = "D:/LLVM/bin/clang.exe"
-        if !(fE clangBin) {
-            clangBin = "clang.exe"
+        // 1. Emit native object file directly via in-process LLVM
+        tmpObj: str = "_zuv_tmp_" + (time.now()) + ".obj"
+        objRes: num = emitDirectObjectFile(moduleIR, tmpObj, self.isRelease, self.targetTriple)
+        if objRes != 0 {
+            prnt "[zuv build] In-process LLVM compilation failed"
+            if fE tmpObj {
+                rmF tmpObj
+            }
+            -> objRes
         }
 
-        let optFlag: str = "-O0"
-        if self.isRelease {
-            optFlag = "-O3"
-        }
-        let libFlag: str = ""
-        if self.isCdylib {
-            libFlag = "-shared"
+        // 2. Link executable or library via lld-link
+        linkRes: num = linkDirectObjectFile(tmpObj, targetExe, self.isCdylib)
+        if fE tmpObj {
+            rmF tmpObj
         }
 
-        cmd: str = clangBin + " " + optFlag + " " + libFlag + " \"" + tmpLl + "\" -o \"" + targetExe + "\" -target " + self.targetTriple + " -Wno-override-module"
-        linkRes: num = sh cmd
-
-        if fE tmpLl {
-            rmF tmpLl
-        }
 
         if linkRes == 0 {
             if !(self.isQuiet) {
