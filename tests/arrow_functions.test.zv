@@ -30,6 +30,16 @@ describeStatus status => mch status {
     _   => "Unknown"
 }
 
+describeStatus2 status {
+    -> mch status {
+        200 => "OK2"
+        404 => "Not Found2"
+        500 => "Internal Server Error2"
+        _   => "Unknown2"
+    }
+} 
+
+
 // 6. Parameterless arrow functions
 getAnswer => 42
 
@@ -51,6 +61,10 @@ lg u.role
 lg describeStatus 200
 lg describeStatus 404
 lg describeStatus 999
+
+lg describeStatus2 200
+lg describeStatus2 404
+lg describeStatus2 999
 
 lg getAnswer
 

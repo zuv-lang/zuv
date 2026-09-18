@@ -4,7 +4,15 @@ failTask {
     panic "fatal error in failTask"
 }
 
-if (args.ln > 2 && args[2] == "child") || (args.ln > 1 && args[1] == "child") {
+mut isChild = 0
+mut ci = 0
+wh ci < args.ln {
+    if args[ci] == "child" {
+        isChild = 1
+    }
+    ci = ci + 1
+}
+if isChild == 1 {
     failTask()
 } els {
     // Parent process invokes child to verify exit code 101

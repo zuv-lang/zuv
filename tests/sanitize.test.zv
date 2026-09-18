@@ -1,0 +1,31 @@
+// Test zero-dependency sanitizers: clean execution without false positives
+let arr = [10, 20, 30]
+let v = arr[0]
+if v != 10 {
+    prnt "FAIL: arr[0]"
+}
+
+let s = "hello"
+let c = s[0]
+if c != "h" {
+    prnt "FAIL: s[0]"
+}
+
+let x = 100 / 5
+if x != 20 {
+    prnt "FAIL: 100 / 5"
+}
+
+let m = 10 % 3
+if m != 1 {
+    prnt "FAIL: 10 % 3"
+}
+
+unsafe {
+    let p = malloc 64
+    if p != 0 {
+        free p
+    }
+}
+
+prnt "Sanitizer test passed"

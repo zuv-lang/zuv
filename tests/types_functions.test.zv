@@ -189,4 +189,143 @@ printoptional3 user: User, no?: num, type?: str {
 
 printoptional3 unump, 3, 'nump'
 
+// =============================================================================
+// Different Function Return Values Test Suite
+// =============================================================================
+
+enum StatusKind {
+    Pending,
+    Active,
+    Completed
+}
+
+// 1. num return type (parenthesized and arrow syntax)
+ret_num_val(a: num, b: num): num {
+    -> a + b
+}
+ret_num_arrow a: num, b: num -> num {
+    -> a * b
+}
+
+// 2. str return type
+ret_str_val(prefix: str, suffix: str): str {
+    -> prefix + " " + suffix
+}
+ret_str_arrow msg: str -> str {
+    -> ">> " + msg
+}
+
+// 3. bool return type
+ret_bool_val(flag: bool): bool {
+    -> !flag
+}
+ret_bool_arrow a: num, b: num -> bool {
+    -> a < b
+}
+
+// 4. i32 return type
+ret_i32_val(a: i32, b: i32): i32 {
+    -> a + b
+}
+ret_i32_arrow a: i32 -> i32 {
+    -> a * 3
+}
+
+// 5. i64 return type
+ret_i64_val(a: i64, b: i64): i64 {
+    -> a + b
+}
+ret_i64_arrow a: i64 -> i64 {
+    -> a * 10
+}
+
+// 6. void return type
+ret_void_val(msg: str): void {
+    lg "void call: " + msg
+}
+ret_void_arrow msg: str -> void {
+    lg "void arrow: " + msg
+}
+
+// 7. Additional Zuv types: i8, u8, i16, ptr, T[], enum, any
+ret_i8_val(x: i8): i8 {
+    -> x
+}
+
+ret_u8_val(x: u8): u8 {
+    -> x
+}
+
+ret_i16_val(x: i16): i16 {
+    -> x
+}
+
+ret_num_arr(arr: num[]): num[] {
+    -> arr
+}
+
+ret_str_arr(arr: str[]): str[] {
+    -> arr
+}
+
+ret_any_val(x: any): any {
+    -> x
+}
+
+// Invocations and verifications
+lg 'ret_num_val'
+lg ret_num_val(12.5, 7.5)
+
+lg 'ret_num_arrow'
+lg ret_num_arrow(3.0, 4.0)
+
+lg 'ret_str_val'
+lg ret_str_val("Zuv", "Language")
+
+lg 'ret_str_arrow'
+lg ret_str_arrow("testing")
+
+lg 'ret_bool_val'
+lg ret_bool_val(false)
+lg 'ret_bool_arrow'
+lg ret_bool_arrow(5, 10)
+
+lg 'ret_i32_val'
+lg ret_i32_val(15, 25)
+lg 'ret_i32_arrow'
+lg ret_i32_arrow(7)
+
+lg 'ret_i64_val'
+lg ret_i64_val(100, 250)
+lg 'ret_i64_arrow'
+lg ret_i64_arrow(42)
+
+lg 'ret_void_val'
+ret_void_val("executing void")
+lg 'ret_void_arrow'
+ret_void_arrow("executing void arrow")
+
+lg 'ret_i8_val'
+lg ret_i8_val(127)
+lg 'ret_u8_val'
+lg ret_u8_val(255)
+lg 'ret_i16_val'
+lg ret_i16_val(32000)
+lg 'ret_num_arr'
+numArr = ret_num_arr([100, 200, 300])
+lg numArr[0]
+lg numArr[2]
+lg 'ret_str_arr'
+strArr = ret_str_arr(["alpha", "beta", "gamma"])
+lg strArr[0]
+lg strArr[1]
+
+lg "ret_any_val"
+lg ret_any_val("any value")
+
+// Enum datatype inspection via `typ` (returns "obj" for enum, "i8" for variant)
+lg typ StatusKind
+lg typ StatusKind.Completed
+let completedStatus = StatusKind.Completed
+lg typ completedStatus
 

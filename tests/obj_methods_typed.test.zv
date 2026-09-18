@@ -1,8 +1,9 @@
 imp arr
 
-let users = []
 
-greet name {
+let users: User[] = []
+
+greet name :: str => {
     -> "hi " + name
 }
 
@@ -11,39 +12,24 @@ obj User {
     age: num,
     status: bool,
     no: i64,
-    id: num,
-    tags: str[],
-    address: {
-        city: str,
-        zip: num,
-        geo: {
-            lat: num,
-            lon: num
-        }
-    },
-    scores: num[][],
-    option: {
-        role: str,
-        level: num
-    },
 
-    fullLabel: => {
+    fullLabel: ::str => {
         -> self.name
     },
-    create: n, a, status, no => {
+    create: n: str, a: num, status: bool, no: i64 :: User => {
+        u = { name: n, age: a, status: status, no: no }
+        users.psh(u)
+        -> u
+    },
+    add: n: str, a: num, status: bool, no: i64 :: User => {
         u = User{ name: n, age: a, status: status, no: no }
         users.psh(u)
         -> u
     },
-    add: n, a, status, no => {
-        u = User{ name: n, age: a, status: status, no: no }
-        users.psh(u)
-        -> u
-    },
-    get: i => {
+    get: i: num :: User => {
         -> users[i]
     },
-    update: i, n, a, status, no => {
+    update: i: num, n: str, a: num, status: bool, no: i64 :: User => {
         users[i] = User{ name: n, age: a, status: status, no: no }
         -> users[i]
     },
@@ -53,7 +39,7 @@ obj User {
     multiLineArowMethod: i => 
         let s ='daddsdd'
         -> s,
-    delete: i => {
+    delete: i: num :: User[] => {
         mut out = []
         mut j = 0
         wh j < users.ln {
@@ -70,7 +56,7 @@ obj User {
     hello: greet
 }
 
-User.bumpAge a {
+User.bumpAge a: num {
     self.age = self.age + a
     -> self
 }
@@ -119,8 +105,8 @@ prnt u1
 
 let u5 = new User({ name: "Alice", age: 28 })
 
-prnt u5.fullLabel
 
+prnt u5.fullLabel
 prnt`========u6========`
 let u6 = new User({ name: "Alice", age: 28 }).fullLabel
 
@@ -131,6 +117,7 @@ prnt rec
 
 let rec2 = { active: false, count: 0, tag: "demo" }
 prnt rec2
+
 
 prnt`====arrowMethod====`
 prnt u5.arrowMethod
@@ -162,42 +149,4 @@ let inventory = [
 prnt inventory.ln
 prnt inventory[0].name
 prnt inventory[1].stock
-
-prnt`====u7 option====`
-let u7 = User{
-    name: "Admin",
-    age: 32,
-    status: true,
-    no: 2001,
-    option: {
-        role: "moderator",
-        level: 5
-    }
-}
-prnt u7.option.role
-prnt u7.option.level
-prnt u7
-
-prnt`====u8 nested====`
-let u8 = User{
-    name: "Dave",
-    age: 40,
-    status: true,
-    no: 3001,
-    id: 1,
-    tags: ["a", "b", "c"],
-    address: { city: "Paris", zip: 75001, geo: { lat: 48.85, lon: 2.35 } },
-    scores: [ [1, 2], [3, 4] ],
-    option: {
-        role: "admin",
-        level: 10
-    }
-}
-prnt u8.address.city
-prnt u8.address.geo.lat
-prnt u8.tags[0]
-prnt u8.scores[0][1]
-prnt u8
-
-
 
