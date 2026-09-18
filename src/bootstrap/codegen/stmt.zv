@@ -92,7 +92,7 @@ obj StmtCodegen {
      */
     emitVarDecl: node: ASTNode :: void => {
         varType: TypeKind = node.inferredType
-        if varType == TypeKind.Unknown {
+        if varType == TypeKind.Unknown && node.typeAnnotation.ln > 0 {
             varType = resolveFieldTypeKind node.typeAnnotation
         }
         initReg: str = ""
@@ -354,7 +354,9 @@ obj StmtCodegen {
 
         if hasVal {
             retRes: ExprResult = self.exprGen.emitExpr node.children[0]
-            if self.returnType == TypeKind.I32 && retRes.typeKind == TypeKind.I64 {
+            if self.returnType == TypeKind.Void {
+                self.codegen.emit `ret void`
+            } els if self.returnType == TypeKind.I32 && retRes.typeKind == TypeKind.I64 {
                 tReg: str = self.codegen.newReg
                 self.codegen.emit `${tReg} = trunc i64 ${retRes.reg} to i32`
                 self.codegen.emit `ret i32 ${tReg}`
@@ -366,6 +368,18 @@ obj StmtCodegen {
                 wReg: str = self.codegen.newReg
                 self.codegen.emit `${wReg} = zext i1 ${retRes.reg} to i64`
                 self.codegen.emit `ret i64 ${wReg}`
+            } els if self.returnType == TypeKind.Bool && retRes.typeKind == TypeKind.I64 {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = trunc i64 ${retRes.reg} to i1`
+                self.codegen.emit `ret i1 ${tReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.Num {
+                wReg: str = self.codegen.newReg
+                self.codegen.emit `${wReg} = fptosi double ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${wReg}`
+            } els if self.returnType == TypeKind.Num && retRes.typeKind == TypeKind.I64 {
+                wReg: str = self.codegen.newReg
+                self.codegen.emit `${wReg} = sitofp i64 ${retRes.reg} to double`
+                self.codegen.emit `ret double ${wReg}`
             } els {
                 retTypeStr: str = llvmType self.returnType
                 self.codegen.emit `ret ${retTypeStr} ${retRes.reg}`

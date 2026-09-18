@@ -55,6 +55,9 @@ createStructField name: str, offset: num, typeKind: TypeKind, typeName: str :: S
  * @returns {TypeKind} Inferred TypeKind variant
  */
 resolveFieldTypeKind typeName: str :: TypeKind {
+    if typeName.ln == 0 {
+        -> TypeKind.Unknown
+    }
     nameLen: num = typeName.ln
     if nameLen >= 2 {
         subSuffix: str = typeName.sub nameLen - 2, 2

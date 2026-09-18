@@ -16,6 +16,6 @@ main {
     cli: Cli = Cli.create os.args
     exitCode: num = cli.run
     if exitCode != 0 {
-        -> exitCode
+        exit exitCode
     }
 }

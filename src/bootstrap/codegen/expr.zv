@@ -44,11 +44,21 @@ type ScopeSymbol = {
 };
 
 /**
+ * Function signature descriptor for precise return type and argument coercion.
+ */
+type FuncSignature = {
+    name: str;
+    returnType: TypeKind;
+    paramTypes: TypeKind[];
+};
+
+/**
  * Coordinates expression evaluation and virtual register emission.
  */
 obj ExprCodegen {
     codegen: Codegen,
     symbols: ScopeSymbol[],
+    functions: FuncSignature[],
     objGen: ObjectCodegen,
     arrGen: ArrayCodegen,
 
@@ -62,9 +72,11 @@ obj ExprCodegen {
      */
     create: codegen: Codegen, objGen: ObjectCodegen, arrGen: ArrayCodegen :: ExprCodegen => {
         emptySymbols: ScopeSymbol[] = []
+        emptyFunctions: FuncSignature[] = []
         -> {
             codegen,
             symbols: emptySymbols,
+            functions: emptyFunctions,
             objGen,
             arrGen
         }
@@ -120,6 +132,43 @@ obj ExprCodegen {
     clearSymbols: :: void => {
         emptySymbols: ScopeSymbol[] = []
         self.symbols = emptySymbols
+    },
+
+    /**
+     * Registers a function signature into the global function catalog.
+     *
+     * @param {str} name - Function identifier
+     * @param {TypeKind} returnType - Semantic return type
+     * @param {TypeKind[]} paramTypes - Semantic parameter types
+     * @returns {void}
+     */
+    addFunctionSig: name: str, returnType: TypeKind, paramTypes: TypeKind[] :: void => {
+        self.functions.psh {
+            name,
+            returnType,
+            paramTypes
+        }
+    },
+
+    /**
+     * Resolves a function signature by identifier.
+     *
+     * @param {str} name - Function identifier to look up
+     * @returns {FuncSignature} Found signature or empty record
+     */
+    findFunctionSig: name: str :: FuncSignature => {
+        emptyParams: TypeKind[] = []
+        found: FuncSignature = {
+            name: "",
+            returnType: TypeKind.Unknown,
+            paramTypes: emptyParams
+        }
+        fr item of self.functions {
+            if item.name == name {
+                found = item
+            }
+        }
+        -> found
     },
 
     /**
@@ -422,7 +471,25 @@ obj ExprCodegen {
                 foundSym = self.findSymbol targetNode.name
                 if foundSym.isAlloca {
                     stType: str = llvmStackType foundSym.typeKind
-                    self.codegen.emit `store ${stType} ${rightRes.reg}, ptr ${foundSym.reg}`
+                    storeValReg: str = rightRes.reg
+                    if foundSym.typeKind == TypeKind.Num && rightRes.typeKind != TypeKind.Num {
+                        cReg: str = self.codegen.newReg
+                        self.codegen.emit `${cReg} = sitofp i64 ${rightRes.reg} to double`
+                        storeValReg = cReg
+                    } els if (foundSym.typeKind == TypeKind.I64 || foundSym.typeKind == TypeKind.I32) && rightRes.typeKind == TypeKind.Num {
+                        cReg: str = self.codegen.newReg
+                        self.codegen.emit `${cReg} = fptosi double ${rightRes.reg} to i64`
+                        storeValReg = cReg
+                    } els if foundSym.typeKind == TypeKind.I32 && rightRes.typeKind == TypeKind.I64 {
+                        cReg: str = self.codegen.newReg
+                        self.codegen.emit `${cReg} = trunc i64 ${rightRes.reg} to i32`
+                        storeValReg = cReg
+                    } els if foundSym.typeKind == TypeKind.Bool && rightRes.typeKind == TypeKind.I64 {
+                        cReg: str = self.codegen.newReg
+                        self.codegen.emit `${cReg} = trunc i64 ${rightRes.reg} to i1`
+                        storeValReg = cReg
+                    }
+                    self.codegen.emit `store ${stType} ${storeValReg}, ptr ${foundSym.reg}`
                 }
             } els if targetNode.kind == NodeKind.IndexExpr {
                 arrNode: ASTNode = targetNode.children[0]
@@ -581,6 +648,12 @@ obj ExprCodegen {
                 } els if firstArgType == TypeKind.Num {
                     dblFmt: str = self.codegen.addStringConstant "%g\n"
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${dblFmt}, double ${firstArgReg})`
+                } els if firstArgType == TypeKind.Bool {
+                    trueStr: str = self.codegen.addStringConstant "true"
+                    falseStr: str = self.codegen.addStringConstant "false"
+                    selReg: str = self.codegen.newReg
+                    self.codegen.emit `${selReg} = select i1 ${firstArgReg}, ptr ${trueStr}, ptr ${falseStr}`
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${selReg})`
                 } els {
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
                 }
@@ -590,6 +663,65 @@ obj ExprCodegen {
             }
             vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
             -> vRes
+        }
+
+        fnSig: FuncSignature = self.findFunctionSig calleeName
+        if fnSig.name.ln > 0 {
+            retType: TypeKind = fnSig.returnType
+            if retType == TypeKind.Unknown {
+                retType = TypeKind.I64
+            }
+
+            coercedArgsStr: str = ""
+            firstArg: bool = true
+            aIdx: num = 0
+            fr aReg of argRegs {
+                aType: TypeKind = argTypes[aIdx]
+                expectedType: TypeKind = (aIdx < fnSig.paramTypes.ln ? fnSig.paramTypes[aIdx] : aType)
+                passReg: str = aReg
+                passType: TypeKind = aType
+
+                if expectedType == TypeKind.Num && aType != TypeKind.Num {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = sitofp i64 ${aReg} to double`
+                    passReg = cReg
+                    passType = TypeKind.Num
+                } els if (expectedType == TypeKind.I64 || expectedType == TypeKind.I32) && aType == TypeKind.Num {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = fptosi double ${aReg} to i64`
+                    passReg = cReg
+                    passType = TypeKind.I64
+                } els if expectedType == TypeKind.I32 && aType == TypeKind.I64 {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = trunc i64 ${aReg} to i32`
+                    passReg = cReg
+                    passType = TypeKind.I32
+                } els if expectedType == TypeKind.Bool && aType == TypeKind.I64 {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = trunc i64 ${aReg} to i1`
+                    passReg = cReg
+                    passType = TypeKind.Bool
+                }
+
+                if !firstArg {
+                    coercedArgsStr = coercedArgsStr + ", "
+                }
+                coercedArgsStr = coercedArgsStr + (llvmType passType) + " " + passReg
+                firstArg = false
+                aIdx++
+            }
+
+            if retType == TypeKind.Void {
+                self.codegen.emit `call void @${calleeName}(${coercedArgsStr})`
+                vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
+                -> vRes
+            }
+
+            retTypeStr: str = llvmType retType
+            callReg: str = self.codegen.newReg
+            self.codegen.emit `${callReg} = call ${retTypeStr} @${calleeName}(${coercedArgsStr})`
+            res: ExprResult = { reg: callReg, typeKind: retType }
+            -> res
         }
 
         retType: TypeKind = node.inferredType

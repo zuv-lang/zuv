@@ -1,6 +1,150 @@
+// --- 1. Parenthesized functions (using single ':' for return type, no '::') ---
+
+add(a: num, b: num): num {
+    -> a + b
+}
+
+square(x: i64): i64 {
+    -> x * x
+}
+
+greet(name: str): str {
+    -> "Hello, " + name
+}
+
+isPositive(n: num): bool {
+    -> n > 0.0
+}
+
+sayHello(): void {
+    lg "sayHello() invoked"
+}
+
+// --- 2. Parenthesis-free functions ---
+
+addPF a: num, b: num :: num {
+    -> a + b
+}
+
+multiplyFree a: num, b: num :: num {
+    -> a * b
+}
+
+cubeFree x: i64 :: i64 {
+    -> x * x * x
+}
+
+concatFree prefix: str, suffix: str :: str {
+    -> prefix + " " + suffix
+}
+
+checkZeroFree n: num :: bool {
+    -> n == 0.0
+}
+
+sayFree :: void {
+    lg "sayFree invoked"
+}
+
 workerTask {
     lg "Worker Thread Started!"
     -> 0
 }
+
+// --- 3. Functions without types ---
+
+addNoTypes(a, b) {
+    -> a + b
+}
+
+doubleNoTypes(x) {
+    -> x * 2
+}
+
+subNoTypes a, b {
+    -> a - b
+}
+
+tripleNoTypes x {
+    -> x * 3
+}
+
+noTypesVoid() {
+    lg "noTypesVoid invoked"
+}
+
+// --- 4. Executing and console outputs of all functions ---
+
+// Parenthesized calls
+sayHello()
+
+r1 = add(10.5, 20.25)
+lg "add(10.5, 20.25):"
+lg r1
+
+r2 = square(7)
+lg "square(7):"
+lg r2
+
+msg = greet("Zuv Developer")
+lg msg
+
+b1 = isPositive(42.0)
+lg "isPositive(42.0):"
+lg b1
+
+b2 = isPositive(-5.0)
+lg "isPositive(-5.0):"
+lg b2
+
+// Parenthesis-free calls
+sayFree
+
+w = workerTask()
+lg "workerTask result:"
+lg w
+
+
+mf = addPF 3.45, 2.73
+lg "addPF 3.45, 2.73:"
+lg mf
+
+mf = multiplyFree 3.5, 2.0
+lg "multiplyFree 3.5, 2.0:"
+lg mf
+
+cf = cubeFree 3
+lg "cubeFree 3:"
+lg cf
+
+msgFree = concatFree "Parenthesis", "Free"
+lg msgFree
+
+cz1 = checkZeroFree 0.0
+lg "checkZeroFree 0.0:"
+lg cz1
+
+cz2 = checkZeroFree 5.5
+lg "checkZeroFree 5.5:"
+lg cz2
+
+// Calls without types
+noTypesVoid()
+
+nt1 = addNoTypes(40, 60)
+lg "addNoTypes(40, 60):"
+lg nt1
+
+nt2 = doubleNoTypes(21)
+lg "doubleNoTypes(21):"
+lg nt2
+
+nt3 = subNoTypes 100, 45
+lg "subNoTypes 100, 45:"
+lg nt3
+
+nt4 = tripleNoTypes 15
+lg "tripleNoTypes 15:"
+lg nt4
 
 lg "done"

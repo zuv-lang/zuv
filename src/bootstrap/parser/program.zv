@@ -37,6 +37,12 @@ IsFuncDecl parser: Parser :: bool {
         if tok.kind == TokenType.TOK_COLON_COLON || tok.kind == TokenType.TOK_ARROW || tok.kind == TokenType.TOK_FAT_ARROW || tok.kind == TokenType.TOK_LBRACE {
             -> true
         }
+        if tok.kind == TokenType.TOK_RPAREN {
+            pNext: Token = parser.peekAhead(offset + 1)
+            if pNext.kind == TokenType.TOK_COLON {
+                -> true
+            }
+        }
         if tok.kind == TokenType.TOK_SEMICOLON || tok.kind == TokenType.TOK_ASSIGN {
             brk
         }

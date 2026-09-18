@@ -192,6 +192,9 @@ ParseExpr parser: Parser :: ASTNode {
        nextTok.kind == TokenType.TOK_ASSIGN || nextTok.kind == TokenType.TOK_PLUS_EQ || nextTok.kind == TokenType.TOK_MINUS_EQ {
         opTok: Token = parser.advance
         right: ASTNode = ParseExpr parser
+        if opTok.kind == TokenType.TOK_ASSIGN || opTok.kind == TokenType.TOK_PLUS_EQ || opTok.kind == TokenType.TOK_MINUS_EQ {
+            right = ParseJuxtaposedArgs parser, right
+        }
         left = ASTNode.createBinary opTok.val, left, right, opTok.line, opTok.col
     }
 

@@ -552,6 +552,22 @@ InferStatement checker: Checker, stmt: ASTNode :: void {
     InferDeclaration(checker, stmt)
 }
 
+HasReturnValueNode node: ASTNode :: bool {
+    if node.kind == NodeKind.RetStmt {
+        if node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr {
+            -> true
+        }
+    }
+    fr child of node.children {
+        if child.kind != NodeKind.FuncDecl {
+            if HasReturnValueNode(child) {
+                -> true
+            }
+        }
+    }
+    -> false
+}
+
 /**
  * Validates and registers top-level declarations (types, objects, functions, enums, imports).
  *
@@ -615,6 +631,8 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         retKind = TypeKind.Void
         if decl.typeAnnotation.ln > 0 {
             retKind = StrToTypeKind(decl.typeAnnotation)
+        } els if HasReturnValueNode(decl) {
+            retKind = TypeKind.I64
         }
         paramTypeNames: str[] = []
         fr pItem of decl.params {
@@ -700,10 +718,16 @@ InferProgram checker: Checker, program: ASTNode :: void {
                 retKind = TypeKind.Void
                 if child.typeAnnotation.ln > 0 {
                     retKind = StrToTypeKind(child.typeAnnotation)
+                } els if HasReturnValueNode(child) {
+                    retKind = TypeKind.I64
                 }
                 paramTypeNames: str[] = []
                 fr pItem of child.params {
-                    paramTypeNames.psh(pItem.typeAnnotation)
+                    pTypeStr: str = pItem.typeAnnotation
+                    if pTypeStr.ln == 0 {
+                        pTypeStr = "i64"
+                    }
+                    paramTypeNames.psh(pTypeStr)
                 }
                 fnTypeName = "fn_" + child.name
                 fnTypeInfo = TypeInfo.createFunc(retKind, child.typeAnnotation, paramTypeNames)
@@ -736,8 +760,13 @@ InferProgram checker: Checker, program: ASTNode :: void {
             if child.kind == NodeKind.FuncDecl {
                 checker.enterScope()
                 fr param of child.params {
-                    pKind = StrToTypeKind(param.typeAnnotation)
-                    pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+                    pKind: TypeKind = TypeKind.I64
+                    pTypeStr: str = "i64"
+                    if param.typeAnnotation.ln > 0 {
+                        pKind = StrToTypeKind(param.typeAnnotation)
+                        pTypeStr = param.typeAnnotation
+                    }
+                    pSym = Symbol.create(param.name, pKind, pTypeStr, false, true, checker.currentLevel(), param.line, param.col)
                     checker.defineSymbol(pSym)
                 }
                 fr bStmt of child.children {

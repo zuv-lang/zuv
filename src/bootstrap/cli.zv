@@ -167,6 +167,61 @@ StrEndsWith text: str, suffix: str :: bool {
 }
 
 /**
+ * Checks whether a string contains a given substring.
+ *
+ * @param {str} text - Input text string
+ * @param {str} sub - Target substring to find
+ * @returns {bool} True if sub is found within text, false otherwise
+ */
+StrContains text: str, sub: str :: bool {
+    if sub.ln == 0 {
+        -> true
+    }
+    if text.ln < sub.ln {
+        -> false
+    }
+    -> text.cnt(sub)
+}
+
+/**
+ * Prints text line-by-line with four leading indentation spaces.
+ *
+ * @param {str} text - Input text string to print indented
+ * @returns {void}
+ */
+PrintIndentedText text: str :: void {
+    tLen: num = text.ln
+    if tLen == 0 {
+        ret
+    }
+    startIdx: num = 0
+    i: num = 0
+    wh i < tLen {
+        ch: str = text.chr i
+        if ch == "\n" {
+            lineStr: str = text.slc startIdx, i
+            if lineStr.ln > 0 && (lineStr.chr(lineStr.ln - 1)) == "\r" {
+                lineStr = lineStr.slc 0, lineStr.ln - 1
+            }
+            if lineStr.ln > 0 {
+                prnt "    " + lineStr
+            }
+            startIdx = i + 1
+        }
+        i = i + 1
+    }
+    if startIdx < tLen {
+        lastLine: str = text.slc startIdx, tLen
+        if lastLine.ln > 0 && (lastLine.chr(lastLine.ln - 1)) == "\r" {
+            lastLine = lastLine.slc 0, lastLine.ln - 1
+        }
+        if lastLine.ln > 0 {
+            prnt "    " + lastLine
+        }
+    }
+}
+
+/**
  * Resolves a friendly target name alias to its canonical LLVM target triple.
  *
  * @param {str} alias - Target alias name (e.g. 'win64', 'linux-x64', 'macos-arm64')
@@ -184,6 +239,51 @@ ResolveTargetTriple alias: str :: str => sw alias {
     "macos-x64"     => "x86_64-apple-darwin"
     "darwin-x64"    => "x86_64-apple-darwin"
     _               => (alias.ln > 0 ? alias : "x86_64-pc-windows-msvc")
+}
+
+/**
+ * Recursively inspects an AST node to check if it contains a return statement with a non-nil value.
+ *
+ * @param {ASTNode} node - AST node to inspect
+ * @returns {bool} True if a non-nil RetStmt is found
+ */
+HasReturnValue node: ASTNode :: bool {
+    if node.kind == NodeKind.RetStmt {
+        if node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr {
+            -> true
+        }
+    }
+    fr child of node.children {
+        if child.kind != NodeKind.FuncDecl {
+            if HasReturnValue(child) {
+                -> true
+            }
+        }
+    }
+    -> false
+}
+
+/**
+ * Resolves the semantic TypeKind for a function declaration.
+ *
+ * @param {ASTNode} node - FuncDecl AST node
+ * @returns {TypeKind} Resolved return TypeKind
+ */
+ResolveFuncReturnType node: ASTNode :: TypeKind {
+    if node.typeAnnotation.ln > 0 && node.typeAnnotation != "void" {
+        tk: TypeKind = StrToTypeKind(node.typeAnnotation)
+        if tk == TypeKind.Unknown {
+            -> TypeKind.I64
+        }
+        -> tk
+    }
+    if node.typeAnnotation == "void" {
+        -> TypeKind.Void
+    }
+    if HasReturnValue(node) {
+        -> TypeKind.I64
+    }
+    -> TypeKind.Void
 }
 
 
@@ -794,6 +894,19 @@ obj Cli {
             } els if topNode.kind == NodeKind.ExternDecl {
                 extMgr.emitExternDeclNode(topNode, cg)
             } els if topNode.kind == NodeKind.FuncDecl {
+                fnRetTK: TypeKind = ResolveFuncReturnType(topNode)
+                fnParamTKs: TypeKind[] = []
+                fr p of topNode.params {
+                    pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
+                    if pTK == TypeKind.Unknown && p.typeAnnotation.ln > 0 {
+                        pTK = TypeKind.I64
+                    } els if pTK == TypeKind.Unknown {
+                        pTK = TypeKind.I64
+                    }
+                    fnParamTKs.psh(pTK)
+                }
+                exprGen.addFunctionSig(topNode.name, fnRetTK, fnParamTKs)
+
                 if topNode.name == "main" {
                     hasExplicitMain = true
                     mainNode = topNode
@@ -807,10 +920,7 @@ obj Cli {
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
                 if topNode.name != "main" {
-                    retTK: TypeKind = StrToTypeKind(topNode.typeAnnotation)
-                    if retTK == TypeKind.Unknown && topNode.typeAnnotation.ln > 0 {
-                        retTK = TypeKind.I64
-                    }
+                    retTK: TypeKind = ResolveFuncReturnType(topNode)
                     retLLVM: str = llvmType(retTK)
 
                     exportAttr: str = ""
@@ -825,7 +935,7 @@ obj Cli {
                     firstP: bool = true
                     fr p of topNode.params {
                         pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
-                        if pTK == TypeKind.Unknown && p.typeAnnotation.ln > 0 {
+                        if pTK == TypeKind.Unknown || p.typeAnnotation.ln == 0 {
                             pTK = TypeKind.I64
                         }
                         pLLVM: str = llvmType(pTK)
@@ -842,7 +952,7 @@ obj Cli {
                     // Bind parameters into local stack alloca slots
                     fr p of topNode.params {
                         pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
-                        if pTK == TypeKind.Unknown && p.typeAnnotation.ln > 0 {
+                        if pTK == TypeKind.Unknown || p.typeAnnotation.ln == 0 {
                             pTK = TypeKind.I64
                         }
                         stType: str = llvmStackType(pTK)
@@ -976,57 +1086,109 @@ obj Cli {
      */
     handleTest: :: num => {
         prnt ""
-        prnt " ZUV TEST v0.6.0 (Bootstrap Automated Test Runner)"
+        prnt " ZUV TEST v0.6.0"
         prnt ""
-        testFiles: str[] = sF "tests", ".test.zv"
-        prnt "Total test suites discovered: " + testFiles.ln
-        prnt ""
+
+        allTestFiles: str[] = sF "tests", ".test.zv"
+        if allTestFiles.ln == 0 {
+            allTestFiles = sF "sub_projects/zuv/tests", ".test.zv"
+        }
+
+        filter: str = self.targetFile
+        matchCount: num = 0
+        fr tFile of allTestFiles {
+            if filter.ln == 0 || StrContains(tFile, filter) {
+                matchCount = matchCount + 1
+            }
+        }
+
+        if matchCount == 0 {
+            prnt " ! No test files matching *.test.zv found in project."
+            prnt ""
+            -> 0
+        }
+
+        compilerBin: str = ".\\zuv_bootstrap.exe"
+        if !(fE "zuv_bootstrap.exe") && !(fE ".\\zuv_bootstrap.exe") {
+            if fE "sub_projects/zuv/zuv_bootstrap.exe" {
+                compilerBin = "sub_projects/zuv/zuv_bootstrap.exe"
+            } els if fE "zuv.exe" {
+                compilerBin = ".\\zuv.exe"
+            }
+        }
 
         passCount: num = 0
         failCount: num = 0
-        startMs = nw
+        startMs: num = time.now()
 
-        fr tFile of testFiles {
-            caseStart = nw
+        fr tFile of allTestFiles {
+            if filter.ln > 0 && !(StrContains(tFile, filter)) {
+                cont
+            }
+
+            caseStart: num = time.now()
             tmpExe: str = "test_run_temp.exe"
+            runOut: str = "test_run_temp.out"
             if fE tmpExe {
                 rmF tmpExe
             }
-            buildCmd: str = ".\\zuv.exe build \"" + tFile + "\" -o \"" + tmpExe + "\" -q"
+            if fE runOut {
+                rmF runOut
+            }
+
+            buildCmd: str = compilerBin + " build \"" + tFile + "\" -o \"" + tmpExe + "\" -q > \"" + runOut + "\" 2>&1"
             bRes: num = sh buildCmd
+
+            elapsedFail: num = time.now() - caseStart
             if bRes != 0 || !(fE tmpExe) {
-                elapsedFail = nw - caseStart
-                prnt " FAIL " + tFile + " (" + elapsedFail + "ms) [Compilation Failed]"
+                prnt " ✗ " + tFile + " (" + elapsedFail + "ms)"
+                if fE runOut {
+                    errText: str = rF runOut
+                    PrintIndentedText errText
+                }
                 failCount = failCount + 1
             } els {
-                rCmd: str = ".\\" + tmpExe
+                if fE runOut {
+                    rmF runOut
+                }
+                rCmd: str = ".\\" + tmpExe + " > \"" + runOut + "\" 2>&1"
                 rRes: num = sh rCmd
-                elapsedPass = nw - caseStart
+                elapsedPass: num = time.now() - caseStart
                 if rRes == 0 {
-                    prnt " PASS " + tFile + " (" + elapsedPass + "ms)"
+                    prnt " Pass " + tFile + " (" + elapsedPass + "ms)"
                     passCount = passCount + 1
                 } els {
-                    prnt " FAIL " + tFile + " (" + elapsedPass + "ms) [Exit code " + rRes + "]"
+                    prnt " Fail " + tFile + " (" + elapsedPass + "ms)"
+                    prnt "    Execution failed with exit code " + rRes
+                    if fE runOut {
+                        runText: str = rF runOut
+                        PrintIndentedText runText
+                    }
                     failCount = failCount + 1
                 }
             }
             if fE tmpExe {
                 rmF tmpExe
             }
+            if fE runOut {
+                rmF runOut
+            }
         }
 
-        totalElapsed = nw - startMs
+        totalElapsed: num = time.now() - startMs
         totalCases: num = passCount + failCount
         prnt ""
         if failCount == 0 {
-            prnt " Test Files: " + passCount + " passed (" + totalCases + ")"
-            prnt "      Tests: " + passCount + " passed"
+            prnt " Test Files  " + passCount + " passed (" + totalCases + ")"
         } els {
-            prnt " Test Files: " + failCount + " failed, " + passCount + " passed (" + totalCases + ")"
-            prnt "      Tests: " + failCount + " failed, " + passCount + " passed"
+            prnt " Test Files  " + failCount + " failed | " + passCount + " passed (" + totalCases + ")"
         }
-        prnt "   Duration: " + totalElapsed + "ms"
+        prnt "      Tests  " + passCount + " passed"
+        prnt "   Duration  " + totalElapsed + "ms"
         prnt ""
-        -> (failCount > 0 ? 1 : 0)
+        if failCount > 0 {
+            -> 1
+        }
+        -> 0
     }
 }

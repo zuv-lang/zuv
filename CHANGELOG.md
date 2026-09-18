@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚡ Functions Grammar & Execution (`func_simple.test.zv`)
+- **Single Colon `:`**: Supported standard single colon for parenthesized return types (`add(a: num, b: num): num`).
+- **Parenthesis-Free**: Supported paren-free function signatures (`addPF a: num, b: num :: num`) and argument passing on variable re-assignment.
+- **Functions Without Types**: Supported unannotated functions (e.g. `addNoTypes(a, b)`, `subNoTypes a, b`), defaulting params and return values to `i64`.
+- **Type Coercion**: Handled scalar assignment and return type coercions (`num`, `i64`, `i32`, `bool`).
+- **Test**: `tests/func_simple.test.zv` passes check and execution.
+
+
 ### 📦 C Dynamic Library Export & FFI (`--cdylib`, `pub extern "C"`)
 - **`pub extern "C"`**: Added block and single-declaration parser and codegen with `dllexport`.
 - **cdylib Build**: Added `--cdylib` flag and `@rsp` response file linking with MSVC CRT support.

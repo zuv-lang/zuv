@@ -326,12 +326,12 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
     name: str = nameTok.val
 
     params: Param[] = []
-    if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_ARROW) && !(parser.check TokenType.TOK_FAT_ARROW) {
+    if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_ARROW) && !(parser.check TokenType.TOK_FAT_ARROW) && !(parser.check TokenType.TOK_COLON) {
         params = ParseParamList parser
     }
 
-    returnType: str = "void"
-    if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) {
+    returnType: str = ""
+    if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) || (parser.matchToken TokenType.TOK_COLON) {
         returnType = ParseTypeString parser
     }
 
