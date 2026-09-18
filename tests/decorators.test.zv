@@ -47,7 +47,7 @@ Measure fn, c {
 obj App {
     @Measure
     calculate: => {
-        mut i = 0
+        i = 0
         wh i < 100000 { i = i + 1 }
         -> i
     }

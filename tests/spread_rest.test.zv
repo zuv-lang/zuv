@@ -22,8 +22,8 @@ if updated.id == 1 {
 }
 
 sumAll ...nums {
-    mut total = 0
-    mut i = 0
+    total = 0
+    i = 0
     wh i < nums.ln {
         total = total + nums[i]
         i = i + 1
@@ -37,8 +37,8 @@ if s == 60 {
 }
 
 sumPref a, ...rest {
-    mut acc = a
-    mut j = 0
+    acc = a
+    j = 0
     wh j < rest.ln {
         acc = acc + rest[j]
         j = j + 1

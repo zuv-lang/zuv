@@ -54,8 +54,8 @@ obj User {
         s ='daddsdd'
         -> s,
     delete: i => {
-        mut out = []
-        mut j = 0
+        out = []
+        j = 0
         wh j < users.ln {
             if j != i {
                 out.psh users[j]
@@ -107,7 +107,7 @@ prnt msg
 msg2 = u3.hello "Eve"
 prnt msg2
 
-mut u4 = User.create "Zoe", 10
+u4 = User.create "Zoe", 10
 u4 = u4.bumpAge 5
 prnt u4.age
 prnt u4.sayBye

@@ -4,8 +4,8 @@ failTask {
     panic "fatal error in failTask"
 }
 
-mut isChild = 0
-mut ci = 0
+isChild = 0
+ci = 0
 wh ci < args.ln {
     if args[ci] == "child" {
         isChild = 1
