@@ -18,7 +18,7 @@ imp Codegen, StringConstant frm codegen
  * @param {str} typeStr - High-level type name (e.g. "num", "str", "void", "i64", "double")
  * @returns {str} LLVM IR type string ("void", "i1", "i8", "i16", "i32", "i64", "double", "ptr")
  */
-ToLLVMExternType typeStr: str :: str {
+ToLLVMExternType typeStr: str, libName: str :: str {
     if typeStr == "void" {
         -> "void"
     }
@@ -40,7 +40,20 @@ ToLLVMExternType typeStr: str :: str {
     if typeStr == "i16" || typeStr == "u16" {
         -> "i16"
     }
-    // Default for C ABI "num", "i32", "int", "DWORD", or unknown
+    if typeStr == "i32" || typeStr == "int" || typeStr == "DWORD" || typeStr == "u32" {
+        -> "i32"
+    }
+    if typeStr == "num" {
+        isSysLib: bool = libName == "msvcrt.dll" || libName == "msvcrt.lib" || libName == "msvcrt" ||
+                         libName == "kernel32.dll" || libName == "kernel32.lib" || libName == "kernel32" ||
+                         libName == "user32.dll" || libName == "user32.lib" || libName == "user32" ||
+                         libName == "ws2_32.dll" || libName == "ws2_32.lib" || libName == "ws2_32" ||
+                         libName == "c" || libName == "libc" || libName == "C"
+        if isSysLib {
+            -> "i32"
+        }
+        -> "double"
+    }
     -> "i32"
 }
 
@@ -128,13 +141,13 @@ ResolvePlatformLib libName: str, targetTriple: str :: str {
     isMac: bool = IsMacOSTriple targetTriple
 
     // C Runtime alias resolution
-    isCrt: bool = libName == "c" || libName == "libc" || libName == "msvcrt" || 
+    isCrt: bool = libName == "c" || libName == "C" || libName == "libc" || libName == "msvcrt" || 
                   libName == "msvcrt.lib" || libName == "msvcrt.dll" || 
                   libName == "ucrt" || libName == "libcmt"
 
     if isCrt {
         if isWin {
-            if libName == "c" || libName == "libc" {
+            if libName == "c" || libName == "C" || libName == "libc" {
                 -> "c"
             }
             -> "msvcrt.lib"
@@ -222,7 +235,7 @@ obj ExternManager {
             -> und
         }
         resolved: str = ResolvePlatformLib libName, targetTriple
-        if resolved.ln == 0 || resolved == "c" || resolved == "libc" {
+        if resolved.ln == 0 || resolved == "c" || resolved == "C" || resolved == "libc" {
             -> und
         }
         if !(self.hasLib resolved) {
@@ -325,7 +338,7 @@ obj ExternManager {
 
         fr fnChild of node.children {
             fnName = fnChild.name
-            retType = ToLLVMExternType fnChild.typeAnnotation
+            retType = ToLLVMExternType fnChild.typeAnnotation, libName
             paramTypes: str[] = []
             isVarArg = false
 
@@ -337,7 +350,7 @@ obj ExternManager {
                     if p.isRest {
                         isVarArg = true
                     } els {
-                        pType = ToLLVMExternType p.typeAnnotation
+                        pType = ToLLVMExternType p.typeAnnotation, libName
                         paramTypes.psh pType
                     }
                 }

@@ -13,7 +13,7 @@
 
 imp os, fs, str, arr, time
 imp Token, TokenType frm tokens
-imp TypeInfo, TypeKind frm types
+imp TypeInfo, TypeKind, StrToTypeKind frm types
 imp ASTNode, NodeKind frm ast
 imp Diagnostic frm diagnostics
 imp Lexer frm lexer
@@ -24,7 +24,7 @@ imp InferProgram frm checker/infer
 imp BorrowChecker, BorrowCheckProgram frm checker/borrow
 imp Codegen frm codegen/codegen
 imp ExternManager, IsWindowsTriple, IsLinuxTriple, IsMacOSTriple frm codegen/extern
-imp llvmType, isFloatType, isIntegerType frm codegen/types
+imp llvmType, llvmStackType, selectDefaultValue, isFloatType, isIntegerType frm codegen/types
 imp ObjectCodegen, StructLayout, StructLayoutRegistry, resolveFieldTypeKind frm codegen/decl
 imp ArrayCodegen frm codegen/array
 imp ExprCodegen frm codegen/expr
@@ -222,7 +222,41 @@ linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, targetTriple
             isDll = true
         }
 
-        dllFlags: str = "-subsystem:console -stack:33554432"
+        // Custom / external libraries routing on Windows
+        customLibs: str = ""
+        fr lib of externLibs {
+            if lib == "c" || lib == "C" || lib == "libc" {
+                // MSVC CRT linked by default
+            } els if lib == "msvcrt" || lib == "msvcrt.lib" || lib == "msvcrt.dll" {
+                customLibs = customLibs + " -defaultlib:msvcrt"
+            } els if StrEndsWith(lib, ".lib") || StrEndsWith(lib, ".LIB") {
+                customLibs = customLibs + " \"" + lib + "\""
+            } els if StrEndsWith(lib, ".dll") || StrEndsWith(lib, ".DLL") {
+                dllBase: str = lib.slc(0, lib.ln - 4)
+                libFile: str = dllBase + ".lib"
+                if !(fE lib) {
+                    if fE ("tests/" + lib) {
+                        sh ("copy /y \"tests\\" + lib + "\" \"" + lib + "\" >nul")
+                    } els if fE ("../" + lib) {
+                        sh ("copy /y \"..\\" + lib + "\" \"" + lib + "\" >nul")
+                    }
+                }
+                if !(fE libFile) {
+                    if fE ("tests/" + libFile) {
+                        sh ("copy /y \"tests\\" + libFile + "\" \"" + libFile + "\" >nul")
+                    } els if fE ("../" + libFile) {
+                        sh ("copy /y \"..\\" + libFile + "\" \"" + libFile + "\" >nul")
+                    }
+                }
+                customLibs = customLibs + " -defaultlib:" + dllBase
+            } els {
+                customLibs = customLibs + " -defaultlib:" + lib
+            }
+        }
+
+        rspFile: str = objPath + ".rsp"
+        rspContent: str = "\"" + objPath + "\"\n"
+        rspContent = rspContent + "-out:\"" + outExePath + "\"\n"
         if isDll {
             outLibPath: str = outExePath
             exeLen: num = outExePath.ln
@@ -231,28 +265,33 @@ linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, targetTriple
             } els {
                 outLibPath = outLibPath + ".lib"
             }
-            dllFlags = "-dll -implib:\"" + outLibPath + "\" -noentry -defaultlib:ucrt -defaultlib:vcruntime"
+            rspContent = rspContent + "-dll\n"
+            rspContent = rspContent + "-implib:\"" + outLibPath + "\"\n"
+            rspContent = rspContent + "-noentry\n"
+            rspContent = rspContent + "-defaultlib:ucrt\n"
+            rspContent = rspContent + "-defaultlib:vcruntime\n"
+        } els {
+            rspContent = rspContent + "-subsystem:console\n"
+            rspContent = rspContent + "-stack:33554432\n"
         }
+        rspContent = rspContent + "-defaultlib:libcmt\n"
+        rspContent = rspContent + "-defaultlib:legacy_stdio_definitions\n"
+        rspContent = rspContent + "-defaultlib:oldnames\n"
+        rspContent = rspContent + "-defaultlib:user32\n"
+        rspContent = rspContent + "-defaultlib:kernel32\n"
+        rspContent = rspContent + "-defaultlib:ws2_32\n"
+        rspContent = rspContent + "-libpath:.\n"
+        rspContent = rspContent + "-libpath:..\n"
+        rspContent = rspContent + "-libpath:tests\n"
+        rspContent = rspContent + customLibs + "\n"
+        rspContent = rspContent + "-nologo\n"
 
-        // Custom / external libraries routing on Windows
-        customLibs: str = ""
-        fr lib of externLibs {
-            if lib == "c" || lib == "libc" {
-                // MSVC CRT linked by default
-            } els if lib == "msvcrt" || lib == "msvcrt.lib" || lib == "msvcrt.dll" {
-                customLibs = customLibs + " -defaultlib:msvcrt"
-            } els if StrEndsWith(lib, ".lib") || StrEndsWith(lib, ".LIB") {
-                customLibs = customLibs + " \"" + lib + "\""
-            } els if StrEndsWith(lib, ".dll") || StrEndsWith(lib, ".DLL") {
-                dllBase: str = lib.slc(0, lib.ln - 4)
-                customLibs = customLibs + " -defaultlib:" + dllBase
-            } els {
-                customLibs = customLibs + " -defaultlib:" + lib
-            }
-        }
-
-        cmd: str = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" " + dllFlags + " -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -defaultlib:ws2_32" + customLibs + " -nologo"
+        wF rspFile, rspContent
+        cmd: str = lldBin + " @\"" + rspFile + "\""
         res: num = sh cmd
+        if fE rspFile {
+            rmF rspFile
+        }
         -> res
     }
 
@@ -267,7 +306,7 @@ linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, targetTriple
 
         libFlags: str = "-lc -lm -lpthread"
         fr lib of externLibs {
-            if lib == "c" || lib == "libc" || lib == "msvcrt" || lib == "msvcrt.lib" || lib == "msvcrt.dll" {
+            if lib == "c" || lib == "C" || lib == "libc" || lib == "msvcrt" || lib == "msvcrt.lib" || lib == "msvcrt.dll" {
                 // Routed to -lc above
             } els if lib == "kernel32.lib" || lib == "user32.lib" || lib == "ws2_32.lib" {
                 // Skip Windows-only libraries on Linux
@@ -450,6 +489,9 @@ obj Cli {
             if arg == "-o" && i + 1 < total {
                 i = i + 1
                 self.outputFile = self.args[i]
+                if StrEndsWith(self.outputFile, ".dll") || StrEndsWith(self.outputFile, ".DLL") {
+                    self.isCdylib = true
+                }
             } els if arg == "-r" || arg == "--release" {
                 self.isRelease = true
             } els if arg == "-S" || arg == "--emit-llvm" {
@@ -737,6 +779,8 @@ obj Cli {
         targetExe: str = self.outputFile
         if targetExe.ln == 0 {
             targetExe = (self.isCdylib ? "output.dll" : "output.exe")
+        } els if StrEndsWith(targetExe, ".dll") || StrEndsWith(targetExe, ".DLL") {
+            self.isCdylib = true
         }
 
         // Emit functions and statements
@@ -763,8 +807,52 @@ obj Cli {
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
                 if topNode.name != "main" {
-                    retLLVM: str = (topNode.typeAnnotation.ln > 0 && topNode.typeAnnotation != "void" ? "i64" : "void")
-                    cg.startFunction("define " + retLLVM + " @" + topNode.name + "() {")
+                    retTK: TypeKind = StrToTypeKind(topNode.typeAnnotation)
+                    if retTK == TypeKind.Unknown && topNode.typeAnnotation.ln > 0 {
+                        retTK = TypeKind.I64
+                    }
+                    retLLVM: str = llvmType(retTK)
+
+                    exportAttr: str = ""
+                    if topNode.isPub || topNode.isExternC || self.isCdylib {
+                        if IsWindowsTriple(self.targetTriple) {
+                            exportAttr = "dllexport "
+                        }
+                    }
+
+                    // Build parameter list signature
+                    paramsSig: str = ""
+                    firstP: bool = true
+                    fr p of topNode.params {
+                        pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
+                        if pTK == TypeKind.Unknown && p.typeAnnotation.ln > 0 {
+                            pTK = TypeKind.I64
+                        }
+                        pLLVM: str = llvmType(pTK)
+                        if !firstP {
+                            paramsSig = paramsSig + ", "
+                        }
+                        paramsSig = paramsSig + pLLVM + " %arg_" + p.name
+                        firstP = false
+                    }
+
+                    cg.startFunction("define " + exportAttr + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
+                    stmtGen.setReturnType(retTK)
+
+                    // Bind parameters into local stack alloca slots
+                    fr p of topNode.params {
+                        pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
+                        if pTK == TypeKind.Unknown && p.typeAnnotation.ln > 0 {
+                            pTK = TypeKind.I64
+                        }
+                        stType: str = llvmStackType(pTK)
+                        pLLVM: str = llvmType(pTK)
+                        slotReg: str = cg.newReg()
+                        cg.emit(slotReg + " = alloca " + stType)
+                        cg.emit("store " + pLLVM + " %arg_" + p.name + ", ptr " + slotReg)
+                        exprGen.addSymbol(p.name, slotReg, pTK, false, true)
+                    }
+
                     if topNode.children.ln > 0 {
                         bodyBlock: ASTNode = topNode.children[0]
                         fr bodyStmt of bodyBlock.children {
@@ -774,9 +862,11 @@ obj Cli {
                     if retLLVM == "void" {
                         cg.emit("ret void")
                     } els {
-                        cg.emit("ret i64 0")
+                        dVal: str = selectDefaultValue(retTK)
+                        cg.emit("ret " + retLLVM + " " + dVal)
                     }
                     cg.finishFunction()
+                    exprGen.clearSymbols()
                 }
             }
         }
@@ -797,7 +887,7 @@ obj Cli {
             }
             cg.emit("ret i32 0")
             cg.finishFunction()
-        } els if !(self.isCdylib) {
+        } els {
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
             rtGen.emitInitCrashHandlerCall()
             stmtGen.setReturnType(TypeKind.I32)

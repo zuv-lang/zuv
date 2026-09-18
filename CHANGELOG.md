@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 📦 C Dynamic Library Export & FFI (`--cdylib`, `pub extern "C"`)
+- **`pub extern "C"`**: Added block and single-declaration parser and codegen with `dllexport`.
+- **cdylib Build**: Added `--cdylib` flag and `@rsp` response file linking with MSVC CRT support.
+- **FFI Coercion**: Handled double/integer argument coercion for custom DLL functions.
+- **Tests**: `tests/cdylib_export.test.zv` and `tests/call_cdylib.test.zv` pass.
+
 ### 🔒 Constants & Deprecation of `let` / `mut`
 - **Block-Letter Constants**: Uppercase identifiers (`ABC`, `MAX_LEN`) are immutable constants enforced by borrow checker (`error[E0203]`).
 - **Deprecate `let` & `mut`**: Standard assignment (`x = 1`) is mutable by default without keywords; `let` retained only for backward compatibility.

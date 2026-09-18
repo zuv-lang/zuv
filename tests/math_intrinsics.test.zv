@@ -3,61 +3,61 @@ imp mth
 // 1. Basic Unary Intrinsics
 // let a1 = abs -42
 // prnt a1
-let a2 = mth.abs -15.5
+a2 = mth.abs -15.5
 prnt a2
-let c1 = mth.ceil 3.2
+c1 = mth.ceil 3.2
 prnt c1
-let f1 = mth.floor 3.8
+f1 = mth.floor 3.8
 prnt f1
-let r1 = mth.round 3.6
+r1 = mth.round 3.6
 prnt r1
-let r2 = mth.round 3.2
+r2 = mth.round 3.2
 prnt r2
-let t1 = mth.trunc 3.9
+t1 = mth.trunc 3.9
 prnt t1
-let t2 = mth.trunc -3.9
+t2 = mth.trunc -3.9
 prnt t2
 
 // 2. Sqrt & Pow
-let s1 = mth.sqrt 16
+s1 = mth.sqrt 16
 prnt s1
-let s2 = mth.sqrt 25
+s2 = mth.sqrt 25
 prnt s2
-let p1 = mth.pow 2, 3
+p1 = mth.pow 2, 3
 prnt p1
-let p2 = mth.pow 3, 2
+p2 = mth.pow 3, 2
 prnt p2
 
 // 3. Min & Max
-let mx1 = mth.max 10, 20
+mx1 = mth.max 10, 20
 prnt mx1
-let mx2 = mth.max 5, 3
+mx2 = mth.max 5, 3
 prnt mx2
-let mn1 = mth.min 10, 20
+mn1 = mth.min 10, 20
 prnt mn1
-let mn2 = mth.min 5, 3
+mn2 = mth.min 5, 3
 prnt mn2
 
 // 4. Trigonometry
-let sn1 = mth.sin 0
+sn1 = mth.sin 0
 prnt sn1
-let cs1 = mth.cos 0
+cs1 = mth.cos 0
 prnt cs1
-let tn1 = mth.tan 0
+tn1 = mth.tan 0
 prnt tn1
-let asn1 = mth.asin 0
+asn1 = mth.asin 0
 prnt asn1
-let acs1 = mth.acos 1
+acs1 = mth.acos 1
 prnt acs1
-let atn1 = mth.atan 0
+atn1 = mth.atan 0
 prnt atn1
-let atn2 = mth.atan2 0, 1
+atn2 = mth.atan2 0, 1
 prnt atn2
 
 // 5. Log & Exp
-let l1 = mth.log 1
+l1 = mth.log 1
 prnt l1
-let e1 = mth.exp 0
+e1 = mth.exp 0
 prnt e1
 
 // 6. Constants
@@ -69,5 +69,5 @@ prnt (mth.E > 2.71 and mth.E < 2.72)
 prnt (mth.SQRT2 > 1.41 and mth.SQRT2 < 1.42)
 
 // 7. Random
-let rnd = mth.rand
+rnd = mth.rand
 prnt (rnd >= 0 and rnd < 1)

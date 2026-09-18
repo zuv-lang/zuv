@@ -8,28 +8,28 @@ if args.ln > 2 {
 }
 if mode != "" {
     if mode == "oob_read" {
-        let a = [10, 20, 30]
-        let x = a[10]
+        a = [10, 20, 30]
+        x = a[10]
         exit 0
     }
     if mode == "neg_read" {
-        let a = [10, 20, 30]
-        let x = a[-1]
+        a = [10, 20, 30]
+        x = a[-1]
         exit 0
     }
     if mode == "oob_write" {
-        let a = [10, 20, 30]
+        a = [10, 20, 30]
         a[10] = 99
         exit 0
     }
     if mode == "neg_write" {
-        let a = [10, 20, 30]
+        a = [10, 20, 30]
         a[-1] = 99
         exit 0
     }
     if mode == "empty_read" {
-        let a = []
-        let x = a[0]
+        a = []
+        x = a[0]
         exit 0
     }
     exit 0
@@ -38,7 +38,7 @@ if mode != "" {
 // Parent Process Execution
 
 // 1. In-Bounds Array Reads and Writes
-let arr = [100, 200, 300]
+arr = [100, 200, 300]
 if arr[0] != 100 {
     panic "arr[0] != 100"
 }
@@ -54,9 +54,9 @@ if arr[1] != 555 {
 }
 
 // 2. Safe Dynamic Expansion (10,000 elements — far exceeding 1024-element buffer limit)
-let big = []
-let count = 10000
-let i = 0
+big = []
+count = 10000
+i = 0
 wh i < count {
     big.psh i
     i = i + 1
@@ -87,59 +87,59 @@ if big[1024] != 88888 {
 }
 
 // 3. Optional Indexing (?.[i]) Safe Fallback
-let optArr = [10, 20, 30]
-let v0 = optArr?.[0]
+optArr = [10, 20, 30]
+v0 = optArr?.[0]
 if v0 != 10 {
     panic "optArr?.[0] != 10"
 }
-let vOob = optArr?.[100]
+vOob = optArr?.[100]
 if vOob != nil {
     panic "optArr?.[100] should be nil"
 }
-let vNeg = optArr?.[-1]
+vNeg = optArr?.[-1]
 if vNeg != nil {
     panic "optArr?.[-1] should be nil"
 }
-let emptyArr = []
-let vEmpty = emptyArr?.[0]
+emptyArr = []
+vEmpty = emptyArr?.[0]
 if vEmpty != nil {
     panic "emptyArr?.[0] should be nil"
 }
-let nilArr = nil
-let vNil = nilArr?.[0]
+nilArr = nil
+vNil = nilArr?.[0]
 if vNil != nil {
     panic "nilArr?.[0] should be nil"
 }
 
 // 4. Subprocess Verification for Bounds Panic (exit code 101)
-let selfExe = args[0]
+selfExe = args[0]
 prnt "4. Verifying runtime bounds guard abortion on out-of-bounds access:"
 
-let c1 = sh("\"" + selfExe + "\" oob_read")
+c1 = sh("\"" + selfExe + "\" oob_read")
 if c1 != 101 {
     panic "expected oob_read to exit with 101"
 }
 prnt "   - Positive out-of-bounds read aborts with exit code 101: OK"
 
-let c2 = sh("\"" + selfExe + "\" neg_read")
+c2 = sh("\"" + selfExe + "\" neg_read")
 if c2 != 101 {
     panic "expected neg_read to exit with 101"
 }
 prnt "   - Negative index read aborts with exit code 101: OK"
 
-let c3 = sh("\"" + selfExe + "\" oob_write")
+c3 = sh("\"" + selfExe + "\" oob_write")
 if c3 != 101 {
     panic "expected oob_write to exit with 101"
 }
 prnt "   - Positive out-of-bounds write aborts with exit code 101: OK"
 
-let c4 = sh("\"" + selfExe + "\" neg_write")
+c4 = sh("\"" + selfExe + "\" neg_write")
 if c4 != 101 {
     panic "expected neg_write to exit with 101"
 }
 prnt "   - Negative index write aborts with exit code 101: OK"
 
-let c5 = sh("\"" + selfExe + "\" empty_read")
+c5 = sh("\"" + selfExe + "\" empty_read")
 if c5 != 101 {
     panic "expected empty_read to exit with 101"
 }

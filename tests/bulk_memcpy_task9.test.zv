@@ -9,8 +9,8 @@
 // 7. High-performance bulk @memcpy copy across 10,000 elements.
 
 // 1. Basic Array Cloning via Spread
-let original = [10, 20, 30, 40, 50]
-let clone = [...original]
+original = [10, 20, 30, 40, 50]
+clone = [...original]
 
 prnt clone.ln
 if clone.ln == 5 {
@@ -36,10 +36,10 @@ if clone.cap == 5 {
 }
 
 // 4. Multi-Array Spread Concatenation
-let part1 = [1, 2]
-let part2 = [3, 4]
-let part3 = [5, 6]
-let combined = [...part1, ...part2, ...part3]
+part1 = [1, 2]
+part2 = [3, 4]
+part3 = [5, 6]
+combined = [...part1, ...part2, ...part3]
 
 prnt combined.ln
 if combined.ln == 6 {
@@ -49,7 +49,7 @@ if combined.ln == 6 {
 }
 
 // 5. Mixed Literals and Spreads
-let mixed = [100, ...part1, 200, ...part2, 300]
+mixed = [100, ...part1, 200, ...part2, 300]
 prnt mixed.ln
 if mixed.ln == 7 {
     if mixed[0] == 100 and mixed[1] == 1 and mixed[2] == 2 and mixed[3] == 200 and mixed[4] == 3 and mixed[5] == 4 and mixed[6] == 300 {
@@ -58,25 +58,25 @@ if mixed.ln == 7 {
 }
 
 // 6. Empty Array and Nil Spreading
-let empty_spread = [...[], 42, ...nil]
+empty_spread = [...[], 42, ...nil]
 prnt empty_spread.ln
 if empty_spread.ln == 1 and empty_spread[0] == 42 {
     prnt "Empty and nil spread handling passed"
 }
 
 // 7. Large-Scale Bulk @memcpy Copy across 10,000 Elements
-let large = []
-fr let i = 0; i < 10000; i++ {
+large = []
+fr i = 0; i < 10000; i++ {
     large.psh i
 }
 
-let large_copy = [...large]
+large_copy = [...large]
 
 prnt large_copy.ln
 prnt large_copy[0]
 prnt large_copy[9999]
 
-let copy_sum = 0
+copy_sum = 0
 fr val of large_copy {
     copy_sum = copy_sum + val
 }

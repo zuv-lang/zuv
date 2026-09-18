@@ -5,7 +5,7 @@ imp arr
 imp str
 
 // 1. Empty Array Initialization and First Push
-let a = []
+a = []
 if a.ln != 0 {
     panic "a.ln should be 0"
 }
@@ -82,7 +82,7 @@ if a[8] != 900 {
 }
 
 // 3. Non-Power-of-2 Base Growth: 3 -> 6 -> 12
-let b = [10, 20, 30]
+b = [10, 20, 30]
 if b.ln != 3 {
     panic "b.ln should be 3"
 }
@@ -120,8 +120,8 @@ if b[0] != 10 || b[1] != 20 || b[2] != 30 || b[3] != 40 || b[4] != 50 || b[5] !=
 }
 
 // 4. Large-Scale Stress Test (5,000 Elements)
-let big = []
-let i = 0
+big = []
+i = 0
 wh i < 5000 {
     big.psh i
     i = i + 1
@@ -158,8 +158,8 @@ if big[4999] != 4999 {
 }
 
 // 5. Parent Container Writeback: Object Property Array
-let container = { items: [] }
-let k = 0
+container = { items: [] }
+k = 0
 wh k < 100 {
     container.items.psh (k * 10)
     k = k + 1
@@ -179,8 +179,8 @@ if container.items[99] != 990 {
 }
 
 // 6. Nested Array Writeback
-let matrix = [[]]
-let m = 0
+matrix = [[]]
+m = 0
 wh m < 50 {
     matrix[0].psh (m + 100)
     m = m + 1
@@ -200,8 +200,8 @@ if matrix[0][49] != 149 {
 }
 
 // 7. Dynamic Growth in Array Spread Expression
-let baseArr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-let spreadArr = [...baseArr, ...baseArr]
+baseArr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+spreadArr = [...baseArr, ...baseArr]
 if spreadArr.ln != 40 {
     panic "spreadArr.ln should be 40"
 }

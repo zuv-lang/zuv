@@ -9,16 +9,16 @@
 // 7. Bulk memory copy between contiguous array buffers via mem.cp.
 
 // 1. Contiguous 8-Byte Spacing
-let arr = [100, 200, 300, 400, 500, 600, 700, 800]
+arr = [100, 200, 300, 400, 500, 600, 700, 800]
 unsafe {
-    let p0 = &arr[0]
-    let p1 = &arr[1]
-    let p2 = &arr[2]
-    let p3 = &arr[3]
+    p0 = &arr[0]
+    p1 = &arr[1]
+    p2 = &arr[2]
+    p3 = &arr[3]
 
-    let diff01 = p1 - p0
-    let diff12 = p2 - p1
-    let diff23 = p3 - p2
+    diff01 = p1 - p0
+    diff12 = p2 - p1
+    diff23 = p3 - p2
 
     prnt diff01
     prnt diff12
@@ -31,9 +31,9 @@ unsafe {
 
 // 2. 64-Byte Cache Line Span Verification (8 elements = 64 bytes total)
 unsafe {
-    let p0 = &arr[0]
-    let p7 = &arr[7]
-    let span = p7 - p0
+    p0 = &arr[0]
+    p7 = &arr[7]
+    span = p7 - p0
     prnt span
 
     if span == 56 {
@@ -42,14 +42,14 @@ unsafe {
 }
 
 // 3. Sequential Streaming (fr .. of with native i64 loop counter) across 50,000 elements
-let big = []
-fr let i = 0; i < 50000; i++ {
+big = []
+fr i = 0; i < 50000; i++ {
     big.psh i
 }
 
 prnt big.ln
 
-let sum = 0
+sum = 0
 fr item of big {
     sum = sum + item
 }
@@ -61,8 +61,8 @@ if sum == 1249975000 {
 }
 
 // 4. Sequential Index Traversal with fr .. in
-let sample = [10, 20, 30, 40, 50]
-let in_sum = 0
+sample = [10, 20, 30, 40, 50]
+in_sum = 0
 fr idx in sample {
     in_sum = in_sum + idx
 }
@@ -72,7 +72,7 @@ if in_sum == 10 {
 }
 
 // 5. In-Place Contiguous Mutation
-let mut_arr = [1, 2, 3, 4]
+mut_arr = [1, 2, 3, 4]
 mut_arr[0] = 10
 mut_arr[1] = 20
 mut_arr[2] = 30
@@ -84,8 +84,8 @@ if mut_arr[0] == 10 and mut_arr[1] == 20 and mut_arr[2] == 30 and mut_arr[3] == 
 
 // 6. Fast Contiguous Block Copy via mem.cp
 unsafe {
-    let src = [11, 22, 33, 44]
-    let dst = [0, 0, 0, 0]
+    src = [11, 22, 33, 44]
+    dst = [0, 0, 0, 0]
     mem.cp &dst[0], &src[0], 32
 
     prnt dst[0]

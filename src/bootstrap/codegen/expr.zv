@@ -113,6 +113,16 @@ obj ExprCodegen {
     },
 
     /**
+     * Resets the scoped symbol table for a new function or global block.
+     *
+     * @returns {void}
+     */
+    clearSymbols: :: void => {
+        emptySymbols: ScopeSymbol[] = []
+        self.symbols = emptySymbols
+    },
+
+    /**
      * Master expression evaluator routing AST nodes to specialized emitters.
      *
      * @param {ASTNode} node - Target expression AST node
@@ -591,10 +601,55 @@ obj ExprCodegen {
             vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
             -> vRes
         }
+        // Handle C/cdylib extern functions returning double
+        if self.codegen.header.cnt("declare double @" + calleeName) {
+            dblArgsStr: str = ""
+            firstDbl: bool = true
+            dIdx: num = 0
+            fr aReg of argRegs {
+                aType: TypeKind = argTypes[dIdx]
+                passReg: str = aReg
+                if aType != TypeKind.Num {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = sitofp i64 ${aReg} to double`
+                    passReg = cReg
+                }
+                if !firstDbl {
+                    dblArgsStr = dblArgsStr + ", "
+                }
+                dblArgsStr = dblArgsStr + "double " + passReg
+                firstDbl = false
+                dIdx++
+            }
+            callReg: str = self.codegen.newReg
+            self.codegen.emit `${callReg} = call double @${calleeName}(${dblArgsStr})`
+            res: ExprResult = { reg: callReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
         // Handle C extern functions returning i32
         if self.codegen.header.cnt("declare i32 @" + calleeName) {
+            i32ArgsStr: str = ""
+            firstI32: bool = true
+            iIdx: num = 0
+            fr aReg of argRegs {
+                aType: TypeKind = argTypes[iIdx]
+                passReg: str = aReg
+                if aType == TypeKind.I64 {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = trunc i64 ${aReg} to i32`
+                    passReg = cReg
+                }
+                if !firstI32 {
+                    i32ArgsStr = i32ArgsStr + ", "
+                }
+                tStr: str = (aType == TypeKind.I64 || aType == TypeKind.I32 ? "i32" : llvmType aType)
+                i32ArgsStr = i32ArgsStr + tStr + " " + passReg
+                firstI32 = false
+                iIdx++
+            }
             callReg: str = self.codegen.newReg
-            self.codegen.emit `${callReg} = call i32 @${calleeName}(${argsStr})`
+            self.codegen.emit `${callReg} = call i32 @${calleeName}(${i32ArgsStr})`
             if retType == TypeKind.Num {
                 convReg: str = self.codegen.newReg
                 self.codegen.emit `${convReg} = sitofp i32 ${callReg} to double`

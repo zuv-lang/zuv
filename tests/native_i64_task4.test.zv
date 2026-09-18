@@ -4,7 +4,7 @@
 imp arr
 imp str
 
-let a0 = []
+a0 = []
 if a0.ln != 0 {
     panic "a0.ln should be 0"
 }
@@ -12,7 +12,7 @@ if a0.cap != 0 {
     panic "a0.cap should be 0"
 }
 
-let a1 = [10, 20, 30]
+a1 = [10, 20, 30]
 if a1.ln != 3 {
     panic "a1.ln should be 3"
 }
@@ -31,12 +31,12 @@ if a1[2] != 30 {
 }
 
 // Indexing with expressions involving .ln
-let lastElem = a1[a1.ln - 1]
+lastElem = a1[a1.ln - 1]
 if lastElem != 30 {
     panic "a1[a1.ln - 1] should be 30"
 }
 
-let midElem = a1[a1.ln - 2]
+midElem = a1[a1.ln - 2]
 if midElem != 20 {
     panic "a1[a1.ln - 2] should be 20"
 }
@@ -57,7 +57,7 @@ if a1[4] != 50 {
 }
 
 // Pop and verify length
-let popped = a1.pp
+popped = a1.pp
 if popped != 50 {
     panic "popped should be 50"
 }
@@ -66,29 +66,29 @@ if a1.ln != 4 {
 }
 
 // String length with native i64
-let strVal = "hello world"
+strVal = "hello world"
 if strVal.ln != 11 {
     panic "strVal.ln should be 11"
 }
 
-let emptyStr = ""
+emptyStr = ""
 if emptyStr.ln != 0 {
     panic "emptyStr.ln should be 0"
 }
 
 // Function calls ln() and cap()
-let lenCall = ln a1
+lenCall = ln a1
 if lenCall != 4 {
     panic "ln a1 should be 4"
 }
 
-let capCall = cap a1
+capCall = cap a1
 if capCall < 4 {
     panic "cap a1 should be >= 4"
 }
 
 // For-of loop
-let sum = 0
+sum = 0
 fr val of [1, 2, 3, 4] {
     sum = sum + val
 }
@@ -97,7 +97,7 @@ if sum != 10 {
 }
 
 // For-in loop on array
-let idxSum = 0
+idxSum = 0
 fr idx, val in [100, 200, 300] {
     idxSum = idxSum + idx
 }

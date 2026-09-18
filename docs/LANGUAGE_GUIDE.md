@@ -6,7 +6,7 @@ Welcome to the official language manual for **Zuv**, a fast, statically-typed, m
 
 ## Table of Contents
 1. [Syntax & Basics](#syntax--basics)
-2. [Variables, Types & Literals](#variables-types--literals)
+2. [Variables, Constants & Types](#variables-constants--types)
 3. [Operators & Modern Expressions](#operators--modern-expressions)
 4. [Ownership, Borrowing & Unsafe Pointers](#ownership-borrowing--unsafe-pointers)
 5. [Control Flow & Pattern Matching](#control-flow--pattern-matching)
@@ -42,16 +42,56 @@ main {
 
 ---
 
-## Variables, Types & Literals
+## Variables, Constants & Types
 
-### Variable Declaration & Mutation
-Variables in Zuv are declared with `let` or bare assignment, and are mutable only when marked with `mut`:
+### Variable Declaration & Mutability
+Variables in Zuv are declared via direct assignment and are **mutable by default** without needing any keyword ceremony:
 
 ```zuv
-x = 10         // Immutable variable
-let name = "Zuv"
-mut counter = 20 // Mutable variable
+counter = 20        // Mutable variable (default)
 counter = counter + 1
+
+name = "Zuv"
+name = "Zuv Compiler" // Reassignment allowed
+```
+
+> [!NOTE]
+> The `let` and `mut` keywords are deprecated. Standard assignment (`x = 1`) is mutable by default. `let` is retained only for backward compatibility.
+
+### Block-Letter Constants (`UPPER_CASE`)
+Constants in Zuv follow a zero-keyword naming convention based on **uppercase block lettering**:
+
+- **Rule**: Any identifier consisting entirely of capital letters, numbers, and underscores (e.g. `ABC`, `MAX_RETRIES`, `PORT`, `API_URL`) is strictly **immutable** and enforced at compile time by the borrow checker (`error[E0203]`):
+```zuv
+MAX_BUFFER = 1024
+PORT = 8080
+
+MAX_BUFFER = 2048   // Compile Error [E0203]: Cannot mutate immutable constant 'MAX_BUFFER'
+```
+
+- **Scope**: Constants can be defined at module/global scope as well as within local function scopes:
+```zuv
+calculateTax price: num :: num {
+    DEFAULT_TAX_RATE = 0.15
+    -> price * DEFAULT_TAX_RATE
+}
+```
+
+- **Objects & Arrays as Constants**: When an uppercase constant is bound to an object or array, the root reference itself is immutable (cannot be reassigned), while internal elements and fields remain accessible and mutable:
+```zuv
+CONFIG = { timeout: 3000 }
+CONFIG.timeout = 5000     // Allowed (mutating field)
+CONFIG = { timeout: 1000 } // Error [E0203]: Cannot reassign constant 'CONFIG'
+
+LIST = [1, 2]
+LIST.psh 3               // Allowed (appending to heap array)
+LIST = [4, 5]            // Error [E0203]: Cannot reassign constant 'LIST'
+```
+
+- **Explicit Mutability Opt-Out**: In rare cases where a block-letter identifier needs to be mutable, prefixing it with `let` explicitly opts out of immutability:
+```zuv
+let MUTABLE_BLOCK = 10
+MUTABLE_BLOCK = 20        // Allowed because 'let' explicitly opted out
 ```
 
 ### Primitive Types & Literal Formats
@@ -75,6 +115,46 @@ counter = counter + 1
 - Exponentiation: `**` (e.g., `2 ** 8` yields `256`)
 - Compound assignments: `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `|=`, `^=`
 - Increment & Decrement: `++`, `--`
+
+### Logical & Boolean Operators (`!`, `not`, `&&`, `||`)
+Zuv supports both symbol-based and natural word-based logical operators interchangeably:
+
+- **Logical NOT (`!` / `not`)**:
+  - Inverts truthiness of any boolean or expression:
+  ```zuv
+  isReady = false
+  if !isReady {
+      prnt "Not ready yet"
+  }
+
+  // Word-based 'not' is completely interchangeable with '!'
+  if not isReady {
+      prnt "Still not ready"
+  }
+  ```
+  - Precedence: Prefix unary `!` binds tightly to the following operand or parenthesized expression:
+  ```zuv
+  if !(x > 10) {
+      prnt "x is 10 or less"
+  }
+  ```
+
+- **Logical AND (`&&` / `and`)**:
+  ```zuv
+  if isValid && hasPermission { ... }
+  if isValid and hasPermission { ... }
+  ```
+
+- **Logical OR (`||` / `or`)**:
+  ```zuv
+  if isCached || fetchFromNetwork() { ... }
+  if isCached or fetchFromNetwork() { ... }
+  ```
+
+- **Inequality (`!=`)**:
+  ```zuv
+  if count != 0 { ... }
+  ```
 
 ### Bitwise Operators
 - Bitwise AND: `&`

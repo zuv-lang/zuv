@@ -2,8 +2,8 @@
 // Verifies that code with proper scoping and error-free safety checks runs cleanly.
 
 testDiagnostics {
-    let code = 42
-    let message = "Rich Compiler Diagnostics Engine operational"
+    code = 42
+    message = "Rich Compiler Diagnostics Engine operational"
     prnt message
     if code == 42 {
         prnt "Diagnostic code verification passed"

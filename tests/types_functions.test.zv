@@ -1,5 +1,5 @@
-let numbers: num[] = [1, 2, 3]
-let names: str[] = ["A", "B"]
+numbers: num[] = [1, 2, 3]
+names: str[] = ["A", "B"]
 
 obj Person {
     name: str,
@@ -30,7 +30,7 @@ type UserWithId = Named & Aged & {
     id: num;
 };
 
-let user : User = {
+user : User = {
     name: "Rohit",
     age: 25
 }
@@ -107,7 +107,7 @@ create_user_num name: str, age: num -> User {
 //     -> { name, age }
 // }
 
-let users: User[] = [
+users: User[] = [
     { name: "Rohit", age: 25 }
 ]
 
@@ -326,6 +326,6 @@ lg ret_any_val("any value")
 // Enum datatype inspection via `typ` (returns "obj" for enum, "i8" for variant)
 lg typ StatusKind
 lg typ StatusKind.Completed
-let completedStatus = StatusKind.Completed
+completedStatus = StatusKind.Completed
 lg typ completedStatus
 

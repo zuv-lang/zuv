@@ -1,5 +1,5 @@
 // Auxiliary local module helper file with Go-style exported and unexported functions
-let AppVersion = "v2.0.0"
+AppVersion = "v2.0.0"
 
 AddNumbers a, b {
     -> a + b

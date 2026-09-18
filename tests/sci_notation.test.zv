@@ -22,7 +22,7 @@ if typ 123e5 == "num" {
     prnt "typ sci ok"
 }
 
-let x = 2e4
+x = 2e4
 if x == 20000 {
     prnt "sci var ok"
 }

@@ -11,7 +11,7 @@ dist x1, y1, x2, y2 =>
 
 // 3. Multi-line statements body with explicit return
 multi a, b =>
-    let c = a * 2
+    c = a * 2
     -> c + b
 
 // 4. Object literal return
@@ -68,10 +68,10 @@ lg describeStatus2 999
 
 lg getAnswer
 
-let doubleFn = x => x * 2
+doubleFn = x => x * 2
 lg doubleFn 21
 
-let addFn = (a, b) => a + b
+addFn = (a, b) => a + b
 lg addFn 15, 25
 
 lg apply double, 7

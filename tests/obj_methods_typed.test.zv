@@ -1,7 +1,7 @@
 imp arr
 
 
-let users: User[] = []
+users: User[] = []
 
 greet name :: str => {
     -> "hi " + name
@@ -37,7 +37,7 @@ obj User {
     twoLineArowMethod: i => 
         users[i],
     multiLineArowMethod: i => 
-        let s ='daddsdd'
+        s ='daddsdd'
         -> s,
     delete: i: num :: User[] => {
         mut out = []
@@ -98,24 +98,24 @@ u4 = u4.bumpAge 5
 prnt u4.age
 prnt u4.sayBye
 
-let u1 = new User{ name: "Alice", age: 28 }
+u1 = new User{ name: "Alice", age: 28 }
 u1.fullLabel
 
 prnt u1
 
-let u5 = new User({ name: "Alice", age: 28 })
+u5 = new User({ name: "Alice", age: 28 })
 
 
 prnt u5.fullLabel
 prnt`========u6========`
-let u6 = new User({ name: "Alice", age: 28 }).fullLabel
+u6 = new User({ name: "Alice", age: 28 }).fullLabel
 
 prnt u6
 
-let rec = { title: "Zuv", version: 2, isFast: true }
+rec = { title: "Zuv", version: 2, isFast: true }
 prnt rec
 
-let rec2 = { active: false, count: 0, tag: "demo" }
+rec2 = { active: false, count: 0, tag: "demo" }
 prnt rec2
 
 
@@ -130,7 +130,7 @@ prnt`====multiLineArowMethod====`
 prnt u5.multiLineArowMethod
 
 prnt`====nested====`
-let nested = {
+nested = {
     id: 1,
     tags: ["a", "b", "c"],
     address: { city: "Paris", zip: 75001, geo: { lat: 48.85, lon: 2.35 } },
@@ -142,7 +142,7 @@ prnt nested.address.geo.lat
 prnt nested.tags[1]
 prnt nested.scores[0][1]
 
-let inventory = [
+inventory = [
     { name: "apple", stock: 10 },
     { name: "pear", stock: 5 }
 ]

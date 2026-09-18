@@ -534,6 +534,39 @@ ParseDeclaration parser: Parser :: ASTNode {
     }
 
     curTok: Token = parser.cur
+
+    // Handle pub extern "C" { ... } or pub extern "C" fn ...
+    if isPub && curTok.kind == TokenType.TOK_EXTERN {
+        pAhead: Token = parser.peekAhead 1
+        if pAhead.kind == TokenType.TOK_STRING && (pAhead.val == "C" || pAhead.val == "c") {
+            parser.advance // consume 'extern'
+            parser.advance // consume "C"
+
+            if parser.matchToken TokenType.TOK_LBRACE {
+                blockNode: ASTNode = ASTNode.createBase NodeKind.BlockStmt, curTok.line, curTok.col
+                wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+                    if parser.matchToken TokenType.TOK_SEMICOLON {
+                        cont
+                    }
+                    fnNode: ASTNode = ParseFuncDecl parser, true, false
+                    fnNode.isExternC = true
+                    fnNode.isPub = true
+                    blockNode.children.psh fnNode
+                    if parser.matchToken TokenType.TOK_SEMICOLON {
+                        // optional delimiter
+                    }
+                }
+                parser.consume TokenType.TOK_RBRACE, "Expected '}' after pub extern block"
+                -> blockNode
+            } els {
+                fnNode: ASTNode = ParseFuncDecl parser, true, false
+                fnNode.isExternC = true
+                fnNode.isPub = true
+                -> fnNode
+            }
+        }
+    }
+
     if curTok.kind == TokenType.TOK_TYP || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "type") {
         -> ParseTypeDecl parser, isPub
     }

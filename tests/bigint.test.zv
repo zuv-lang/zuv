@@ -1,7 +1,7 @@
-let a = 123n
-let b = 1234567890123456789012345n
-let c = BigInt "123"
-let d = BigInt 456
+a = 123n
+b = 1234567890123456789012345n
+c = BigInt "123"
+d = BigInt 456
 
 if 123n == 123n {
     prnt "same literal equal ok"

@@ -1,7 +1,7 @@
 // Unit Test for Native Backtrace & Runtime Stack Unwinding (`std/debug`)
 
 inner_worker {
-    let bt = debug.backtrace()
+    bt = debug.backtrace()
     if bt.ln > 0 {
         prnt "backtrace captured successfully"
     }

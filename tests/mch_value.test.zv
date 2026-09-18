@@ -2,7 +2,7 @@ sayThree msg {
     prnt msg
 }
 
-let n = 2
+n = 2
 mch n {
     1 => {
         prnt "num One"
@@ -18,7 +18,7 @@ mch n {
     }
 }
 
-let m = 9
+m = 9
 mch m {
     1 => {
         prnt "wild miss"
@@ -31,7 +31,7 @@ mch m {
     }
 }
 
-let s = "hi"
+s = "hi"
 mch s {
     "bye" => {
         prnt "str bye"
@@ -44,7 +44,7 @@ mch s {
     }
 }
 
-let b = yes
+b = yes
 mch b {
     no => {
         prnt "bool no"
@@ -57,7 +57,7 @@ mch b {
     }
 }
 
-let k = 3
+k = 3
 mch k {
     1 => {
         prnt "expr One"
@@ -69,14 +69,14 @@ mch k {
     }
 }
 
-let j = 2
+j = 2
 mch j {
     1 => prnt "expr skip"
     2 => prnt "expr Two ok"
     _ => prnt "expr miss"
 }
 
-let swN = 1
+swN = 1
 sw swN {
     1 => prnt "sw One ok"
     2 => prnt "sw Two"

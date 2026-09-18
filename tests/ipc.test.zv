@@ -3,66 +3,66 @@ imp ipc frm "ipc"
 imp net frm "net"
 
 // 1. Cross-Process Synchronization: System-wide Named Mutex
-let mtx = ipc.mutex "zuv_ipc_mtx_test"
-let lockOk = ipc.lock mtx
-let tryOk = ipc.tryLock mtx
-let unOk1 = ipc.unlock mtx
-let unOk2 = ipc.unlock mtx
+mtx = ipc.mutex "zuv_ipc_mtx_test"
+lockOk = ipc.lock mtx
+tryOk = ipc.tryLock mtx
+unOk1 = ipc.unlock mtx
+unOk2 = ipc.unlock mtx
 ipc.close mtx
 if lockOk == 1 && unOk1 == 1 {
     prnt "ipc named mutex lock/unlock passed"
 }
 
 // 2. Cross-Process Synchronization: Named Semaphore
-let sem = ipc.sem "zuv_ipc_sem_test", 1, 2
-let sWaitOk = ipc.semWait sem, 100
-let sPostOk = ipc.semPost sem, 1
-let sTryOk = ipc.semTryWait sem
-let sPostOk2 = ipc.semPost sem, 1
+sem = ipc.sem "zuv_ipc_sem_test", 1, 2
+sWaitOk = ipc.semWait sem, 100
+sPostOk = ipc.semPost sem, 1
+sTryOk = ipc.semTryWait sem
+sPostOk2 = ipc.semPost sem, 1
 ipc.close sem
 if sWaitOk == 1 && sPostOk == 1 && sTryOk == 1 {
     prnt "ipc named semaphore wait/post passed"
 }
 
 // 3. Cross-Process Synchronization: Named Event
-let evt = ipc.event "zuv_ipc_evt_test", 1, 0
-let eSetOk = ipc.eventSet evt
-let eWaitOk = ipc.eventWait evt, 100
-let eResetOk = ipc.eventReset evt
+evt = ipc.event "zuv_ipc_evt_test", 1, 0
+eSetOk = ipc.eventSet evt
+eWaitOk = ipc.eventWait evt, 100
+eResetOk = ipc.eventReset evt
 ipc.close evt
 if eSetOk == 1 && eWaitOk == 1 {
     prnt "ipc named event set/wait/reset passed"
 }
 
 // 4. Memory-Mapped Files & Shared RAM: Anonymous Shared Memory
-let shm = ipc.shm "zuv_ipc_shm_test", 4096
-let bytesWritten = ipc.write shm, 0, "Hello Shared Memory!"
-let readStr = ipc.readStr shm, 0
-let shmOpened = ipc.openShm "zuv_ipc_shm_test", 4096
-let readStr2 = ipc.readStr shmOpened, 0
-let flushRes = ipc.flush shm, 4096
-let unmapRes1 = ipc.unmap shm
-let unmapRes2 = ipc.unmap shmOpened
+shm = ipc.shm "zuv_ipc_shm_test", 4096
+bytesWritten = ipc.write shm, 0, "Hello Shared Memory!"
+readStr = ipc.readStr shm, 0
+shmOpened = ipc.openShm "zuv_ipc_shm_test", 4096
+readStr2 = ipc.readStr shmOpened, 0
+flushRes = ipc.flush shm, 4096
+unmapRes1 = ipc.unmap shm
+unmapRes2 = ipc.unmap shmOpened
 if readStr == "Hello Shared Memory!" && readStr2 == "Hello Shared Memory!" {
     prnt "ipc anonymous shared memory read/write passed"
 }
 
 // 5. File Memory Mapping: mmap & munmap
-let fmap = mmap "tests/mmap_sample.txt", 35
-let fContent = ipc.readStr fmap, 0
-let unmapFileRes = munmap fmap
+fmap = mmap "tests/mmap_sample.txt", 35
+fContent = ipc.readStr fmap, 0
+unmapFileRes = munmap fmap
 if cnt fContent, "Zuv memory mapped" {
     prnt "ipc file mmap/munmap read passed"
 }
 
 // 6. Named Pipes IPC Stream
-let pipeName = "zuv_test_pipe_stream"
-let pipeServer = net.listen "pipe", pipeName
-let pipeClient = net.conn "pipe", pipeName
-let acceptedClient = net.accept pipeServer
+pipeName = "zuv_test_pipe_stream"
+pipeServer = net.listen "pipe", pipeName
+pipeClient = net.conn "pipe", pipeName
+acceptedClient = net.accept pipeServer
 
-let sentBytes = net.send pipeClient, "ping from pipe client"
-let receivedMsg = net.recv pipeServer, 1024
+sentBytes = net.send pipeClient, "ping from pipe client"
+receivedMsg = net.recv pipeServer, 1024
 
 net.close pipeClient
 net.close pipeServer

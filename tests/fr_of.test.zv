@@ -1,4 +1,4 @@
-let nums = [10, 20, 30]
+nums = [10, 20, 30]
 
 fr item of nums {
     prnt item

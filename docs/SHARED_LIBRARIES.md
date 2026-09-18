@@ -9,7 +9,7 @@ Zuv supports compiling native shared dynamic libraries (**`.dll`** on Windows, *
 ```
 ┌────────────────────────────────────────────────────────┐
 │  1. Zuv Source Code (e.g. math.zv)                     │
-│     pub extern "C" add a: num, b: num -> num { ... }   │
+│     pub extern "C" add a: num, b: num :: num { ... }   │
 └───────────────────────────┬────────────────────────────┘
                             │  1. Lexer & Parser
                             ▼
@@ -48,22 +48,22 @@ Use `pub extern "C"` to declare and define functions with unmangled C calling co
 ```zuv
 // math.zv
 
-pub extern "C" add a: num, b: num -> num {
+pub extern "C" add a: num, b: num :: num {
     -> a + b
 }
 
-pub extern "C" multiply a: num, b: num -> num {
+pub extern "C" multiply a: num, b: num :: num {
     -> a * b
 }
 
-pub extern "C" calculateTax price: num, rate: num -> num {
+pub extern "C" calculateTax price: num, rate: num :: num {
     -> price * rate
 }
 ```
 
 - **`pub`**: Marks the function for public symbol export.
 - **`extern "C"`**: Enforces the standard C ABI (no name mangling, standard parameter register passing).
-- **`-> type`**: Explicit return type annotation.
+- **`:: type`**: Explicit return type annotation.
 
 ---
 
@@ -179,9 +179,9 @@ Another Zuv program can link and consume the generated DLL directly:
 
 ```zuv
 // call_math.zv
-extern "math.dll" add a: num, b: num -> num
-extern "math.dll" multiply a: num, b: num -> num
-extern "math.dll" calculateTax price: num, rate: num -> num
+extern "math.dll" add a: num, b: num :: num
+extern "math.dll" multiply a: num, b: num :: num
+extern "math.dll" calculateTax price: num, rate: num :: num
 
 sum = add 10, 25
 prod = multiply 7, 8

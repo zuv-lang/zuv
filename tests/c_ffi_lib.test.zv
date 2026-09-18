@@ -25,13 +25,13 @@ if screenWidth > 0 {
 Sleep 10
 
 // 5. Dynamic Runtime FFI (ffi.ld / ffi.sym / ffi.call / ffi.cls)
-let k32 = ffi.ld "kernel32.dll"
+k32 = ffi.ld "kernel32.dll"
 if k32 != 0 {
     prnt "Dynamically loaded kernel32.dll via ffi.ld"
-    let dynPidFn = ffi.sym k32, "GetCurrentProcessId"
+    dynPidFn = ffi.sym k32, "GetCurrentProcessId"
     if dynPidFn != 0 {
         prnt "Resolved symbol GetCurrentProcessId via ffi.sym"
-        let dynPid = ffi.call dynPidFn
+        dynPid = ffi.call dynPidFn
         if dynPid > 0 {
             prnt ("Dynamic FFI invoked GetCurrentProcessId: " + dynPid)
         }

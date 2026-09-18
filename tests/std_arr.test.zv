@@ -48,7 +48,7 @@ lg "Final length via 'numbers.ln':"
 lg l4
 
 // 4. Text Array Test
-let text_items = ["kind", "val", "line"]
+text_items = ["kind", "val", "line"]
 lg "Text array test:"
 lg text_items[0]
 lg text_items[1]

@@ -71,10 +71,22 @@ ParseProgram parser: Parser :: ASTNode {
            curTok.kind == TokenType.TOK_EXTERN || curTok.kind == TokenType.TOK_IMP ||
            curTok.kind == TokenType.TOK_FN {
             declNode: ASTNode = ParseDeclaration parser
-            progNode.children.psh declNode
+            if declNode.kind == NodeKind.BlockStmt {
+                fr bChild of declNode.children {
+                    progNode.children.psh bChild
+                }
+            } els {
+                progNode.children.psh declNode
+            }
         } els if curTok.kind == TokenType.TOK_IDENT && (curTok.val == "type" || curTok.val == "obj") {
             declNode: ASTNode = ParseDeclaration parser
-            progNode.children.psh declNode
+            if declNode.kind == NodeKind.BlockStmt {
+                fr bChild of declNode.children {
+                    progNode.children.psh bChild
+                }
+            } els {
+                progNode.children.psh declNode
+            }
         } els if curTok.kind == TokenType.TOK_IDENT && IsFuncDecl(parser) {
             declNode: ASTNode = ParseDeclaration parser
             progNode.children.psh declNode
