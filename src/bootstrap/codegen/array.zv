@@ -223,7 +223,6 @@ obj ArrayCodegen {
             -> und
         }
         self.codegen.emitExtern "@_zuv_empty_arr = internal constant [2 x i64] [i64 0, i64 0]"
-        self.codegen.emitExtern "@zuv_err_oob = private unnamed_addr constant [21 x i8] c\"index out of bounds\\00\", align 1"
         self.globalsEmitted = true
     },
 

@@ -16,7 +16,7 @@
  */
 
 imp str, arr
-imp Token, TokenType frm ../tokens
+imp Token, TokenType, IsKeyword frm ../tokens
 imp ASTNode, NodeKind, Param, FieldEntry, MatchArm frm ../ast
 imp TypeInfo, TypeKind frm ../types
 imp Diagnostic frm ../diagnostics
@@ -316,22 +316,32 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     // Postfix Member Access: target.property
     if opTok.kind == TokenType.TOK_DOT {
         parser.advance // consume '.'
-        propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
-        propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
-        propNode.name = propTok.val
-        propNode.children = [left]
-        -> propNode
+        propTok: Token = parser.cur
+        if propTok.kind == TokenType.TOK_IDENT || IsKeyword(propTok.kind) {
+            parser.advance
+            propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
+            propNode.name = propTok.val
+            propNode.children = [left]
+            -> propNode
+        } els {
+            parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
+        }
     }
 
     // Postfix Safe Navigation: target?.property
     if opTok.kind == TokenType.TOK_OPT_DOT {
         parser.advance // consume '?.'
-        propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '?.'"
-        propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
-        propNode.name = propTok.val
-        propNode.op = "?."
-        propNode.children = [left]
-        -> propNode
+        propTok: Token = parser.cur
+        if propTok.kind == TokenType.TOK_IDENT || IsKeyword(propTok.kind) {
+            parser.advance
+            propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
+            propNode.name = propTok.val
+            propNode.op = "?."
+            propNode.children = [left]
+            -> propNode
+        } els {
+            parser.consume TokenType.TOK_IDENT, "Expected property name after '?.'"
+        }
     }
 
     // Postfix Increment / Decrement: x++, x--

@@ -89,6 +89,8 @@ obj Checker {
         symTime = Symbol.create "time", TypeKind.Obj, "time", false, true, 0, 0, 0
         symNet = Symbol.create "net", TypeKind.Obj, "net", false, true, 0, 0, 0
         symHttp = Symbol.create "http", TypeKind.Obj, "http", false, true, 0, 0, 0
+        symFfi = Symbol.create "ffi", TypeKind.Obj, "ffi", false, true, 0, 0, 0
+        symMath = Symbol.create "math", TypeKind.Obj, "math", false, true, 0, 0, 0
         rootSyms.psh symOs
         rootSyms.psh symFs
         rootSyms.psh symStr
@@ -96,6 +98,8 @@ obj Checker {
         rootSyms.psh symTime
         rootSyms.psh symNet
         rootSyms.psh symHttp
+        rootSyms.psh symFfi
+        rootSyms.psh symMath
 
         // Built-in runtime utility functions
         symPrnt = Symbol.create "prnt", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0

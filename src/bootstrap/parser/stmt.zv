@@ -16,7 +16,7 @@
  */
 
 imp str, arr
-imp Token, TokenType frm ../tokens
+imp Token, TokenType, IsBlockLetterConstant, IsKeyword frm ../tokens
 imp ASTNode, NodeKind, Param, FieldEntry, MatchArm frm ../ast
 imp TypeInfo, TypeKind frm ../types
 imp Diagnostic frm ../diagnostics
@@ -67,7 +67,16 @@ ParseExpr parser: Parser :: ASTNode {
         left = ASTNode.createBigInt biTok.val, biTok.line, biTok.col
     } els if tok.kind == TokenType.TOK_IDENT {
         idTok: Token = parser.advance
-        left = ASTNode.createIdent idTok.val, idTok.line, idTok.col
+        if parser.isZeroArgFunc(idTok.val) &&
+           (parser.isAtEnd || parser.cur.line != idTok.line ||
+            parser.check(TokenType.TOK_SEMICOLON) || parser.check(TokenType.TOK_RBRACE) ||
+            parser.check(TokenType.TOK_RPAREN) || parser.check(TokenType.TOK_COMMA)) {
+            callee = ASTNode.createIdent idTok.val, idTok.line, idTok.col
+            emptyArgs: ASTNode[] = []
+            left = ASTNode.createCall callee, emptyArgs, idTok.line, idTok.col
+        } els {
+            left = ASTNode.createIdent idTok.val, idTok.line, idTok.col
+        }
     } els if tok.kind == TokenType.TOK_LBRACKET {
         // Array literal: [elem1, elem2]
         lbTok: Token = parser.advance
@@ -130,11 +139,16 @@ ParseExpr parser: Parser :: ASTNode {
     // Postfix Operations: member access (.prop), index ([idx]), call (args)
     wh !(parser.isAtEnd) {
         if parser.matchToken TokenType.TOK_DOT {
-            propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
-            propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
-            propNode.name = propTok.val
-            propNode.children = [left]
-            left = propNode
+            propTok: Token = parser.cur
+            if propTok.kind == TokenType.TOK_IDENT || IsKeyword(propTok.kind) {
+                parser.advance
+                propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
+                propNode.name = propTok.val
+                propNode.children = [left]
+                left = propNode
+            } els {
+                parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
+            }
         } els if parser.matchToken TokenType.TOK_LBRACKET {
             idxExpr: ASTNode = ParseExpr parser
             parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
@@ -279,7 +293,9 @@ ParseVarDecl parser: Parser :: ASTNode {
     }
 
     parser.addVar nameTok.val
-    -> ASTNode.createVarDecl nameTok.val, typeAnnot, isBorrow, initExpr, startTok.line, startTok.col
+    declNode = ASTNode.createVarDecl nameTok.val, typeAnnot, isBorrow, initExpr, startTok.line, startTok.col
+    declNode.isMutable = true
+    -> declNode
 }
 
 /**
@@ -643,7 +659,9 @@ ParseStatement parser: Parser :: ASTNode {
             }
             parser.addVar nameTok.val
             emptyType: str = ""
-            -> ASTNode.createVarDecl nameTok.val, emptyType, false, initExpr, curTok.line, curTok.col
+            declNode = ASTNode.createVarDecl nameTok.val, emptyType, false, initExpr, curTok.line, curTok.col
+            declNode.isMutable = !(IsBlockLetterConstant(nameTok.val))
+            -> declNode
         }
     }
 
@@ -670,7 +688,9 @@ ParseStatement parser: Parser :: ASTNode {
             // optional trailing semicolon
         }
         parser.addVar nameTok.val
-        -> ASTNode.createVarDecl nameTok.val, typeAnnot, false, initExpr, curTok.line, curTok.col
+        declNode = ASTNode.createVarDecl nameTok.val, typeAnnot, false, initExpr, curTok.line, curTok.col
+        declNode.isMutable = !(IsBlockLetterConstant(nameTok.val))
+        -> declNode
     }
 
     -> ParseExpressionStmt parser

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔒 Constants & Deprecation of `let` / `mut`
+- **Block-Letter Constants**: Uppercase identifiers (`ABC`, `MAX_LEN`) are immutable constants enforced by borrow checker (`error[E0203]`).
+- **Deprecate `let` & `mut`**: Standard assignment (`x = 1`) is mutable by default without keywords; `let` retained only for backward compatibility.
+- **Test**: `tests/constant_block.test.zv` passes.
+
+### 🛠️ Fix `tests/c_ffi_lib.test.zv` & Dynamic FFI
+- **Fix Member Access**: Fixed lookahead bug on `.` using `parser.cur` instead of `parser.peek()`; allowed keyword properties (e.g. `ffi.sym`).
+- **Dynamic FFI**: Added native lowering for `ffi.ld`, `ffi.sym`, `ffi.cls`, and `ffi.call`.
+- **Type Coercion**: Fixed scalar coercion in `emitBinary` for float, integer, and pointer comparisons.
+- **Test**: `tests/c_ffi_lib.test.zv` passes.
+
+### 🌐 Cross-Platform C & Library Routing
+- **Linker Routing**: Platform routing in `cli.zv` (`lld-link` on Windows, `ld.lld` on Linux, `ld64.lld` on macOS).
+- **Library Resolution**: Added `ResolvePlatformLib` in `extern.zv` to route CRT aliases while preserving custom `.lib`/`.a`/`.so` files.
+
 ## [0.13.0] - 2026-09-17
 
 ### 🔄 Rewrite Zuv Bootstrap with Proper Structure

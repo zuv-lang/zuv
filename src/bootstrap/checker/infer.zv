@@ -292,8 +292,8 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             -> TypeKind.Str
         }
         if tKind == TypeKind.Arr {
-            expr.inferredType = TypeKind.Num
-            -> TypeKind.Num
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
         }
         expr.inferredType = TypeKind.Unknown
         -> TypeKind.Unknown
@@ -348,6 +348,8 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         -> TypeKind.Unknown
     }
     if k == NodeKind.MethodCallExpr {
+        targetNode = expr.children[0]
+        methodName = expr.name
         isFirstMethodChild = true
         fr child of expr.children {
             if isFirstMethodChild {
@@ -355,6 +357,20 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 InferExpression(checker, child)
             } els {
                 InferExpression(checker, child)
+            }
+        }
+        if targetNode.kind == NodeKind.IdentExpr && targetNode.name == "ffi" {
+            if methodName == "ld" || methodName == "load" || methodName == "sym" || methodName == "getSym" || methodName == "symbol" {
+                expr.inferredType = TypeKind.Ptr
+                -> TypeKind.Ptr
+            }
+            if methodName == "cls" || methodName == "close" {
+                expr.inferredType = TypeKind.I32
+                -> TypeKind.I32
+            }
+            if methodName == "call" {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
             }
         }
         expr.inferredType = TypeKind.Unknown
@@ -636,6 +652,28 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
             if !(checker.hasSymbol(symEntry.name)) {
                 impSym = Symbol.create(symEntry.name, TypeKind.Obj, symEntry.name, false, true, 0, symEntry.line, symEntry.col)
                 checker.defineSymbol(impSym)
+            }
+        }
+        ->
+    }
+    if k == NodeKind.ExternDecl {
+        fr fnChild of decl.children {
+            retKind = TypeKind.Void
+            if fnChild.typeAnnotation.ln > 0 {
+                retKind = StrToTypeKind(fnChild.typeAnnotation)
+            }
+            paramTypeNames: str[] = []
+            fr pItem of fnChild.params {
+                paramTypeNames.psh(pItem.typeAnnotation)
+            }
+            fnTypeName = "fn_" + fnChild.name
+            fnTypeInfo = TypeInfo.createFunc(retKind, fnChild.typeAnnotation, paramTypeNames)
+            fnTypeInfo.name = fnTypeName
+            checker.registerType(fnTypeInfo)
+
+            if !(checker.hasSymbol(fnChild.name)) {
+                extSym = Symbol.create(fnChild.name, TypeKind.Func, fnTypeName, false, true, 0, fnChild.line, fnChild.col)
+                checker.defineSymbol(extSym)
             }
         }
         ->

@@ -15,7 +15,7 @@
  */
 
 imp str, arr
-imp Token, TokenType frm ../tokens
+imp Token, TokenType, IsBlockLetterConstant frm ../tokens
 imp ASTNode, NodeKind frm ../ast
 imp TypeInfo, TypeKind frm ../types
 imp Diagnostic frm ../diagnostics
@@ -234,6 +234,12 @@ obj BorrowChecker {
         if self.scopes.ln == 0 {
             self.enterScope
         }
+        existingVar: BorrowVar = self.getVar name
+        if existingVar.name.ln > 0 && !(existingVar.isMutable) {
+            helpMsg: str = IsBlockLetterConstant(name) ? "constants in block letters cannot be reassigned" : "cannot reassign immutable variable"
+            self.addError "E0203", "Cannot mutate immutable variable: '" + name + "'", line, col, name.ln, helpMsg
+            -> false
+        }
         topIdx: num = self.scopes.ln - 1
         curScope: BorrowScope = self.scopes[topIdx]
         varList: BorrowVar[] = curScope.vars
@@ -380,6 +386,11 @@ obj BorrowChecker {
         actualTarget: str = self.resolveReferenceTarget varName
         targetVar: BorrowVar = self.getVar actualTarget
         if targetVar.name.ln > 0 {
+            if !(targetVar.isMutable) {
+                helpMsg: str = IsBlockLetterConstant(actualTarget) ? "constants in block letters cannot be reassigned" : "make the variable mutable using 'mut' or 'let'"
+                self.addError "E0203", "Cannot mutate immutable variable: '" + actualTarget + "'", line, col, actualTarget.ln, helpMsg
+                -> false
+            }
             if targetVar.activeBorrows > 0 {
                 self.addError "E0204", "Cannot mutate '" + actualTarget + "' while it is borrowed", line, col, actualTarget.ln, "cannot assign to borrowed variable"
                 -> false
@@ -570,7 +581,7 @@ BorrowCheckStatement checker: BorrowChecker, stmt: ASTNode :: void {
             checker.recordBorrow targetName, stmt.name, stmt.line, stmt.col
             ->
         }
-        checker.defineVar stmt.name, false, "", true, stmt.line, stmt.col
+        checker.defineVar stmt.name, false, "", stmt.isMutable, stmt.line, stmt.col
         if stmt.children.ln > 0 {
             BorrowCheckExpression checker, stmt.children[0]
         }
@@ -622,7 +633,8 @@ BorrowCheckStatement checker: BorrowChecker, stmt: ASTNode :: void {
             BorrowCheckExpression checker, stmt.children[0]
         }
         checker.enterScope
-        checker.defineVar stmt.name, false, "", true, stmt.line, stmt.col
+        loopMut: bool = !(IsBlockLetterConstant(stmt.name))
+        checker.defineVar stmt.name, false, "", loopMut, stmt.line, stmt.col
         if stmt.children.ln > 1 {
             BorrowCheckStatement checker, stmt.children[1]
         }

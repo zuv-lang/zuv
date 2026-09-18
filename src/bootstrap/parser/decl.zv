@@ -337,6 +337,7 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
 
     node = ASTNode.createFuncDecl name, returnType, isAsync, isPub, nameTok.line, nameTok.col
     node.params = params
+    parser.addFunction name, (params.ln > 0)
 
     parser.enterScope()
     fr p of params {

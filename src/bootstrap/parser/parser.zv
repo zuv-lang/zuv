@@ -40,6 +40,8 @@ obj Parser {
     source: str,
     errors: Diagnostic[],
     scopes: ParserScope[],
+    functions: str[],
+    functionHasParams: str[],
 
     /**
      * Creates and initializes a new Parser instance for the provided tokens.
@@ -54,6 +56,8 @@ obj Parser {
         errs: Diagnostic[] = []
         initScope: ParserScope = ParserScope.create()
         initScopes: ParserScope[] = [initScope]
+        emptyFns: str[] = []
+        emptyParamFns: str[] = []
         -> {
             tokens,
             pos: 0,
@@ -61,7 +65,9 @@ obj Parser {
             file,
             source,
             errors: errs,
-            scopes: initScopes
+            scopes: initScopes,
+            functions: emptyFns,
+            functionHasParams: emptyParamFns
         }
     },
 
@@ -337,5 +343,42 @@ obj Parser {
             }
         }
         -> false
+    },
+
+    /**
+     * Registers a declared function and whether it accepts parameters.
+     *
+     * @param {str} name - Function name
+     * @param {bool} hasParams - True if function has 1 or more parameters
+     */
+    addFunction: name: str, hasParams: bool :: void => {
+        self.functions.psh name
+        if hasParams {
+            self.functionHasParams.psh name
+        }
+    },
+
+    /**
+     * Checks if an identifier refers to a declared zero-argument function.
+     *
+     * @param {str} name - Function name to check
+     * @returns {bool} True if zero-argument function, false otherwise
+     */
+    isZeroArgFunc: name: str :: bool => {
+        isFn: bool = false
+        fr fnName of self.functions {
+            if fnName == name {
+                isFn = true
+            }
+        }
+        if !(isFn) {
+            -> false
+        }
+        fr pFn of self.functionHasParams {
+            if pFn == name {
+                -> false
+            }
+        }
+        -> true
     }
 }

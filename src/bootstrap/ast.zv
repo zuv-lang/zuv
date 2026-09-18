@@ -97,6 +97,7 @@ obj ASTNode {
     isPrefix: bool,
     boolVal: bool,
     numVal: num,
+    isMutable: bool,
     params: Param[],
     children: ASTNode[],
     cases: MatchArm[],
@@ -127,6 +128,7 @@ obj ASTNode {
             isPrefix: false,
             boolVal: false,
             numVal: 0,
+            isMutable: false,
             params: [],
             children: [],
             cases: [],
@@ -231,6 +233,7 @@ obj ASTNode {
     createIdent: name: str, line: num, col: num :: ASTNode => {
         node = ASTNode.createBase NodeKind.IdentExpr, line, col
         node.name = name
+        node.val = name
         -> node
     },
 

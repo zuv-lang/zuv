@@ -529,3 +529,31 @@ LookupKeyword text: str :: TokenType => sw text {
     _          => TokenType.TOK_IDENT
 }
 
+/**
+ * Checks whether an identifier is formatted as a block-letter constant (ALL_CAPS).
+ *
+ * @param {str} name - Identifier string
+ * @returns {bool} True if name consists of uppercase letters, digits, and underscores, with at least one uppercase letter
+ */
+IsBlockLetterConstant name: str :: bool {
+    if name.ln == 0 {
+        -> false
+    }
+    hasUpper: bool = false
+    i: num = 0
+    wh i < name.ln {
+        c: str = name.chr i
+        if c >= "a" && c <= "z" {
+            -> false
+        }
+        if c >= "A" && c <= "Z" {
+            hasUpper = true
+        } els if c != "_" && !(c >= "0" && c <= "9") {
+            -> false
+        }
+        i = i + 1
+    }
+    -> hasUpper
+}
+
+

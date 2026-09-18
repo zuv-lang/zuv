@@ -85,6 +85,81 @@ obj ExternFuncInfo {
 }
 
 /**
+ * Resolves an external library name for the target platform architecture.
+ *
+ * Maps C runtime specifications ("c", "libc", "msvcrt.lib", "msvcrt.dll") across
+ * operating systems:
+ * - Windows: routes through "msvcrt.lib" (or default MSVC CRT)
+ * - Linux: routes through "c" (linking -lc)
+ * - macOS: routes through "System" (linking -lSystem)
+ *
+ * @param {str} libName - Library name specified in extern declaration
+ * @param {str} targetTriple - Target triple architecture
+ * @returns {str} Resolved library name for target platform, or "" if skipped
+ */
+IsWindowsTriple targetTriple: str :: bool {
+    if targetTriple.ln == 0 || targetTriple.cnt("windows") || targetTriple.cnt("msvc") || targetTriple.cnt("win32") {
+        -> true
+    }
+    -> false
+}
+
+IsLinuxTriple targetTriple: str :: bool {
+    if targetTriple.cnt("linux") {
+        -> true
+    }
+    -> false
+}
+
+IsMacOSTriple targetTriple: str :: bool {
+    if targetTriple.cnt("apple") || targetTriple.cnt("darwin") || targetTriple.cnt("macos") {
+        -> true
+    }
+    -> false
+}
+
+ResolvePlatformLib libName: str, targetTriple: str :: str {
+    if libName.ln == 0 {
+        -> ""
+    }
+
+    isWin: bool = IsWindowsTriple targetTriple
+    isLinux: bool = IsLinuxTriple targetTriple
+    isMac: bool = IsMacOSTriple targetTriple
+
+    // C Runtime alias resolution
+    isCrt: bool = libName == "c" || libName == "libc" || libName == "msvcrt" || 
+                  libName == "msvcrt.lib" || libName == "msvcrt.dll" || 
+                  libName == "ucrt" || libName == "libcmt"
+
+    if isCrt {
+        if isWin {
+            if libName == "c" || libName == "libc" {
+                -> "c"
+            }
+            -> "msvcrt.lib"
+        } els if isLinux {
+            -> "c"
+        } els if isMac {
+            -> "System"
+        }
+        -> "c"
+    }
+
+    // Filter out Windows-specific libraries when targeting non-Windows
+    if !isWin {
+        if libName == "kernel32.lib" || libName == "kernel32.dll" || 
+           libName == "user32.lib" || libName == "user32.dll" || 
+           libName == "ws2_32.lib" || libName == "ws2_32.dll" ||
+           libName == "advapi32.lib" || libName == "ole32.lib" {
+            -> ""
+        }
+    }
+
+    -> libName
+}
+
+/**
  * Coordinates external function declarations, library tracking, and C runtime symbol emission.
  */
 obj ExternManager {
@@ -139,14 +214,19 @@ obj ExternManager {
      * Adds an external library dependency for the linker, ignoring default C runtime.
      *
      * @param {str} libName - Library name (e.g. "kernel32.lib", "user32.dll")
+     * @param {str} targetTriple - Target triple architecture
      * @returns {void}
      */
-    addLib: libName: str :: void => {
-        if libName.ln == 0 || libName == "c" || libName == "libc" {
+    addLib: libName: str, targetTriple: str :: void => {
+        if libName.ln == 0 {
             -> und
         }
-        if !(self.hasLib libName) {
-            self.externLibs.psh libName
+        resolved: str = ResolvePlatformLib libName, targetTriple
+        if resolved.ln == 0 || resolved == "c" || resolved == "libc" {
+            -> und
+        }
+        if !(self.hasLib resolved) {
+            self.externLibs.psh resolved
         }
     },
 
@@ -171,7 +251,7 @@ obj ExternManager {
             -> ""
         }
         self.declaredFuncs.psh name
-        self.addLib libName
+        self.addLib libName, codegen.targetTriple
 
         declStr = FormatExternDeclare retType, name, paramTypes, isVarArg
         codegen.emitExtern declStr
@@ -210,11 +290,23 @@ obj ExternManager {
         self.emitFunctionDecl "strstr", "c", "ptr", ["ptr", "ptr"], false, codegen
         self.emitFunctionDecl "snprintf", "c", "i32", ["ptr", "i64", "ptr"], true, codegen
         self.emitFunctionDecl "printf", "c", "i32", ["ptr"], true, codegen
+        self.emitFunctionDecl "puts", "c", "i32", ["ptr"], false, codegen
 
         // System & process execution functions
         self.emitFunctionDecl "exit", "c", "void", ["i32"], false, codegen
         self.emitFunctionDecl "system", "c", "i32", ["ptr"], false, codegen
         self.emitFunctionDecl "getenv", "c", "ptr", ["ptr"], false, codegen
+
+        // Dynamic library loading functions
+        if IsWindowsTriple codegen.targetTriple {
+            self.emitFunctionDecl "LoadLibraryA", "kernel32.lib", "ptr", ["ptr"], false, codegen
+            self.emitFunctionDecl "GetProcAddress", "kernel32.lib", "ptr", ["ptr", "ptr"], false, codegen
+            self.emitFunctionDecl "FreeLibrary", "kernel32.lib", "i32", ["ptr"], false, codegen
+        } els {
+            self.emitFunctionDecl "dlopen", "c", "ptr", ["ptr", "i32"], false, codegen
+            self.emitFunctionDecl "dlsym", "c", "ptr", ["ptr", "ptr"], false, codegen
+            self.emitFunctionDecl "dlclose", "c", "i32", ["ptr"], false, codegen
+        }
     },
 
     /**

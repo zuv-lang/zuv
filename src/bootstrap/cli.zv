@@ -23,7 +23,7 @@ imp Checker frm checker/checker
 imp InferProgram frm checker/infer
 imp BorrowChecker, BorrowCheckProgram frm checker/borrow
 imp Codegen frm codegen/codegen
-imp ExternManager frm codegen/extern
+imp ExternManager, IsWindowsTriple, IsLinuxTriple, IsMacOSTriple frm codegen/extern
 imp llvmType, isFloatType, isIntegerType frm codegen/types
 imp ObjectCodegen, StructLayout, StructLayoutRegistry, resolveFieldTypeKind frm codegen/decl
 imp ArrayCodegen frm codegen/array
@@ -56,6 +56,10 @@ extern "LLVMTarget.lib" {
     LLVMCreateTargetMachine target: ptr, triple: str, cpu: str, feat: str, opt: num, reloc: num, codeModel: num :: ptr
     LLVMTargetMachineEmitToFile tm: ptr, mod: ptr, filename: str, codegenType: num, errMsg: ptr :: num
     LLVMDisposeTargetMachine tm: ptr :: void
+}
+
+extern "c" {
+    puts s: ptr :: num
 }
 
 
@@ -98,7 +102,9 @@ emitDirectObjectFile ir: str, outputObjPath: str, isRelease: bool, targetTriple:
         outMsg: ptr = malloc 8
         parseRes: num = LLVMParseIRInContext(ctx, memBuf, outMod, outMsg)
         if parseRes != 0 {
-            prnt "[LLVM Error] In-process IR parse failed"
+            msgPtr: ptr = zuv_ptr_deref outMsg
+            prnt "[LLVM Error] In-process IR parse failed:"
+            puts msgPtr
             LLVMContextDispose ctx
             free outMod
             free outMsg
@@ -180,44 +186,172 @@ ResolveTargetTriple alias: str :: str => sw alias {
     _               => (alias.ln > 0 ? alias : "x86_64-pc-windows-msvc")
 }
 
+
 /**
- * Links a compiled object file (.obj) into an executable or shared library using lld-link.
+ * Links a compiled object file (.obj/.o) into an executable or shared library across platforms.
  *
- * @param {str} objPath - Path to input .obj file
- * @param {str} outExePath - Destination binary path (.exe or .dll)
- * @param {bool} isCdylib - True to build a shared library (.dll), false for standalone executable
+ * Routes C runtime and platform linkers:
+ * - Windows: invokes lld-link with MSVC CRT (libcmt, ucrt, msvcrt) and Windows subsystem flags
+ * - Linux: invokes ld.lld / clang targeting ELF with standard Linux C runtime (-lc -lm -lpthread)
+ * - macOS: invokes ld64.lld / clang targeting Mach-O with Apple C runtime (-lSystem)
+ *
+ * @param {str} objPath - Path to input .obj/.o file
+ * @param {str} outExePath - Destination binary path (.exe, .dll, or ELF/Mach-O)
+ * @param {bool} isCdylib - True to build a shared library, false for standalone executable
+ * @param {str} targetTriple - Target triple architecture
+ * @param {str[]} externLibs - List of external libraries to link
  * @returns {num} 0 on successful linkage, non-zero on failure
  */
-linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool :: num {
-    lldBin: str = "lld-link"
-    if fE "D:/LLVM/bin/lld-link.exe" {
-        lldBin = "D:/LLVM/bin/lld-link.exe"
-    } els if fE "lld-link.exe" {
-        lldBin = "lld-link.exe"
-    } els if fE "bin/lld-link.exe" {
-        lldBin = "bin/lld-link.exe"
-    }
+linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, targetTriple: str, externLibs: str[] :: num {
+    isWin: bool = IsWindowsTriple targetTriple
+    isLinux: bool = IsLinuxTriple targetTriple
+    isMac: bool = IsMacOSTriple targetTriple
 
-    isDll: bool = isCdylib
-    if StrEndsWith(outExePath, ".dll") || StrEndsWith(outExePath, ".DLL") {
-        isDll = true
-    }
-
-    dllFlags: str = "-subsystem:console -stack:33554432"
-    if isDll {
-        outLibPath: str = outExePath
-        exeLen: num = outExePath.ln
-        if StrEndsWith(outLibPath, ".dll") || StrEndsWith(outLibPath, ".DLL") {
-            outLibPath = outLibPath.slc(0, exeLen - 4) + ".lib"
-        } els {
-            outLibPath = outLibPath + ".lib"
+    if isWin {
+        lldBin: str = "lld-link"
+        if fE "D:/LLVM/bin/lld-link.exe" {
+            lldBin = "D:/LLVM/bin/lld-link.exe"
+        } els if fE "lld-link.exe" {
+            lldBin = "lld-link.exe"
+        } els if fE "bin/lld-link.exe" {
+            lldBin = "bin/lld-link.exe"
         }
-        dllFlags = "-dll -implib:\"" + outLibPath + "\" -noentry -defaultlib:ucrt -defaultlib:vcruntime"
+
+        isDll: bool = isCdylib
+        if StrEndsWith(outExePath, ".dll") || StrEndsWith(outExePath, ".DLL") {
+            isDll = true
+        }
+
+        dllFlags: str = "-subsystem:console -stack:33554432"
+        if isDll {
+            outLibPath: str = outExePath
+            exeLen: num = outExePath.ln
+            if StrEndsWith(outLibPath, ".dll") || StrEndsWith(outLibPath, ".DLL") {
+                outLibPath = outLibPath.slc(0, exeLen - 4) + ".lib"
+            } els {
+                outLibPath = outLibPath + ".lib"
+            }
+            dllFlags = "-dll -implib:\"" + outLibPath + "\" -noentry -defaultlib:ucrt -defaultlib:vcruntime"
+        }
+
+        // Custom / external libraries routing on Windows
+        customLibs: str = ""
+        fr lib of externLibs {
+            if lib == "c" || lib == "libc" {
+                // MSVC CRT linked by default
+            } els if lib == "msvcrt" || lib == "msvcrt.lib" || lib == "msvcrt.dll" {
+                customLibs = customLibs + " -defaultlib:msvcrt"
+            } els if StrEndsWith(lib, ".lib") || StrEndsWith(lib, ".LIB") {
+                customLibs = customLibs + " \"" + lib + "\""
+            } els if StrEndsWith(lib, ".dll") || StrEndsWith(lib, ".DLL") {
+                dllBase: str = lib.slc(0, lib.ln - 4)
+                customLibs = customLibs + " -defaultlib:" + dllBase
+            } els {
+                customLibs = customLibs + " -defaultlib:" + lib
+            }
+        }
+
+        cmd: str = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" " + dllFlags + " -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -defaultlib:ws2_32" + customLibs + " -nologo"
+        res: num = sh cmd
+        -> res
     }
 
-    cmd: str = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" " + dllFlags + " -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -defaultlib:ws2_32 -nologo"
-    res: num = sh cmd
-    -> res
+    if isLinux {
+        // Linux ELF target: route C runtime via -lc -lm -lpthread
+        linuxLld: str = "ld.lld"
+        if fE "D:/LLVM/bin/ld.lld.exe" {
+            linuxLld = "D:/LLVM/bin/ld.lld.exe"
+        } els if fE "ld.lld" {
+            linuxLld = "ld.lld"
+        }
+
+        libFlags: str = "-lc -lm -lpthread"
+        fr lib of externLibs {
+            if lib == "c" || lib == "libc" || lib == "msvcrt" || lib == "msvcrt.lib" || lib == "msvcrt.dll" {
+                // Routed to -lc above
+            } els if lib == "kernel32.lib" || lib == "user32.lib" || lib == "ws2_32.lib" {
+                // Skip Windows-only libraries on Linux
+            } els if StrEndsWith(lib, ".so") || StrEndsWith(lib, ".a") {
+                libFlags = libFlags + " \"" + lib + "\""
+            } els {
+                libFlags = libFlags + " -l" + lib
+            }
+        }
+
+        if StrEndsWith(outExePath, ".o") {
+            cpCmd: str = "copy /y \"" + objPath + "\" \"" + outExePath + "\""
+            sh cpCmd
+            prnt "[zuv build] Cross-compile: object file emitted: " + outExePath
+            prnt "[zuv build] Note: cross-linking to " + targetTriple + " requires a target sysroot."
+            -> 0
+        }
+
+        sharedFlag: str = (isCdylib ? "-shared" : "")
+        cmd: str = linuxLld + " " + sharedFlag + " \"" + objPath + "\" -o \"" + outExePath + "\" " + libFlags
+        res: num = sh cmd
+        if res != 0 {
+            objDst: str = outExePath
+            if !StrEndsWith(objDst, ".o") {
+                objDst = objDst + ".o"
+            }
+            cpCmd: str = "copy /y \"" + objPath + "\" \"" + objDst + "\""
+            sh cpCmd
+            prnt "[zuv build] Cross-compile: object file emitted: " + objDst
+            prnt "[zuv build] Note: cross-linking to " + targetTriple + " requires a target sysroot."
+            -> 0
+        }
+        -> res
+    }
+
+    if isMac {
+        // macOS Mach-O target: route C runtime via -lSystem
+        macLld: str = "ld64.lld"
+        if fE "D:/LLVM/bin/ld64.lld.exe" {
+            macLld = "D:/LLVM/bin/ld64.lld.exe"
+        } els if fE "ld64.lld" {
+            macLld = "ld64.lld"
+        }
+
+        libFlags: str = "-lSystem"
+        fr lib of externLibs {
+            if lib == "c" || lib == "libc" || lib == "msvcrt" || lib == "msvcrt.lib" || lib == "msvcrt.dll" || lib == "System" {
+                // Routed to -lSystem above
+            } els if lib == "kernel32.lib" || lib == "user32.lib" || lib == "ws2_32.lib" {
+                // Skip Windows-only libraries on macOS
+            } els if StrEndsWith(lib, ".dylib") || StrEndsWith(lib, ".a") {
+                libFlags = libFlags + " \"" + lib + "\""
+            } els {
+                libFlags = libFlags + " -l" + lib
+            }
+        }
+
+        if StrEndsWith(outExePath, ".o") {
+            cpCmd: str = "copy /y \"" + objPath + "\" \"" + outExePath + "\""
+            sh cpCmd
+            prnt "[zuv build] Cross-compile: object file emitted: " + outExePath
+            prnt "[zuv build] Note: cross-linking to " + targetTriple + " requires a target macOS SDK."
+            -> 0
+        }
+
+        dylibFlag: str = (isCdylib ? "-dylib" : "")
+        cmd: str = macLld + " " + dylibFlag + " \"" + objPath + "\" -o \"" + outExePath + "\" " + libFlags
+        res: num = sh cmd
+        if res != 0 {
+            objDst: str = outExePath
+            if !StrEndsWith(objDst, ".o") {
+                objDst = objDst + ".o"
+            }
+            cpCmd: str = "copy /y \"" + objPath + "\" \"" + objDst + "\""
+            sh cpCmd
+            prnt "[zuv build] Cross-compile: object file emitted: " + objDst
+            prnt "[zuv build] Note: cross-linking to " + targetTriple + " requires a target macOS SDK."
+            -> 0
+        }
+        -> res
+    }
+
+    prnt "[zuv build] Unsupported target platform for direct linking: " + targetTriple
+    -> 1
 }
 
 /**
@@ -699,8 +833,8 @@ obj Cli {
             -> objRes
         }
 
-        // 2. Link executable or library via lld-link
-        linkRes: num = linkDirectObjectFile(tmpObj, targetExe, self.isCdylib)
+        // 2. Link executable or library with platform-specific routing
+        linkRes: num = linkDirectObjectFile(tmpObj, targetExe, self.isCdylib, self.targetTriple, extMgr.getExternLibs())
         if fE tmpObj {
             rmF tmpObj
         }

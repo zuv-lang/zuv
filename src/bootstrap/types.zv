@@ -322,6 +322,12 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
     if (target == TypeKind.Ptr || target == TypeKind.Obj || target == TypeKind.Arr) && (source == TypeKind.Nil || source == TypeKind.Und) {
         -> true
     }
+    if (target == TypeKind.Ptr || target == TypeKind.Obj) && (source == TypeKind.I64 || source == TypeKind.I32 || source == TypeKind.Num) {
+        -> true
+    }
+    if (source == TypeKind.Ptr || source == TypeKind.Obj) && (target == TypeKind.I64 || target == TypeKind.I32 || target == TypeKind.Num) {
+        -> true
+    }
     -> false
 }
 
