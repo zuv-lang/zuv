@@ -20,6 +20,26 @@ sayHello(): void {
     lg "sayHello() invoked"
 }
 
+arrayReturnNum(a: num, b: num): num[] {
+    -> [a, b]
+}
+
+arrayReturnI64(a: i64, b: i64): i64[] {
+    -> [a, b]
+}
+
+arrayReturnStr(a: str, b: str): str[] {
+    -> [a, b]
+}
+
+arrayReturnBool(a: bool, b: bool): bool[] {
+    -> [a, b]
+}
+
+arrayParameterReturnBool(a: bool[], b: bool): bool[] {
+    -> a
+}
+
 // --- 2. Parenthesis-free functions ---
 
 addPF a: num, b: num :: num {
@@ -51,6 +71,26 @@ workerTask {
     -> 0
 }
 
+arrayReturnNumPf a: num, b: num :: num[] {
+    -> [a, b]
+}
+
+arrayReturnI64Pf a: i64, b: i64 :: i64[] {
+    -> [a, b]
+}
+
+arrayReturnStrPf a: str, b: str :: str[] {
+    -> [a, b]
+}
+
+arrayReturnBoolPf a: bool, b: bool :: bool[] {
+    -> [a, b]
+}
+
+arrayParameterReturnBoolPf a: bool[], b: bool :: bool[] {
+    -> a
+}
+
 // --- 3. Functions without types ---
 
 addNoTypes(a, b) {
@@ -71,6 +111,14 @@ tripleNoTypes x {
 
 noTypesVoid() {
     lg "noTypesVoid invoked"
+}
+
+arrayReturnNoTypes(a, b) {
+    -> [a, b]
+}
+
+arrayParameterReturnBoolNoTypes a, b {
+    -> a
 }
 
 // --- 4. Executing and console outputs of all functions ---
@@ -96,6 +144,26 @@ lg b1
 b2 = isPositive(-5.0)
 lg "isPositive(-5.0):"
 lg b2
+
+r3 = arrayReturnNum(10.5, 20.25)
+lg "arrayReturnNum(10.5, 20.25):"
+lg r3
+
+r4 = arrayReturnI64(10, 20)
+lg "arrayReturnI64(10, 20):"
+lg r4
+
+r5 = arrayReturnStr("Hello", "Zuv")
+lg "arrayReturnStr(\"Hello\", \"Zuv\"):"
+lg r5
+
+r6 = arrayReturnBool(true, false)
+lg "arrayReturnBool(true, false):"
+lg r6
+
+r7 = arrayParameterReturnBool([true], false)
+lg "arrayParameterReturnBool([true], false):"
+lg r7
 
 // Parenthesis-free calls
 sayFree
@@ -128,6 +196,26 @@ cz2 = checkZeroFree 5.5
 lg "checkZeroFree 5.5:"
 lg cz2
 
+apf= arrayReturnNumPf 5.5, 10.1
+lg "arrayReturnNumPf 5.5, 10.1:"
+lg apf
+
+ai64f = arrayReturnI64Pf 5, 10
+lg "arrayReturnI64Pf 5, 10:"
+lg ai64f
+
+asf = arrayReturnStrPf "Hello", "Zuv"
+lg "arrayReturnStrPf \"Hello\", \"Zuv\":"
+lg asf
+
+abf = arrayReturnBoolPf true, false
+lg "arrayReturnBoolPf true, false:"
+lg abf
+
+apbf = arrayParameterReturnBoolPf [true], false
+lg "arrayParameterReturnBoolPf [true], false:"
+lg apbf
+
 // Calls without types
 noTypesVoid()
 
@@ -146,5 +234,11 @@ lg nt3
 nt4 = tripleNoTypes 15
 lg "tripleNoTypes 15:"
 lg nt4
+
+arnt = arrayReturnNoTypes(5, 10)
+lg "arrayReturnNoTypes(5, 10):"
+lg arnt
+
+aprbnt = arrayParameterReturnBoolNoTypes [true], false
 
 lg "done"
