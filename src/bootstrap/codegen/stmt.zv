@@ -97,9 +97,11 @@ obj StmtCodegen {
         }
         initReg: str = ""
         hasInit: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
+        emptyRes: ExprResult = { reg: "", typeKind: TypeKind.Unknown }
+        initRes: ExprResult = emptyRes
 
         if hasInit {
-            initRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            initRes = self.exprGen.emitExpr node.children[0]
             initReg = initRes.reg
             if varType == TypeKind.Unknown {
                 varType = initRes.typeKind
@@ -116,7 +118,19 @@ obj StmtCodegen {
         slotReg: str = self.codegen.newReg
         self.codegen.emit `${slotReg} = alloca ${stType}`
         if initReg.ln > 0 {
-            self.codegen.emit `store ${stType} ${initReg}, ptr ${slotReg}`
+            actualInitReg: str = initReg
+            if hasInit {
+                if stType == "ptr" && initRes.typeKind == TypeKind.I64 {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${initReg} to ptr`
+                    actualInitReg = convReg
+                } els if stType == "i64" && (initRes.typeKind == TypeKind.Func || initRes.typeKind == TypeKind.Ptr) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = ptrtoint ptr ${initReg} to i64`
+                    actualInitReg = convReg
+                }
+            }
+            self.codegen.emit `store ${stType} ${actualInitReg}, ptr ${slotReg}`
         }
 
         self.exprGen.addSymbol node.name, slotReg, varType, false, true

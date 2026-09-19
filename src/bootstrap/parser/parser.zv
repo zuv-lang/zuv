@@ -243,8 +243,7 @@ obj Parser {
             }
             curTok: Token = self.cur
             if curTok.kind == TokenType.TOK_LET || curTok.kind == TokenType.TOK_AMP_LET ||
-               curTok.kind == TokenType.TOK_FN || curTok.kind == TokenType.TOK_STRUCT ||
-               curTok.kind == TokenType.TOK_TYP || curTok.kind == TokenType.TOK_ENUM ||
+               curTok.kind == TokenType.TOK_STRUCT || curTok.kind == TokenType.TOK_TYP || curTok.kind == TokenType.TOK_ENUM ||
                curTok.kind == TokenType.TOK_IF || curTok.kind == TokenType.TOK_WH ||
                curTok.kind == TokenType.TOK_FOR || curTok.kind == TokenType.TOK_MATCH ||
                curTok.kind == TokenType.TOK_RET || curTok.kind == TokenType.TOK_PUB ||

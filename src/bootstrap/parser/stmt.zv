@@ -608,6 +608,51 @@ IsTypedVarDecl parser: Parser :: bool {
 }
 
 /**
+ * Parses a print or logging statement (`prnt expr`, `lg expr`, `inf expr`, `wrn expr`, `err expr`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} ExprStmt AST node wrapping the print call
+ */
+ParsePrintStmt parser: Parser :: ASTNode {
+    pTok: Token = parser.advance
+    calleeIdent = ASTNode.createIdent pTok.val, pTok.line, pTok.col
+    printArgs: ASTNode[] = []
+
+    cTok: Token = parser.cur
+    if cTok.kind == TokenType.TOK_LPAREN {
+        parser.advance
+        wh true {
+            curLoop: Token = parser.cur
+            if curLoop.kind == TokenType.TOK_RPAREN || parser.isAtEnd {
+                brk
+            }
+            argExpr: ASTNode = ParseExpr parser
+            printArgs.psh argExpr
+            cAfter: Token = parser.cur
+            if cAfter.kind == TokenType.TOK_COMMA {
+                parser.advance
+            } els {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_RPAREN, "Expected ')' after print arguments"
+    } els if !(parser.isAtEnd) && cTok.line == pTok.line &&
+             cTok.kind != TokenType.TOK_SEMICOLON && cTok.kind != TokenType.TOK_RBRACE {
+        rawExpr: ASTNode = ParseExpr parser
+        argExpr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
+        printArgs.psh argExpr
+    }
+
+    cEnd: Token = parser.cur
+    if cEnd.kind == TokenType.TOK_SEMICOLON {
+        parser.advance
+    }
+
+    printCall = ASTNode.createCall calleeIdent, printArgs, pTok.line, pTok.col
+    -> ASTNode.createExprStmt printCall, pTok.line, pTok.col
+}
+
+/**
  * Master statement dispatcher routing tokens to specialized statement parsers.
  *
  * @param {Parser} parser - Parser coordinator instance
@@ -615,6 +660,15 @@ IsTypedVarDecl parser: Parser :: bool {
  */
 ParseStatement parser: Parser :: ASTNode {
     curTok: Token = parser.cur
+
+    pTok: Token = parser.peek
+    if curTok.kind == TokenType.TOK_PRNT || curTok.kind == TokenType.TOK_LOG ||
+       curTok.kind == TokenType.TOK_WARN || curTok.kind == TokenType.TOK_INFO ||
+       (curTok.kind == TokenType.TOK_ERR && curTok.line == pTok.line &&
+        pTok.kind != TokenType.TOK_FAT_ARROW && pTok.kind != TokenType.TOK_COMMA &&
+        pTok.kind != TokenType.TOK_RBRACE && pTok.kind != TokenType.TOK_SEMICOLON) {
+        -> ParsePrintStmt parser
+    }
 
     if curTok.kind == TokenType.TOK_LET || curTok.kind == TokenType.TOK_AMP_LET {
         -> ParseVarDecl parser

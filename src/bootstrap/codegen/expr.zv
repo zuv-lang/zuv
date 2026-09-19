@@ -318,6 +318,15 @@ obj ExprCodegen {
             res: ExprResult = { reg: foundSym.reg, typeKind: foundSym.typeKind }
             -> res
         }
+        fnSig: FuncSignature = self.findFunctionSig node.name
+        if fnSig.name.ln > 0 {
+            fnRes: ExprResult = { reg: "@" + node.name, typeKind: TypeKind.Func }
+            -> fnRes
+        }
+        if self.codegen.header.cnt("@" + node.name + "(") {
+            fnRes: ExprResult = { reg: "@" + node.name, typeKind: TypeKind.Func }
+            -> fnRes
+        }
         fallbackReg: str = `%${node.name}`
         fRes: ExprResult = { reg: fallbackReg, typeKind: node.inferredType }
         -> fRes
@@ -629,13 +638,18 @@ obj ExprCodegen {
             argIdx++
         }
 
-        if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "err" {
-            fmtStr: str = "%s\n"
+        if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "err" || calleeName == "inf" {
+            fmtPrefix: str = ""
             if calleeName == "wrn" {
-                fmtStr = "[WARN] %s\n"
+                fmtPrefix = "[WARN] "
             } els if calleeName == "err" {
-                fmtStr = "[ERR] %s\n"
+                fmtPrefix = "[ERR] "
+            } els if calleeName == "inf" {
+                fmtPrefix = "[INFO] "
+            } els if calleeName == "lg" {
+                fmtPrefix = "[LOG] "
             }
+            fmtStr: str = fmtPrefix + "%s\n"
             fmtConst: str = self.codegen.addStringConstant fmtStr
             if argRegs.ln > 0 {
                 firstArgReg: str = argRegs[0]
@@ -643,10 +657,12 @@ obj ExprCodegen {
                 if firstArgType == TypeKind.Str || firstArgType == TypeKind.Ptr {
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
                 } els if firstArgType == TypeKind.I64 {
-                    numFmt: str = self.codegen.addStringConstant "%lld\n"
+                    numFmtStr: str = fmtPrefix + "%lld\n"
+                    numFmt: str = self.codegen.addStringConstant numFmtStr
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
                 } els if firstArgType == TypeKind.Num {
-                    dblFmt: str = self.codegen.addStringConstant "%g\n"
+                    dblFmtStr: str = fmtPrefix + "%g\n"
+                    dblFmt: str = self.codegen.addStringConstant dblFmtStr
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${dblFmt}, double ${firstArgReg})`
                 } els if firstArgType == TypeKind.Bool {
                     trueStr: str = self.codegen.addStringConstant "true"
@@ -665,6 +681,31 @@ obj ExprCodegen {
             -> vRes
         }
 
+        calleeSym: ScopeSymbol = self.findSymbol calleeName
+        if calleeNode.kind != NodeKind.IdentExpr || calleeSym.reg.ln > 0 {
+            calleeRes: ExprResult = self.emitExpr calleeNode
+            fnPtrReg: str = calleeRes.reg
+            if calleeRes.typeKind != TypeKind.Ptr && calleeRes.typeKind != TypeKind.Func {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${calleeRes.reg} to ptr`
+                fnPtrReg = convReg
+            }
+            retType: TypeKind = node.inferredType
+            if retType == TypeKind.Unknown || retType == TypeKind.Func {
+                retType = TypeKind.I64
+            }
+            retTypeStr: str = llvmType retType
+            if retType == TypeKind.Void {
+                self.codegen.emit `call void ${fnPtrReg}(${argsStr})`
+                vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
+                -> vRes
+            }
+            callReg: str = self.codegen.newReg
+            self.codegen.emit `${callReg} = call ${retTypeStr} ${fnPtrReg}(${argsStr})`
+            res: ExprResult = { reg: callReg, typeKind: retType }
+            -> res
+        }
+
         fnSig: FuncSignature = self.findFunctionSig calleeName
         if fnSig.name.ln > 0 {
             retType: TypeKind = fnSig.returnType
@@ -677,7 +718,10 @@ obj ExprCodegen {
             aIdx: num = 0
             fr aReg of argRegs {
                 aType: TypeKind = argTypes[aIdx]
-                expectedType: TypeKind = (aIdx < fnSig.paramTypes.ln ? fnSig.paramTypes[aIdx] : aType)
+                expectedType: TypeKind = aType
+                if aIdx < fnSig.paramTypes.ln {
+                    expectedType = fnSig.paramTypes[aIdx]
+                }
                 passReg: str = aReg
                 passType: TypeKind = aType
 
@@ -701,6 +745,16 @@ obj ExprCodegen {
                     self.codegen.emit `${cReg} = trunc i64 ${aReg} to i1`
                     passReg = cReg
                     passType = TypeKind.Bool
+                } els if expectedType == TypeKind.I64 && (aType == TypeKind.Func || aType == TypeKind.Ptr) {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = ptrtoint ptr ${aReg} to i64`
+                    passReg = cReg
+                    passType = TypeKind.I64
+                } els if (expectedType == TypeKind.Func || expectedType == TypeKind.Ptr) && aType == TypeKind.I64 {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = inttoptr i64 ${aReg} to ptr`
+                    passReg = cReg
+                    passType = TypeKind.Ptr
                 }
 
                 if !firstArg {

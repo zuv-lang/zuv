@@ -83,7 +83,6 @@ enum TokenType {
     TOK_UNSAFE,
     TOK_PUB,
     TOK_LET,
-    TOK_FN,
     TOK_STRUCT,
 
     // Types
@@ -249,7 +248,6 @@ TokenTypeToStr kind: TokenType :: str => sw kind {
     TokenType.TOK_UNSAFE          => "unsafe"
     TokenType.TOK_PUB             => "pub"
     TokenType.TOK_LET             => "let"
-    TokenType.TOK_FN              => "fn"
     TokenType.TOK_STRUCT          => "obj"
     TokenType.TOK_TYPE_NUM        => "num"
     TokenType.TOK_TYPE_BOOL       => "bool"
@@ -353,7 +351,6 @@ IsKeyword kind: TokenType :: bool => sw kind {
     TokenType.TOK_UNSAFE    => true
     TokenType.TOK_PUB       => true
     TokenType.TOK_LET       => true
-    TokenType.TOK_FN        => true
     TokenType.TOK_STRUCT    => true
     TokenType.TOK_MACRO     => true
     TokenType.TOK_TYPE_NUM  => true
@@ -464,7 +461,6 @@ IsDelimiter kind: TokenType :: bool => sw kind {
  */
 LookupKeyword text: str :: TokenType => sw text {
     "let"      => TokenType.TOK_LET
-    "fn"       => TokenType.TOK_FN
     "obj"      => TokenType.TOK_STRUCT
     "enum"     => TokenType.TOK_ENUM
     "pub"      => TokenType.TOK_PUB

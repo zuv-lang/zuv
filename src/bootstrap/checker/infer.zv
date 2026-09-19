@@ -339,6 +339,10 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                     expr.inferredType = fnInfo.elemType
                     -> fnInfo.elemType
                 }
+                if fnSym.typeKind == TypeKind.Func {
+                    expr.inferredType = TypeKind.I64
+                    -> TypeKind.I64
+                }
                 expr.inferredType = fnSym.typeKind
                 -> fnSym.typeKind
             }

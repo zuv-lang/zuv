@@ -76,7 +76,7 @@ main {
 
     // 4. Diagnostics Verification via Diagnostic.create and diag.format
     diag = Diagnostic.create "E0102", "Expected next token to be {, got IDENTIFIER instead", "example.zv", 2, 11, 1, "add '{' here"
-    mockSource: str = "fn square x {\n    -> x * x\n}"
+    mockSource: str = "square x {\n    -> x * x\n}"
     formatted: str = diag.format mockSource
     prnt "4. Formatted Diagnostic:"
     prnt formatted
@@ -124,7 +124,7 @@ main {
     astObj: ASTNode = ParseDeclaration pObj
     prnt `   Parsed ObjDecl: '${astObj.name}', fields count: ${astObj.fields.ln}`
 
-    fnDeclCode: str = "pub fn add a: num, b: num :: num"
+    fnDeclCode: str = "pub add a: num, b: num :: num"
     lexFn = Lexer.create fnDeclCode
     pFn = Parser.create lexFn.tokenizeAll, "fn.zv", fnDeclCode
     astFn: ASTNode = ParseDeclaration pFn

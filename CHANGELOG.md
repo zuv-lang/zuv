@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🎯 Function Pointers & Removal of `fn` (`function_pointers.test.zv`)
+- **Remove `fn`**: Completely eliminated `fn` keyword/prefix; functions declare directly by identifier (`name params { ... }`).
+- **Function Pointers & Indirect Calls**: Enabled first-class function values, variable aliases, and dynamic indirect calls.
+- **Argument Coercion**: Fixed pointer/integer conversions (`inttoptr`, `ptrtoint`) for callback parameters and call arguments.
+- **Statement Logging**: Added juxtaposed call argument support for log statements (`lg`, `prnt`, `wrn`, `inf`, `err`).
+- **Test**: `tests/function_pointers.test.zv` passes end-to-end.
+
 ### ⚡ Functions Grammar & Execution (`func_simple.test.zv`)
 - **Single Colon `:`**: Supported standard single colon for parenthesized return types (`add(a: num, b: num): num`).
 - **Parenthesis-Free**: Supported paren-free function signatures (`addPF a: num, b: num :: num`) and argument passing on variable re-assignment.

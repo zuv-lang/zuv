@@ -74,8 +74,7 @@ ParseProgram parser: Parser :: ASTNode {
         if curTok.kind == TokenType.TOK_PUB || curTok.kind == TokenType.TOK_ASYNC ||
            curTok.kind == TokenType.TOK_ASYNC_ST || curTok.kind == TokenType.TOK_TYP ||
            curTok.kind == TokenType.TOK_STRUCT || curTok.kind == TokenType.TOK_ENUM ||
-           curTok.kind == TokenType.TOK_EXTERN || curTok.kind == TokenType.TOK_IMP ||
-           curTok.kind == TokenType.TOK_FN {
+           curTok.kind == TokenType.TOK_EXTERN || curTok.kind == TokenType.TOK_IMP {
             declNode: ASTNode = ParseDeclaration parser
             if declNode.kind == NodeKind.BlockStmt {
                 fr bChild of declNode.children {
