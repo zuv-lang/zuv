@@ -670,6 +670,8 @@ obj ExprCodegen {
                     selReg: str = self.codegen.newReg
                     self.codegen.emit `${selReg} = select i1 ${firstArgReg}, ptr ${trueStr}, ptr ${falseStr}`
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${selReg})`
+                } els if firstArgType == TypeKind.Arr {
+                    self.emitPrintArray firstArgReg, fmtPrefix
                 } els {
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
                 }
@@ -1226,5 +1228,99 @@ obj ExprCodegen {
         self.codegen.emit `${resReg} = add ${itype} 0, 0`
         iRes: ExprResult = { reg: resReg, typeKind: node.inferredType }
         -> iRes
+    },
+
+    /**
+     * Emits inline LLVM IR to print an array as [elem1, elem2, ...].
+     * Uses dynamic pointer heuristic: if element > 0x10000, treat as string pointer.
+     *
+     * @param {str} arrPtrReg - SSA register holding the array pointer
+     * @param {str} fmtPrefix - Log prefix string like "[LOG] "
+     * @returns {void}
+     */
+    emitPrintArray: arrPtrReg: str, fmtPrefix: str :: void => {
+        openBracket: str = self.codegen.addStringConstant (fmtPrefix + "[")
+        closeBracket: str = self.codegen.addStringConstant "]\n"
+        commaStr: str = self.codegen.addStringConstant ", "
+        intFmt: str = self.codegen.addStringConstant "%lld"
+        strFmt: str = self.codegen.addStringConstant "\"%s\""
+
+        // Print opening prefix + "["
+        self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${openBracket})`
+
+        // Load length
+        lenReg: str = self.codegen.newReg
+        self.codegen.emit `${lenReg} = load i64, ptr ${arrPtrReg}`
+
+        // Allocate index slot
+        idxSlot: str = self.codegen.newReg
+        self.codegen.emit `${idxSlot} = alloca i64`
+        self.codegen.emit `store i64 0, ptr ${idxSlot}`
+
+        condLbl: str = self.codegen.newLabel "prnt_arr_cond"
+        bodyLbl: str = self.codegen.newLabel "prnt_arr_body"
+        endLbl: str = self.codegen.newLabel "prnt_arr_end"
+        isStrLbl: str = self.codegen.newLabel "prnt_arr_str"
+        isIntLbl: str = self.codegen.newLabel "prnt_arr_int"
+        afterElemLbl: str = self.codegen.newLabel "prnt_arr_after"
+
+        self.codegen.emit `br label %${condLbl}`
+        self.codegen.emitLabel condLbl
+        curIdx: str = self.codegen.newReg
+        self.codegen.emit `${curIdx} = load i64, ptr ${idxSlot}`
+        hasMore: str = self.codegen.newReg
+        self.codegen.emit `${hasMore} = icmp ult i64 ${curIdx}, ${lenReg}`
+        self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
+
+        self.codegen.emitLabel bodyLbl
+
+        // Print ", " if not first
+        isFirst: str = self.codegen.newReg
+        self.codegen.emit `${isFirst} = icmp eq i64 ${curIdx}, 0`
+        noCommLbl: str = self.codegen.newLabel "prnt_arr_nocomma"
+        commLbl: str = self.codegen.newLabel "prnt_arr_comma"
+        self.codegen.emit `br i1 ${isFirst}, label %${noCommLbl}, label %${commLbl}`
+        self.codegen.emitLabel commLbl
+        self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${commaStr})`
+        self.codegen.emit `br label %${noCommLbl}`
+        self.codegen.emitLabel noCommLbl
+
+        // Load element as raw i64
+        elemIdxReg: str = self.codegen.newReg
+        self.codegen.emit `${elemIdxReg} = add i64 ${curIdx}, 1`
+        gepReg: str = self.codegen.newReg
+        self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdxReg}`
+        rawVal: str = self.codegen.newReg
+        self.codegen.emit `${rawVal} = load i64, ptr ${gepReg}`
+
+        // Dynamic dispatch: if value > 0x10000 → string pointer, else integer
+        threshold: str = self.codegen.newReg
+        self.codegen.emit `${threshold} = icmp ugt i64 ${rawVal}, 65536`
+        self.codegen.emit `br i1 ${threshold}, label %${isStrLbl}, label %${isIntLbl}`
+
+        // Print as string pointer
+        self.codegen.emitLabel isStrLbl
+        strPtr: str = self.codegen.newReg
+        self.codegen.emit `${strPtr} = inttoptr i64 ${rawVal} to ptr`
+        self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${strFmt}, ptr ${strPtr})`
+        self.codegen.emit `br label %${afterElemLbl}`
+
+        // Print as integer
+        self.codegen.emitLabel isIntLbl
+        self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${intFmt}, i64 ${rawVal})`
+        self.codegen.emit `br label %${afterElemLbl}`
+
+        self.codegen.emitLabel afterElemLbl
+
+        // Increment index
+        nextIdx: str = self.codegen.newReg
+        self.codegen.emit `${nextIdx} = add i64 ${curIdx}, 1`
+        self.codegen.emit `store i64 ${nextIdx}, ptr ${idxSlot}`
+        self.codegen.emit `br label %${condLbl}`
+
+        self.codegen.emitLabel endLbl
+
+        // Print closing "]" + newline
+        self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${closeBracket})`
     }
 }

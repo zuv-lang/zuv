@@ -37,8 +37,34 @@ ParseTypeString parser: Parser :: str {
     }
 
     curTok: Token = parser.cur
+
+    // Handle bracket-tuple return types: [T, U] or [num, str]
+    if curTok.kind == TokenType.TOK_LBRACKET {
+        bracketType: str = ParseBracketTypeString parser
+        if isPtr {
+            -> "&" + bracketType
+        }
+        -> bracketType
+    }
+
     baseType: str = curTok.val
     parser.advance
+
+    // Check for generic type arguments: List<T> or Map<K, V>
+    if parser.matchToken TokenType.TOK_LT {
+        typeArgsStr: str = "<"
+        wh !(parser.check TokenType.TOK_GT) && !(parser.isAtEnd) {
+            subType: str = ParseTypeString parser
+            typeArgsStr = typeArgsStr + subType
+            if parser.matchToken TokenType.TOK_COMMA {
+                typeArgsStr = typeArgsStr + ", "
+            } els {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_GT, "Expected '>' after generic type arguments"
+        baseType = baseType + typeArgsStr + ">"
+    }
 
     // Check for array dimensions: T[] or T[][]
     wh parser.check TokenType.TOK_LBRACKET {
@@ -55,6 +81,27 @@ ParseTypeString parser: Parser :: str {
         -> "&" + baseType
     }
     -> baseType
+}
+
+/**
+ * Parses a bracket-tuple type string like [T, U] or [num, str].
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {str} The parsed bracket type string like "[T, U]"
+ */
+ParseBracketTypeString parser: Parser :: str {
+    parser.consume TokenType.TOK_LBRACKET, "Expected '['"
+    res: str = "["
+    wh !(parser.check TokenType.TOK_RBRACKET) && !(parser.isAtEnd) {
+        res += ParseTypeString parser
+        if parser.matchToken TokenType.TOK_COMMA {
+            res += ", "
+        } els {
+            brk
+        }
+    }
+    parser.consume TokenType.TOK_RBRACKET, "Expected ']'"
+    -> res + "]"
 }
 
 /**
@@ -201,7 +248,7 @@ IsMethodMember parser: Parser :: bool {
         if tok.kind == TokenType.TOK_SEMICOLON || tok.kind == TokenType.TOK_RBRACE {
             brk
         }
-        offset = offset + 1
+        offset ++
     }
     -> false
 }
@@ -321,6 +368,18 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
     nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected function name identifier"
     name: str = nameTok.val
 
+    typeParams: str[] = []
+    if parser.matchToken TokenType.TOK_LT {
+        wh !(parser.check TokenType.TOK_GT) && !(parser.isAtEnd) {
+            tpTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type parameter identifier"
+            typeParams.psh tpTok.val
+            if !(parser.matchToken TokenType.TOK_COMMA) {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_GT, "Expected '>' after type parameters"
+    }
+
     params: Param[] = []
     if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_ARROW) && !(parser.check TokenType.TOK_FAT_ARROW) && !(parser.check TokenType.TOK_COLON) {
         params = ParseParamList parser
@@ -332,6 +391,7 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
     }
 
     node = ASTNode.createFuncDecl name, returnType, isAsync, isPub, nameTok.line, nameTok.col
+    node.typeParams = typeParams
     node.params = params
     parser.addFunction name, (params.ln > 0)
 

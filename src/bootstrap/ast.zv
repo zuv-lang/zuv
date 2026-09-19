@@ -103,6 +103,8 @@ obj ASTNode {
     children: ASTNode[],
     cases: MatchArm[],
     fields: FieldEntry[],
+    typeParams: str[],
+    typeArgs: str[],
 
     /**
      * Creates a base ASTNode with default initializers.
@@ -134,7 +136,9 @@ obj ASTNode {
             params: [],
             children: [],
             cases: [],
-            fields: []
+            fields: [],
+            typeParams: [],
+            typeArgs: []
         }
     },
 
@@ -289,6 +293,7 @@ obj ASTNode {
         fr arg of args {
             node.children.psh arg
         }
+        node.typeArgs = callee.typeArgs
         -> node
     },
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0]
+
+### 🧬 TypeScript-Style Generics (`<T>`, `<T, U>`)
+- Added TS-like `<T>` and `<T, U>` generics for functions with explicit (`fn<num> x`) and inferred (`fn x`) type arguments.
+- Added compound return types (`[T, U]`) with array/tuple inference.
+- Implemented and verified across both C++ (`zuv.exe`) and self-host (`zuv_bootstrap.exe`) compilers (`tests/generics.test.zv`).
+
 ### 🎯 Function Pointers & Removal of `fn` (`function_pointers.test.zv`)
 - **Remove `fn`**: Completely eliminated `fn` keyword/prefix; functions declare directly by identifier (`name params { ... }`).
 - **Function Pointers & Indirect Calls**: Enabled first-class function values, variable aliases, and dynamic indirect calls.

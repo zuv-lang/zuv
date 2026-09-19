@@ -21,6 +21,7 @@ imp ASTNode, NodeKind, Param, FieldEntry, MatchArm frm ../ast
 imp TypeInfo, TypeKind frm ../types
 imp Diagnostic frm ../diagnostics
 imp Parser frm parser
+imp IsAngleTypeArgs frm stmt
 
 /**
  * Maps a TokenType to its numeric operator precedence level.
@@ -287,6 +288,60 @@ ParsePrefixExpr parser: Parser :: ASTNode {
  */
 ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     opTok: Token = parser.cur
+
+    // Postfix Generic Type Arguments: callee<T> or callee<T>(arg)
+    if opTok.kind == TokenType.TOK_LT && (left.kind == NodeKind.IdentExpr || left.kind == NodeKind.PropExpr) && IsAngleTypeArgs(parser) {
+        parser.consume TokenType.TOK_LT, "Expected '<'"
+        typeArgs: str[] = []
+        wh !(parser.check TokenType.TOK_GT) && !(parser.isAtEnd) {
+            tTok: Token = parser.cur
+            if tTok.kind == TokenType.TOK_IDENT ||
+               tTok.kind == TokenType.TOK_TYPE_NUM ||
+               tTok.kind == TokenType.TOK_TYPE_STR ||
+               tTok.kind == TokenType.TOK_TYPE_BOOL ||
+               tTok.kind == TokenType.TOK_TYPE_VOID {
+                parser.advance
+            } els {
+                tTok = parser.consume TokenType.TOK_IDENT, "Expected type argument"
+            }
+            tStr: str = tTok.val
+            wh parser.check TokenType.TOK_LBRACKET {
+                if parser.checkPeek TokenType.TOK_RBRACKET {
+                    parser.advance
+                    parser.advance
+                    tStr = tStr + "[]"
+                } els {
+                    brk
+                }
+            }
+            typeArgs.psh tStr
+            if !(parser.matchToken TokenType.TOK_COMMA) {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_GT, "Expected '>' after type arguments"
+        left.typeArgs = typeArgs
+        if parser.check TokenType.TOK_LPAREN {
+            parser.advance // consume '('
+            args: ASTNode[] = []
+            wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+                arg: ASTNode = ParseExpression parser, 1
+                args.psh arg
+                if parser.matchToken TokenType.TOK_COMMA {
+                    // continue
+                } els {
+                    brk
+                }
+            }
+            parser.consume TokenType.TOK_RPAREN, "Expected ')' after call arguments"
+            if left.kind == NodeKind.PropExpr {
+                target = left.children[0]
+                -> ASTNode.createMethodCall target, left.name, args, left.line, left.col
+            }
+            -> ASTNode.createCall left, args, left.line, left.col
+        }
+        -> left
+    }
 
     // Postfix Call: callee(arg1, arg2)
     if opTok.kind == TokenType.TOK_LPAREN {

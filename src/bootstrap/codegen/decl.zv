@@ -58,12 +58,9 @@ resolveFieldTypeKind typeName: str :: TypeKind {
     if typeName.ln == 0 {
         -> TypeKind.Unknown
     }
-    nameLen: num = typeName.ln
-    if nameLen >= 2 {
-        subSuffix: str = typeName.sub nameLen - 2, 2
-        if subSuffix == "[]" {
-            -> TypeKind.Arr
-        }
+    n: num = typeName.ln
+    if n >= 2 && typeName.chr(n - 1) == "]" && (typeName.chr(0) == "[" || typeName.chr(n - 2) == "[") {
+        -> TypeKind.Arr
     }
     -> sw typeName {
         "num"    => TypeKind.Num

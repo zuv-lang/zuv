@@ -272,6 +272,13 @@ HasReturnValue node: ASTNode :: bool {
 ResolveFuncReturnType node: ASTNode :: TypeKind {
     if node.typeAnnotation.ln > 0 && node.typeAnnotation != "void" {
         tk: TypeKind = StrToTypeKind(node.typeAnnotation)
+        if (tk == TypeKind.Unknown || tk == TypeKind.Obj) && node.typeParams.ln > 0 {
+            fr tp of node.typeParams {
+                if tp == node.typeAnnotation {
+                    -> TypeKind.I64
+                }
+            }
+        }
         if tk == TypeKind.Unknown {
             -> TypeKind.I64
         }
@@ -898,6 +905,13 @@ obj Cli {
                 fnParamTKs: TypeKind[] = []
                 fr p of topNode.params {
                     pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
+                    if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
+                        fr tp of topNode.typeParams {
+                            if tp == p.typeAnnotation {
+                                pTK = TypeKind.I64
+                            }
+                        }
+                    }
                     if pTK == TypeKind.Unknown && p.typeAnnotation.ln > 0 {
                         pTK = TypeKind.I64
                     } els if pTK == TypeKind.Unknown {
@@ -935,6 +949,13 @@ obj Cli {
                     firstP: bool = true
                     fr p of topNode.params {
                         pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
+                        if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
+                            fr tp of topNode.typeParams {
+                                if tp == p.typeAnnotation {
+                                    pTK = TypeKind.I64
+                                }
+                            }
+                        }
                         if pTK == TypeKind.Unknown || p.typeAnnotation.ln == 0 {
                             pTK = TypeKind.I64
                         }
@@ -952,6 +973,13 @@ obj Cli {
                     // Bind parameters into local stack alloca slots
                     fr p of topNode.params {
                         pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
+                        if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
+                            fr tp of topNode.typeParams {
+                                if tp == p.typeAnnotation {
+                                    pTK = TypeKind.I64
+                                }
+                            }
+                        }
                         if pTK == TypeKind.Unknown || p.typeAnnotation.ln == 0 {
                             pTK = TypeKind.I64
                         }

@@ -23,6 +23,55 @@ imp Diagnostic frm ../diagnostics
 imp Parser frm parser
 
 /**
+ * Disambiguates a '<' token after an identifier between generic type arguments `<T>` and binary `<`.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {bool} True if '<' begins generic type arguments followed by call arguments
+ */
+pub IsAngleTypeArgs parser: Parser :: bool {
+    if !(parser.check TokenType.TOK_LT) {
+        -> false
+    }
+    curLine: num = parser.cur.line
+    offset: num = 1
+    depth: num = 1
+    wh depth > 0 {
+        tok: Token = parser.peekAhead offset
+        if tok.kind == TokenType.TOK_EOF || tok.line != curLine {
+            -> false
+        }
+        if tok.kind == TokenType.TOK_LT {
+            depth++
+        } els if tok.kind == TokenType.TOK_GT {
+            depth--
+        } els if !(tok.kind == TokenType.TOK_IDENT ||
+                   tok.kind == TokenType.TOK_TYPE_NUM ||
+                   tok.kind == TokenType.TOK_TYPE_STR ||
+                   tok.kind == TokenType.TOK_TYPE_BOOL ||
+                   tok.kind == TokenType.TOK_TYPE_VOID ||
+                   tok.kind == TokenType.TOK_COMMA ||
+                   tok.kind == TokenType.TOK_LBRACKET ||
+                   tok.kind == TokenType.TOK_RBRACKET) {
+            -> false
+        }
+        offset ++
+    }
+    afterTok: Token = parser.peekAhead offset
+    if afterTok.kind == TokenType.TOK_EOF || afterTok.line != curLine {
+        -> false
+    }
+    if afterTok.kind == TokenType.TOK_LPAREN || afterTok.kind == TokenType.TOK_LBRACE ||
+       afterTok.kind == TokenType.TOK_NUMBER || afterTok.kind == TokenType.TOK_STRING ||
+       afterTok.kind == TokenType.TOK_TEMPLATE_STRING || afterTok.kind == TokenType.TOK_IDENT ||
+       afterTok.kind == TokenType.TOK_TRUE || afterTok.kind == TokenType.TOK_FALSE ||
+       afterTok.kind == TokenType.TOK_NIL || afterTok.kind == TokenType.TOK_MINUS ||
+       afterTok.kind == TokenType.TOK_NOT {
+        -> true
+    }
+    -> false
+}
+
+/**
  * Parses a simple or binary expression for statements, conditions, and initializers.
  *
  * Handles literals, identifiers, unary operators, binary expressions, calls, and member access.
@@ -153,6 +202,37 @@ ParseExpr parser: Parser :: ASTNode {
             idxExpr: ASTNode = ParseExpr parser
             parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
             left = ASTNode.createIndex left, idxExpr, left.line, left.col
+        } els if (left.kind == NodeKind.IdentExpr || left.kind == NodeKind.PropExpr) && IsAngleTypeArgs(parser) {
+            parser.consume TokenType.TOK_LT, "Expected '<'"
+            typeArgs: str[] = []
+            wh !(parser.check TokenType.TOK_GT) && !(parser.isAtEnd) {
+                tTok: Token = parser.cur
+                if tTok.kind == TokenType.TOK_IDENT ||
+                   tTok.kind == TokenType.TOK_TYPE_NUM ||
+                   tTok.kind == TokenType.TOK_TYPE_STR ||
+                   tTok.kind == TokenType.TOK_TYPE_BOOL ||
+                   tTok.kind == TokenType.TOK_TYPE_VOID {
+                    parser.advance
+                } els {
+                    tTok = parser.consume TokenType.TOK_IDENT, "Expected type argument"
+                }
+                tStr: str = tTok.val
+                wh parser.check TokenType.TOK_LBRACKET {
+                    if parser.checkPeek TokenType.TOK_RBRACKET {
+                        parser.advance
+                        parser.advance
+                        tStr = tStr + "[]"
+                    } els {
+                        brk
+                    }
+                }
+                typeArgs.psh tStr
+                if !(parser.matchToken TokenType.TOK_COMMA) {
+                    brk
+                }
+            }
+            parser.consume TokenType.TOK_GT, "Expected '>' after type arguments"
+            left.typeArgs = typeArgs
         } els if parser.matchToken TokenType.TOK_LPAREN {
             // Function or method call with parentheses: left(arg1, arg2)
             args: ASTNode[] = []
@@ -602,7 +682,7 @@ IsTypedVarDecl parser: Parser :: bool {
            tok.kind == TokenType.TOK_SEMICOLON {
             brk
         }
-        offset = offset + 1
+        offset ++
     }
     -> false
 }

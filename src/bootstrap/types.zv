@@ -340,21 +340,28 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
  * @param {str} typeName - Type name annotation string (e.g. "num", "str", "bool", "i64")
  * @returns {TypeKind} Corresponding TypeKind variant
  */
-StrToTypeKind typeName: str :: TypeKind => sw typeName {
-    "num"    => TypeKind.Num
-    "double" => TypeKind.Num
-    "f64"    => TypeKind.Num
-    "i64"    => TypeKind.I64
-    "i32"    => TypeKind.I32
-    "i16"    => TypeKind.I16
-    "i8"     => TypeKind.I8
-    "bool"   => TypeKind.Bool
-    "str"    => TypeKind.Str
-    "void"   => TypeKind.Void
-    "ptr"    => TypeKind.Ptr
-    "und"    => TypeKind.Und
-    "nil"    => TypeKind.Nil
-    _        => TypeKind.Obj
+StrToTypeKind typeName: str :: TypeKind {
+    n: num = typeName.ln
+    if n >= 2 && typeName.chr(n - 1) == "]" && (typeName.chr(0) == "[" || typeName.chr(n - 2) == "[") {
+        -> TypeKind.Arr
+    }
+    -> sw typeName {
+        "num"    => TypeKind.Num
+        "double" => TypeKind.Num
+        "f64"    => TypeKind.Num
+        "i64"    => TypeKind.I64
+        "i32"    => TypeKind.I32
+        "i16"    => TypeKind.I16
+        "i8"     => TypeKind.I8
+        "bool"   => TypeKind.Bool
+        "str"    => TypeKind.Str
+        "void"   => TypeKind.Void
+        "ptr"    => TypeKind.Ptr
+        "arr"    => TypeKind.Arr
+        "und"    => TypeKind.Und
+        "nil"    => TypeKind.Nil
+        _        => TypeKind.Obj
+    }
 }
 
 

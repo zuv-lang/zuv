@@ -3,6 +3,8 @@ identity<T> x: T :: T {
 }
 
 val = identity<num> 777
+lg val
+val = identity 777
 lg "Generic function return value:"
 lg val
 
@@ -11,6 +13,15 @@ identity2<T>(x: T): T {
 }
 
 val = identity2<num>(777)
+lg val
+val = identity2(777)
 lg "Generic function return value2:"
 lg val
 
+//multiple
+pair<T, U>(x: T, y: U): [T, U] {
+    ret [x, y]
+}
+p = pair(10, "hello")
+lg "Pair value:"
+lg p;

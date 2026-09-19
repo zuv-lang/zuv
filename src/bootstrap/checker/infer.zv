@@ -331,7 +331,8 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                         if pIdx < argCount {
                             expectedKind = StrToTypeKind(fieldStr)
                             argNode = expr.children[pIdx + 1]
-                            if !(AreTypesCompatible expectedKind, argNode.inferredType) && argNode.inferredType != TypeKind.Unknown {
+                            // Skip type check for generic type params (resolve to Obj)
+                            if expectedKind != TypeKind.Obj && !(AreTypesCompatible expectedKind, argNode.inferredType) && argNode.inferredType != TypeKind.Unknown {
                                 checker.addError("E0306", "Argument " + (pIdx + 1) + " of '" + calleeName + "' expects " + (TypeKindToStr expectedKind) + ", got " + (TypeKindToStr argNode.inferredType), argNode.line, argNode.col, 1, "pass a compatible argument type")
                             }
                         }
@@ -635,6 +636,13 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         retKind = TypeKind.Void
         if decl.typeAnnotation.ln > 0 {
             retKind = StrToTypeKind(decl.typeAnnotation)
+            if (retKind == TypeKind.Unknown || retKind == TypeKind.Obj) && decl.typeParams.ln > 0 {
+                fr tp of decl.typeParams {
+                    if tp == decl.typeAnnotation {
+                        retKind = TypeKind.I64
+                    }
+                }
+            }
         } els if HasReturnValueNode(decl) {
             retKind = TypeKind.I64
         }
@@ -653,6 +661,13 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         checker.enterScope()
         fr param of decl.params {
             pKind = StrToTypeKind(param.typeAnnotation)
+            if (pKind == TypeKind.Unknown || pKind == TypeKind.Obj) && decl.typeParams.ln > 0 {
+                fr tp of decl.typeParams {
+                    if tp == param.typeAnnotation {
+                        pKind = TypeKind.I64
+                    }
+                }
+            }
             pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
             checker.defineSymbol(pSym)
         }
@@ -722,6 +737,13 @@ InferProgram checker: Checker, program: ASTNode :: void {
                 retKind = TypeKind.Void
                 if child.typeAnnotation.ln > 0 {
                     retKind = StrToTypeKind(child.typeAnnotation)
+                    if (retKind == TypeKind.Unknown || retKind == TypeKind.Obj) && child.typeParams.ln > 0 {
+                        fr tp of child.typeParams {
+                            if tp == child.typeAnnotation {
+                                retKind = TypeKind.I64
+                            }
+                        }
+                    }
                 } els if HasReturnValueNode(child) {
                     retKind = TypeKind.I64
                 }
@@ -768,6 +790,13 @@ InferProgram checker: Checker, program: ASTNode :: void {
                     pTypeStr: str = "i64"
                     if param.typeAnnotation.ln > 0 {
                         pKind = StrToTypeKind(param.typeAnnotation)
+                        if (pKind == TypeKind.Unknown || pKind == TypeKind.Obj) && child.typeParams.ln > 0 {
+                            fr tp of child.typeParams {
+                                if tp == param.typeAnnotation {
+                                    pKind = TypeKind.I64
+                                }
+                            }
+                        }
                         pTypeStr = param.typeAnnotation
                     }
                     pSym = Symbol.create(param.name, pKind, pTypeStr, false, true, checker.currentLevel(), param.line, param.col)
