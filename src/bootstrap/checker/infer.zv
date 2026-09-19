@@ -558,6 +558,14 @@ InferStatement checker: Checker, stmt: ASTNode :: void {
 }
 
 HasReturnValueNode node: ASTNode :: bool {
+    if node.kind == NodeKind.FuncDecl {
+        if node.children.ln > 0 {
+            first = node.children[0]
+            if first.kind != NodeKind.BlockStmt {
+                -> true
+            }
+        }
+    }
     if node.kind == NodeKind.RetStmt {
         if node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr {
             -> true
@@ -571,6 +579,235 @@ HasReturnValueNode node: ASTNode :: bool {
         }
     }
     -> false
+}
+
+/**
+ * Recursively searches an AST subtree for a call expression invoking the specified function.
+ *
+ * @param {ASTNode} node - Root of subtree to search
+ * @param {str} fnName - Target function name
+ * @returns {ASTNode} CallExpr node if found, NilExpr node otherwise
+ */
+FindCallInAST node: ASTNode, fnName: str :: ASTNode {
+    if node.kind == NodeKind.FuncDecl && node.name == fnName {
+        nilNode = ASTNode.createNil 0, 0
+        -> nilNode
+    }
+    if node.kind == NodeKind.CallExpr {
+        if node.children.ln > 0 {
+            callee = node.children[0]
+            if callee.kind == NodeKind.IdentExpr && callee.name == fnName {
+                -> node
+            }
+        }
+    }
+    fr child of node.children {
+        res = FindCallInAST child, fnName
+        if res.kind != NodeKind.NilExpr {
+            -> res
+        }
+    }
+    nilNode = ASTNode.createNil 0, 0
+    -> nilNode
+}
+
+/**
+ * Recursively searches an AST subtree for a variable declaration with the specified identifier.
+ *
+ * @param {ASTNode} node - Root of subtree to search
+ * @param {str} varName - Variable identifier
+ * @returns {ASTNode} VarDecl node if found, NilExpr node otherwise
+ */
+FindVarDeclInAST node: ASTNode, varName: str :: ASTNode {
+    if node.kind == NodeKind.VarDecl && node.name == varName {
+        -> node
+    }
+    fr child of node.children {
+        res = FindVarDeclInAST child, varName
+        if res.kind != NodeKind.NilExpr {
+            -> res
+        }
+    }
+    nilNode = ASTNode.createNil 0, 0
+    -> nilNode
+}
+
+/**
+ * Resolves the semantic TypeKind for an expression AST node based on literals, declarations, or operator semantics.
+ *
+ * @param {ASTNode} root - Root AST node for variable resolution
+ * @param {ASTNode} expr - Expression node to evaluate
+ * @returns {TypeKind} Inferred TypeKind
+ */
+InferExprTypeKind root: ASTNode, expr: ASTNode :: TypeKind {
+    k = expr.kind
+    if k == NodeKind.ArrExpr {
+        -> TypeKind.Arr
+    }
+    if k == NodeKind.BoolExpr {
+        -> TypeKind.Bool
+    }
+    if k == NodeKind.StrExpr {
+        -> TypeKind.Str
+    }
+    if k == NodeKind.NumExpr {
+        vStr: str = expr.val
+        if vStr.ln > 0 {
+            if !(IsIntegerLiteral(vStr)) {
+                -> TypeKind.Num
+            }
+        }
+        -> TypeKind.I64
+    }
+    if k == NodeKind.NilExpr {
+        -> TypeKind.Nil
+    }
+    if k == NodeKind.UndExpr {
+        -> TypeKind.Und
+    }
+    if k == NodeKind.IdentExpr {
+        vDecl = FindVarDeclInAST root, expr.name
+        if vDecl.kind != NodeKind.NilExpr {
+            if vDecl.typeAnnotation.ln > 0 {
+                -> StrToTypeKind(vDecl.typeAnnotation)
+            }
+            if vDecl.children.ln > 0 {
+                -> InferExprTypeKind(root, vDecl.children[0])
+            }
+        }
+    }
+    if k == NodeKind.UnaryExpr {
+        if expr.op == "!" {
+            -> TypeKind.Bool
+        }
+        if expr.children.ln > 0 {
+            -> InferExprTypeKind(root, expr.children[0])
+        }
+    }
+    if k == NodeKind.BinaryExpr {
+        opStr = expr.op
+        if opStr == "==" || opStr == "!=" || opStr == "<" || opStr == "<=" || opStr == ">" || opStr == ">=" || opStr == "&&" || opStr == "||" {
+            -> TypeKind.Bool
+        }
+        if expr.children.ln >= 2 {
+            lKind = InferExprTypeKind(root, expr.children[0])
+            rKind = InferExprTypeKind(root, expr.children[1])
+            if lKind == TypeKind.Str || rKind == TypeKind.Str {
+                -> TypeKind.Str
+            }
+            if lKind == TypeKind.Num || rKind == TypeKind.Num {
+                -> TypeKind.Num
+            }
+            if lKind == TypeKind.I64 || rKind == TypeKind.I64 {
+                -> TypeKind.I64
+            }
+        }
+    }
+    if expr.inferredType != TypeKind.Unknown && expr.inferredType != TypeKind.Void {
+        -> expr.inferredType
+    }
+    -> TypeKind.I64
+}
+
+/**
+ * Recursively searches a function body for its return value expression.
+ *
+ * @param {ASTNode} node - Target node (FuncDecl or block)
+ * @returns {ASTNode} Return value expression node if found, NilExpr node otherwise
+ */
+FindReturnNodeInFunc node: ASTNode :: ASTNode {
+    if node.kind == NodeKind.FuncDecl {
+        if node.children.ln > 0 {
+            first = node.children[0]
+            if first.kind != NodeKind.BlockStmt {
+                -> first
+            }
+            -> FindReturnNodeInFunc(first)
+        }
+    }
+    if node.kind == NodeKind.RetStmt {
+        if node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr {
+            -> node.children[0]
+        }
+    }
+    fr child of node.children {
+        if child.kind != NodeKind.FuncDecl {
+            res = FindReturnNodeInFunc child
+            if res.kind != NodeKind.NilExpr {
+                -> res
+            }
+        }
+    }
+    nilNode = ASTNode.createNil 0, 0
+    -> nilNode
+}
+
+/**
+ * Resolves the inferred TypeKind for an untyped parameter by inspecting call sites in the AST.
+ *
+ * @param {ASTNode} root - Root AST node (typically ProgramDecl)
+ * @param {ASTNode} fnNode - Target FuncDecl AST node
+ * @param {num} pIdx - Parameter index (0-based)
+ * @returns {TypeKind} Inferred parameter TypeKind, defaulting to TypeKind.I64
+ */
+ResolveUntypedParamType root: ASTNode, fnNode: ASTNode, pIdx: num :: TypeKind {
+    if pIdx < fnNode.params.ln {
+        p = fnNode.params[pIdx]
+        if p.typeAnnotation.ln > 0 {
+            -> StrToTypeKind(p.typeAnnotation)
+        }
+    }
+    callNode = FindCallInAST root, fnNode.name
+    if callNode.kind == NodeKind.CallExpr {
+        argIdx = pIdx + 1
+        if argIdx < callNode.children.ln {
+            argNode = callNode.children[argIdx]
+            tk = InferExprTypeKind(root, argNode)
+            if tk != TypeKind.Unknown {
+                -> tk
+            }
+        }
+    }
+    -> TypeKind.I64
+}
+
+/**
+ * Resolves the inferred return TypeKind for an untyped function by inspecting its return expression.
+ *
+ * @param {ASTNode} root - Root AST node (typically ProgramDecl)
+ * @param {ASTNode} fnNode - Target FuncDecl AST node
+ * @returns {TypeKind} Inferred return TypeKind
+ */
+ResolveUntypedReturnType root: ASTNode, fnNode: ASTNode :: TypeKind {
+    if fnNode.typeAnnotation.ln > 0 && fnNode.typeAnnotation != "void" {
+        tk = StrToTypeKind(fnNode.typeAnnotation)
+        if (tk == TypeKind.Unknown || tk == TypeKind.Obj) && fnNode.typeParams.ln > 0 {
+            fr tp of fnNode.typeParams {
+                if tp == fnNode.typeAnnotation {
+                    -> TypeKind.I64
+                }
+            }
+        }
+        if tk != TypeKind.Unknown {
+            -> tk
+        }
+    }
+    retVal = FindReturnNodeInFunc fnNode
+    if retVal.kind == NodeKind.NilExpr {
+        -> TypeKind.Void
+    }
+    if retVal.kind == NodeKind.IdentExpr {
+        fr p, pIdx of fnNode.params {
+            if p.name == retVal.name {
+                -> ResolveUntypedParamType(root, fnNode, pIdx)
+            }
+        }
+    }
+    tk = InferExprTypeKind(root, retVal)
+    if tk != TypeKind.Unknown {
+        -> tk
+    }
+    -> TypeKind.I64
 }
 
 /**
@@ -644,11 +881,16 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
                 }
             }
         } els if HasReturnValueNode(decl) {
-            retKind = TypeKind.I64
+            retKind = ResolveUntypedReturnType(decl, decl)
         }
         paramTypeNames: str[] = []
-        fr pItem of decl.params {
-            paramTypeNames.psh(pItem.typeAnnotation)
+        fr pItem, pIdx of decl.params {
+            pTypeStr: str = pItem.typeAnnotation
+            if pTypeStr.ln == 0 {
+                pTK = ResolveUntypedParamType(decl, decl, pIdx)
+                pTypeStr = TypeKindToStr(pTK)
+            }
+            paramTypeNames.psh(pTypeStr)
         }
         fnTypeName = "fn_" + decl.name
         fnTypeInfo = TypeInfo.createFunc(retKind, decl.typeAnnotation, paramTypeNames)
@@ -659,16 +901,24 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         checker.defineSymbol(fnSym)
 
         checker.enterScope()
-        fr param of decl.params {
-            pKind = StrToTypeKind(param.typeAnnotation)
-            if (pKind == TypeKind.Unknown || pKind == TypeKind.Obj) && decl.typeParams.ln > 0 {
-                fr tp of decl.typeParams {
-                    if tp == param.typeAnnotation {
-                        pKind = TypeKind.I64
+        fr param, pIdx of decl.params {
+            pKind: TypeKind = TypeKind.I64
+            pTypeStr: str = "i64"
+            if param.typeAnnotation.ln > 0 {
+                pKind = StrToTypeKind(param.typeAnnotation)
+                if (pKind == TypeKind.Unknown || pKind == TypeKind.Obj) && decl.typeParams.ln > 0 {
+                    fr tp of decl.typeParams {
+                        if tp == param.typeAnnotation {
+                            pKind = TypeKind.I64
+                        }
                     }
                 }
+                pTypeStr = param.typeAnnotation
+            } els {
+                pKind = ResolveUntypedParamType(decl, decl, pIdx)
+                pTypeStr = TypeKindToStr(pKind)
             }
-            pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+            pSym = Symbol.create(param.name, pKind, pTypeStr, false, true, checker.currentLevel(), param.line, param.col)
             checker.defineSymbol(pSym)
         }
         fr bStmt of decl.children {
@@ -707,16 +957,31 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
             fnTypeInfo = TypeInfo.createFunc(retKind, fnChild.typeAnnotation, paramTypeNames)
             fnTypeInfo.name = fnTypeName
             checker.registerType(fnTypeInfo)
-
-            if !(checker.hasSymbol(fnChild.name)) {
-                extSym = Symbol.create(fnChild.name, TypeKind.Func, fnTypeName, false, true, 0, fnChild.line, fnChild.col)
-                checker.defineSymbol(extSym)
-            }
+            extSym = Symbol.create(fnChild.name, TypeKind.Func, fnTypeName, false, true, 0, fnChild.line, fnChild.col)
+            checker.defineSymbol(extSym)
         }
         ->
     }
     if k == NodeKind.VarDecl {
-        InferStatement(checker, decl)
+        initKind = TypeKind.Unknown
+        if decl.children.ln > 0 {
+            initKind = InferExpression(checker, decl.children[0])
+        }
+        declaredKind = TypeKind.Unknown
+        if decl.typeAnnotation.ln > 0 {
+            declaredKind = StrToTypeKind(decl.typeAnnotation)
+        }
+        finalKind = declaredKind
+        if finalKind == TypeKind.Unknown {
+            finalKind = initKind
+        }
+        tName = decl.typeAnnotation
+        if tName.ln == 0 {
+            tName = TypeKindToStr(finalKind)
+        }
+        symVar = Symbol.create(decl.name, finalKind, tName, decl.isBorrow, true, checker.currentLevel(), decl.line, decl.col)
+        checker.defineSymbol(symVar)
+        decl.inferredType = finalKind
         ->
     }
 }
@@ -745,13 +1010,14 @@ InferProgram checker: Checker, program: ASTNode :: void {
                         }
                     }
                 } els if HasReturnValueNode(child) {
-                    retKind = TypeKind.I64
+                    retKind = ResolveUntypedReturnType(program, child)
                 }
                 paramTypeNames: str[] = []
-                fr pItem of child.params {
+                fr pItem, pIdx of child.params {
                     pTypeStr: str = pItem.typeAnnotation
                     if pTypeStr.ln == 0 {
-                        pTypeStr = "i64"
+                        pTK = ResolveUntypedParamType(program, child, pIdx)
+                        pTypeStr = TypeKindToStr(pTK)
                     }
                     paramTypeNames.psh(pTypeStr)
                 }
@@ -785,7 +1051,7 @@ InferProgram checker: Checker, program: ASTNode :: void {
         if child.isDecl() {
             if child.kind == NodeKind.FuncDecl {
                 checker.enterScope()
-                fr param of child.params {
+                fr param, pIdx of child.params {
                     pKind: TypeKind = TypeKind.I64
                     pTypeStr: str = "i64"
                     if param.typeAnnotation.ln > 0 {
@@ -798,6 +1064,9 @@ InferProgram checker: Checker, program: ASTNode :: void {
                             }
                         }
                         pTypeStr = param.typeAnnotation
+                    } els {
+                        pKind = ResolveUntypedParamType(program, child, pIdx)
+                        pTypeStr = TypeKindToStr(pKind)
                     }
                     pSym = Symbol.create(param.name, pKind, pTypeStr, false, true, checker.currentLevel(), param.line, param.col)
                     checker.defineSymbol(pSym)

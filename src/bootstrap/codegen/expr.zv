@@ -1243,6 +1243,7 @@ obj ExprCodegen {
         closeBracket: str = self.codegen.addStringConstant "]\n"
         commaStr: str = self.codegen.addStringConstant ", "
         intFmt: str = self.codegen.addStringConstant "%lld"
+        dblFmt: str = self.codegen.addStringConstant "%g"
         strFmt: str = self.codegen.addStringConstant "\"%s\""
 
         // Print opening prefix + "["
@@ -1260,6 +1261,8 @@ obj ExprCodegen {
         condLbl: str = self.codegen.newLabel "prnt_arr_cond"
         bodyLbl: str = self.codegen.newLabel "prnt_arr_body"
         endLbl: str = self.codegen.newLabel "prnt_arr_end"
+        isDblLbl: str = self.codegen.newLabel "prnt_arr_dbl"
+        chkStrLbl: str = self.codegen.newLabel "prnt_arr_chkstr"
         isStrLbl: str = self.codegen.newLabel "prnt_arr_str"
         isIntLbl: str = self.codegen.newLabel "prnt_arr_int"
         afterElemLbl: str = self.codegen.newLabel "prnt_arr_after"
@@ -1293,10 +1296,25 @@ obj ExprCodegen {
         rawVal: str = self.codegen.newReg
         self.codegen.emit `${rawVal} = load i64, ptr ${gepReg}`
 
-        // Dynamic dispatch: if value > 0x10000 → string pointer, else integer
+        // Dynamic dispatch: if rawVal > 140737488355327 -> double
+        // else if rawVal > 65536 -> string pointer
+        // else -> integer
+        isDblReg: str = self.codegen.newReg
+        self.codegen.emit `${isDblReg} = icmp ugt i64 ${rawVal}, 140737488355327`
+        self.codegen.emit `br i1 ${isDblReg}, label %${isDblLbl}, label %${chkStrLbl}`
+
+        // Check if string pointer or small integer
+        self.codegen.emitLabel chkStrLbl
         threshold: str = self.codegen.newReg
         self.codegen.emit `${threshold} = icmp ugt i64 ${rawVal}, 65536`
         self.codegen.emit `br i1 ${threshold}, label %${isStrLbl}, label %${isIntLbl}`
+
+        // Print as double
+        self.codegen.emitLabel isDblLbl
+        dblVal: str = self.codegen.newReg
+        self.codegen.emit `${dblVal} = bitcast i64 ${rawVal} to double`
+        self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${dblFmt}, double ${dblVal})`
+        self.codegen.emit `br label %${afterElemLbl}`
 
         // Print as string pointer
         self.codegen.emitLabel isStrLbl

@@ -198,7 +198,7 @@ ParseExpr parser: Parser :: ASTNode {
             } els {
                 parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
             }
-        } els if parser.matchToken TokenType.TOK_LBRACKET {
+        } els if (left.kind != NodeKind.IdentExpr || parser.hasVar(left.name) || !(parser.isFunction(left.name))) && parser.matchToken TokenType.TOK_LBRACKET {
             idxExpr: ASTNode = ParseExpr parser
             parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
             left = ASTNode.createIndex left, idxExpr, left.line, left.col

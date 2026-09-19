@@ -20,7 +20,7 @@ imp Lexer frm lexer
 imp Parser frm parser/parser
 imp ParseProgram frm parser/program
 imp Checker frm checker/checker
-imp InferProgram frm checker/infer
+imp InferProgram, ResolveUntypedParamType, ResolveUntypedReturnType frm checker/infer
 imp BorrowChecker, BorrowCheckProgram frm checker/borrow
 imp Codegen frm codegen/codegen
 imp ExternManager, IsWindowsTriple, IsLinuxTriple, IsMacOSTriple frm codegen/extern
@@ -248,6 +248,14 @@ ResolveTargetTriple alias: str :: str => sw alias {
  * @returns {bool} True if a non-nil RetStmt is found
  */
 HasReturnValue node: ASTNode :: bool {
+    if node.kind == NodeKind.FuncDecl {
+        if node.children.ln > 0 {
+            first = node.children[0]
+            if first.kind != NodeKind.BlockStmt {
+                -> true
+            }
+        }
+    }
     if node.kind == NodeKind.RetStmt {
         if node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr {
             -> true
@@ -266,10 +274,11 @@ HasReturnValue node: ASTNode :: bool {
 /**
  * Resolves the semantic TypeKind for a function declaration.
  *
+ * @param {ASTNode} root - Root ProgramDecl AST node
  * @param {ASTNode} node - FuncDecl AST node
  * @returns {TypeKind} Resolved return TypeKind
  */
-ResolveFuncReturnType node: ASTNode :: TypeKind {
+ResolveFuncReturnType root: ASTNode, node: ASTNode :: TypeKind {
     if node.typeAnnotation.ln > 0 && node.typeAnnotation != "void" {
         tk: TypeKind = StrToTypeKind(node.typeAnnotation)
         if (tk == TypeKind.Unknown || tk == TypeKind.Obj) && node.typeParams.ln > 0 {
@@ -288,7 +297,7 @@ ResolveFuncReturnType node: ASTNode :: TypeKind {
         -> TypeKind.Void
     }
     if HasReturnValue(node) {
-        -> TypeKind.I64
+        -> ResolveUntypedReturnType(root, node)
     }
     -> TypeKind.Void
 }
@@ -901,21 +910,24 @@ obj Cli {
             } els if topNode.kind == NodeKind.ExternDecl {
                 extMgr.emitExternDeclNode(topNode, cg)
             } els if topNode.kind == NodeKind.FuncDecl {
-                fnRetTK: TypeKind = ResolveFuncReturnType(topNode)
+                fnRetTK: TypeKind = ResolveFuncReturnType(prog, topNode)
                 fnParamTKs: TypeKind[] = []
-                fr p of topNode.params {
-                    pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
-                    if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
-                        fr tp of topNode.typeParams {
-                            if tp == p.typeAnnotation {
-                                pTK = TypeKind.I64
+                fr p, pIdx of topNode.params {
+                    pTK: TypeKind = TypeKind.I64
+                    if p.typeAnnotation.ln > 0 {
+                        pTK = StrToTypeKind(p.typeAnnotation)
+                        if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
+                            fr tp of topNode.typeParams {
+                                if tp == p.typeAnnotation {
+                                    pTK = TypeKind.I64
+                                }
                             }
                         }
-                    }
-                    if pTK == TypeKind.Unknown && p.typeAnnotation.ln > 0 {
-                        pTK = TypeKind.I64
-                    } els if pTK == TypeKind.Unknown {
-                        pTK = TypeKind.I64
+                        if pTK == TypeKind.Unknown {
+                            pTK = TypeKind.I64
+                        }
+                    } els {
+                        pTK = ResolveUntypedParamType(prog, topNode, pIdx)
                     }
                     fnParamTKs.psh(pTK)
                 }
@@ -934,7 +946,7 @@ obj Cli {
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
                 if topNode.name != "main" {
-                    retTK: TypeKind = ResolveFuncReturnType(topNode)
+                    retTK: TypeKind = ResolveFuncReturnType(prog, topNode)
                     retLLVM: str = llvmType(retTK)
 
                     exportAttr: str = ""
@@ -947,17 +959,22 @@ obj Cli {
                     // Build parameter list signature
                     paramsSig: str = ""
                     firstP: bool = true
-                    fr p of topNode.params {
-                        pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
-                        if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
-                            fr tp of topNode.typeParams {
-                                if tp == p.typeAnnotation {
-                                    pTK = TypeKind.I64
+                    fr p, pIdx of topNode.params {
+                        pTK: TypeKind = TypeKind.I64
+                        if p.typeAnnotation.ln > 0 {
+                            pTK = StrToTypeKind(p.typeAnnotation)
+                            if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
+                                fr tp of topNode.typeParams {
+                                    if tp == p.typeAnnotation {
+                                        pTK = TypeKind.I64
+                                    }
                                 }
                             }
-                        }
-                        if pTK == TypeKind.Unknown || p.typeAnnotation.ln == 0 {
-                            pTK = TypeKind.I64
+                            if pTK == TypeKind.Unknown {
+                                pTK = TypeKind.I64
+                            }
+                        } els {
+                            pTK = ResolveUntypedParamType(prog, topNode, pIdx)
                         }
                         pLLVM: str = llvmType(pTK)
                         if !firstP {
@@ -971,17 +988,22 @@ obj Cli {
                     stmtGen.setReturnType(retTK)
 
                     // Bind parameters into local stack alloca slots
-                    fr p of topNode.params {
-                        pTK: TypeKind = StrToTypeKind(p.typeAnnotation)
-                        if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
-                            fr tp of topNode.typeParams {
-                                if tp == p.typeAnnotation {
-                                    pTK = TypeKind.I64
+                    fr p, pIdx of topNode.params {
+                        pTK: TypeKind = TypeKind.I64
+                        if p.typeAnnotation.ln > 0 {
+                            pTK = StrToTypeKind(p.typeAnnotation)
+                            if (pTK == TypeKind.Unknown || pTK == TypeKind.Obj) && topNode.typeParams.ln > 0 {
+                                fr tp of topNode.typeParams {
+                                    if tp == p.typeAnnotation {
+                                        pTK = TypeKind.I64
+                                    }
                                 }
                             }
-                        }
-                        if pTK == TypeKind.Unknown || p.typeAnnotation.ln == 0 {
-                            pTK = TypeKind.I64
+                            if pTK == TypeKind.Unknown {
+                                pTK = TypeKind.I64
+                            }
+                        } els {
+                            pTK = ResolveUntypedParamType(prog, topNode, pIdx)
                         }
                         stType: str = llvmStackType(pTK)
                         pLLVM: str = llvmType(pTK)

@@ -8,12 +8,28 @@ square(x: i64): i64 {
     -> x * x
 }
 
+addI64(a: i64, b: i64): i64 {
+    -> a + b
+}
+
 greet(name: str): str {
     -> "Hello, " + name
 }
 
+concatStr(a: str, b: str): str {
+    -> a + " " + b
+}
+
 isPositive(n: num): bool {
     -> n > 0.0
+}
+
+andBool(a: bool, b: bool): bool {
+    -> a && b
+}
+
+notBool(b: bool): bool {
+    -> !b
 }
 
 sayHello(): void {
@@ -36,6 +52,18 @@ arrayReturnBool(a: bool, b: bool): bool[] {
     -> [a, b]
 }
 
+arrayParameterReturnNum(a: num[], b: num): num[] {
+    -> a
+}
+
+arrayParameterReturnI64(a: i64[], b: i64): i64[] {
+    -> a
+}
+
+arrayParameterReturnStr(a: str[], b: str): str[] {
+    -> a
+}
+
 arrayParameterReturnBool(a: bool[], b: bool): bool[] {
     -> a
 }
@@ -54,12 +82,24 @@ cubeFree x: i64 :: i64 {
     -> x * x * x
 }
 
+addI64Pf a: i64, b: i64 :: i64 {
+    -> a + b
+}
+
 concatFree prefix: str, suffix: str :: str {
     -> prefix + " " + suffix
 }
 
 checkZeroFree n: num :: bool {
     -> n == 0.0
+}
+
+andBoolPf a: bool, b: bool :: bool {
+    -> a && b
+}
+
+notBoolPf b: bool :: bool {
+    -> !b
 }
 
 sayFree :: void {
@@ -85,6 +125,18 @@ arrayReturnStrPf a: str, b: str :: str[] {
 
 arrayReturnBoolPf a: bool, b: bool :: bool[] {
     -> [a, b]
+}
+
+arrayParameterReturnNumPf a: num[], b: num :: num[] {
+    -> a
+}
+
+arrayParameterReturnI64Pf a: i64[], b: i64 :: i64[] {
+    -> a
+}
+
+arrayParameterReturnStrPf a: str[], b: str :: str[] {
+    -> a
 }
 
 arrayParameterReturnBoolPf a: bool[], b: bool :: bool[] {
@@ -134,8 +186,16 @@ r2 = square(7)
 lg "square(7):"
 lg r2
 
+r2_add = addI64(15, 25)
+lg "addI64(15, 25):"
+lg r2_add
+
 msg = greet("Zuv Developer")
 lg msg
+
+fullMsg = concatStr("Hello", "Zuv")
+lg "concatStr(\"Hello\", \"Zuv\"):"
+lg fullMsg
 
 b1 = isPositive(42.0)
 lg "isPositive(42.0):"
@@ -144,6 +204,14 @@ lg b1
 b2 = isPositive(-5.0)
 lg "isPositive(-5.0):"
 lg b2
+
+b3 = andBool(true, false)
+lg "andBool(true, false):"
+lg b3
+
+b4 = notBool(true)
+lg "notBool(true):"
+lg b4
 
 r3 = arrayReturnNum(10.5, 20.25)
 lg "arrayReturnNum(10.5, 20.25):"
@@ -161,9 +229,21 @@ r6 = arrayReturnBool(true, false)
 lg "arrayReturnBool(true, false):"
 lg r6
 
-r7 = arrayParameterReturnBool([true], false)
-lg "arrayParameterReturnBool([true], false):"
+r7 = arrayParameterReturnNum([10.5, 20.25], 30.5)
+lg "arrayParameterReturnNum([10.5, 20.25], 30.5):"
 lg r7
+
+r8 = arrayParameterReturnI64([10, 20], 30)
+lg "arrayParameterReturnI64([10, 20], 30):"
+lg r8
+
+r9 = arrayParameterReturnStr(["Hello", "Zuv"], "World")
+lg "arrayParameterReturnStr([\"Hello\", \"Zuv\"], \"World\"):"
+lg r9
+
+r10 = arrayParameterReturnBool([true], false)
+lg "arrayParameterReturnBool([true], false):"
+lg r10
 
 // Parenthesis-free calls
 sayFree
@@ -172,18 +252,21 @@ w = workerTask()
 lg "workerTask result:"
 lg w
 
-
 mf = addPF 3.45, 2.73
 lg "addPF 3.45, 2.73:"
 lg mf
 
-mf = multiplyFree 3.5, 2.0
+mf2 = multiplyFree 3.5, 2.0
 lg "multiplyFree 3.5, 2.0:"
-lg mf
+lg mf2
 
 cf = cubeFree 3
 lg "cubeFree 3:"
 lg cf
+
+cf_add = addI64Pf 12, 18
+lg "addI64Pf 12, 18:"
+lg cf_add
 
 msgFree = concatFree "Parenthesis", "Free"
 lg msgFree
@@ -196,7 +279,15 @@ cz2 = checkZeroFree 5.5
 lg "checkZeroFree 5.5:"
 lg cz2
 
-apf= arrayReturnNumPf 5.5, 10.1
+ab1 = andBoolPf true, true
+lg "andBoolPf true, true:"
+lg ab1
+
+ab2 = notBoolPf false
+lg "notBoolPf false:"
+lg ab2
+
+apf = arrayReturnNumPf 5.5, 10.1
 lg "arrayReturnNumPf 5.5, 10.1:"
 lg apf
 
@@ -212,7 +303,23 @@ abf = arrayReturnBoolPf true, false
 lg "arrayReturnBoolPf true, false:"
 lg abf
 
-apbf = arrayParameterReturnBoolPf [true], false
+numArr = [5.5, 10.1]
+apnf = arrayParameterReturnNumPf numArr, 20.2
+lg "arrayParameterReturnNumPf [5.5, 10.1], 20.2:"
+lg apnf
+
+i64Arr = [5, 10]
+api64f = arrayParameterReturnI64Pf i64Arr, 15
+lg "arrayParameterReturnI64Pf [5, 10], 15:"
+lg api64f
+
+strArr = ["Hello", "Zuv"]
+apsf = arrayParameterReturnStrPf strArr, "World"
+lg "arrayParameterReturnStrPf [\"Hello\", \"Zuv\"], \"World\":"
+lg apsf
+
+boolArr = [true]
+apbf = arrayParameterReturnBoolPf boolArr, false
 lg "arrayParameterReturnBoolPf [true], false:"
 lg apbf
 
@@ -240,5 +347,7 @@ lg "arrayReturnNoTypes(5, 10):"
 lg arnt
 
 aprbnt = arrayParameterReturnBoolNoTypes [true], false
+lg "arrayParameterReturnBoolNoTypes [true], false:"
+lg aprbnt
 
 lg "done"

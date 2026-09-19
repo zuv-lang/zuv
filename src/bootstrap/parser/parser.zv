@@ -358,6 +358,21 @@ obj Parser {
     },
 
     /**
+     * Checks if an identifier refers to any declared function.
+     *
+     * @param {str} name - Function name to check
+     * @returns {bool} True if declared function, false otherwise
+     */
+    isFunction: name: str :: bool => {
+        fr fnName of self.functions {
+            if fnName == name {
+                -> true
+            }
+        }
+        -> false
+    },
+
+    /**
      * Checks if an identifier refers to a declared zero-argument function.
      *
      * @param {str} name - Function name to check
