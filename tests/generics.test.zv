@@ -1,7 +1,16 @@
-identity[T] x: T {
+identity<T> x: T :: T {
     -> x
 }
 
-val = identity[num] 777
+val = identity<num> 777
 lg "Generic function return value:"
 lg val
+
+identity2<T>(x: T): T {
+    -> x
+}
+
+val = identity2<num>(777)
+lg "Generic function return value2:"
+lg val
+

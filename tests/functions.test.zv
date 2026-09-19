@@ -10,3 +10,16 @@ factorial n {
 res = factorial 5
 lg "Factorial of 5:"
 lg res
+
+factorial2 (n) {
+    if (n <= 1) {
+        -> 1
+    }
+    prev = n - 1
+    sub = factorial (prev)
+    -> n * sub
+}
+
+res = factorial (5) 
+lg "Factorial of 5:"
+lg res
