@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.14.0]
+## [0.14.0] - 2026-09-20
 
 ### 🧬 TypeScript-Style Generics (`<T>`, `<T, U>`)
 - Added TS-like `<T>` and `<T, U>` generics for functions with explicit (`fn<num> x`) and inferred (`fn x`) type arguments.
