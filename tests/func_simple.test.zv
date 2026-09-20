@@ -350,4 +350,28 @@ aprbnt = arrayParameterReturnBoolNoTypes [true], false
 lg "arrayParameterReturnBoolNoTypes [true], false:"
 lg aprbnt
 
+// --- 5. Object passing through functions ---
+
+objectReturn(pt) {
+    -> pt
+}
+
+objectReturnwithoutParenthesis pt {
+    -> pt
+}
+
+pt = { x: 12, y: 34 }
+obrt = objectReturn(pt)
+lg "objectReturn(pt):"
+lg obrt
+lg obrt.x
+lg obrt.y
+
+obrt = objectReturnwithoutParenthesis pt
+
+lg "objectReturnwithoutParenthesis(pt):"
+lg obrt
+lg obrt.x
+lg obrt.y
+
 lg "done"

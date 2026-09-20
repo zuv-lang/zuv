@@ -246,10 +246,20 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             expr.inferredType = TypeKind.I64
             -> TypeKind.I64
         }
+        // Anonymous objects (TypeKind.Obj) allow any property access without type checking
+        if targetKind == TypeKind.Obj {
+            expr.inferredType = TypeKind.Unknown
+            -> TypeKind.Unknown
+        }
         typeName = targetNode.typeAnnotation
         if typeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
             foundSym = checker.resolveSymbol(targetNode.name)
             typeName = foundSym.typeName
+        }
+        // Skip error for anonymous/generic object type names
+        if typeName == "obj" || typeName == "Obj" {
+            expr.inferredType = TypeKind.Unknown
+            -> TypeKind.Unknown
         }
         if typeName.ln > 0 {
             typeInfo = checker.resolveType(typeName)
@@ -269,7 +279,10 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                     expr.inferredType = resKind
                     -> resKind
                 }
-                checker.addError("E0302", "Property '" + propName + "' does not exist on type '" + typeName + "'", expr.line, expr.col, propName.ln, "check member spelling or add field to " + typeName)
+                // Only emit error for named struct types, not anonymous objects
+                if typeInfo.kind != TypeKind.Obj {
+                    checker.addError("E0302", "Property '" + propName + "' does not exist on type '" + typeName + "'", expr.line, expr.col, propName.ln, "check member spelling or add field to " + typeName)
+                }
                 expr.inferredType = TypeKind.Unknown
                 -> TypeKind.Unknown
             }
@@ -702,6 +715,9 @@ InferExprTypeKind root: ASTNode, expr: ASTNode :: TypeKind {
                 -> TypeKind.I64
             }
         }
+    }
+    if k == NodeKind.ObjLitExpr {
+        -> TypeKind.Obj
     }
     if expr.inferredType != TypeKind.Unknown && expr.inferredType != TypeKind.Void {
         -> expr.inferredType
