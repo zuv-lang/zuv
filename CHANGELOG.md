@@ -46,10 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Type Coercion**: Fixed scalar coercion in `emitBinary` for float, integer, and pointer comparisons.
 - **Test**: `tests/c_ffi_lib.test.zv` passes.
 
-### 🌐 Cross-Platform C & Library Routing
-- **Linker Routing**: Platform routing in `cli.zv` (`lld-link` on Windows, `ld.lld` on Linux, `ld64.lld` on macOS).
-- **Library Resolution**: Added `ResolvePlatformLib` in `extern.zv` to route CRT aliases while preserving custom `.lib`/`.a`/`.so` files.
-
 ## [0.13.0] - 2026-09-17
 
 ### 🔄 Rewrite Zuv Bootstrap with Proper Structure
