@@ -1158,7 +1158,7 @@ obj Cli {
             -> 0
         }
 
-        compilerBin: str = ".\\zuv.exe"
+        compilerBin: str = ".\\zuv_bootstrap.exe"
         if !(fE "zuv_bootstrap.exe") && !(fE ".\\zuv_bootstrap.exe") {
             if fE "sub_projects/zuv/zuv_bootstrap.exe" {
                 compilerBin = "sub_projects/zuv/zuv_bootstrap.exe"
