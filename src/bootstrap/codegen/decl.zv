@@ -63,6 +63,9 @@ resolveFieldTypeKind typeName: str :: TypeKind {
         }
     }
     -> sw typeName {
+        ""       => TypeKind.Unknown
+        "any"    => TypeKind.Unknown
+        "unknown"=> TypeKind.Unknown
         "num"    => TypeKind.Num
         "double" => TypeKind.Num
         "f64"    => TypeKind.Num

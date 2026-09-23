@@ -58,6 +58,11 @@ extern "LLVMTarget.lib" {
     LLVMDisposeTargetMachine tm: ptr :: void
 }
 
+//start debugging helper function to print a string pointer from LLVM
+// extern "msvcrt.dll" {
+//     puts strPtr: ptr :: i32
+// }
+//end debugging helper function to print a string pointer from LLVM
 
 /**
  * Emits a native machine code object file (.obj) directly from LLVM IR in-process.
@@ -98,6 +103,13 @@ emitDirectObjectFile ir: str, outputObjPath: str, isRelease: bool, targetTriple:
         outMsg: ptr = malloc 8
         parseRes: num = LLVMParseIRInContext(ctx, memBuf, outMod, outMsg)
         if parseRes != 0 {
+            // If parsing fails, print the error message from LLVM  
+            // errMsgPtr: ptr = zuv_ptr_deref outMsg
+            // if errMsgPtr != nil {
+            //     puts errMsgPtr
+            // }
+            // end print the error message from LLVM
+
             prnt "[LLVM Error] In-process IR parse failed"
             LLVMContextDispose ctx
             free outMod
@@ -625,12 +637,82 @@ obj Cli {
             }
         }
 
+        // Pre-register user function signatures
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.FuncDecl {
+                retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : "i64")
+                pTypes: str[] = []
+                fr p of topNode.params {
+                    pLLVM: str = "i64"
+                    if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                        pLLVM = "ptr"
+                    } els if p.typeAnnotation == "bool" {
+                        pLLVM = "i1"
+                    } els if p.typeAnnotation == "i32" {
+                        pLLVM = "i32"
+                    } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                        pLLVM = "double"
+                    }
+                    pTypes.psh(pLLVM)
+                }
+                exprGen.registerFunc(topNode.name, retLLVM, pTypes)
+            }
+        }
+
         // Emit custom functions (excluding main)
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
                 if topNode.name != "main" {
-                    retLLVM: str = (topNode.typeAnnotation.ln > 0 && topNode.typeAnnotation != "void" ? "i64" : "void")
-                    cg.startFunction("define " + retLLVM + " @" + topNode.name + "() {")
+                    exprGen.clearSymbols()
+                    retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : "i64")
+                    paramsSig: str = ""
+                    isFirstP = true
+                    fr p of topNode.params {
+                        pLLVM: str = "i64"
+                        if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                            pLLVM = "ptr"
+                        } els if p.typeAnnotation == "bool" {
+                            pLLVM = "i1"
+                        } els if p.typeAnnotation == "i32" {
+                            pLLVM = "i32"
+                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                            pLLVM = "double"
+                        }
+                        if !isFirstP {
+                            paramsSig = paramsSig + ", "
+                        }
+                        paramsSig = paramsSig + pLLVM + " %arg_" + p.name
+                        isFirstP = false
+                    }
+                    cg.startFunction("define " + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
+                    if retLLVM == "void" {
+                        stmtGen.setReturnType(TypeKind.Void)
+                    } els {
+                        stmtGen.setReturnType(TypeKind.I64)
+                    }
+
+                    fr p of topNode.params {
+                        pLLVM: str = "i64"
+                        pKind: TypeKind = TypeKind.Unknown
+                        if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                            pLLVM = "ptr"
+                            pKind = TypeKind.Str
+                        } els if p.typeAnnotation == "bool" {
+                            pLLVM = "i1"
+                            pKind = TypeKind.Bool
+                        } els if p.typeAnnotation == "i32" {
+                            pLLVM = "i32"
+                            pKind = TypeKind.I32
+                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                            pLLVM = "double"
+                            pKind = TypeKind.Num
+                        }
+                        slotReg: str = cg.newReg
+                        cg.emit(`${slotReg} = alloca ${pLLVM}`)
+                        cg.emit(`store ${pLLVM} %arg_${p.name}, ptr ${slotReg}`)
+                        exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                    }
+
                     if topNode.children.ln > 0 {
                         bodyBlock: ASTNode = topNode.children[0]
                         fr bodyStmt of bodyBlock.children {
@@ -648,6 +730,7 @@ obj Cli {
         }
 
         // Emit @main function
+        exprGen.clearSymbols()
         if hasExplicitMain {
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
             rtGen.emitInitCrashHandlerCall()

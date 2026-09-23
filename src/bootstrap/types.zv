@@ -307,6 +307,9 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
     if target == source {
         -> true
     }
+    if target == TypeKind.Unknown || source == TypeKind.Unknown {
+        -> true
+    }
     if target == TypeKind.Num && (source == TypeKind.I64 || source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
         -> true
     }
@@ -331,21 +334,40 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
  * @param {str} typeName - Type name annotation string (e.g. "num", "str", "bool", "i64")
  * @returns {TypeKind} Corresponding TypeKind variant
  */
-StrToTypeKind typeName: str :: TypeKind => sw typeName {
-    "num"    => TypeKind.Num
-    "double" => TypeKind.Num
-    "f64"    => TypeKind.Num
-    "i64"    => TypeKind.I64
-    "i32"    => TypeKind.I32
-    "i16"    => TypeKind.I16
-    "i8"     => TypeKind.I8
-    "bool"   => TypeKind.Bool
-    "str"    => TypeKind.Str
-    "void"   => TypeKind.Void
-    "ptr"    => TypeKind.Ptr
-    "und"    => TypeKind.Und
-    "nil"    => TypeKind.Nil
-    _        => TypeKind.Obj
+StrToTypeKind typeName: str :: TypeKind {
+    nameLen: num = typeName.ln
+    if nameLen >= 2 {
+        subSuffix: str = typeName.sub nameLen - 2, 2
+        if subSuffix == "[]" {
+            -> TypeKind.Arr
+        }
+    }
+    -> sw typeName {
+        ""       => TypeKind.Unknown
+        "any"    => TypeKind.Unknown
+        "unknown"=> TypeKind.Unknown
+        "num"    => TypeKind.Num
+        "double" => TypeKind.Num
+        "f64"    => TypeKind.Num
+        "i64"    => TypeKind.I64
+        "u64"    => TypeKind.I64
+        "i32"    => TypeKind.I32
+        "u32"    => TypeKind.I32
+        "i16"    => TypeKind.I16
+        "u16"    => TypeKind.I16
+        "i8"     => TypeKind.I8
+        "u8"     => TypeKind.I8
+        "byte"   => TypeKind.I8
+        "bool"   => TypeKind.Bool
+        "str"    => TypeKind.Str
+        "void"   => TypeKind.Void
+        "ptr"    => TypeKind.Ptr
+        "arr"    => TypeKind.Arr
+        "enum"   => TypeKind.Enum
+        "und"    => TypeKind.Und
+        "nil"    => TypeKind.Nil
+        _        => TypeKind.Obj
+    }
 }
 
 

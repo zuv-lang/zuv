@@ -31,6 +31,12 @@ type ExprResult = {
     typeKind: TypeKind;
 };
 
+type FuncSignature = {
+    name: str;
+    retType: str;
+    paramTypes: str[];
+};
+
 /**
  * Symbol entry in the active function or block lexical scope.
  */
@@ -50,6 +56,7 @@ obj ExprCodegen {
     symbols: ScopeSymbol[],
     objGen: ObjectCodegen,
     arrGen: ArrayCodegen,
+    funcSigs: FuncSignature[],
 
     /**
      * Initializes a new ExprCodegen coordinator.
@@ -61,11 +68,13 @@ obj ExprCodegen {
      */
     create: codegen: Codegen, objGen: ObjectCodegen, arrGen: ArrayCodegen :: ExprCodegen => {
         emptySymbols: ScopeSymbol[] = []
+        emptySigs: FuncSignature[] = []
         -> {
             codegen,
             symbols: emptySymbols,
             objGen,
-            arrGen
+            arrGen,
+            funcSigs: emptySigs
         }
     },
 
@@ -109,6 +118,52 @@ obj ExprCodegen {
             }
         }
         -> found
+    },
+
+    /**
+     * Registers a user function signature for argument coercions.
+     *
+     * @param {str} name - Function name
+     * @param {str} retType - LLVM return type string
+     * @param {str[]} paramTypes - LLVM parameter type strings
+     * @returns {void}
+     */
+    registerFunc: name: str, retType: str, paramTypes: str[] :: void => {
+        self.funcSigs.psh {
+            name,
+            retType,
+            paramTypes
+        }
+    },
+
+    /**
+     * Looks up a registered function signature by name.
+     *
+     * @param {str} name - Function name to find
+     * @returns {FuncSignature} Found signature or empty
+     */
+    findFunc: name: str :: FuncSignature => {
+        fr fnSig of self.funcSigs {
+            if fnSig.name == name {
+                -> fnSig
+            }
+        }
+        emptyParams: str[] = []
+        emptySig: FuncSignature = {
+            name: "",
+            retType: "",
+            paramTypes: emptyParams
+        }
+        -> emptySig
+    },
+
+    /**
+     * Clears all local scope symbols.
+     *
+     * @returns {void}
+     */
+    clearSymbols: :: void => {
+        self.symbols = []
     },
 
     /**
@@ -441,12 +496,26 @@ obj ExprCodegen {
             argIdx++
         }
 
-        if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "err" {
+        if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "inf" || calleeName == "err" {
             fmtStr: str = "%s\n"
-            if calleeName == "wrn" {
-                fmtStr = "[WARN] %s\n"
+            numFmtStr: str = "%lld\n"
+            dblFmtStr: str = "%g\n"
+            if calleeName == "lg" {
+                fmtStr = "\\1B[1;32m[LOG]\\1B[0m %s\n"
+                numFmtStr = "\\1B[1;32m[LOG]\\1B[0m %lld\n"
+                dblFmtStr = "\\1B[1;32m[LOG]\\1B[0m %g\n"
+            } els if calleeName == "wrn" {
+                fmtStr = "\\1B[1;33m[WARN]\\1B[0m %s\n"
+                numFmtStr = "\\1B[1;33m[WARN]\\1B[0m %lld\n"
+                dblFmtStr = "\\1B[1;33m[WARN]\\1B[0m %g\n"
+            } els if calleeName == "inf" {
+                fmtStr = "\\1B[1;36m[INFO]\\1B[0m %s\n"
+                numFmtStr = "\\1B[1;36m[INFO]\\1B[0m %lld\n"
+                dblFmtStr = "\\1B[1;36m[INFO]\\1B[0m %g\n"
             } els if calleeName == "err" {
-                fmtStr = "[ERR] %s\n"
+                fmtStr = "\\1B[1;31m[ERR]\\1B[0m %s\n"
+                numFmtStr = "\\1B[1;31m[ERR]\\1B[0m %lld\n"
+                dblFmtStr = "\\1B[1;31m[ERR]\\1B[0m %g\n"
             }
             fmtConst: str = self.codegen.addStringConstant fmtStr
             if argRegs.ln > 0 {
@@ -454,11 +523,40 @@ obj ExprCodegen {
                 firstArgType: TypeKind = argTypes[0]
                 if firstArgType == TypeKind.Str || firstArgType == TypeKind.Ptr {
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
-                } els if firstArgType == TypeKind.I64 || firstArgType == TypeKind.Num {
-                    numFmt: str = self.codegen.addStringConstant "%lld\n"
+                } els if firstArgType == TypeKind.Num {
+                    dFmt: str = self.codegen.addStringConstant dblFmtStr
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${dFmt}, double ${firstArgReg})`
+                } els if firstArgType == TypeKind.Bool {
+                    strTrue: str = self.codegen.addStringConstant "true"
+                    strFalse: str = self.codegen.addStringConstant "false"
+                    boolPtr: str = self.codegen.newReg
+                    self.codegen.emit `${boolPtr} = select i1 ${firstArgReg}, ptr ${strTrue}, ptr ${strFalse}`
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${boolPtr})`
+                } els if firstArgType == TypeKind.I32 {
+                    sextReg: str = self.codegen.newReg
+                    self.codegen.emit `${sextReg} = sext i32 ${firstArgReg} to i64`
+                    numFmt: str = self.codegen.addStringConstant numFmtStr
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${sextReg})`
+                } els if firstArgType == TypeKind.I64 {
+                    numFmt: str = self.codegen.addStringConstant numFmtStr
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
                 } els {
-                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
+                    isSmallReg: str = self.codegen.newReg
+                    pNumLbl: str = self.codegen.newLabel "p_num"
+                    pStrLbl: str = self.codegen.newLabel "p_str"
+                    pEndLbl: str = self.codegen.newLabel "p_end"
+                    self.codegen.emit `${isSmallReg} = icmp ult i64 ${firstArgReg}, 65536`
+                    self.codegen.emit `br i1 ${isSmallReg}, label %${pNumLbl}, label %${pStrLbl}`
+                    self.codegen.emitLabel pStrLbl
+                    pPtrReg: str = self.codegen.newReg
+                    self.codegen.emit `${pPtrReg} = inttoptr i64 ${firstArgReg} to ptr`
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${pPtrReg})`
+                    self.codegen.emit `br label %${pEndLbl}`
+                    self.codegen.emitLabel pNumLbl
+                    numFmt: str = self.codegen.addStringConstant numFmtStr
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
+                    self.codegen.emit `br label %${pEndLbl}`
+                    self.codegen.emitLabel pEndLbl
                 }
             } els {
                 emptyFmt: str = self.codegen.addStringConstant "\n"
@@ -466,6 +564,55 @@ obj ExprCodegen {
             }
             vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
             -> vRes
+        }
+
+        fnSig: FuncSignature = self.findFunc calleeName
+        if fnSig.name.ln > 0 {
+            userArgsStr: str = ""
+            userFirst: bool = true
+            uIdx: num = 0
+            fr aReg of argRegs {
+                aType: TypeKind = argTypes[uIdx]
+                expectedLLVM: str = (uIdx < fnSig.paramTypes.ln ? fnSig.paramTypes[uIdx] : "i64")
+                actualLLVM: str = llvmType aType
+                passedReg: str = aReg
+                if expectedLLVM == "i64" && (actualLLVM == "ptr" || aType == TypeKind.Str || aType == TypeKind.Ptr) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = ptrtoint ptr ${aReg} to i64`
+                    passedReg = convReg
+                } els if expectedLLVM == "i64" && (actualLLVM == "i1" || aType == TypeKind.Bool) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = zext i1 ${aReg} to i64`
+                    passedReg = convReg
+                } els if expectedLLVM == "i64" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = sext i32 ${aReg} to i64`
+                    passedReg = convReg
+                } els if expectedLLVM == "i64" && (actualLLVM == "double" || aType == TypeKind.Num) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = fptosi double ${aReg} to i64`
+                    passedReg = convReg
+                } els if expectedLLVM == "ptr" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${aReg} to ptr`
+                    passedReg = convReg
+                }
+                if !userFirst {
+                    userArgsStr = userArgsStr + ", "
+                }
+                userArgsStr = userArgsStr + expectedLLVM + " " + passedReg
+                userFirst = false
+                uIdx++
+            }
+            if fnSig.retType == "void" {
+                self.codegen.emit `call void @${calleeName}(${userArgsStr})`
+                vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
+                -> vRes
+            }
+            callReg: str = self.codegen.newReg
+            self.codegen.emit `${callReg} = call ${fnSig.retType} @${calleeName}(${userArgsStr})`
+            res: ExprResult = { reg: callReg, typeKind: TypeKind.I64 }
+            -> res
         }
 
         retType: TypeKind = node.inferredType

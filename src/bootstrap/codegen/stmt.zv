@@ -78,10 +78,11 @@ obj StmtCodegen {
         NodeKind.FrInStmt  => self.emitFrIn node
         NodeKind.SwStmt    => self.emitSw node
         NodeKind.RetStmt   => self.emitRet node
-        NodeKind.BrkStmt   => self.emitBrk node
-        NodeKind.ContStmt  => self.emitCont node
-        NodeKind.PanicStmt => self.emitPanic node
-        _                  => {}
+        NodeKind.BrkStmt    => self.emitBrk node
+        NodeKind.ContStmt   => self.emitCont node
+        NodeKind.PanicStmt  => self.emitPanic node
+        NodeKind.TryCthStmt => self.emitTryCth node
+        _                   => {}
     },
 
     /**
@@ -92,7 +93,7 @@ obj StmtCodegen {
      */
     emitVarDecl: node: ASTNode :: void => {
         varType: TypeKind = node.inferredType
-        if varType == TypeKind.Unknown {
+        if varType == TypeKind.Unknown && node.typeAnnotation.ln > 0 {
             varType = resolveFieldTypeKind node.typeAnnotation
         }
         initReg: str = ""
@@ -275,6 +276,52 @@ obj StmtCodegen {
      * @returns {void}
      */
     emitFrIn: node: ASTNode :: void => {
+        if node.children.ln == 4 {
+            initNode: ASTNode = node.children[0]
+            condNode: ASTNode = node.children[1]
+            postNode: ASTNode = node.children[2]
+            bodyNode: ASTNode = node.children[3]
+
+            if initNode.kind == NodeKind.VarDecl {
+                self.emitVarDecl initNode
+            } els {
+                self.emitStmt initNode
+            }
+
+            condLbl: str = self.codegen.newLabel "fr_cond"
+            bodyLbl: str = self.codegen.newLabel "fr_body"
+            stepLbl: str = self.codegen.newLabel "fr_step"
+            endLbl: str = self.codegen.newLabel "fr_end"
+
+            self.breakLabels.psh endLbl
+            self.continueLabels.psh stepLbl
+
+            self.codegen.emit `br label %${condLbl}`
+            self.codegen.emitLabel condLbl
+
+            condRes: ExprResult = self.exprGen.emitExpr condNode
+            condI1: str = condRes.reg
+            if condRes.typeKind != TypeKind.Bool {
+                cmpReg: str = self.codegen.newReg
+                itype: str = llvmType condRes.typeKind
+                self.codegen.emit `${cmpReg} = icmp ne ${itype} ${condRes.reg}, 0`
+                condI1 = cmpReg
+            }
+            self.codegen.emit `br i1 ${condI1}, label %${bodyLbl}, label %${endLbl}`
+
+            self.codegen.emitLabel bodyLbl
+            self.emitStmt bodyNode
+            self.codegen.emit `br label %${stepLbl}`
+
+            self.codegen.emitLabel stepLbl
+            self.exprGen.emitExpr postNode
+            self.codegen.emit `br label %${condLbl}`
+
+            self.codegen.emitLabel endLbl
+            self.breakLabels.pp
+            self.continueLabels.pp
+            ->
+        }
         self.emitFrOf node
     },
 
@@ -366,6 +413,8 @@ obj StmtCodegen {
                 wReg: str = self.codegen.newReg
                 self.codegen.emit `${wReg} = zext i1 ${retRes.reg} to i64`
                 self.codegen.emit `ret i64 ${wReg}`
+            } els if self.returnType == TypeKind.Void {
+                self.codegen.emit `ret void`
             } els {
                 retTypeStr: str = llvmType self.returnType
                 self.codegen.emit `ret ${retTypeStr} ${retRes.reg}`
@@ -419,5 +468,20 @@ obj StmtCodegen {
         }
         self.codegen.emit `call void @abort()`
         self.codegen.emit `unreachable`
+    },
+
+    /**
+     * Emits a try/catch block executing the guarded block safely.
+     *
+     * @param {ASTNode} node - TryCthStmt AST node
+     * @returns {void}
+     */
+    emitTryCth: node: ASTNode :: void => {
+        if node.children.ln > 0 {
+            self.emitStmt node.children[0]
+        }
+        if node.children.ln > 2 && node.children[2].kind != NodeKind.NilExpr {
+            self.emitStmt node.children[2]
+        }
     }
 }

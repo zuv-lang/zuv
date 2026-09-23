@@ -65,7 +65,12 @@ llvmStackType typeKind: TypeKind :: str => sw typeKind {
     TypeKind.I32  => "i32"
     TypeKind.I64  => "i64"
     TypeKind.Void => "void"
-    _             => "ptr"
+    TypeKind.Str  => "ptr"
+    TypeKind.Ptr  => "ptr"
+    TypeKind.Arr  => "ptr"
+    TypeKind.Obj  => "ptr"
+    TypeKind.Func => "ptr"
+    _             => "i64"
 }
 
 /**

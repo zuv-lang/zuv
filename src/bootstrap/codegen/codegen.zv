@@ -50,6 +50,10 @@ obj StringConstant {
     }
 }
 
+isHexDigit ch: str :: bool {
+    -> (ch >= "0" && ch <= "9") || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
+}
+
 /**
  * Escapes characters in a string for LLVM IR string constant representation.
  *
@@ -62,7 +66,10 @@ EscapeStringForLLVM text: str :: str {
     i: num = 0
     wh i < count {
         ch: str = text[i]
-        if ch == "\"" {
+        if ch == "\\" && i + 2 < count && isHexDigit(text[i+1]) && isHexDigit(text[i+2]) {
+            escaped = escaped + "\\" + text[i+1] + text[i+2]
+            i = i + 2
+        } els if ch == "\"" {
             escaped = escaped + "\\22"
         } els if ch == "\\" {
             escaped = escaped + "\\5C"
@@ -87,7 +94,20 @@ EscapeStringForLLVM text: str :: str {
  * @returns {num} Byte count
  */
 MeasureStringBytes text: str :: num {
-    -> text.ln
+    count: num = text.ln
+    bLen: num = 0
+    i: num = 0
+    wh i < count {
+        ch: str = text[i]
+        if ch == "\\" && i + 2 < count && isHexDigit(text[i+1]) && isHexDigit(text[i+2]) {
+            bLen++
+            i = i + 2
+        } els {
+            bLen++
+        }
+        i++
+    }
+    -> bLen
 }
 
 /**

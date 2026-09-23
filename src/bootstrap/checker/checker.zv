@@ -101,11 +101,13 @@ obj Checker {
         symPrnt = Symbol.create "prnt", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symLg = Symbol.create "lg", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symWrn = Symbol.create "wrn", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
+        symInf = Symbol.create "inf", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symErr = Symbol.create "err", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symPanic = Symbol.create "panic", TypeKind.Func, "fn(str)->void", false, true, 0, 0, 0
         rootSyms.psh symPrnt
         rootSyms.psh symLg
         rootSyms.psh symWrn
+        rootSyms.psh symInf
         rootSyms.psh symErr
         rootSyms.psh symPanic
 

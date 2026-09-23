@@ -330,7 +330,7 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
         params = ParseParamList parser
     }
 
-    returnType: str = "void"
+    returnType: str = "i64"
     if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) {
         returnType = ParseTypeString parser
     }

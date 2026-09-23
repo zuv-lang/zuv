@@ -244,6 +244,7 @@ obj Parser {
                curTok.kind == TokenType.TOK_RET || curTok.kind == TokenType.TOK_PUB ||
                curTok.kind == TokenType.TOK_EXTERN || curTok.kind == TokenType.TOK_IMP ||
                curTok.kind == TokenType.TOK_PRNT || curTok.kind == TokenType.TOK_LOG ||
+               curTok.kind == TokenType.TOK_WARN || curTok.kind == TokenType.TOK_INFO ||
                curTok.kind == TokenType.TOK_TRY || curTok.kind == TokenType.TOK_PANIC {
                 ret
             }

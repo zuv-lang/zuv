@@ -618,6 +618,15 @@ BorrowCheckStatement checker: BorrowChecker, stmt: ASTNode :: void {
         ->
     }
     if k == NodeKind.FrOfStmt || k == NodeKind.FrInStmt {
+        if stmt.children.ln == 4 {
+            checker.enterScope
+            BorrowCheckStatement checker, stmt.children[0]
+            BorrowCheckExpression checker, stmt.children[1]
+            BorrowCheckExpression checker, stmt.children[2]
+            BorrowCheckStatement checker, stmt.children[3]
+            checker.exitScope
+            ->
+        }
         if stmt.children.ln > 0 {
             BorrowCheckExpression checker, stmt.children[0]
         }
