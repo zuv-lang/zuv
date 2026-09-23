@@ -180,9 +180,9 @@ fr i = 0; i < 2; i++ {
     inf i
 }
 
-// 4.4 pattern matching (mch) logging branches
+// 4.4 pattern matching (sw) logging branches
 statusCode = 404
-mch statusCode {
+sw statusCode {
     200 => {
         inf "Status 200 OK"
     }
