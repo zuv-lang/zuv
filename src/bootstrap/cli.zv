@@ -14,7 +14,7 @@
 imp os, fs, str, arr, time
 imp Token, TokenType frm tokens
 imp TypeInfo, TypeKind frm types
-imp ASTNode, NodeKind frm ast
+imp ASTNode, NodeKind, NodeKindToStr frm ast
 imp Diagnostic frm diagnostics
 imp Lexer frm lexer
 imp Parser frm parser/parser
@@ -24,7 +24,7 @@ imp InferProgram frm checker/infer
 imp BorrowChecker, BorrowCheckProgram frm checker/borrow
 imp Codegen frm codegen/codegen
 imp ExternManager frm codegen/extern
-imp llvmType, isFloatType, isIntegerType frm codegen/types
+imp llvmType, llvmStackType, selectDefaultValue, isFloatType, isIntegerType frm codegen/types
 imp ObjectCodegen, StructLayout, StructLayoutRegistry, resolveFieldTypeKind frm codegen/decl
 imp ArrayCodegen frm codegen/array
 imp ExprCodegen frm codegen/expr
@@ -602,10 +602,6 @@ obj Cli {
         // LLVM Codegen
         cg = Codegen.create(self.targetTriple, self.isRelease)
         regLayouts = StructLayoutRegistry.create()
-        objGen = ObjectCodegen.create(cg, regLayouts)
-        arrGen = ArrayCodegen.create(cg)
-        exprGen = ExprCodegen.create(cg, objGen, arrGen)
-        stmtGen = StmtCodegen.create(cg, exprGen)
         rtGen = RuntimeCodegen.create(cg)
         extMgr = ExternManager.create()
 
@@ -625,6 +621,8 @@ obj Cli {
         fr topNode of prog.children {
             if topNode.kind == NodeKind.TypeDecl || topNode.kind == NodeKind.ObjDecl {
                 regLayouts.registerFromAST(topNode)
+            } els if topNode.kind == NodeKind.EnumDecl {
+                regLayouts.registerEnumFromAST(topNode)
             } els if topNode.kind == NodeKind.ExternDecl {
                 extMgr.emitExternDeclNode(topNode, cg)
             } els if topNode.kind == NodeKind.FuncDecl {
@@ -634,6 +632,73 @@ obj Cli {
                 }
             } els {
                 topLevelStmts.psh(topNode)
+            }
+        }
+
+        objGen = ObjectCodegen.create(cg, regLayouts)
+        arrGen = ArrayCodegen.create(cg)
+        exprGen = ExprCodegen.create(cg, objGen, arrGen)
+        stmtGen = StmtCodegen.create(cg, exprGen)
+
+        // Pre-register top-level global variables
+        declaredGlobals: str[] = []
+        fr topNode of topLevelStmts {
+            if topNode.kind == NodeKind.VarDecl {
+                isAlreadyDecl: bool = false
+                fr gName of declaredGlobals {
+                    if gName == topNode.name {
+                        isAlreadyDecl = true
+                    }
+                }
+                if !isAlreadyDecl {
+                    declaredGlobals.psh(topNode.name)
+                    gType = topNode.inferredType
+                    if gType == TypeKind.Unknown && topNode.typeAnnotation.ln > 0 {
+                        gType = resolveFieldTypeKind(topNode.typeAnnotation)
+                    }
+                    if gType == TypeKind.Unknown && topNode.children.ln > 0 {
+                        cNode: ASTNode = topNode.children[0]
+                        if cNode.kind == NodeKind.NumExpr {
+                            gType = TypeKind.I64
+                        } els if cNode.kind == NodeKind.StrExpr {
+                            gType = TypeKind.Str
+                        } els if cNode.kind == NodeKind.BoolExpr {
+                            gType = TypeKind.Bool
+                        } els if cNode.kind == NodeKind.MethodCallExpr {
+                            mName: str = cNode.name
+                            if mName == "sub" || mName == "substr" || mName == "slc" || mName == "slice" || mName == "chr" || mName == "charAt" || mName == "cat" || mName == "concat" {
+                                gType = TypeKind.Str
+                            } els if mName == "cnt" || mName == "contains" || mName == "eq" {
+                                gType = TypeKind.Bool
+                            } els if mName == "ln" || mName == "length" || mName == "psh" || mName == "push" {
+                                gType = TypeKind.I64
+                            }
+                        } els if cNode.kind == NodeKind.IndexExpr {
+                            if cNode.children.ln > 0 {
+                                idxTarget: ASTNode = cNode.children[0]
+                                if idxTarget.kind == NodeKind.StrExpr {
+                                    gType = TypeKind.Str
+                                } els if idxTarget.kind == NodeKind.IdentExpr {
+                                    tSym: ScopeSymbol = exprGen.findGlobalSymbol(idxTarget.name)
+                                    if tSym.typeKind == TypeKind.Str {
+                                        gType = TypeKind.Str
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if gType == TypeKind.Unknown {
+                        gType = TypeKind.I64
+                    }
+                    stType: str = llvmStackType(gType)
+                    zeroVal: str = selectDefaultValue(gType)
+                    if zeroVal.ln == 0 {
+                        zeroVal = "0"
+                    }
+                    globReg: str = "@global_" + topNode.name
+                    cg.emitExtern(globReg + " = global " + stType + " " + zeroVal)
+                    exprGen.addGlobalSymbol(topNode.name, globReg, gType)
+                }
             }
         }
 
@@ -660,6 +725,7 @@ obj Cli {
         }
 
         // Emit custom functions (excluding main)
+        stmtGen.setTopLevel(false)
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
                 if topNode.name != "main" {
@@ -693,7 +759,7 @@ obj Cli {
 
                     fr p of topNode.params {
                         pLLVM: str = "i64"
-                        pKind: TypeKind = TypeKind.Unknown
+                        pKind = TypeKind.Unknown
                         if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
                             pLLVM = "ptr"
                             pKind = TypeKind.Str
@@ -735,6 +801,7 @@ obj Cli {
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
             rtGen.emitInitCrashHandlerCall()
             stmtGen.setReturnType(TypeKind.I32)
+            stmtGen.setTopLevel(true)
             fr topStmt of topLevelStmts {
                 stmtGen.emitStmt(topStmt)
             }
@@ -750,6 +817,7 @@ obj Cli {
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
             rtGen.emitInitCrashHandlerCall()
             stmtGen.setReturnType(TypeKind.I32)
+            stmtGen.setTopLevel(true)
             fr topStmt of topLevelStmts {
                 stmtGen.emitStmt(topStmt)
             }
