@@ -133,12 +133,12 @@ if gate > 10
 prnt "gate statement after braceless if ok"
 
 // 7. Single-line wh loop
-mut whCount = 0
+whCount = 0
 wh whCount < 3 whCount = whCount + 1
 if whCount == 3 prnt "single-line wh ok"
 
 // 8. Multi-line braceless wh loop
-mut whMulti = 0
+whMulti = 0
 wh whMulti < 3
     whMulti = whMulti + 1
 if whMulti == 3 prnt "multi-line braceless wh ok"

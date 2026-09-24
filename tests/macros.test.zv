@@ -25,8 +25,8 @@ let totalCount = 100
 logVal totalCount
 
 // 2. In-place multi-statement swap macro
-mut x = 10
-mut y = 20
+x = 10
+y = 20
 swap x, y
 checkEq x, 20
 checkEq y, 10

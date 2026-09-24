@@ -35,11 +35,11 @@ if total == 10 {
 }
 
 // 4. Interoperability between 'let' and 'mut'
-mut a = 5
+a = 5
 let b = 15
 let c = a + b
 if c == 20 {
-    prnt "Interoperability between let and mut passed"
+    prnt "Interoperability between let and passed"
 }
 
 prnt "Let Variables Unit Test Passed"

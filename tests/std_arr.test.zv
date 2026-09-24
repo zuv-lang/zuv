@@ -5,7 +5,7 @@ imp arr
 
 lg "--- Testing std/arr Shortforms (.ln, .psh, .pp) ---"
 
-mut numbers = [10, 20, 30]
+numbers = [10, 20, 30]
 
 // 0. Array Index ([0], [1], [2])
 i0 = numbers[0]

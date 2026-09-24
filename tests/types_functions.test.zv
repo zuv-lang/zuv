@@ -91,19 +91,19 @@ create_user_num_paren(name: str, age: num): User {
 }
 
 // parenthises free
-create_user_i32 name: str, age: i32 -> Userwithagei32 {
+create_user_i32 name: str, age: i32 :: Userwithagei32 {
     -> { name, age }
 }
 
-create_user_i64 name: str, age: i64 -> Userwithagei64 {
+create_user_i64 name: str, age: i64 :: Userwithagei64 {
     -> { name, age }
 }
 
-create_user_num name: str, age: num -> User {
+create_user_num name: str, age: num :: User {
     -> { name, age }
 }
 
-// create_user_num name: str, age: i64 -> User {
+// create_user_num name: str, age: i64 :: User {
 //     -> { name, age }
 // }
 

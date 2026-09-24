@@ -1,6 +1,6 @@
 // Task 6: Overflow Behavior — Safe Dynamic Expansion & Bounds Guard
 
-mut mode = ""
+mode = ""
 if args.ln > 2 {
     mode = args[2]
 } els if args.ln > 1 && args[1] != "tests/bounds_guard_task6.test.zv" && args[1] != "main.zv" {
