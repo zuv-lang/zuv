@@ -21,6 +21,7 @@ imp ASTNode, NodeKind, Param, FieldEntry, MatchArm frm ../ast
 imp TypeInfo, TypeKind frm ../types
 imp Diagnostic frm ../diagnostics
 imp Parser frm parser
+imp Lexer frm ../lexer
 
 /**
  * Maps a TokenType to its numeric operator precedence level.
@@ -164,6 +165,81 @@ ParseObjectLiteral parser: Parser :: ASTNode {
     -> node
 }
 
+ParseTemplateStringExpr parser: Parser, raw: str, line: num, col: num :: ASTNode {
+    hasInterp: bool = false
+    i: num = 0
+    rawLen: num = raw.ln
+    wh (i + 1 < rawLen) {
+        if raw[i] == "$" && raw[i + 1] == "{" {
+            hasInterp = true
+            brk
+        }
+        i++
+    }
+    if !hasInterp {
+        -> ASTNode.createStr raw, line, col
+    }
+
+    parts: ASTNode[] = []
+    i = 0
+    curText: str = ""
+    wh i < rawLen {
+        if raw[i] == "$" && (i + 1 < rawLen) && raw[i + 1] == "{" {
+            if curText.ln > 0 {
+                parts.psh (ASTNode.createStr curText, line, col)
+                curText = ""
+            }
+            i = i + 2
+            startExpr: num = i
+            braceDepth: num = 1
+            wh (i < rawLen) && (braceDepth > 0) {
+                ch: str = raw[i]
+                if ch == "{" {
+                    braceDepth++
+                } els if ch == "}" {
+                    braceDepth--
+                    if braceDepth == 0 {
+                        brk
+                    }
+                }
+                i++
+            }
+            exprStr: str = raw.slc startExpr, i
+            if (i < rawLen) && (raw[i] == "}") {
+                i++
+            }
+            if exprStr.ln > 0 {
+                subLex = Lexer.create exprStr
+                subTokens: Token[] = subLex.tokenizeAll
+                subParser: Parser = Parser.create subTokens, parser.file, parser.source
+                subNode: ASTNode = ParseExpression subParser, 0
+                parts.psh subNode
+            }
+        } els {
+            curText = curText + raw[i]
+            i++
+        }
+    }
+    if curText.ln > 0 {
+        parts.psh (ASTNode.createStr curText, line, col)
+    }
+
+    if parts.ln == 0 {
+        -> ASTNode.createStr "", line, col
+    }
+    if parts.ln == 1 {
+        -> parts[0]
+    }
+
+    resNode: ASTNode = parts[0]
+    pIdx: num = 1
+    wh pIdx < parts.ln {
+        resNode = ASTNode.createBinary "+", resNode, parts[pIdx], line, col
+        pIdx++
+    }
+    -> resNode
+}
+
 /**
  * Parses a primary atom expression (literal, identifier, grouped, array, or object literal).
  *
@@ -187,10 +263,16 @@ ParsePrimary parser: Parser :: ASTNode {
         -> ASTNode.createBigInt biTok.val, biTok.line, biTok.col
     }
 
-    // String & Template Literals
-    if tok.kind == TokenType.TOK_STRING || tok.kind == TokenType.TOK_TEMPLATE_STRING {
+    // String Literals
+    if tok.kind == TokenType.TOK_STRING {
         strTok: Token = parser.advance
         -> ASTNode.createStr strTok.val, strTok.line, strTok.col
+    }
+
+    // Template Literals
+    if tok.kind == TokenType.TOK_TEMPLATE_STRING {
+        strTok: Token = parser.advance
+        -> ParseTemplateStringExpr parser, strTok.val, strTok.line, strTok.col
     }
 
     // Booleans & Nil / Und
@@ -211,8 +293,12 @@ ParsePrimary parser: Parser :: ASTNode {
         -> ASTNode.createUnd uTok.line, uTok.col
     }
 
-    // Identifiers & Variable References
-    if tok.kind == TokenType.TOK_IDENT {
+    // Identifiers & Variable References / Built-in Names
+    if tok.kind == TokenType.TOK_IDENT || tok.kind == TokenType.TOK_PRNT ||
+       tok.kind == TokenType.TOK_LOG || tok.kind == TokenType.TOK_WARN ||
+       tok.kind == TokenType.TOK_INFO || tok.kind == TokenType.TOK_PANIC ||
+       tok.kind == TokenType.TOK_SIZEOF || tok.kind == TokenType.TOK_SZ ||
+       tok.kind == TokenType.TOK_ERR || tok.kind == TokenType.TOK_OK {
         idTok: Token = parser.advance
         -> ASTNode.createIdent idTok.val, idTok.line, idTok.col
     }
@@ -256,6 +342,12 @@ ParsePrefixExpr parser: Parser :: ASTNode {
         -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
     }
 
+    if tok.kind == TokenType.TOK_INC || tok.kind == TokenType.TOK_DEC {
+        opTok: Token = parser.advance
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
+    }
+
     if tok.kind == TokenType.TOK_AMP || tok.kind == TokenType.TOK_AMP_LET {
         opTok: Token = parser.advance
         operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
@@ -269,6 +361,14 @@ ParsePrefixExpr parser: Parser :: ASTNode {
         awTok: Token = parser.advance
         target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
         -> ASTNode.createAwait target, awTok.line, awTok.col
+    }
+
+    if tok.kind == TokenType.TOK_TYP {
+        typTok: Token = parser.advance
+        target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        node = ASTNode.createBase NodeKind.TypExpr, typTok.line, typTok.col
+        node.children = [target]
+        -> node
     }
 
     -> ParsePrimary parser
@@ -302,6 +402,10 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
             }
         }
         parser.consume TokenType.TOK_RPAREN, "Expected ')' after call arguments"
+        if left.kind == NodeKind.PropExpr {
+            target = left.children[0]
+            -> ASTNode.createMethodCall target, left.name, args, left.line, left.col
+        }
         -> ASTNode.createCall left, args, left.line, left.col
     }
 

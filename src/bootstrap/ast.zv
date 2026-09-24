@@ -53,7 +53,8 @@ enum NodeKind {
     CastExpr,
     BorrowExpr,
     TernaryExpr,
-    AwaitExpr
+    AwaitExpr,
+    TypExpr
 }
 
 type Param = {
@@ -724,6 +725,7 @@ NodeKindToStr kind: NodeKind :: str => sw kind {
     NodeKind.BorrowExpr     => "BorrowExpr"
     NodeKind.TernaryExpr    => "TernaryExpr"
     NodeKind.AwaitExpr      => "AwaitExpr"
+    NodeKind.TypExpr        => "TypExpr"
     _                       => "UnknownNode"
 }
 
@@ -793,6 +795,7 @@ IsExprNode kind: NodeKind :: bool => sw kind {
     NodeKind.BorrowExpr     => true
     NodeKind.TernaryExpr    => true
     NodeKind.AwaitExpr      => true
+    NodeKind.TypExpr        => true
     _                       => false
 }
 

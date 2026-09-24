@@ -10,6 +10,18 @@ if s == Status.Active {
     prnt "enum eq Active ok"
 }
 
+if typ Status == "obj" {
+    prnt "typ Status ok"
+}
+
+if typ Status.Active == "i8" {
+    prnt "typ Status.Active ok"
+}
+
+if typ s == "i8" {
+    prnt "typ s ok"
+}
+
 let d0 = Status.Pending
 let d1 = Status.Active
 let d2 = Status.Archived

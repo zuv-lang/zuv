@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚙️ Self-Host Compiler Frontend & Codegen Improvements
+- **Compound Assignment**: Supported `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `|=`, `^=` with memory store lowering and string `+=` concatenation (`tests/compound_assign.test.zv`).
+- **Base Literals**: Added standalone parser/converter for binary (`0b`), octal (`0o`), and hex (`0x`) numbers before LLVM IR emission (`tests/bases.test.zv`).
+- **Type Inspection (`typ`)**: Fixed `emitTyp` to classify numeric expressions as `"num"`, preserving `"i8"` for enum variants and `"obj"` for enums (`tests/typ.test.zv`).
+- **Prefix `++` / `--`**: Added prefix increment/decrement parsing in `ParsePrefixExpr` alongside postfix evaluation (`tests/incr_decr.test.zv`).
+- **Logical Keywords**: Added `and`, `or`, and `not` keyword parsing and truthy boolean condition evaluation (`tests/logical_symbols.test.zv`).
+- **Bitwise & Cast Safety**: Added `i1` boolean cast rules (`zext`/`uitofp`), guarded against illegal `bitcast i1`, and coerced `if`/`wh` conditions to `i1` (`tests/bitwise.test.zv`).
+- **Strict Equality & Precedence**: Allowed cross-type `==`/`!=` with `strcmp` lowering, and unified Pratt expression parsing (`tests/strict_eq.test.zv`, `tests/ternary.test.zv`).
+
+
 ## [0.13.0] - 2026-09-17
 
 ### 🔄 Rewrite Zuv Bootstrap with Proper Structure

@@ -111,6 +111,7 @@ obj RuntimeCodegen {
         self.emitRuntimeDecl "declare ptr @malloc(i64)", "@malloc"
         self.emitRuntimeDecl "declare i64 @strlen(ptr)", "@strlen"
         self.emitRuntimeDecl "declare i32 @snprintf(ptr, i64, ptr, ...)", "@snprintf"
+        self.emitRuntimeDecl "declare double @llvm.pow.f64(double, double)", "@llvm.pow.f64"
 
         // Type definition for function descriptor
         self.codegen.header += "%struct.ZuvFuncDesc = type { ptr, ptr, ptr, i32 }\n\n"

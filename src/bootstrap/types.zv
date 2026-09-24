@@ -21,7 +21,6 @@ enum TypeKind {
     Ptr,
     Arr,
     Obj,
-    Enum,
     Func,
     Und,
     Nil
@@ -139,10 +138,10 @@ obj TypeInfo {
      */
     createEnum: name: str :: TypeInfo => {
         -> {
-            kind: TypeKind.Enum,
+            kind: TypeKind.Obj,
             name,
-            elemType: TypeKind.I32,
-            elemTypeName: "i32",
+            elemType: TypeKind.I8,
+            elemTypeName: "i8",
             fields: [],
             fieldTypes: [],
             isRef: false
@@ -226,7 +225,6 @@ TypeKindToStr kind: TypeKind :: str => sw kind {
     TypeKind.Ptr     => "ptr"
     TypeKind.Arr     => "arr"
     TypeKind.Obj     => "obj"
-    TypeKind.Enum    => "enum"
     TypeKind.Func    => "func"
     TypeKind.Und     => "und"
     TypeKind.Nil     => "nil"
@@ -363,7 +361,6 @@ StrToTypeKind typeName: str :: TypeKind {
         "void"   => TypeKind.Void
         "ptr"    => TypeKind.Ptr
         "arr"    => TypeKind.Arr
-        "enum"   => TypeKind.Enum
         "und"    => TypeKind.Und
         "nil"    => TypeKind.Nil
         _        => TypeKind.Obj

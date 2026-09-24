@@ -449,7 +449,7 @@ obj Lexer {
         }
 
         literal: str = self.src.slc startPos, self.pos
-        kind: TokenType = LookupKeyword literal
+        kind = LookupKeyword literal
         tokLen: num = self.pos - startPos
         tok = Token.create kind, literal, startLine, startCol, tokLen
         -> tok

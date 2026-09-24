@@ -22,7 +22,6 @@ llvmType typeKind: TypeKind :: str => sw typeKind {
     TypeKind.Void => "void"
     TypeKind.Bool => "i1"
     TypeKind.I8   => "i8"
-    TypeKind.Enum => "i8"
     TypeKind.I16  => "i16"
     TypeKind.I32  => "i32"
     TypeKind.I64  => "i64"
@@ -60,7 +59,6 @@ llvmStackType typeKind: TypeKind :: str => sw typeKind {
     TypeKind.Num  => "double"
     TypeKind.Bool => "i1"
     TypeKind.I8   => "i8"
-    TypeKind.Enum => "i8"
     TypeKind.I16  => "i16"
     TypeKind.I32  => "i32"
     TypeKind.I64  => "i64"
@@ -85,7 +83,6 @@ isIntegerType typeKind: TypeKind :: bool => sw typeKind {
     TypeKind.I32  => true
     TypeKind.I64  => true
     TypeKind.Bool => true
-    TypeKind.Enum => true
     _             => false
 }
 
@@ -130,7 +127,6 @@ selectDefaultValue typeKind: TypeKind :: str => sw typeKind {
     TypeKind.I16  => "0"
     TypeKind.I32  => "0"
     TypeKind.I64  => "0"
-    TypeKind.Enum => "0"
     TypeKind.Und  => "0"
     TypeKind.Nil  => "0"
     TypeKind.Str  => "null"
@@ -231,11 +227,20 @@ selectCastOp fromKind: TypeKind, toKind: TypeKind :: str {
     }
 
     sw fromKind {
+        TypeKind.Bool => {
+            -> sw toKind {
+                TypeKind.I8   => "zext"
+                TypeKind.I16  => "zext"
+                TypeKind.I32  => "zext"
+                TypeKind.I64  => "zext"
+                TypeKind.Num  => "uitofp"
+                _             => ""
+            }
+        }
         TypeKind.Num => {
             -> sw toKind {
                 TypeKind.Bool => "fcmp one"
                 TypeKind.I8   => "fptosi"
-                TypeKind.Enum => "fptosi"
                 TypeKind.I16  => "fptosi"
                 TypeKind.I32  => "fptosi"
                 TypeKind.I64  => "fptosi"
@@ -244,49 +249,41 @@ selectCastOp fromKind: TypeKind, toKind: TypeKind :: str {
         }
         TypeKind.I8 => {
             -> sw toKind {
-                TypeKind.Num => "sitofp"
-                TypeKind.I16 => "zext"
-                TypeKind.I32 => "zext"
-                TypeKind.I64 => "zext"
-                _            => ""
-            }
-        }
-        TypeKind.Enum => {
-            -> sw toKind {
-                TypeKind.Num => "sitofp"
-                TypeKind.I16 => "zext"
-                TypeKind.I32 => "zext"
-                TypeKind.I64 => "zext"
-                _            => ""
+                TypeKind.Bool => "trunc"
+                TypeKind.Num  => "sitofp"
+                TypeKind.I16  => "zext"
+                TypeKind.I32  => "zext"
+                TypeKind.I64  => "zext"
+                _             => ""
             }
         }
         TypeKind.I16 => {
             -> sw toKind {
+                TypeKind.Bool => "trunc"
                 TypeKind.Num  => "sitofp"
                 TypeKind.I32  => "sext"
                 TypeKind.I64  => "sext"
                 TypeKind.I8   => "trunc"
-                TypeKind.Enum => "trunc"
                 _             => ""
             }
         }
         TypeKind.I32 => {
             -> sw toKind {
+                TypeKind.Bool => "trunc"
                 TypeKind.Num  => "sitofp"
                 TypeKind.I64  => "sext"
                 TypeKind.I16  => "trunc"
                 TypeKind.I8   => "trunc"
-                TypeKind.Enum => "trunc"
                 _             => ""
             }
         }
         TypeKind.I64 => {
             -> sw toKind {
+                TypeKind.Bool => "trunc"
                 TypeKind.Num  => "sitofp"
                 TypeKind.I32  => "trunc"
                 TypeKind.I16  => "trunc"
                 TypeKind.I8   => "trunc"
-                TypeKind.Enum => "trunc"
                 TypeKind.Ptr  => "inttoptr"
                 TypeKind.Str  => "inttoptr"
                 TypeKind.Arr  => "inttoptr"

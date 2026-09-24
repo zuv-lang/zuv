@@ -534,7 +534,7 @@ main {
 
     // 15. LLVM Type Mapping & Zero Name-Guessing Instruction Selection (Phase 4 Task 4.3)
     prnt "15. LLVM Type Mapping & Zero Name-Guessing Instruction Selection:"
-    prnt `    Type mappings: void=${llvmType TypeKind.Void}, bool=${llvmType TypeKind.Bool}, i8=${llvmType TypeKind.I8}, enum=${llvmType TypeKind.Enum}, i32=${llvmType TypeKind.I32}, i64=${llvmType TypeKind.I64}`
+    prnt `    Type mappings: void=${llvmType TypeKind.Void}, bool=${llvmType TypeKind.Bool}, i8=${llvmType TypeKind.I8}, i32=${llvmType TypeKind.I32}, i64=${llvmType TypeKind.I64}`
     prnt `    Pointer mappings: str=${llvmType TypeKind.Str}, ptr=${llvmType TypeKind.Ptr}, arr=${llvmType TypeKind.Arr}, obj=${llvmType TypeKind.Obj}`
 
     // Arithmetic selection (zero name-guessing)
@@ -652,7 +652,7 @@ main {
 
     // 17.2 Multi-field layout with enums and strings
     userFields: str[] = ["name", "age", "role"]
-    userTypes: TypeKind[] = [TypeKind.Str, TypeKind.Num, TypeKind.Enum]
+    userTypes: TypeKind[] = [TypeKind.Str, TypeKind.Num, TypeKind.I8]
     userLayout: StructLayout = regLayouts.registerLayout "User", userFields, userTypes
     nameOff: num = userLayout.getOffset "name"
     ageOff: num = userLayout.getOffset "age"
@@ -678,7 +678,7 @@ main {
     // 17.6 Integer & enum widening (zext i8 to i64)
     uFieldNames: str[] = ["name", "age", "role"]
     uValRegs: str[] = ["%r_name", "%r_age", "%r_role"]
-    uValTypes: TypeKind[] = [TypeKind.Str, TypeKind.Num, TypeKind.Enum]
+    uValTypes: TypeKind[] = [TypeKind.Str, TypeKind.Num, TypeKind.I8]
     uPtr: str = objGen.emitObjectLit "User", uFieldNames, uValRegs, uValTypes
     prnt `    User literal with enum widening: userPtr=${uPtr}`
 

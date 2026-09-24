@@ -196,12 +196,6 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             -> TypeKind.I64
         }
         if expr.op == "==" || expr.op == "!=" {
-            if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
-                isCompat = (AreTypesCompatible leftKind, rightKind) || (AreTypesCompatible rightKind, leftKind)
-                if !isCompat {
-                    checker.addError("E0305", "Cannot compare incompatible types " + (TypeKindToStr leftKind) + " and " + (TypeKindToStr rightKind), expr.line, expr.col, expr.op.ln, "ensure compared types match")
-                }
-            }
             expr.inferredType = TypeKind.Bool
             -> TypeKind.Bool
         }
@@ -224,9 +218,13 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             expr.inferredType = leftKind
             -> leftKind
         }
-        if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" {
+        if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" ||
+           expr.op == "%=" || expr.op == "**=" || expr.op == "&=" || expr.op == "|=" || expr.op == "^=" {
             if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
                 isCompat = AreTypesCompatible leftKind, rightKind
+                if expr.op == "+=" && leftKind == TypeKind.Str {
+                    isCompat = true
+                }
                 if !isCompat {
                     checker.addError("E0306", "Cannot assign value of type " + (TypeKindToStr rightKind) + " to target of type " + (TypeKindToStr leftKind), expr.line, expr.col, expr.op.ln, "ensure assigned value matches variable type")
                 }
@@ -251,7 +249,8 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         }
         typeName = targetNode.typeAnnotation
         if typeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
-            foundSym = checker.resolveSymbol(targetNode.name)
+            targetIdent = targetNode.name.ln > 0 ? targetNode.name : targetNode.val
+            foundSym = checker.resolveSymbol(targetIdent)
             typeName = foundSym.typeName
         }
         if typeName.ln > 0 {
@@ -422,6 +421,13 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         }
         expr.inferredType = TypeKind.Unknown
         -> TypeKind.Unknown
+    }
+    if k == NodeKind.TypExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        expr.inferredType = TypeKind.Str
+        -> TypeKind.Str
     }
     expr.inferredType = TypeKind.Unknown
     -> TypeKind.Unknown
@@ -683,8 +689,15 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
     }
     if k == NodeKind.EnumDecl {
         eInfo = TypeInfo.createEnum(decl.name)
+        fr fld of decl.fields {
+            eInfo.addField fld.name, TypeKind.I8
+            if !(checker.hasSymbol(fld.name)) {
+                vSym = Symbol.create(fld.name, TypeKind.I8, "i8", false, true, 0, fld.line, fld.col)
+                checker.defineSymbol(vSym)
+            }
+        }
         checker.registerType(eInfo)
-        eSym = Symbol.create(decl.name, TypeKind.Enum, decl.name, false, true, 0, decl.line, decl.col)
+        eSym = Symbol.create(decl.name, TypeKind.Obj, decl.name, false, true, 0, decl.line, decl.col)
         checker.defineSymbol(eSym)
         ->
     }
@@ -735,8 +748,15 @@ InferProgram checker: Checker, program: ASTNode :: void {
                 checker.registerType(tInfo)
             } els if k == NodeKind.EnumDecl {
                 eInfo = TypeInfo.createEnum(child.name)
+                fr fld of child.fields {
+                    eInfo.addField fld.name, TypeKind.I8
+                    if !(checker.hasSymbol(fld.name)) {
+                        vSym = Symbol.create(fld.name, TypeKind.I8, "i8", false, true, 0, fld.line, fld.col)
+                        checker.defineSymbol(vSym)
+                    }
+                }
                 checker.registerType(eInfo)
-                eSym = Symbol.create(child.name, TypeKind.Enum, child.name, false, true, 0, child.line, child.col)
+                eSym = Symbol.create(child.name, TypeKind.Obj, child.name, false, true, 0, child.line, child.col)
                 checker.defineSymbol(eSym)
             } els if k == NodeKind.ImportDecl {
                 fr symEntry of child.fields {

@@ -83,7 +83,6 @@ resolveFieldTypeKind typeName: str :: TypeKind {
         "void"   => TypeKind.Void
         "ptr"    => TypeKind.Ptr
         "arr"    => TypeKind.Arr
-        "enum"   => TypeKind.Enum
         "und"    => TypeKind.Und
         "nil"    => TypeKind.Nil
         _        => TypeKind.Obj
@@ -185,6 +184,8 @@ obj StructLayout {
 obj StructLayoutRegistry {
     layouts: StructLayout[],
     dynamicFields: str[],
+    dynamicFieldTypes: TypeKind[],
+    enumNames: str[],
 
     /**
      * Initializes an empty StructLayoutRegistry coordinator instance.
@@ -194,9 +195,13 @@ obj StructLayoutRegistry {
     create: :: StructLayoutRegistry => {
         emptyLayouts: StructLayout[] = []
         emptyDynFields: str[] = []
+        emptyDynTypes: TypeKind[] = []
+        emptyEnumNames: str[] = []
         -> StructLayoutRegistry {
             layouts: emptyLayouts,
-            dynamicFields: emptyDynFields
+            dynamicFields: emptyDynFields,
+            dynamicFieldTypes: emptyDynTypes,
+            enumNames: emptyEnumNames
         }
     },
 
@@ -232,7 +237,7 @@ obj StructLayoutRegistry {
         builtFields: StructField[] = []
         curIdx: num = 0
         fr fEntry of node.fields {
-            fType: TypeKind = resolveFieldTypeKind fEntry.valStr
+            fType = resolveFieldTypeKind fEntry.valStr
             fDesc: StructField = createStructField fEntry.name, curIdx, fType, fEntry.valStr
             builtFields.psh fDesc
             curIdx++
@@ -283,7 +288,37 @@ obj StructLayoutRegistry {
             fIdx++
         }
         self.dynamicFields.psh fieldName
+        self.dynamicFieldTypes.psh TypeKind.Unknown
         -> fIdx
+    },
+
+    setDynamicFieldType: fieldName: str, fieldType: TypeKind :: void => {
+        fIdx: num = 0
+        fr df of self.dynamicFields {
+            if df == fieldName {
+                if fIdx < self.dynamicFieldTypes.ln {
+                    self.dynamicFieldTypes[fIdx] = fieldType
+                }
+                ->
+            }
+            fIdx++
+        }
+        self.dynamicFields.psh fieldName
+        self.dynamicFieldTypes.psh fieldType
+    },
+
+    getDynamicFieldType: fieldName: str :: TypeKind => {
+        fIdx: num = 0
+        fr df of self.dynamicFields {
+            if df == fieldName {
+                if fIdx < self.dynamicFieldTypes.ln {
+                    -> self.dynamicFieldTypes[fIdx]
+                }
+                -> TypeKind.Unknown
+            }
+            fIdx++
+        }
+        -> TypeKind.Unknown
     },
 
     /**
@@ -294,8 +329,78 @@ obj StructLayoutRegistry {
      * @returns {TypeKind} Field TypeKind or TypeKind.Unknown
      */
     getFieldType: typeName: str, fieldName: str :: TypeKind => {
-        layout: StructLayout = self.getLayout typeName
-        -> layout.getFieldType fieldName
+        if typeName.ln > 0 {
+            layout: StructLayout = self.getLayout typeName
+            fType = layout.getFieldType fieldName
+            if fType != TypeKind.Unknown {
+                -> fType
+            }
+        }
+        -> self.getDynamicFieldType fieldName
+    },
+
+    /**
+     * Registers an enum definition as a constant namespace layout.
+     *
+     * @param {ASTNode} node - Enum declaration AST node
+     * @returns {StructLayout} Constructed and registered StructLayout
+     */
+    registerEnumFromAST: node: ASTNode :: StructLayout => {
+        builtFields: StructField[] = []
+        curIdx: num = 0
+        fr fEntry of node.fields {
+            fDesc: StructField = createStructField fEntry.name, curIdx, TypeKind.I8, "i8"
+            builtFields.psh fDesc
+            curIdx++
+        }
+        layout: StructLayout = StructLayout.create node.name, builtFields
+        self.layouts.psh layout
+        self.enumNames.psh node.name
+        -> layout
+    },
+
+    /**
+     * Checks whether a type name represents a registered enum namespace.
+     *
+     * @param {str} name - Identifier to check
+     * @returns {bool} True if name is an enum
+     */
+    isEnum: name: str :: bool => {
+        fr en of self.enumNames {
+            if en == name {
+                -> true
+            }
+        }
+        -> false
+    },
+
+    /**
+     * Retrieves the integer discriminant value for a named enum variant.
+     *
+     * @param {str} enumName - Enum namespace name
+     * @param {str} variantName - Variant identifier
+     * @returns {num} Discriminant value or -1 if not found
+     */
+    getEnumVariantVal: enumName: str, variantName: str :: num => {
+        layout: StructLayout = self.getLayout enumName
+        -> layout.getOffset variantName
+    },
+
+    /**
+     * Searches all registered enums for a variant identifier.
+     *
+     * @param {str} variantName - Bare variant identifier
+     * @returns {num} Discriminant value or -1 if not found
+     */
+    findVariantVal: variantName: str :: num => {
+        fr en of self.enumNames {
+            layout: StructLayout = self.getLayout en
+            off: num = layout.getOffset variantName
+            if off >= 0 {
+                -> off
+            }
+        }
+        -> -1
     }
 }
 
@@ -352,7 +457,8 @@ obj ObjectCodegen {
         fieldIdx: num = 0
         fr fName of fieldNames {
             valReg: str = valRegs[fieldIdx]
-            valType: TypeKind = valTypes[fieldIdx]
+            valType = valTypes[fieldIdx]
+            self.registry.setDynamicFieldType fName, valType
             boxedVal: str = boxValueToI64 self.codegen, valReg, valType
 
             offset: num = fieldIdx

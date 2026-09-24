@@ -21,6 +21,8 @@ imp ASTNode, NodeKind, Param, FieldEntry, MatchArm frm ../ast
 imp TypeInfo, TypeKind frm ../types
 imp Diagnostic frm ../diagnostics
 imp Parser frm parser
+imp Lexer frm ../lexer
+imp ParseExpression frm expr
 
 /**
  * Parses a simple or binary expression for statements, conditions, and initializers.
@@ -31,157 +33,7 @@ imp Parser frm parser
  * @returns {ASTNode} Parsed expression AST node
  */
 ParseExpr parser: Parser :: ASTNode {
-    tok: Token = parser.cur
-
-    // Unary prefix operators: !, -, ~, not
-    if tok.kind == TokenType.TOK_NOT || tok.kind == TokenType.TOK_MINUS || tok.kind == TokenType.TOK_TILDE {
-        opTok: Token = parser.advance
-        operand: ASTNode = ParseExpr parser
-        -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
-    }
-
-    left = ASTNode.createNil tok.line, tok.col
-
-    // Primary Expressions
-    if tok.kind == TokenType.TOK_NUMBER {
-        numTok: Token = parser.advance
-        left = ASTNode.createNum 0, numTok.line, numTok.col
-        left.val = numTok.val
-    } els if tok.kind == TokenType.TOK_STRING || tok.kind == TokenType.TOK_TEMPLATE_STRING {
-        strTok: Token = parser.advance
-        left = ASTNode.createStr strTok.val, strTok.line, strTok.col
-    } els if tok.kind == TokenType.TOK_TRUE {
-        bTok: Token = parser.advance
-        left = ASTNode.createBool true, bTok.line, bTok.col
-    } els if tok.kind == TokenType.TOK_FALSE {
-        bTok: Token = parser.advance
-        left = ASTNode.createBool false, bTok.line, bTok.col
-    } els if tok.kind == TokenType.TOK_NIL {
-        nTok: Token = parser.advance
-        left = ASTNode.createNil nTok.line, nTok.col
-    } els if tok.kind == TokenType.TOK_UND {
-        uTok: Token = parser.advance
-        left = ASTNode.createUnd uTok.line, uTok.col
-    } els if tok.kind == TokenType.TOK_BIGINT {
-        biTok: Token = parser.advance
-        left = ASTNode.createBigInt biTok.val, biTok.line, biTok.col
-    } els if tok.kind == TokenType.TOK_IDENT {
-        idTok: Token = parser.advance
-        left = ASTNode.createIdent idTok.val, idTok.line, idTok.col
-    } els if tok.kind == TokenType.TOK_LBRACKET {
-        // Array literal: [elem1, elem2]
-        lbTok: Token = parser.advance
-        elems: ASTNode[] = []
-        wh !(parser.check TokenType.TOK_RBRACKET) && !(parser.isAtEnd) {
-            el: ASTNode = ParseExpr parser
-            elems.psh el
-            if parser.matchToken TokenType.TOK_COMMA {
-                // consume delimiter
-            } els {
-                brk
-            }
-        }
-        parser.consume TokenType.TOK_RBRACKET, "Expected ']' to close array literal"
-        arrNode = ASTNode.createBase NodeKind.ArrExpr, lbTok.line, lbTok.col
-        arrNode.children = elems
-        left = arrNode
-    } els if tok.kind == TokenType.TOK_LBRACE {
-        // Object literal: { key1: val1, key2, ... }
-        lbTok: Token = parser.advance
-        objNode = ASTNode.createBase NodeKind.ObjLitExpr, lbTok.line, lbTok.col
-        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
-            if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
-                cont
-            }
-            if !(parser.check TokenType.TOK_IDENT) && !(parser.check TokenType.TOK_STRING) {
-                parser.advance
-                cont
-            }
-            fTok: Token = parser.advance
-            valNode = ASTNode.createIdent fTok.val, fTok.line, fTok.col
-            if parser.matchToken TokenType.TOK_COLON {
-                valNode = ParseExpr parser
-            }
-            entry: FieldEntry = {
-                name: fTok.val,
-                valStr: fTok.val,
-                isSpread: false,
-                line: fTok.line,
-                col: fTok.col
-            }
-            objNode.fields.psh entry
-            objNode.children.psh valNode
-            if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
-                // optional delimiter
-            }
-        }
-        parser.consume TokenType.TOK_RBRACE, "Expected '}' after object literal"
-        left = objNode
-    } els if tok.kind == TokenType.TOK_LPAREN {
-        // Parenthesized expression: (expr)
-        parser.advance
-        left = ParseExpr parser
-        parser.consume TokenType.TOK_RPAREN, "Expected ')' after expression"
-    } els {
-        fallbackTok: Token = parser.advance
-        left = ASTNode.createIdent fallbackTok.val, fallbackTok.line, fallbackTok.col
-    }
-
-    // Postfix Operations: member access (.prop), index ([idx]), call (args)
-    wh !(parser.isAtEnd) {
-        if parser.matchToken TokenType.TOK_DOT {
-            propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
-            propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
-            propNode.name = propTok.val
-            propNode.children = [left]
-            left = propNode
-        } els if parser.matchToken TokenType.TOK_LBRACKET {
-            idxExpr: ASTNode = ParseExpr parser
-            parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
-            left = ASTNode.createIndex left, idxExpr, left.line, left.col
-        } els if parser.matchToken TokenType.TOK_LPAREN {
-            // Function or method call with parentheses: left(arg1, arg2)
-            args: ASTNode[] = []
-            wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
-                argNode: ASTNode = ParseExpr parser
-                args.psh argNode
-                if parser.matchToken TokenType.TOK_COMMA {
-                    // continue
-                } els {
-                    brk
-                }
-            }
-            parser.consume TokenType.TOK_RPAREN, "Expected ')' after call arguments"
-            if left.kind == NodeKind.PropExpr {
-                target = left.children[0]
-                left = ASTNode.createMethodCall target, left.name, args, left.line, left.col
-            } els {
-                left = ASTNode.createCall left, args, left.line, left.col
-            }
-        } els if parser.matchToken TokenType.TOK_INC {
-            left = ASTNode.createUnary "++", left, false, left.line, left.col
-        } els if parser.matchToken TokenType.TOK_DEC {
-            left = ASTNode.createUnary "--", left, false, left.line, left.col
-        } els {
-            brk
-        }
-    }
-
-    // Binary Operators: +, -, *, /, %, ==, !=, <, >, <=, >=, &&, ||, =
-    nextTok: Token = parser.cur
-    if nextTok.kind == TokenType.TOK_PLUS || nextTok.kind == TokenType.TOK_MINUS ||
-       nextTok.kind == TokenType.TOK_ASTERISK || nextTok.kind == TokenType.TOK_SLASH || nextTok.kind == TokenType.TOK_PERCENT ||
-       nextTok.kind == TokenType.TOK_EQ || nextTok.kind == TokenType.TOK_NOT_EQ ||
-       nextTok.kind == TokenType.TOK_LT || nextTok.kind == TokenType.TOK_GT ||
-       nextTok.kind == TokenType.TOK_LTE || nextTok.kind == TokenType.TOK_GTE ||
-       nextTok.kind == TokenType.TOK_AND || nextTok.kind == TokenType.TOK_OR ||
-       nextTok.kind == TokenType.TOK_ASSIGN || nextTok.kind == TokenType.TOK_PLUS_EQ || nextTok.kind == TokenType.TOK_MINUS_EQ {
-        opTok: Token = parser.advance
-        right: ASTNode = ParseExpr parser
-        left = ASTNode.createBinary opTok.val, left, right, opTok.line, opTok.col
-    }
-
-    -> left
+    -> ParseExpression parser, 1
 }
 
 /**
@@ -498,10 +350,29 @@ ParseMatchStmt parser: Parser :: ASTNode {
             armBody = ASTNode.createBlock [exprArm], patExpr.line, patExpr.col
         }
 
+        patText: str = ""
+        patKind: str = ""
+        if patExpr.kind == NodeKind.PropExpr && patExpr.children.ln > 0 {
+            patText = patExpr.children[0].name + "." + patExpr.name
+            patKind = patExpr.children[0].name
+        } els if patExpr.name == "_" {
+            patText = "_"
+            patKind = "_"
+        } els if patExpr.kind == NodeKind.IdentExpr {
+            patText = patExpr.name
+            patKind = "ident"
+        } els if patExpr.val.ln > 0 {
+            patText = patExpr.val
+            patKind = patExpr.val
+        } els {
+            patText = patExpr.name
+            patKind = patExpr.name
+        }
+
         arm: MatchArm = {
-            patternKind: patExpr.val,
+            patternKind: patKind,
             varName: patExpr.name,
-            litText: patExpr.val,
+            litText: patText,
             line: patExpr.line,
             col: patExpr.col
         }
