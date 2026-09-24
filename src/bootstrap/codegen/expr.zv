@@ -44,6 +44,7 @@ type ScopeSymbol = {
     name: str;
     reg: str;
     typeKind: TypeKind;
+    typeName: str;
     isPtr: bool;
     isAlloca: bool;
 };
@@ -58,6 +59,7 @@ obj ExprCodegen {
     objGen: ObjectCodegen,
     arrGen: ArrayCodegen,
     funcSigs: FuncSignature[],
+    activeCatchLabel: str,
 
     /**
      * Initializes a new ExprCodegen coordinator.
@@ -77,7 +79,8 @@ obj ExprCodegen {
             globalSymbols: emptyGlobals,
             objGen,
             arrGen,
-            funcSigs: emptySigs
+            funcSigs: emptySigs,
+            activeCatchLabel: ""
         }
     },
 
@@ -96,6 +99,19 @@ obj ExprCodegen {
             name,
             reg,
             typeKind,
+            typeName: "",
+            isPtr,
+            isAlloca
+        }
+        self.symbols.psh newSym
+    },
+
+    addSymbolWithType: name: str, reg: str, typeKind: TypeKind, typeName: str, isPtr: bool, isAlloca: bool :: void => {
+        newSym: ScopeSymbol = {
+            name,
+            reg,
+            typeKind,
+            typeName,
             isPtr,
             isAlloca
         }
@@ -115,6 +131,19 @@ obj ExprCodegen {
             name,
             reg,
             typeKind,
+            typeName: "",
+            isPtr: false,
+            isAlloca: true
+        }
+        self.globalSymbols.psh newSym
+    },
+
+    addGlobalSymbolWithType: name: str, reg: str, typeKind: TypeKind, typeName: str :: void => {
+        newSym: ScopeSymbol = {
+            name,
+            reg,
+            typeKind,
+            typeName,
             isPtr: false,
             isAlloca: true
         }
@@ -132,6 +161,7 @@ obj ExprCodegen {
             name: "",
             reg: "",
             typeKind: TypeKind.Unknown,
+            typeName: "",
             isPtr: false,
             isAlloca: false
         }
@@ -148,16 +178,19 @@ obj ExprCodegen {
      *
      * @param {str} name - Global variable identifier
      * @param {TypeKind} typeKind - Updated semantic type
+     * @param {str} typeName - Updated struct/type name annotation
      * @returns {void}
      */
-    setGlobalSymbolType: name: str, typeKind: TypeKind :: void => {
+    setGlobalSymbolType: name: str, typeKind: TypeKind, typeName: str :: void => {
         idx: num = 0
         fr gItem of self.globalSymbols {
             if gItem.name == name {
+                effTypeName: str = typeName.ln > 0 ? typeName : gItem.typeName
                 updated: ScopeSymbol = {
                     name: gItem.name,
                     reg: gItem.reg,
                     typeKind,
+                    typeName: effTypeName,
                     isPtr: gItem.isPtr,
                     isAlloca: gItem.isAlloca
                 }
@@ -178,6 +211,7 @@ obj ExprCodegen {
             name: "",
             reg: "",
             typeKind: TypeKind.Unknown,
+            typeName: "",
             isPtr: false,
             isAlloca: false
         }
@@ -268,6 +302,8 @@ obj ExprCodegen {
         NodeKind.CastExpr       => self.emitCast node
         NodeKind.TernaryExpr    => self.emitTernary node
         NodeKind.TypExpr        => self.emitTyp node
+        NodeKind.AwaitExpr      => self.emitAwait node
+        NodeKind.NewExpr        => self.emitNew node
         _                       => self.emitDefault node
     },
 
@@ -361,9 +397,10 @@ obj ExprCodegen {
      */
     emitBigInt: node: ASTNode :: ExprResult => {
         valStr: str = node.val.ln > 0 ? node.val : "0"
-        resReg: str = self.codegen.newReg
-        self.codegen.emit `${resReg} = add i64 0, ${valStr}`
-        res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+        strConst: str = self.codegen.addStringConstant valStr
+        ptrReg: str = self.codegen.newReg
+        self.codegen.emit `${ptrReg} = getelementptr inbounds i8, ptr ${strConst}, i64 0`
+        res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
         -> res
     },
 
@@ -386,6 +423,15 @@ obj ExprCodegen {
             res: ExprResult = { reg: foundSym.reg, typeKind: foundSym.typeKind }
             -> res
         }
+        if node.name == "args" {
+            self.codegen.emitExtern "@zuv_global_args = global i64 0"
+            valReg: str = self.codegen.newReg
+            self.codegen.emit `${valReg} = load i64, ptr @zuv_global_args`
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = inttoptr i64 ${valReg} to ptr`
+            res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Arr }
+            -> res
+        }
         // Check if bare enum variant name (e.g. Pending, Active, Archived)
         vVal: num = self.objGen.registry.findVariantVal node.name
         if vVal < 0 && node.val.ln > 0 {
@@ -397,28 +443,35 @@ obj ExprCodegen {
             vRes: ExprResult = { reg: resReg, typeKind: TypeKind.I8 }
             -> vRes
         }
-        // Check if zero-argument function call (e.g. incrementCounter, resetCounter)
+        // Check if zero-argument function call or function pointer value
         fnSig: FuncSignature = self.findFunc node.name
         if fnSig.name.ln > 0 {
-            if fnSig.retType == "void" {
-                self.codegen.emit `call void @${node.name}()`
-                vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
-                -> vRes
+            if fnSig.paramTypes.ln == 0 {
+                if fnSig.retType == "void" {
+                    self.codegen.emit `call void @${node.name}()`
+                    vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
+                    -> vRes
+                }
+                callReg: str = self.codegen.newReg
+                self.codegen.emit `${callReg} = call ${fnSig.retType} @${node.name}()`
+                callKind = TypeKind.I64
+                if fnSig.retType == "ptr" {
+                    callKind = TypeKind.Ptr
+                } els if fnSig.retType == "i32" {
+                    callKind = TypeKind.I32
+                } els if fnSig.retType == "double" {
+                    callKind = TypeKind.Num
+                } els if fnSig.retType == "i1" {
+                    callKind = TypeKind.Bool
+                }
+                cRes: ExprResult = { reg: callReg, typeKind: callKind }
+                -> cRes
+            } els {
+                ptrReg: str = self.codegen.newReg
+                self.codegen.emit `${ptrReg} = ptrtoint ptr @${node.name} to i64`
+                fpRes: ExprResult = { reg: ptrReg, typeKind: TypeKind.I64 }
+                -> fpRes
             }
-            callReg: str = self.codegen.newReg
-            self.codegen.emit `${callReg} = call ${fnSig.retType} @${node.name}()`
-            callKind = TypeKind.I64
-            if fnSig.retType == "ptr" {
-                callKind = TypeKind.Ptr
-            } els if fnSig.retType == "i32" {
-                callKind = TypeKind.I32
-            } els if fnSig.retType == "double" {
-                callKind = TypeKind.Num
-            } els if fnSig.retType == "i1" {
-                callKind = TypeKind.Bool
-            }
-            cRes: ExprResult = { reg: callReg, typeKind: callKind }
-            -> cRes
         }
         fallbackReg: str = `%${node.name}`
         fRes: ExprResult = { reg: fallbackReg, typeKind: node.inferredType }
@@ -556,16 +609,72 @@ obj ExprCodegen {
                 idxNode: ASTNode = targetNode.children[1]
                 arrRes: ExprResult = self.emitExpr arrNode
                 idxRes: ExprResult = self.emitExpr idxNode
-                self.arrGen.emitSetElement arrRes.reg, idxRes.reg, rightRes.reg, rightRes.typeKind, node.line
+                idxReg: str = idxRes.reg
+                if idxRes.typeKind == TypeKind.Num {
+                    convIdx: str = self.codegen.newReg
+                    self.codegen.emit `${convIdx} = fptosi double ${idxRes.reg} to i64`
+                    idxReg = convIdx
+                } els if idxRes.typeKind == TypeKind.I32 {
+                    convIdx: str = self.codegen.newReg
+                    self.codegen.emit `${convIdx} = sext i32 ${idxRes.reg} to i64`
+                    idxReg = convIdx
+                }
+                arrPtrReg: str = arrRes.reg
+                if isFloatType arrRes.typeKind {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = fptosi double ${arrRes.reg} to i64`
+                    arrPtrReg = convReg
+                }
+                if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${arrPtrReg} to ptr`
+                    arrPtrReg = convReg
+                }
+                self.arrGen.emitSetElement arrPtrReg, idxReg, rightRes.reg, rightRes.typeKind, node.line
             } els if targetNode.kind == NodeKind.PropExpr {
                 objNode: ASTNode = targetNode.children[0]
                 propName: str = targetNode.name
                 objRes: ExprResult = self.emitExpr objNode
-                off: num = self.objGen.registry.getFieldOffset "", propName
+                objPtrReg: str = objRes.reg
+                if objRes.typeKind != TypeKind.Obj && objRes.typeKind != TypeKind.Ptr {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${objRes.reg} to ptr`
+                    objPtrReg = convReg
+                }
+                objTypeName: str = objNode.typeAnnotation
+                if objTypeName.ln == 0 && objNode.kind == NodeKind.IdentExpr {
+                    targetSym = self.findSymbol objNode.name
+                    if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                        objTypeName = targetSym.typeName
+                    }
+                }
+                if objTypeName.ln == 0 {
+                    fr l of self.objGen.registry.layouts {
+                        if l.hasField propName {
+                            objTypeName = l.typeName
+                            brk
+                        }
+                    }
+                }
+                off: num = self.objGen.registry.getFieldOffset objTypeName, propName
                 if off < 0 {
                     off = 0
                 }
-                self.objGen.emitSetProperty objRes.reg, off, rightRes.reg, rightRes.typeKind
+                fldType: TypeKind = self.objGen.registry.getFieldType objTypeName, propName
+                setValReg: str = rightRes.reg
+                setValType: TypeKind = rightRes.typeKind
+                if fldType == TypeKind.Num && setValType != TypeKind.Num {
+                    convFlt: str = self.codegen.newReg
+                    self.codegen.emit `${convFlt} = sitofp i64 ${setValReg} to double`
+                    setValReg = convFlt
+                    setValType = TypeKind.Num
+                } els if fldType == TypeKind.I64 && setValType == TypeKind.Num {
+                    convInt: str = self.codegen.newReg
+                    self.codegen.emit `${convInt} = fptosi double ${setValReg} to i64`
+                    setValReg = convInt
+                    setValType = TypeKind.I64
+                }
+                self.objGen.emitSetProperty objPtrReg, off, setValReg, setValType
             }
             -> rightRes
         }
@@ -794,6 +903,26 @@ obj ExprCodegen {
                     bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
                     -> bRes
                 }
+                isI64L: bool = (leftRes.typeKind == TypeKind.I64 || leftRes.typeKind == TypeKind.I32)
+                isI64R: bool = (rightRes.typeKind == TypeKind.I64 || rightRes.typeKind == TypeKind.I32)
+                if (isI64L && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und)) ||
+                   (isI64R && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und)) {
+                    valReg: str = isI64L ? leftRes.reg : rightRes.reg
+                    cmpRes: str = self.codegen.newReg
+                    icmpOp: str = (op == "==") ? "eq" : "ne"
+                    self.codegen.emit `${cmpRes} = icmp ${icmpOp} i64 ${valReg}, 0`
+                    bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
+                    -> bRes
+                }
+                if (leftRes.typeKind == TypeKind.Num && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und)) ||
+                   (rightRes.typeKind == TypeKind.Num && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und)) {
+                    valReg: str = (leftRes.typeKind == TypeKind.Num) ? leftRes.reg : rightRes.reg
+                    cmpRes: str = self.codegen.newReg
+                    fcmpOp: str = (op == "==") ? "fcmp oeq" : "fcmp one"
+                    self.codegen.emit `${cmpRes} = ${fcmpOp} double ${valReg}, 0.0`
+                    bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
+                    -> bRes
+                }
                 condReg: str = self.codegen.newReg
                 condVal: str = (op == "==") ? "0" : "1"
                 self.codegen.emit `${condReg} = icmp eq i32 ${condVal}, 1`
@@ -946,6 +1075,144 @@ obj ExprCodegen {
             argIdx++
         }
 
+        if (calleeName == "sh" || calleeName == "sys" || calleeName == "exec") && argRegs.ln == 1 {
+            cmdReg: str = argRegs[0]
+            self.codegen.emitExtern "declare i32 @system(ptr)"
+            sysRes: str = self.codegen.newReg
+            self.codegen.emit `${sysRes} = call i32 @system(ptr ${cmdReg})`
+            intRes: str = self.codegen.newReg
+            self.codegen.emit `${intRes} = sext i32 ${sysRes} to i64`
+            res: ExprResult = { reg: intRes, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if calleeName == "BigInt" {
+            if argRegs.ln > 0 {
+                firstArgReg: str = argRegs[0]
+                firstArgType: TypeKind = argTypes[0]
+                if firstArgType == TypeKind.Str || firstArgType == TypeKind.Ptr {
+                    bRes: ExprResult = { reg: firstArgReg, typeKind: TypeKind.Str }
+                    -> bRes
+                }
+                intValReg: str = firstArgReg
+                if firstArgType == TypeKind.Num {
+                    convInt: str = self.codegen.newReg
+                    self.codegen.emit `${convInt} = fptosi double ${firstArgReg} to i64`
+                    intValReg = convInt
+                } els if firstArgType == TypeKind.I32 || firstArgType == TypeKind.I16 || firstArgType == TypeKind.I8 {
+                    exReg: str = self.codegen.newReg
+                    srcType: str = llvmType firstArgType
+                    self.codegen.emit `${exReg} = sext ${srcType} ${firstArgReg} to i64`
+                    intValReg = exReg
+                }
+                bufReg: str = self.codegen.newReg
+                self.codegen.emit `${bufReg} = call ptr @malloc(i64 32)`
+                fmtConst: str = self.codegen.addStringConstant "%lld"
+                self.codegen.emit `call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${bufReg}, i64 32, ptr ${fmtConst}, i64 ${intValReg})`
+                bRes: ExprResult = { reg: bufReg, typeKind: TypeKind.Str }
+                -> bRes
+            }
+            zeroConst: str = self.codegen.addStringConstant "0"
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = getelementptr inbounds i8, ptr ${zeroConst}, i64 0`
+            bRes: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+            -> bRes
+        }
+
+        if (calleeName == "Prm.all" || calleeName == "Promise.all") && argRegs.ln == 1 {
+            arrPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Arr && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                arrPtr = cReg
+            }
+            prmPtr: str = self.codegen.newReg
+            self.codegen.emit `${prmPtr} = call ptr @zuv_prm_all(ptr ${arrPtr})`
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${prmPtr} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+        if (calleeName == "Prm.race" || calleeName == "Promise.race") && argRegs.ln == 1 {
+            arrPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Arr && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                arrPtr = cReg
+            }
+            prmPtr: str = self.codegen.newReg
+            self.codegen.emit `${prmPtr} = call ptr @zuv_prm_race(ptr ${arrPtr})`
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${prmPtr} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+        if (calleeName == "Prm.allSettled" || calleeName == "Promise.allSettled") && argRegs.ln == 1 {
+            arrPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Arr && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                arrPtr = cReg
+            }
+            prmPtr: str = self.codegen.newReg
+            self.codegen.emit `${prmPtr} = call ptr @zuv_prm_all_settled(ptr ${arrPtr})`
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${prmPtr} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if (calleeName == "fs.wFAsync" || calleeName == "wFAsync") && argRegs.ln == 2 {
+            pPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                pPtr = cReg
+            }
+            dPtr: str = argRegs[1]
+            if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[1]} to ptr`
+                dPtr = cReg
+            }
+            prmPtr: str = self.codegen.newReg
+            self.codegen.emit `${prmPtr} = call ptr @zuv_fs_wf_async(ptr ${pPtr}, ptr ${dPtr})`
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${prmPtr} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if (calleeName == "fs.rFAsync" || calleeName == "rFAsync") && argRegs.ln == 1 {
+            pPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                pPtr = cReg
+            }
+            prmPtr: str = self.codegen.newReg
+            self.codegen.emit `${prmPtr} = call ptr @zuv_fs_rf_async(ptr ${pPtr})`
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${prmPtr} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if (calleeName == "fs.rm" || calleeName == "rm" || calleeName == "rmF" || calleeName == "fs.rmF") && argRegs.ln >= 1 {
+            pPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                pPtr = cReg
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call i32 @remove(ptr ${pPtr})`
+            sextReg: str = self.codegen.newReg
+            self.codegen.emit `${sextReg} = sext i32 ${resReg} to i64`
+            res: ExprResult = { reg: sextReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
         if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "inf" || calleeName == "err" {
             fmtStr: str = "%s\n"
             numFmtStr: str = "%lld\n"
@@ -997,24 +1264,23 @@ obj ExprCodegen {
                     self.codegen.emit `${sextReg} = sext i32 ${firstArgReg} to i64`
                     numFmt: str = self.codegen.addStringConstant numFmtStr
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${sextReg})`
-                } els if firstArgType == TypeKind.I64 {
-                    numFmt: str = self.codegen.addStringConstant numFmtStr
-                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
                 } els {
+                    unwrappedReg: str = self.codegen.newReg
+                    self.codegen.emit `${unwrappedReg} = call i64 @zuv_prm_await(i64 ${firstArgReg})`
                     isSmallReg: str = self.codegen.newReg
                     pNumLbl: str = self.codegen.newLabel "p_num"
                     pStrLbl: str = self.codegen.newLabel "p_str"
                     pEndLbl: str = self.codegen.newLabel "p_end"
-                    self.codegen.emit `${isSmallReg} = icmp ult i64 ${firstArgReg}, 65536`
+                    self.codegen.emit `${isSmallReg} = icmp ult i64 ${unwrappedReg}, 65536`
                     self.codegen.emit `br i1 ${isSmallReg}, label %${pNumLbl}, label %${pStrLbl}`
                     self.codegen.emitLabel pStrLbl
                     pPtrReg: str = self.codegen.newReg
-                    self.codegen.emit `${pPtrReg} = inttoptr i64 ${firstArgReg} to ptr`
+                    self.codegen.emit `${pPtrReg} = inttoptr i64 ${unwrappedReg} to ptr`
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${pPtrReg})`
                     self.codegen.emit `br label %${pEndLbl}`
                     self.codegen.emitLabel pNumLbl
                     numFmt: str = self.codegen.addStringConstant numFmtStr
-                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${unwrappedReg})`
                     self.codegen.emit `br label %${pEndLbl}`
                     self.codegen.emitLabel pEndLbl
                 }
@@ -1101,6 +1367,75 @@ obj ExprCodegen {
             -> res
         }
 
+        calleeSym: ScopeSymbol = self.findSymbol calleeName
+        if calleeSym.name.ln > 0 || calleeNode.kind != NodeKind.IdentExpr {
+            calleePtrReg: str = ""
+            if calleeNode.kind != NodeKind.IdentExpr {
+                cRes: ExprResult = self.emitExpr calleeNode
+                if cRes.typeKind != TypeKind.Ptr {
+                    ptrReg: str = self.codegen.newReg
+                    self.codegen.emit `${ptrReg} = inttoptr i64 ${cRes.reg} to ptr`
+                    calleePtrReg = ptrReg
+                } els {
+                    calleePtrReg = cRes.reg
+                }
+            } els if calleeSym.isAlloca {
+                loadFnReg: str = self.codegen.newReg
+                stType: str = llvmStackType calleeSym.typeKind
+                self.codegen.emit `${loadFnReg} = load ${stType}, ptr ${calleeSym.reg}`
+                if stType != "ptr" {
+                    ptrReg: str = self.codegen.newReg
+                    self.codegen.emit `${ptrReg} = inttoptr i64 ${loadFnReg} to ptr`
+                    calleePtrReg = ptrReg
+                } els {
+                    calleePtrReg = loadFnReg
+                }
+            } els {
+                if calleeSym.typeKind != TypeKind.Ptr {
+                    ptrReg: str = self.codegen.newReg
+                    self.codegen.emit `${ptrReg} = inttoptr i64 ${calleeSym.reg} to ptr`
+                    calleePtrReg = ptrReg
+                } els {
+                    calleePtrReg = calleeSym.reg
+                }
+            }
+            fnCallArgsStr: str = ""
+            firstFnArg: bool = true
+            fArgIdx: num = 0
+            fr aReg of argRegs {
+                aType = argTypes[fArgIdx]
+                boxedArg: str = aReg
+                if aType == TypeKind.Num {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = fptosi double ${aReg} to i64`
+                    boxedArg = cReg
+                } els if aType == TypeKind.Str || aType == TypeKind.Ptr || aType == TypeKind.Arr || aType == TypeKind.Obj {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = ptrtoint ptr ${aReg} to i64`
+                    boxedArg = cReg
+                } els if aType == TypeKind.Bool || aType == TypeKind.I8 {
+                    cReg: str = self.codegen.newReg
+                    srcLLVM: str = (aType == TypeKind.Bool) ? "i1" : "i8"
+                    self.codegen.emit `${cReg} = zext ${srcLLVM} ${aReg} to i64`
+                    boxedArg = cReg
+                } els if aType == TypeKind.I32 {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = sext i32 ${aReg} to i64`
+                    boxedArg = cReg
+                }
+                if !firstFnArg {
+                    fnCallArgsStr = fnCallArgsStr + ", "
+                }
+                fnCallArgsStr = fnCallArgsStr + "i64 " + boxedArg
+                firstFnArg = false
+                fArgIdx++
+            }
+            callReg: str = self.codegen.newReg
+            self.codegen.emit `${callReg} = call i64 ${calleePtrReg}(${fnCallArgsStr})`
+            res: ExprResult = { reg: callReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
         retType = node.inferredType
         if retType == TypeKind.Unknown {
             retType = TypeKind.I64
@@ -1127,28 +1462,58 @@ obj ExprCodegen {
         targetNode: ASTNode = node.children[0]
         methodName: str = node.name
 
+        if targetNode.kind == NodeKind.IdentExpr && (targetNode.name == "fs" || targetNode.name == "net" || targetNode.name == "os" || targetNode.name == "sys" || targetNode.name == "io") {
+            cName: str = targetNode.name + "." + methodName
+            cNode: ASTNode = ASTNode.createIdent cName, node.line, node.col
+            callChildren: ASTNode[] = [cNode]
+            fr child, cIdx of node.children {
+                if cIdx == 0 { cont }
+                callChildren.psh child
+            }
+            cCallNode: ASTNode = ASTNode.createCall cNode, [], node.line, node.col
+            cCallNode.children = callChildren
+            cCallNode.inferredType = node.inferredType
+            -> self.emitCall cCallNode
+        }
+
         if methodName == "psh" || methodName == "push" {
             arrRes: ExprResult = self.emitExpr targetNode
             valRes: ExprResult = self.emitExpr node.children[1]
             varSlot: str = ""
+            varIsI64: bool = false
             if targetNode.kind == NodeKind.IdentExpr {
                 foundSym = self.findSymbol targetNode.name
                 if foundSym.isAlloca {
                     varSlot = foundSym.reg
+                    if foundSym.typeKind != TypeKind.Arr && foundSym.typeKind != TypeKind.Ptr {
+                        varIsI64 = true
+                    }
                 }
             }
-            lenReg: str = self.arrGen.emitPush arrRes.reg, valRes.reg, valRes.typeKind, varSlot
+            arrPtrReg: str = arrRes.reg
+            if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${arrRes.reg} to ptr`
+                arrPtrReg = convReg
+            }
+            lenReg: str = self.arrGen.emitPush arrPtrReg, valRes.reg, valRes.typeKind, varSlot, varIsI64
             res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
             -> res
         }
 
         if methodName == "pp" || methodName == "pop" {
             arrRes: ExprResult = self.emitExpr targetNode
+            arrPtrReg: str = arrRes.reg
+            if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${arrRes.reg} to ptr`
+                arrPtrReg = convReg
+            }
             popType = node.inferredType
             if popType == TypeKind.Unknown {
                 popType = TypeKind.I64
             }
-            valReg: str = self.arrGen.emitPop arrRes.reg
+            valReg: str = self.arrGen.emitPop arrPtrReg
             res: ExprResult = { reg: valReg, typeKind: popType }
             -> res
         }
@@ -1327,17 +1692,18 @@ obj ExprCodegen {
         targetRes: ExprResult = self.emitExpr targetNode
         idxRes: ExprResult = self.emitExpr idxNode
 
+        idxReg: str = idxRes.reg
+        if idxRes.typeKind == TypeKind.Num {
+            cReg: str = self.codegen.newReg
+            self.codegen.emit `${cReg} = fptosi double ${idxRes.reg} to i64`
+            idxReg = cReg
+        } els if idxRes.typeKind == TypeKind.I32 {
+            cReg: str = self.codegen.newReg
+            self.codegen.emit `${cReg} = sext i32 ${idxRes.reg} to i64`
+            idxReg = cReg
+        }
+
         if targetRes.typeKind == TypeKind.Str {
-            idxReg: str = idxRes.reg
-            if idxRes.typeKind == TypeKind.Num {
-                cReg: str = self.codegen.newReg
-                self.codegen.emit `${cReg} = fptosi double ${idxRes.reg} to i64`
-                idxReg = cReg
-            } els if idxRes.typeKind == TypeKind.I32 {
-                cReg: str = self.codegen.newReg
-                self.codegen.emit `${cReg} = sext i32 ${idxRes.reg} to i64`
-                idxReg = cReg
-            }
             charPtrReg: str = self.codegen.newReg
             self.codegen.emit `${charPtrReg} = getelementptr inbounds i8, ptr ${targetRes.reg}, i64 ${idxReg}`
             charValReg: str = self.codegen.newReg
@@ -1352,7 +1718,19 @@ obj ExprCodegen {
             -> res
         }
 
-        elemVal: str = self.arrGen.emitGetElement targetRes.reg, idxRes.reg, false, node.line
+        arrPtrReg: str = targetRes.reg
+        if isFloatType targetRes.typeKind {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = fptosi double ${targetRes.reg} to i64`
+            arrPtrReg = convReg
+        }
+        if targetRes.typeKind != TypeKind.Arr && targetRes.typeKind != TypeKind.Ptr {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${arrPtrReg} to ptr`
+            arrPtrReg = convReg
+        }
+        isOpt: bool = (node.op == "?.")
+        elemVal: str = self.arrGen.emitGetElement arrPtrReg, idxReg, isOpt, node.line
         targetKind = node.inferredType
         if targetKind == TypeKind.Unknown {
             targetKind = TypeKind.I64
@@ -1371,6 +1749,17 @@ obj ExprCodegen {
     emitProp: node: ASTNode :: ExprResult => {
         targetNode: ASTNode = node.children[0]
         propName: str = node.name
+
+        // Check for os.args
+        if targetNode.kind == NodeKind.IdentExpr && targetNode.name == "os" && propName == "args" {
+            self.codegen.emitExtern "@zuv_global_args = global i64 0"
+            valReg: str = self.codegen.newReg
+            self.codegen.emit `${valReg} = load i64, ptr @zuv_global_args`
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = inttoptr i64 ${valReg} to ptr`
+            res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Arr }
+            -> res
+        }
 
         // Check for enum property access, e.g. Status.Active
         if targetNode.kind == NodeKind.IdentExpr {
@@ -1400,13 +1789,25 @@ obj ExprCodegen {
                 res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
                 -> res
             }
-            lenReg: str = self.arrGen.emitLength targetRes.reg
+            arrPtrReg: str = targetRes.reg
+            if targetRes.typeKind != TypeKind.Arr && targetRes.typeKind != TypeKind.Ptr {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
+                arrPtrReg = convReg
+            }
+            lenReg: str = self.arrGen.emitLength arrPtrReg
             res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
             -> res
         }
 
         if propName == "pp" || propName == "pop" {
-            valReg: str = self.arrGen.emitPop targetRes.reg
+            arrPtrReg: str = targetRes.reg
+            if targetRes.typeKind != TypeKind.Arr && targetRes.typeKind != TypeKind.Ptr {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
+                arrPtrReg = convReg
+            }
+            valReg: str = self.arrGen.emitPop arrPtrReg
             popType = node.inferredType
             if popType == TypeKind.Unknown {
                 popType = TypeKind.I64
@@ -1415,18 +1816,37 @@ obj ExprCodegen {
             -> res
         }
 
-        off: num = self.objGen.registry.getFieldOffset "", propName
+        structTypeName: str = targetNode.typeAnnotation
+        if structTypeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
+            targetSym = self.findSymbol targetNode.name
+            if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                structTypeName = targetSym.typeName
+            }
+        }
+        if structTypeName.ln == 0 {
+            fr l of self.objGen.registry.layouts {
+                if l.hasField propName {
+                    structTypeName = l.typeName
+                    brk
+                }
+            }
+        }
+
+        off: num = self.objGen.registry.getFieldOffset structTypeName, propName
         if off < 0 {
             off = 0
         }
         targetPropKind = node.inferredType
         if targetPropKind == TypeKind.Unknown {
-            targetPropKind = self.objGen.registry.getFieldType "", propName
+            targetPropKind = self.objGen.registry.getFieldType structTypeName, propName
         }
-        if targetPropKind == TypeKind.Unknown {
-            targetPropKind = TypeKind.I64
+        objPtrReg: str = targetRes.reg
+        if targetRes.typeKind != TypeKind.Obj && targetRes.typeKind != TypeKind.Ptr {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
+            objPtrReg = convReg
         }
-        valReg: str = self.objGen.emitGetProperty targetRes.reg, off, targetPropKind, false
+        valReg: str = self.objGen.emitGetProperty objPtrReg, off, targetPropKind, false
         res: ExprResult = { reg: valReg, typeKind: targetPropKind }
         -> res
     },
@@ -1449,10 +1869,16 @@ obj ExprCodegen {
             fr elem of node.children {
                 if elem.kind == NodeKind.UnaryExpr && elem.op == "..." {
                     spRes: ExprResult = self.emitExpr elem.children[0]
-                    spLen: str = self.arrGen.emitLength spRes.reg
+                    arrPtrReg: str = spRes.reg
+                    if spRes.typeKind != TypeKind.Arr && spRes.typeKind != TypeKind.Ptr {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = inttoptr i64 ${spRes.reg} to ptr`
+                        arrPtrReg = convReg
+                    }
+                    spLen: str = self.arrGen.emitLength arrPtrReg
                     spPart: ArraySpreadPart = {
                         isSpread: true,
-                        valReg: spRes.reg,
+                        valReg: arrPtrReg,
                         valType: spRes.typeKind,
                         lenReg: spLen
                     }
@@ -1505,7 +1931,11 @@ obj ExprCodegen {
             }
             childIdx++
         }
-        objPtr: str = self.objGen.emitObjectLit node.name, fieldNames, valRegs, valTypes
+        structName: str = node.name
+        if structName.ln == 0 {
+            structName = node.typeAnnotation
+        }
+        objPtr: str = self.objGen.emitObjectLit structName, fieldNames, valRegs, valTypes
         res: ExprResult = { reg: objPtr, typeKind: TypeKind.Obj }
         -> res
     },
@@ -1525,6 +1955,90 @@ obj ExprCodegen {
         }
         if toType == TypeKind.Unknown {
             toType = TypeKind.I64
+        }
+
+        if targetRes.typeKind == toType {
+            -> targetRes
+        }
+
+        if toType == TypeKind.Bool {
+            cmpReg: str = self.codegen.newReg
+            if targetRes.typeKind == TypeKind.Num {
+                self.codegen.emit `${cmpReg} = fcmp one double ${targetRes.reg}, 0.0`
+            } els if isPointerType targetRes.typeKind {
+                self.codegen.emit `${cmpReg} = icmp ne ptr ${targetRes.reg}, null`
+            } els {
+                cType: str = llvmType targetRes.typeKind
+                self.codegen.emit `${cmpReg} = icmp ne ${cType} ${targetRes.reg}, 0`
+            }
+            bRes: ExprResult = { reg: cmpReg, typeKind: TypeKind.Bool }
+            -> bRes
+        }
+
+        if toType == TypeKind.Str {
+            if targetRes.typeKind == TypeKind.Bool {
+                strTrue: str = self.codegen.addStringConstant "true"
+                strFalse: str = self.codegen.addStringConstant "false"
+                boolPtr: str = self.codegen.newReg
+                self.codegen.emit `${boolPtr} = select i1 ${targetRes.reg}, ptr ${strTrue}, ptr ${strFalse}`
+                sRes: ExprResult = { reg: boolPtr, typeKind: TypeKind.Str }
+                -> sRes
+            }
+            if targetRes.typeKind == TypeKind.Num {
+                buf: str = self.codegen.newReg
+                self.codegen.emit `${buf} = call ptr @malloc(i64 32)`
+                dblFmt: str = self.codegen.addStringConstant "%g"
+                self.codegen.emit `call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 32, ptr ${dblFmt}, double ${targetRes.reg})`
+                sRes: ExprResult = { reg: buf, typeKind: TypeKind.Str }
+                -> sRes
+            }
+            if targetRes.typeKind == TypeKind.I64 || targetRes.typeKind == TypeKind.I32 || targetRes.typeKind == TypeKind.I16 || targetRes.typeKind == TypeKind.I8 {
+                zReg: str = targetRes.reg
+                if targetRes.typeKind != TypeKind.I64 {
+                    exReg: str = self.codegen.newReg
+                    iTypeStr: str = llvmType targetRes.typeKind
+                    self.codegen.emit `${exReg} = sext ${iTypeStr} ${targetRes.reg} to i64`
+                    zReg = exReg
+                }
+                buf: str = self.codegen.newReg
+                self.codegen.emit `${buf} = call ptr @malloc(i64 32)`
+                numFmt: str = self.codegen.addStringConstant "%lld"
+                self.codegen.emit `call i32 (ptr, i64, ptr, ...) @snprintf(ptr ${buf}, i64 32, ptr ${numFmt}, i64 ${zReg})`
+                sRes: ExprResult = { reg: buf, typeKind: TypeKind.Str }
+                -> sRes
+            }
+        }
+
+        if targetRes.typeKind == TypeKind.Ptr && toType == TypeKind.Num {
+            iReg: str = self.codegen.newReg
+            self.codegen.emit `${iReg} = ptrtoint ptr ${targetRes.reg} to i64`
+            numReg: str = self.codegen.newReg
+            self.codegen.emit `${numReg} = sitofp i64 ${iReg} to double`
+            pRes: ExprResult = { reg: numReg, typeKind: TypeKind.Num }
+            -> pRes
+        }
+
+        if targetRes.typeKind == TypeKind.Num && toType == TypeKind.Ptr {
+            iReg: str = self.codegen.newReg
+            self.codegen.emit `${iReg} = fptosi double ${targetRes.reg} to i64`
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = inttoptr i64 ${iReg} to ptr`
+            pRes: ExprResult = { reg: ptrReg, typeKind: TypeKind.Ptr }
+            -> pRes
+        }
+
+        if (targetRes.typeKind == TypeKind.I64 || targetRes.typeKind == TypeKind.I32 || targetRes.typeKind == TypeKind.I16 || targetRes.typeKind == TypeKind.I8) && toType == TypeKind.Ptr {
+            zReg: str = targetRes.reg
+            if targetRes.typeKind != TypeKind.I64 {
+                exReg: str = self.codegen.newReg
+                iTypeStr: str = llvmType targetRes.typeKind
+                self.codegen.emit `${exReg} = sext ${iTypeStr} ${targetRes.reg} to i64`
+                zReg = exReg
+            }
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = inttoptr i64 ${zReg} to ptr`
+            pRes: ExprResult = { reg: ptrReg, typeKind: TypeKind.Ptr }
+            -> pRes
         }
 
         castOp: str = selectCastOp targetRes.typeKind, toType
@@ -1652,6 +2166,24 @@ obj ExprCodegen {
                 typName = "arr"
             } els if child.kind == NodeKind.ObjLitExpr {
                 typName = "obj"
+            } els if child.kind == NodeKind.CallExpr {
+                cNode = child.children[0]
+                cName: str = cNode.name.ln > 0 ? cNode.name : cNode.val
+                if cName == "BigInt" {
+                    typName = "bigint"
+                } els {
+                    typName = TypeKindToStr child.inferredType
+                }
+            } els if child.kind == NodeKind.CastExpr {
+                if child.typeAnnotation == "str" {
+                    typName = "str"
+                } els if child.typeAnnotation == "bool" {
+                    typName = "bool"
+                } els if child.typeAnnotation == "int" || child.typeAnnotation == "uint" || child.typeAnnotation == "i32" || child.typeAnnotation == "u32" || child.typeAnnotation == "i64" || child.typeAnnotation == "u64" || child.typeAnnotation == "num" || child.typeAnnotation == "double" {
+                    typName = "num"
+                } els {
+                    typName = child.typeAnnotation
+                }
             } els if child.kind == NodeKind.IdentExpr {
                 cName: str = child.val
                 if cName.ln == 0 {
@@ -1660,11 +2192,18 @@ obj ExprCodegen {
                 if self.objGen.registry.isEnum cName {
                     typName = "obj"
                 } els {
-                    k = child.inferredType
-                    if k == TypeKind.Num || k == TypeKind.I64 {
-                        typName = "num"
+                    targetSym = self.findSymbol cName
+                    if targetSym.name.ln > 0 && targetSym.typeName == "bigint" {
+                        typName = "bigint"
+                    } els if child.typeAnnotation == "bigint" {
+                        typName = "bigint"
                     } els {
-                        typName = TypeKindToStr k
+                        k = child.inferredType
+                        if k == TypeKind.Num || k == TypeKind.I64 {
+                            typName = "num"
+                        } els {
+                            typName = TypeKindToStr k
+                        }
                     }
                 }
             } els if child.kind == NodeKind.PropExpr {
@@ -1705,6 +2244,68 @@ obj ExprCodegen {
         gepReg: str = self.codegen.newReg
         self.codegen.emit `${gepReg} = getelementptr inbounds i8, ptr ${strConst}, i64 0`
         res: ExprResult = { reg: gepReg, typeKind: TypeKind.Str }
+        -> res
+    },
+
+    emitAwait: node: ASTNode :: ExprResult => {
+        if node.children.ln > 0 {
+            targetNode: ASTNode = node.children[0]
+            valRes: ExprResult = self.emitExpr targetNode
+            valReg: str = valRes.reg
+            if valRes.typeKind == TypeKind.Func {
+                valRes.typeKind = TypeKind.I64
+            } els if valRes.typeKind == TypeKind.Ptr || valRes.typeKind == TypeKind.Arr || valRes.typeKind == TypeKind.Obj {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = ptrtoint ptr ${valRes.reg} to i64`
+                valReg = cReg
+            }
+            awaitRes: str = self.codegen.newReg
+            self.codegen.emit `${awaitRes} = call i64 @zuv_prm_await(i64 ${valReg})`
+            if self.activeCatchLabel.ln > 0 {
+                rejReg: str = self.codegen.newReg
+                self.codegen.emit `${rejReg} = load i32, ptr @zuv_prm_is_rejected`
+                hasRejReg: str = self.codegen.newReg
+                self.codegen.emit `${hasRejReg} = icmp ne i32 ${rejReg}, 0`
+                okLbl: str = self.codegen.newLabel "awt_ok"
+                self.codegen.emit `br i1 ${hasRejReg}, label %${self.activeCatchLabel}, label %${okLbl}`
+                self.codegen.emitLabel okLbl
+            }
+            res: ExprResult = { reg: awaitRes, typeKind: TypeKind.I64 }
+            -> res
+        }
+        res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
+        -> res
+    },
+
+    emitNew: node: ASTNode :: ExprResult => {
+        typeName: str = node.name
+        if typeName == "Prm" || typeName == "Promise" {
+            modeReg: str = self.codegen.newReg
+            self.codegen.emit `${modeReg} = load i32, ptr @zuv_async_context_mode`
+            prmReg: str = self.codegen.newReg
+            self.codegen.emit `${prmReg} = call ptr @zuv_prm_new(i32 ${modeReg})`
+            if node.children.ln > 0 {
+                self.codegen.emit `store ptr ${prmReg}, ptr @zuv_active_prm`
+                execRes: ExprResult = self.emitExpr node.children[0]
+                fnPtrReg: str = self.codegen.newReg
+                if execRes.typeKind == TypeKind.Ptr {
+                    fnPtrReg = execRes.reg
+                } els {
+                    self.codegen.emit `${fnPtrReg} = inttoptr i64 ${execRes.reg} to ptr`
+                }
+                resCbReg: str = self.codegen.newReg
+                self.codegen.emit `${resCbReg} = ptrtoint ptr @zuv_prm_cb_resolve to i64`
+                rejCbReg: str = self.codegen.newReg
+                self.codegen.emit `${rejCbReg} = ptrtoint ptr @zuv_prm_cb_reject to i64`
+                callRes: str = self.codegen.newReg
+                self.codegen.emit `${callRes} = call i64 ${fnPtrReg}(i64 ${resCbReg}, i64 ${rejCbReg})`
+            }
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${prmReg} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+        res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
         -> res
     },
 

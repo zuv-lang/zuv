@@ -78,8 +78,9 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         -> TypeKind.Und
     }
     if k == NodeKind.BigIntExpr {
-        expr.inferredType = TypeKind.I64
-        -> TypeKind.I64
+        expr.inferredType = TypeKind.Str
+        expr.typeAnnotation = "bigint"
+        -> TypeKind.Str
     }
     if k == NodeKind.IdentExpr {
         symName = expr.name
@@ -117,18 +118,23 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         }
         fCount = expr.fields.ln
         matchedStruct = ""
-        fr tItem of checker.types {
-            if tItem.kind == TypeKind.Obj && tItem.fields.ln == fCount && fCount > 0 {
-                allMatched = true
-                fr fld, f of expr.fields {
-                    if fld.name != tItem.fields[f] {
-                        allMatched = false
+        if expr.name.ln > 0 {
+            matchedStruct = expr.name
+        }
+        if matchedStruct.ln == 0 {
+            fr tItem of checker.types {
+                if tItem.kind == TypeKind.Obj && tItem.fields.ln == fCount && fCount > 0 {
+                    allMatched = true
+                    fr fld, f of expr.fields {
+                        if fld.name != tItem.fields[f] {
+                            allMatched = false
+                            brk
+                        }
+                    }
+                    if allMatched {
+                        matchedStruct = tItem.name
                         brk
                     }
-                }
-                if allMatched {
-                    matchedStruct = tItem.name
-                    brk
                 }
             }
         }
@@ -316,6 +322,10 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             expr.inferredType = elemType
             -> elemType
         }
+        if expr.op == "?." {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
         expr.inferredType = TypeKind.Unknown
         -> TypeKind.Unknown
     }
@@ -339,6 +349,30 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "inf" || calleeName == "err" || calleeName == "panic" {
                 expr.inferredType = TypeKind.Void
                 -> TypeKind.Void
+            }
+            if calleeName == "sh" || calleeName == "sys" || calleeName == "exec" {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            if calleeName == "BigInt" {
+                expr.inferredType = TypeKind.Str
+                expr.typeAnnotation = "bigint"
+                -> TypeKind.Str
+            }
+            if calleeName == "Prm.all" || calleeName == "Prm.race" || calleeName == "Prm.allSettled" ||
+               calleeName == "Promise.all" || calleeName == "Promise.race" || calleeName == "Promise.allSettled" {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            if (calleeName.ln >= 3 && calleeName.sub 0, 3 == "fs.") ||
+               (calleeName.ln >= 4 && (calleeName.sub 0, 4 == "net." || calleeName.sub 0, 4 == "sys.")) ||
+               (calleeName.ln >= 3 && (calleeName.sub 0, 3 == "os." || calleeName.sub 0, 3 == "io.")) {
+                if calleeName == "fs.rF" || calleeName == "fs.read" {
+                    expr.inferredType = TypeKind.Str
+                    -> TypeKind.Str
+                }
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
             }
             fnSym = checker.resolveSymbol(calleeName)
             if fnSym.name.ln > 0 {
@@ -416,11 +450,30 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
     if k == NodeKind.AwaitExpr {
         if expr.children.ln > 0 {
             awKind = InferExpression(checker, expr.children[0])
+            if awKind == TypeKind.Func {
+                targetIdent: str = expr.children[0].name
+                if targetIdent.ln == 0 {
+                    targetIdent = expr.children[0].val
+                }
+                fnSym = checker.resolveSymbol targetIdent
+                if fnSym.name.ln > 0 {
+                    fnT = checker.resolveType fnSym.typeName
+                    if fnT.elemType != TypeKind.Unknown && fnT.elemType != TypeKind.Func {
+                        awKind = fnT.elemType
+                    } els {
+                        awKind = TypeKind.I64
+                    }
+                } els {
+                    awKind = TypeKind.I64
+                }
+            } els if awKind == TypeKind.Ptr || awKind == TypeKind.Unknown {
+                awKind = TypeKind.I64
+            }
             expr.inferredType = awKind
             -> awKind
         }
-        expr.inferredType = TypeKind.Unknown
-        -> TypeKind.Unknown
+        expr.inferredType = TypeKind.I64
+        -> TypeKind.I64
     }
     if k == NodeKind.TypExpr {
         if expr.children.ln > 0 {
@@ -428,6 +481,17 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         }
         expr.inferredType = TypeKind.Str
         -> TypeKind.Str
+    }
+    if k == NodeKind.NewExpr {
+        fr child of expr.children {
+            InferExpression(checker, child)
+        }
+        if expr.name == "Prm" || expr.name == "Promise" {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        expr.inferredType = TypeKind.Obj
+        -> TypeKind.Obj
     }
     expr.inferredType = TypeKind.Unknown
     -> TypeKind.Unknown
@@ -525,32 +589,50 @@ InferStatement checker: Checker, stmt: ASTNode :: void {
         }
         checker.enterScope()
         itemKind = TypeKind.I64
-        if collKind == TypeKind.Str {
-            itemKind = TypeKind.Str
-        } els if collKind == TypeKind.Arr {
-            elemType = TypeKind.Unknown
-            collNode = stmt.children[0]
-            collTypeName = collNode.typeAnnotation
-            if collTypeName.ln == 0 && collNode.kind == NodeKind.IdentExpr {
-                foundSym = checker.resolveSymbol(collNode.name)
-                if foundSym.name.ln > 0 {
-                    collTypeName = foundSym.typeName
-                }
+        if k == NodeKind.FrInStmt {
+            if collKind == TypeKind.Arr {
+                itemKind = TypeKind.Num
+            } els {
+                itemKind = TypeKind.Str
             }
-            if collTypeName.ln >= 2 {
-                subSuffix = collTypeName.sub collTypeName.ln - 2, 2
-                if subSuffix == "[]" {
-                    baseName = collTypeName.sub 0, collTypeName.ln - 2
-                    elemType = StrToTypeKind(baseName)
+        } els {
+            if collKind == TypeKind.Str {
+                itemKind = TypeKind.Str
+            } els if collKind == TypeKind.Arr {
+                elemType = TypeKind.Unknown
+                collNode = stmt.children[0]
+                collTypeName = collNode.typeAnnotation
+                if collTypeName.ln == 0 && collNode.kind == NodeKind.IdentExpr {
+                    foundSym = checker.resolveSymbol(collNode.name)
+                    if foundSym.name.ln > 0 {
+                        collTypeName = foundSym.typeName
+                    }
                 }
-            }
-            if elemType != TypeKind.Unknown {
-                itemKind = elemType
+                if collTypeName.ln >= 2 {
+                    subSuffix = collTypeName.sub collTypeName.ln - 2, 2
+                    if subSuffix == "[]" {
+                        baseName = collTypeName.sub 0, collTypeName.ln - 2
+                        elemType = StrToTypeKind(baseName)
+                    }
+                }
+                if elemType != TypeKind.Unknown {
+                    itemKind = elemType
+                } els {
+                    itemKind = TypeKind.Num
+                }
             }
         }
         stmt.inferredType = itemKind
         symLoop = Symbol.create(stmt.name, itemKind, (TypeKindToStr itemKind), false, true, checker.currentLevel(), stmt.line, stmt.col)
         checker.defineSymbol(symLoop)
+        if stmt.val.ln > 0 {
+            secKind = TypeKind.Num
+            if k == NodeKind.FrInStmt && collKind != TypeKind.Arr {
+                secKind = TypeKind.I64
+            }
+            symSec = Symbol.create(stmt.val, secKind, (TypeKindToStr secKind), false, true, checker.currentLevel(), stmt.line, stmt.col)
+            checker.defineSymbol(symSec)
+        }
         if stmt.children.ln > 1 {
             InferStatement(checker, stmt.children[1])
         }
@@ -659,7 +741,7 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         ->
     }
     if k == NodeKind.FuncDecl {
-        retKind = TypeKind.I64
+        retKind = TypeKind.Unknown
         if decl.typeAnnotation.ln > 0 {
             retKind = StrToTypeKind(decl.typeAnnotation)
         }
@@ -729,7 +811,7 @@ InferProgram checker: Checker, program: ASTNode :: void {
         if child.isDecl() {
             k = child.kind
             if k == NodeKind.FuncDecl {
-                retKind = TypeKind.Void
+                retKind = TypeKind.Unknown
                 if child.typeAnnotation.ln > 0 {
                     retKind = StrToTypeKind(child.typeAnnotation)
                 }

@@ -123,6 +123,7 @@ obj Codegen {
     targetTriple: str,
     dataLayout: str,
     isRelease: bool,
+    sourceFile: str,
 
     /**
      * Creates a new LLVM module code generation coordinator.
@@ -149,7 +150,8 @@ obj Codegen {
             strConstants: emptyStrConsts,
             targetTriple: triple,
             dataLayout: layout,
-            isRelease
+            isRelease,
+            sourceFile: ""
         }
     },
 

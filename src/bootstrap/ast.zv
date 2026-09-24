@@ -54,7 +54,8 @@ enum NodeKind {
     BorrowExpr,
     TernaryExpr,
     AwaitExpr,
-    TypExpr
+    TypExpr,
+    NewExpr
 }
 
 type Param = {
@@ -432,6 +433,22 @@ obj ASTNode {
     },
 
     /**
+     * Creates a new instance / constructor expression node.
+     *
+     * @param {str} typeName - Constructed object or promise type name
+     * @param {ASTNode[]} args - Constructor arguments
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} New expression AST node
+     */
+    createNew: typeName: str, args: ASTNode[], line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.NewExpr, line, col
+        node.name = typeName
+        node.children = args
+        -> node
+    },
+
+    /**
      * Creates a block statement AST node.
      *
      * @param {ASTNode[]} stmts - Statements inside the block
@@ -726,6 +743,7 @@ NodeKindToStr kind: NodeKind :: str => sw kind {
     NodeKind.TernaryExpr    => "TernaryExpr"
     NodeKind.AwaitExpr      => "AwaitExpr"
     NodeKind.TypExpr        => "TypExpr"
+    NodeKind.NewExpr        => "NewExpr"
     _                       => "UnknownNode"
 }
 
@@ -796,6 +814,7 @@ IsExprNode kind: NodeKind :: bool => sw kind {
     NodeKind.TernaryExpr    => true
     NodeKind.AwaitExpr      => true
     NodeKind.TypExpr        => true
+    NodeKind.NewExpr        => true
     _                       => false
 }
 

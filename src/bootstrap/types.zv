@@ -334,6 +334,12 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
  */
 StrToTypeKind typeName: str :: TypeKind {
     nameLen: num = typeName.ln
+    if nameLen >= 1 {
+        firstChar: str = typeName.sub 0, 1
+        if firstChar == "*" || firstChar == "&" {
+            -> TypeKind.Ptr
+        }
+    }
     if nameLen >= 2 {
         subSuffix: str = typeName.sub nameLen - 2, 2
         if subSuffix == "[]" {
@@ -347,6 +353,8 @@ StrToTypeKind typeName: str :: TypeKind {
         "num"    => TypeKind.Num
         "double" => TypeKind.Num
         "f64"    => TypeKind.Num
+        "int"    => TypeKind.I32
+        "uint"   => TypeKind.I32
         "i64"    => TypeKind.I64
         "u64"    => TypeKind.I64
         "i32"    => TypeKind.I32

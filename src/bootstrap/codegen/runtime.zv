@@ -112,9 +112,28 @@ obj RuntimeCodegen {
         self.emitRuntimeDecl "declare i64 @strlen(ptr)", "@strlen"
         self.emitRuntimeDecl "declare i32 @snprintf(ptr, i64, ptr, ...)", "@snprintf"
         self.emitRuntimeDecl "declare double @llvm.pow.f64(double, double)", "@llvm.pow.f64"
+        self.emitRuntimeDecl "declare void @Sleep(i32)", "@Sleep"
+        self.emitRuntimeDecl "declare ptr @fopen(ptr, ptr)", "@fopen"
+        self.emitRuntimeDecl "declare i32 @fseek(ptr, i64, i32)", "@fseek"
+        self.emitRuntimeDecl "declare i64 @ftell(ptr)", "@ftell"
+        self.emitRuntimeDecl "declare void @rewind(ptr)", "@rewind"
+        self.emitRuntimeDecl "declare i64 @fread(ptr, i64, i64, ptr)", "@fread"
+        self.emitRuntimeDecl "declare i64 @fwrite(ptr, i64, i64, ptr)", "@fwrite"
+        self.emitRuntimeDecl "declare i32 @fclose(ptr)", "@fclose"
+        self.emitRuntimeDecl "declare i32 @remove(ptr)", "@remove"
+        self.emitRuntimeDecl "declare ptr @memcpy(ptr, ptr, i64)", "@memcpy"
+        self.emitRuntimeDecl "declare i32 @system(ptr)", "@system"
+        self.emitRuntimeDecl "@_zuv_empty_arr = internal constant [2 x i64] [i64 0, i64 0]", "@_zuv_empty_arr"
+        self.emitRuntimeDecl "@zuv_global_args = global i64 0", "@zuv_global_args"
 
         // Type definition for function descriptor
         self.codegen.header += "%struct.ZuvFuncDesc = type { ptr, ptr, ptr, i32 }\n\n"
+        self.codegen.header += `
+        @zuv_active_prm = internal global ptr null
+        @zuv_async_context_mode = internal global i32 0
+        @zuv_prm_is_rejected = internal global i32 0
+        @zuv_exc_value = internal global i64 0
+        `
 
         numDescs: num = self.funcDescs.ln
         if numDescs == 0 {
@@ -651,6 +670,481 @@ obj RuntimeCodegen {
     },
 
     /**
+     * Emits first-class Promise / Prm asynchronous runtime support functions.
+     *
+     * @returns {void}
+     */
+    emitPromiseRuntime: :: void => {
+        rbConst: str = self.codegen.addStringConstant "rb"
+        wbConst: str = self.codegen.addStringConstant "wb"
+        self.codegen.funcs += `
+        define internal i32 @zuv_get_async_context() {
+        entry:
+          %m = load i32, ptr @zuv_async_context_mode
+          ret i32 %m
+        }
+
+        define internal void @zuv_set_async_context(i32 %m) {
+        entry:
+          store i32 %m, ptr @zuv_async_context_mode
+          ret void
+        }
+
+        define internal ptr @zuv_prm_new(i32 %mode) {
+        entry:
+          %p = call ptr @malloc(i64 64)
+          call ptr @memset(ptr %p, i32 0, i64 64)
+          store i64 1347571249, ptr %p
+          %gepMode = getelementptr inbounds i64, ptr %p, i64 2
+          %m64 = zext i32 %mode to i64
+          store i64 %m64, ptr %gepMode
+          ret ptr %p
+        }
+
+        define internal void @zuv_prm_resolve(ptr %p, i64 %val) {
+        entry:
+          %isNull = icmp eq ptr %p, null
+          br i1 %isNull, label %ret_lbl, label %chk_magic
+        chk_magic:
+          %magic = load i64, ptr %p
+          %isPrm = icmp eq i64 %magic, 1347571249
+          br i1 %isPrm, label %chk_settled, label %ret_lbl
+        chk_settled:
+          %gepSettled = getelementptr inbounds i64, ptr %p, i64 4
+          %s = load i64, ptr %gepSettled
+          %isSet = icmp ne i64 %s, 0
+          br i1 %isSet, label %ret_lbl, label %do_res
+        do_res:
+          %gepState = getelementptr inbounds i64, ptr %p, i64 1
+          store i64 1, ptr %gepState
+          %gepVal = getelementptr inbounds i64, ptr %p, i64 3
+          store i64 %val, ptr %gepVal
+          store i64 1, ptr %gepSettled
+          br label %ret_lbl
+        ret_lbl:
+          ret void
+        }
+
+        define internal void @zuv_prm_reject(ptr %p, i64 %err) {
+        entry:
+          %isNull = icmp eq ptr %p, null
+          br i1 %isNull, label %ret_lbl, label %chk_magic
+        chk_magic:
+          %magic = load i64, ptr %p
+          %isPrm = icmp eq i64 %magic, 1347571249
+          br i1 %isPrm, label %chk_settled, label %ret_lbl
+        chk_settled:
+          %gepSettled = getelementptr inbounds i64, ptr %p, i64 4
+          %s = load i64, ptr %gepSettled
+          %isSet = icmp ne i64 %s, 0
+          br i1 %isSet, label %ret_lbl, label %do_rej
+        do_rej:
+          %gepState = getelementptr inbounds i64, ptr %p, i64 1
+          store i64 2, ptr %gepState
+          %gepVal = getelementptr inbounds i64, ptr %p, i64 3
+          store i64 %err, ptr %gepVal
+          store i64 1, ptr %gepSettled
+          br label %ret_lbl
+        ret_lbl:
+          ret void
+        }
+
+        define internal i64 @zuv_prm_cb_resolve(i64 %val) {
+        entry:
+          %p = load ptr, ptr @zuv_active_prm
+          call void @zuv_prm_resolve(ptr %p, i64 %val)
+          ret i64 0
+        }
+
+        define internal i64 @zuv_prm_cb_reject(i64 %err) {
+        entry:
+          %p = load ptr, ptr @zuv_active_prm
+          call void @zuv_prm_reject(ptr %p, i64 %err)
+          ret i64 0
+        }
+
+        define internal i64 @zuv_prm_await(i64 %val) {
+        entry:
+          %isSmall = icmp ult i64 %val, 268435456
+          br i1 %isSmall, label %ret_val, label %chk_align
+        chk_align:
+          %lowBits = and i64 %val, 7
+          %isAligned = icmp eq i64 %lowBits, 0
+          br i1 %isAligned, label %chk_high, label %ret_val
+        chk_high:
+          %isTooHigh = icmp ugt i64 %val, 140737488355327
+          br i1 %isTooHigh, label %ret_val, label %chk_ptr
+        chk_ptr:
+          %ptr = inttoptr i64 %val to ptr
+          %magic = load i64, ptr %ptr
+          %isPrm = icmp eq i64 %magic, 1347571249
+          br i1 %isPrm, label %wait_loop, label %ret_val
+        wait_loop:
+          %gepSettled = getelementptr inbounds i64, ptr %ptr, i64 4
+          %st = load i64, ptr %gepSettled
+          %isDone = icmp ne i64 %st, 0
+          br i1 %isDone, label %unpack, label %poll_step
+        poll_step:
+          call void @Sleep(i32 1)
+          br label %wait_loop
+        unpack:
+          %gepState = getelementptr inbounds i64, ptr %ptr, i64 1
+          %state = load i64, ptr %gepState
+          %gepVal = getelementptr inbounds i64, ptr %ptr, i64 3
+          %v = load i64, ptr %gepVal
+          %isRej = icmp eq i64 %state, 2
+          br i1 %isRej, label %handle_rej, label %handle_ok
+        handle_rej:
+          store i64 %v, ptr @zuv_exc_value
+          store i32 1, ptr @zuv_prm_is_rejected
+          ret i64 %v
+        handle_ok:
+          store i32 0, ptr @zuv_prm_is_rejected
+          ret i64 %v
+        ret_val:
+          store i32 0, ptr @zuv_prm_is_rejected
+          ret i64 %val
+        }
+
+        define internal ptr @zuv_prm_all(ptr %arr) {
+        entry:
+          %m = load i32, ptr @zuv_async_context_mode
+          %pAll = call ptr @zuv_prm_new(i32 %m)
+          %isNull = icmp eq ptr %arr, null
+          br i1 %isNull, label %ret_empty, label %chk_len
+        chk_len:
+          %len = load i64, ptr %arr
+          %isZero = icmp eq i64 %len, 0
+          br i1 %isZero, label %ret_empty, label %alloc_res
+        ret_empty:
+          %empty = call ptr @malloc(i64 24)
+          store i64 0, ptr %empty
+          %emptyArr = getelementptr inbounds i64, ptr %empty, i64 1
+          store i64 0, ptr %emptyArr
+          %emptyInt = ptrtoint ptr %emptyArr to i64
+          call void @zuv_prm_resolve(ptr %pAll, i64 %emptyInt)
+          ret ptr %pAll
+        alloc_res:
+          %szElements = add i64 %len, 2
+          %bytes = mul i64 %szElements, 8
+          %rawRes = call ptr @malloc(i64 %bytes)
+          store i64 %len, ptr %rawRes
+          %resArr = getelementptr inbounds i64, ptr %rawRes, i64 1
+          store i64 %len, ptr %resArr
+          br label %loop_cond
+        loop_cond:
+          %i = phi i64 [ 1, %alloc_res ], [ %iNext, %loop_step ]
+          %done = icmp ugt i64 %i, %len
+          br i1 %done, label %finish, label %loop_body
+        loop_body:
+          %gepItem = getelementptr inbounds i64, ptr %arr, i64 %i
+          %itemVal = load i64, ptr %gepItem
+          %resVal = call i64 @zuv_prm_await(i64 %itemVal)
+          %gepRes = getelementptr inbounds i64, ptr %resArr, i64 %i
+          store i64 %resVal, ptr %gepRes
+          br label %loop_step
+        loop_step:
+          %iNext = add i64 %i, 1
+          br label %loop_cond
+        finish:
+          %resInt = ptrtoint ptr %resArr to i64
+          call void @zuv_prm_resolve(ptr %pAll, i64 %resInt)
+          ret ptr %pAll
+        }
+
+        define internal ptr @zuv_prm_race(ptr %arr) {
+        entry:
+          %m = load i32, ptr @zuv_async_context_mode
+          %pRace = call ptr @zuv_prm_new(i32 %m)
+          %isNull = icmp eq ptr %arr, null
+          br i1 %isNull, label %ret_race, label %chk_len_race
+        chk_len_race:
+          %len = load i64, ptr %arr
+          %isZero = icmp eq i64 %len, 0
+          br i1 %isZero, label %ret_race, label %poll_race
+        poll_race:
+          br label %race_loop_cond
+        race_loop_cond:
+          %iR = phi i64 [ 1, %poll_race ], [ %iRNext, %race_loop_step ]
+          %rDone = icmp ugt i64 %iR, %len
+          br i1 %rDone, label %await_first, label %race_loop_body
+        race_loop_body:
+          %gepItemR = getelementptr inbounds i64, ptr %arr, i64 %iR
+          %itemRVal = load i64, ptr %gepItemR
+          %rPtr = inttoptr i64 %itemRVal to ptr
+          %rMagic = load i64, ptr %rPtr
+          %rIsPrm = icmp eq i64 %rMagic, 1347571249
+          br i1 %rIsPrm, label %chk_r_set, label %race_loop_step
+        chk_r_set:
+          %gepRSet = getelementptr inbounds i64, ptr %rPtr, i64 4
+          %rSet = load i64, ptr %gepRSet
+          %rDoneSet = icmp ne i64 %rSet, 0
+          br i1 %rDoneSet, label %race_win, label %race_loop_step
+        race_win:
+          %gepRVal = getelementptr inbounds i64, ptr %rPtr, i64 3
+          %rVal = load i64, ptr %gepRVal
+          call void @zuv_prm_resolve(ptr %pRace, i64 %rVal)
+          ret ptr %pRace
+        race_loop_step:
+          %iRNext = add i64 %iR, 1
+          br label %race_loop_cond
+        await_first:
+          %gepFirst = getelementptr inbounds i64, ptr %arr, i64 1
+          %fVal = load i64, ptr %gepFirst
+          %fRes = call i64 @zuv_prm_await(i64 %fVal)
+          call void @zuv_prm_resolve(ptr %pRace, i64 %fRes)
+          ret ptr %pRace
+        ret_race:
+          call void @zuv_prm_resolve(ptr %pRace, i64 0)
+          ret ptr %pRace
+        }
+
+        define internal ptr @zuv_prm_all_settled(ptr %arr) {
+        entry:
+          %m = load i32, ptr @zuv_async_context_mode
+          %pSettled = call ptr @zuv_prm_new(i32 %m)
+          %isNull = icmp eq ptr %arr, null
+          br i1 %isNull, label %ret_empty_s, label %chk_len_s
+        chk_len_s:
+          %len = load i64, ptr %arr
+          %isZero = icmp eq i64 %len, 0
+          br i1 %isZero, label %ret_empty_s, label %alloc_res_s
+        ret_empty_s:
+          %empty = call ptr @malloc(i64 24)
+          store i64 0, ptr %empty
+          %emptyArr = getelementptr inbounds i64, ptr %empty, i64 1
+          store i64 0, ptr %emptyArr
+          %emptyInt = ptrtoint ptr %emptyArr to i64
+          call void @zuv_prm_resolve(ptr %pSettled, i64 %emptyInt)
+          ret ptr %pSettled
+        alloc_res_s:
+          %szElements = add i64 %len, 2
+          %bytes = mul i64 %szElements, 8
+          %rawRes = call ptr @malloc(i64 %bytes)
+          store i64 %len, ptr %rawRes
+          %resArr = getelementptr inbounds i64, ptr %rawRes, i64 1
+          store i64 %len, ptr %resArr
+          br label %loop_cond_s
+        loop_cond_s:
+          %iS = phi i64 [ 1, %alloc_res_s ], [ %iSNext, %loop_step_s ]
+          %sDone = icmp ugt i64 %iS, %len
+          br i1 %sDone, label %finish_s, label %loop_body_s
+        loop_body_s:
+          %gepItemS = getelementptr inbounds i64, ptr %arr, i64 %iS
+          %itemSVal = load i64, ptr %gepItemS
+          %resSVal = call i64 @zuv_prm_await(i64 %itemSVal)
+          %gepResS = getelementptr inbounds i64, ptr %resArr, i64 %iS
+          store i64 %resSVal, ptr %gepResS
+          br label %loop_step_s
+        loop_step_s:
+          %iSNext = add i64 %iS, 1
+          br label %loop_cond_s
+        finish_s:
+          %resIntS = ptrtoint ptr %resArr to i64
+          call void @zuv_prm_resolve(ptr %pSettled, i64 %resIntS)
+          ret ptr %pSettled
+        }
+
+        define internal ptr @zuv_fs_rf_async(ptr %path) {
+        entry:
+          %m = load i32, ptr @zuv_async_context_mode
+          %p = call ptr @zuv_prm_new(i32 %m)
+          %fp = call ptr @fopen(ptr %path, ptr ${rbConst})
+          %isNull = icmp eq ptr %fp, null
+          br i1 %isNull, label %rf_err, label %rf_ok
+        rf_ok:
+          call i32 @fseek(ptr %fp, i64 0, i32 2)
+          %sz = call i64 @ftell(ptr %fp)
+          call void @rewind(ptr %fp)
+          %sz1 = add i64 %sz, 1
+          %buf = call ptr @malloc(i64 %sz1)
+          %n = call i64 @fread(ptr %buf, i64 1, i64 %sz, ptr %fp)
+          %endPtr = getelementptr inbounds i8, ptr %buf, i64 %n
+          store i8 0, ptr %endPtr
+          call i32 @fclose(ptr %fp)
+          %strInt = ptrtoint ptr %buf to i64
+          call void @zuv_prm_resolve(ptr %p, i64 %strInt)
+          ret ptr %p
+        rf_err:
+          %emp = call ptr @malloc(i64 1)
+          store i8 0, ptr %emp
+          %empInt = ptrtoint ptr %emp to i64
+          call void @zuv_prm_resolve(ptr %p, i64 %empInt)
+          ret ptr %p
+        }
+
+        define internal ptr @zuv_fs_wf_async(ptr %path, ptr %data) {
+        entry:
+          %m = load i32, ptr @zuv_async_context_mode
+          %p = call ptr @zuv_prm_new(i32 %m)
+          %fp = call ptr @fopen(ptr %path, ptr ${wbConst})
+          %isNull = icmp eq ptr %fp, null
+          br i1 %isNull, label %wf_err, label %wf_ok
+        wf_ok:
+          %dLen = call i64 @strlen(ptr %data)
+          %written = call i64 @fwrite(ptr %data, i64 1, i64 %dLen, ptr %fp)
+          call i32 @fclose(ptr %fp)
+          call void @zuv_prm_resolve(ptr %p, i64 %written)
+          ret ptr %p
+        wf_err:
+          call void @zuv_prm_resolve(ptr %p, i64 0)
+          ret ptr %p
+        }
+        `
+    },
+
+    /**
+     * Emits the CLI arguments initialization handler `@zuv_init_args`.
+     *
+     * Constructs the global args array containing [executable, sourceFile, ...cliArgs].
+     *
+     * @returns {void}
+     */
+    emitInitArgs: :: void => {
+        self.codegen.funcs += `
+        define void @zuv_init_args(i32 %argc, ptr %argv, ptr %srcFile) {
+        entry:
+            %isArgcNeg = icmp slt i32 %argc, 0
+            %isArgvNull = icmp eq ptr %argv, null
+            %isBad = or i1 %isArgcNeg, %isArgvNull
+            br i1 %isBad, label %init_empty, label %do_init
+
+        init_empty:
+            %empArr = getelementptr inbounds [2 x i64], ptr @_zuv_empty_arr, i64 0, i64 1
+            %empInt = ptrtoint ptr %empArr to i64
+            store i64 %empInt, ptr @zuv_global_args
+            ret void
+
+        do_init:
+            %argc64 = sext i32 %argc to i64
+            %hasArgv = icmp sgt i64 %argc64, 0
+            %argcPlus1 = add i64 %argc64, 1
+            %totCount = select i1 %hasArgv, i64 %argcPlus1, i64 1
+            %szElements = add i64 %totCount, 2
+            %bytes = mul i64 %szElements, 8
+            %rawArr = call ptr @malloc(i64 %bytes)
+            store i64 %totCount, ptr %rawArr
+            %arr = getelementptr inbounds i64, ptr %rawArr, i64 1
+            store i64 %totCount, ptr %arr
+            br i1 %hasArgv, label %store_argv0, label %store_only_src
+
+        store_argv0:
+            %pArgv0 = load ptr, ptr %argv, align 8
+            %isArgv0Null = icmp eq ptr %pArgv0, null
+            br i1 %isArgv0Null, label %store_empty_argv0, label %copy_argv0
+
+        store_empty_argv0:
+            %emp0 = call ptr @malloc(i64 1)
+            store i8 0, ptr %emp0
+            %emp0Int = ptrtoint ptr %emp0 to i64
+            %gepSlotArgv0 = getelementptr inbounds i64, ptr %arr, i64 1
+            store i64 %emp0Int, ptr %gepSlotArgv0
+            br label %store_src_file
+
+        copy_argv0:
+            %len0 = call i64 @strlen(ptr %pArgv0)
+            %len0p1 = add i64 %len0, 1
+            %copy0 = call ptr @malloc(i64 %len0p1)
+            call ptr @memcpy(ptr %copy0, ptr %pArgv0, i64 %len0p1)
+            %copy0Int = ptrtoint ptr %copy0 to i64
+            %gepSlotArgv0b = getelementptr inbounds i64, ptr %arr, i64 1
+            store i64 %copy0Int, ptr %gepSlotArgv0b
+            br label %store_src_file
+
+        store_src_file:
+            %isSrcNull = icmp eq ptr %srcFile, null
+            br i1 %isSrcNull, label %store_empty_src, label %copy_src
+
+        store_empty_src:
+            %empSrc = call ptr @malloc(i64 1)
+            store i8 0, ptr %empSrc
+            %empSrcInt = ptrtoint ptr %empSrc to i64
+            %gepSlot1 = getelementptr inbounds i64, ptr %arr, i64 2
+            store i64 %empSrcInt, ptr %gepSlot1
+            br label %check_rest_args
+
+        copy_src:
+            %lenSrc = call i64 @strlen(ptr %srcFile)
+            %lenSrcp1 = add i64 %lenSrc, 1
+            %copySrc = call ptr @malloc(i64 %lenSrcp1)
+            call ptr @memcpy(ptr %copySrc, ptr %srcFile, i64 %lenSrcp1)
+            %copySrcInt = ptrtoint ptr %copySrc to i64
+            %gepSlot1b = getelementptr inbounds i64, ptr %arr, i64 2
+            store i64 %copySrcInt, ptr %gepSlot1b
+            br label %check_rest_args
+
+        store_only_src:
+            %isSrcNull2 = icmp eq ptr %srcFile, null
+            br i1 %isSrcNull2, label %store_empty_src2, label %copy_src2
+
+        store_empty_src2:
+            %empSrc2 = call ptr @malloc(i64 1)
+            store i8 0, ptr %empSrc2
+            %empSrc2Int = ptrtoint ptr %empSrc2 to i64
+            %gepSlotSingle = getelementptr inbounds i64, ptr %arr, i64 1
+            store i64 %empSrc2Int, ptr %gepSlotSingle
+            br label %init_done
+
+        copy_src2:
+            %lenSrc2 = call i64 @strlen(ptr %srcFile)
+            %lenSrc2p1 = add i64 %lenSrc2, 1
+            %copySrc2 = call ptr @malloc(i64 %lenSrc2p1)
+            call ptr @memcpy(ptr %copySrc2, ptr %srcFile, i64 %lenSrc2p1)
+            %copySrc2Int = ptrtoint ptr %copySrc2 to i64
+            %gepSlotSingleB = getelementptr inbounds i64, ptr %arr, i64 1
+            store i64 %copySrc2Int, ptr %gepSlotSingleB
+            br label %init_done
+
+        check_rest_args:
+            %iAlloc = alloca i64
+            store i64 1, ptr %iAlloc
+            br label %loop_cond
+
+        loop_cond:
+            %curI = load i64, ptr %iAlloc
+            %cmp = icmp slt i64 %curI, %argc64
+            br i1 %cmp, label %loop_body, label %init_done
+
+        loop_body:
+            %gepArgv = getelementptr inbounds ptr, ptr %argv, i64 %curI
+            %argStr = load ptr, ptr %gepArgv, align 8
+            %isArgNull = icmp eq ptr %argStr, null
+            br i1 %isArgNull, label %store_empty_arg, label %copy_arg
+
+        store_empty_arg:
+            %nullStr = call ptr @malloc(i64 1)
+            store i8 0, ptr %nullStr
+            %nullInt = ptrtoint ptr %nullStr to i64
+            %slotIdx0 = add i64 %curI, 2
+            %gepSlot0 = getelementptr inbounds i64, ptr %arr, i64 %slotIdx0
+            store i64 %nullInt, ptr %gepSlot0
+            br label %next_iter
+
+        copy_arg:
+            %strLen = call i64 @strlen(ptr %argStr)
+            %strLenPlus1 = add i64 %strLen, 1
+            %newStr = call ptr @malloc(i64 %strLenPlus1)
+            call ptr @memcpy(ptr %newStr, ptr %argStr, i64 %strLenPlus1)
+            %strInt = ptrtoint ptr %newStr to i64
+            %slotIdx = add i64 %curI, 2
+            %gepSlot = getelementptr inbounds i64, ptr %arr, i64 %slotIdx
+            store i64 %strInt, ptr %gepSlot
+            br label %next_iter
+
+        next_iter:
+            %nextI = add i64 %curI, 1
+            store i64 %nextI, ptr %iAlloc
+            br label %loop_cond
+
+        init_done:
+            %arrInt = ptrtoint ptr %arr to i64
+            store i64 %arrInt, ptr @zuv_global_args
+            ret void
+        }
+        `
+    },
+
+    /**
      * Emits the complete suite of runtime intrinsics, crash handling, and backtrace handlers.
      *
      * @returns {void}
@@ -669,6 +1163,8 @@ obj RuntimeCodegen {
         self.emitBacktraceHandler
         self.emitCrashHandler
         self.emitInitCrashHandler
+        self.emitInitArgs
+        self.emitPromiseRuntime
         self.runtimeEmitted = true
     },
 
@@ -699,6 +1195,17 @@ obj RuntimeCodegen {
     emitBoundsCheckCall: arrReg: str, idxReg: str, file: str, line: num :: void => {
         fileSym: str = self.codegen.addStringConstant file
         self.codegen.emit `call void @zuv_check_bounds(ptr ${arrReg}, i64 ${idxReg}, ptr ${fileSym}, i32 ${line})`
+    },
+
+    /**
+     * Emits a call to `@zuv_init_args` with program argc, argv, and source file name.
+     *
+     * @param {str} srcFile - Source file path string
+     * @returns {void}
+     */
+    emitInitArgsCall: srcFile: str :: void => {
+        fileSym: str = self.codegen.addStringConstant srcFile
+        self.codegen.emit `call void @zuv_init_args(i32 %argc, ptr %argv, ptr ${fileSym})`
     },
 
     /**

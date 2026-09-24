@@ -601,6 +601,7 @@ obj Cli {
 
         // LLVM Codegen
         cg = Codegen.create(self.targetTriple, self.isRelease)
+        cg.sourceFile = self.targetFile
         regLayouts = StructLayoutRegistry.create()
         rtGen = RuntimeCodegen.create(cg)
         extMgr = ExternManager.create()
@@ -653,12 +654,29 @@ obj Cli {
                 if !isAlreadyDecl {
                     declaredGlobals.psh(topNode.name)
                     gType = topNode.inferredType
-                    if gType == TypeKind.Unknown && topNode.typeAnnotation.ln > 0 {
-                        gType = resolveFieldTypeKind(topNode.typeAnnotation)
+                    if gType == TypeKind.Func {
+                        gType = TypeKind.I64
+                    }
+                    gTypeName: str = topNode.typeAnnotation
+                    if gTypeName.ln == 0 && topNode.children.ln > 0 {
+                        gTypeName = topNode.children[0].typeAnnotation
+                        if gTypeName.ln == 0 && topNode.children[0].name.ln > 0 {
+                            gTypeName = topNode.children[0].name
+                        }
+                    }
+                    if gType == TypeKind.Unknown && gTypeName.ln > 0 {
+                        gType = resolveFieldTypeKind(gTypeName)
                     }
                     if gType == TypeKind.Unknown && topNode.children.ln > 0 {
                         cNode: ASTNode = topNode.children[0]
-                        if cNode.kind == NodeKind.NumExpr {
+                        if cNode.kind == NodeKind.ObjLitExpr {
+                            gType = TypeKind.Obj
+                        } els if cNode.kind == NodeKind.AwaitExpr {
+                            gType = cNode.inferredType
+                            if gType == TypeKind.Unknown || gType == TypeKind.Func {
+                                gType = TypeKind.I64
+                            }
+                        } els if cNode.kind == NodeKind.NumExpr {
                             gType = TypeKind.I64
                         } els if cNode.kind == NodeKind.StrExpr {
                             gType = TypeKind.Str
@@ -697,7 +715,7 @@ obj Cli {
                     }
                     globReg: str = "@global_" + topNode.name
                     cg.emitExtern(globReg + " = global " + stType + " " + zeroVal)
-                    exprGen.addGlobalSymbol(topNode.name, globReg, gType)
+                    exprGen.addGlobalSymbolWithType(topNode.name, globReg, gType, gTypeName)
                 }
             }
         }
@@ -709,7 +727,7 @@ obj Cli {
                 pTypes: str[] = []
                 fr p of topNode.params {
                     pLLVM: str = "i64"
-                    if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                    if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
                         pLLVM = "ptr"
                     } els if p.typeAnnotation == "bool" {
                         pLLVM = "i1"
@@ -735,7 +753,7 @@ obj Cli {
                     isFirstP = true
                     fr p of topNode.params {
                         pLLVM: str = "i64"
-                        if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                        if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
                             pLLVM = "ptr"
                         } els if p.typeAnnotation == "bool" {
                             pLLVM = "i1"
@@ -757,12 +775,30 @@ obj Cli {
                         stmtGen.setReturnType(TypeKind.I64)
                     }
 
+                    prmReg: str = ""
+                    prevModeReg: str = ""
+                    if topNode.isAsync {
+                        asyncMode: num = 1
+                        if topNode.val == "st" {
+                            asyncMode = 0
+                        }
+                        prevModeReg = cg.newReg
+                        cg.emit(`${prevModeReg} = call i32 @zuv_get_async_context()`)
+                        cg.emit(`call void @zuv_set_async_context(i32 ${asyncMode})`)
+                        prmReg = cg.newReg
+                        cg.emit(`${prmReg} = call ptr @zuv_prm_new(i32 ${asyncMode})`)
+                        stmtGen.setAsyncFunc(prmReg, prevModeReg)
+                    }
+
                     fr p of topNode.params {
                         pLLVM: str = "i64"
                         pKind = TypeKind.Unknown
                         if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
                             pLLVM = "ptr"
                             pKind = TypeKind.Str
+                        } els if p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                            pLLVM = "ptr"
+                            pKind = TypeKind.Arr
                         } els if p.typeAnnotation == "bool" {
                             pLLVM = "i1"
                             pKind = TypeKind.Bool
@@ -779,16 +815,39 @@ obj Cli {
                         exprGen.addSymbol(p.name, slotReg, pKind, false, true)
                     }
 
+                    hasExplicitRet: bool = false
                     if topNode.children.ln > 0 {
                         bodyBlock: ASTNode = topNode.children[0]
                         fr bodyStmt of bodyBlock.children {
                             stmtGen.emitStmt(bodyStmt)
                         }
+                        if bodyBlock.children.ln > 0 {
+                            lastStmt: ASTNode = bodyBlock.children[bodyBlock.children.ln - 1]
+                            if lastStmt.kind == NodeKind.RetStmt {
+                                hasExplicitRet = true
+                            }
+                        }
                     }
-                    if retLLVM == "void" {
-                        cg.emit("ret void")
+
+                    if topNode.isAsync {
+                        if !hasExplicitRet {
+                            cg.emit(`call void @zuv_prm_resolve(ptr ${prmReg}, i64 0)`)
+                            if prevModeReg.ln > 0 {
+                                cg.emit(`call void @zuv_set_async_context(i32 ${prevModeReg})`)
+                            }
+                            prmInt: str = cg.newReg
+                            cg.emit(`${prmInt} = ptrtoint ptr ${prmReg} to i64`)
+                            cg.emit(`ret i64 ${prmInt}`)
+                        }
+                        stmtGen.clearAsyncFunc()
                     } els {
-                        cg.emit("ret i64 0")
+                        if !hasExplicitRet {
+                            if retLLVM == "void" {
+                                cg.emit("ret void")
+                            } els {
+                                cg.emit("ret i64 0")
+                            }
+                        }
                     }
                     cg.finishFunction()
                 }
@@ -799,6 +858,7 @@ obj Cli {
         exprGen.clearSymbols()
         if hasExplicitMain {
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
+            rtGen.emitInitArgsCall(self.targetFile)
             rtGen.emitInitCrashHandlerCall()
             stmtGen.setReturnType(TypeKind.I32)
             stmtGen.setTopLevel(true)
@@ -815,6 +875,7 @@ obj Cli {
             cg.finishFunction()
         } els if !(self.isCdylib) {
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
+            rtGen.emitInitArgsCall(self.targetFile)
             rtGen.emitInitCrashHandlerCall()
             stmtGen.setReturnType(TypeKind.I32)
             stmtGen.setTopLevel(true)

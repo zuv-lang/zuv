@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Logical Keywords**: Added `and`, `or`, and `not` keyword parsing and truthy boolean condition evaluation (`tests/logical_symbols.test.zv`).
 - **Bitwise & Cast Safety**: Added `i1` boolean cast rules (`zext`/`uitofp`), guarded against illegal `bitcast i1`, and coerced `if`/`wh` conditions to `i1` (`tests/bitwise.test.zv`).
 - **Strict Equality & Precedence**: Allowed cross-type `==`/`!=` with `strcmp` lowering, and unified Pratt expression parsing (`tests/strict_eq.test.zv`, `tests/ternary.test.zv`).
+- **Braceless Control Flow**: Supported single-statement braceless bodies for `if`, `els`, `wh`, and `fr` (`tests/control_flow.test.zv`).
+- **Collection Iteration (`fr in` / `fr of`)**: Added single and two-variable iteration over arrays and objects with `__keys`/`__vals` buffer generation (`tests/fr_in.test.zv`, `tests/fr_of.test.zv`).
+- **Keyword Cleanup**: Removed obsolete `mut` and `&mut` tokens (`TOK_MUT`, `TOK_AMP_MUT`) in favor of implicit mutability.
+- **Type Casting (`as`)**: Supported primitive keywords (`num`, `str`, `bool`), pointer types (`*byte`), integer truncation/widening, and dynamic string/boolean conversions (`tests/as_cast.test.zv`).
+- **Dynamic Arrays & Untyped Parameters**: Supported pointer conversions and writeback for array method calls on untyped parameters, alongside expression-level juxtaposed calls (`tests/empty_arr_task1.test.zv`).
+- **Arrow Functions & Lambdas**: Added expression bodies, hoisted lambda closures, indirect function calls, and polymorphic print branching (`tests/arrow_functions.test.zv`).
+- **Async / Await Primitives**: Supported `asc` declarations, `awt` expression parsing, return type inference, and zero-argument async dispatch (`tests/async_await.test.zv`).
+- **Promise Combinators**: Supported `new Prm` arrow callback instantiation, `Prm.all`, `Prm.race`, and `Prm.allSettled` runtime lowering (`tests/async_combinators.test.zv`).
+- **Async File I/O**: Lowered `fs.wFAsync`, `fs.rFAsync`, and `fs.rm` via non-blocking runtime file primitives (`tests/async_io.test.zv`).
+- **Async Promise Contexts**: Lowered `@st`/`ascST` single-thread contexts, `Prm` unwrapping, rejection propagation, and `try`/`cth` blocks (`tests/async_prm.test.zv`).
+- **Attributes & Struct Instantiation**: Supported attribute annotations (`@inline`, `@derive`), typed struct literal instantiation, field type coercions, and member offset resolution (`tests/attributes.test.zv`).
+- **BigInt Primitives**: Implemented BigInt literals (`123n`), `BigInt` constructor, `typ` introspection, and equality comparisons (`tests/bigint.test.zv`).
 
 
 ## [0.13.0] - 2026-09-17

@@ -241,6 +241,150 @@ ParseTemplateStringExpr parser: Parser, raw: str, line: num, col: num :: ASTNode
 }
 
 /**
+ * Parses an anonymous lambda expression and hoists it as a synthesized function.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {str[]} paramNames - Parameter name identifiers
+ * @param {num} line - Source line number
+ * @param {num} col - Source column number
+ * @returns {ASTNode} Identifier AST node referencing the synthesized function
+ */
+ParseLambda parser: Parser, paramNames: str[], line: num, col: num :: ASTNode {
+    lambdaId: num = parser.lambdaCounter
+    parser.lambdaCounter = lambdaId + 1
+    lambdaName: str = "__lambda_" + lambdaId
+
+    params: Param[] = []
+    fr pName of paramNames {
+        p: Param = {
+            name: pName,
+            typeAnnotation: "",
+            isRest: false,
+            isOptional: false,
+            line,
+            col
+        }
+        params.psh p
+    }
+
+    parser.enterScope()
+    fr pName of paramNames {
+        parser.addVar pName
+    }
+
+    bodyBlock: ASTNode = ASTNode.createBlock [], line, col
+    if parser.check TokenType.TOK_LBRACE {
+        isObjLit: bool = false
+        if parser.checkPeek TokenType.TOK_RBRACE {
+            isObjLit = true
+        } els if parser.checkPeek TokenType.TOK_IDENT {
+            t2: Token = parser.peekAhead 2
+            if t2.kind == TokenType.TOK_COLON {
+                isObjLit = true
+            }
+        }
+
+        if isObjLit {
+            objExpr: ASTNode = ParseObjectLiteral parser
+            retNode: ASTNode = ASTNode.createRet objExpr, objExpr.line, objExpr.col
+            bodyBlock = ASTNode.createBlock [retNode], objExpr.line, objExpr.col
+        } els {
+            parser.consume TokenType.TOK_LBRACE, "Expected '{'"
+            stmts: ASTNode[] = []
+            wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+                if parser.matchToken TokenType.TOK_SEMICOLON {
+                    cont
+                }
+                cTok: Token = parser.cur
+                pTok: Token = parser.peek
+                if cTok.kind == TokenType.TOK_IDENT && pTok.kind == TokenType.TOK_ASSIGN {
+                    nameTok: Token = parser.advance
+                    parser.advance // consume '='
+                    initVal: ASTNode = ParseExpression parser, 1
+                    parser.addVar nameTok.val
+                    emptyType: str = ""
+                    stmts.psh (ASTNode.createVarDecl nameTok.val, emptyType, false, initVal, nameTok.line, nameTok.col)
+                    if parser.matchToken TokenType.TOK_SEMICOLON {
+                        // optional delimiter
+                    }
+                    cont
+                }
+                if cTok.kind == TokenType.TOK_RET {
+                    rTok: Token = parser.advance
+                    rExpr: ASTNode = ParseExpression parser, 1
+                    stmts.psh (ASTNode.createRet rExpr, rTok.line, rTok.col)
+                    if parser.matchToken TokenType.TOK_SEMICOLON {
+                        // optional delimiter
+                    }
+                    cont
+                }
+                sExpr: ASTNode = ParseExpression parser, 1
+                stmts.psh (ASTNode.createExprStmt sExpr, sExpr.line, sExpr.col)
+                if parser.matchToken TokenType.TOK_SEMICOLON {
+                    // optional delimiter
+                }
+            }
+            parser.consume TokenType.TOK_RBRACE, "Expected '}'"
+            bodyBlock = ASTNode.createBlock stmts, line, col
+        }
+    } els {
+        stmts: ASTNode[] = []
+        cTokStart: Token = parser.cur
+        curL: num = cTokStart.line
+        indentCol: num = cTokStart.col
+        wh !parser.isAtEnd {
+            cTok: Token = parser.cur
+            tCol: num = cTok.col
+            tLine: num = cTok.line
+            if tLine > curL && tCol < indentCol {
+                brk
+            }
+            pTok: Token = parser.peek
+            if cTok.kind == TokenType.TOK_IDENT && pTok.kind == TokenType.TOK_ASSIGN {
+                nameTok: Token = parser.advance
+                parser.advance // consume '='
+                initVal: ASTNode = ParseExpression parser, 1
+                parser.addVar nameTok.val
+                emptyType: str = ""
+                stmts.psh (ASTNode.createVarDecl nameTok.val, emptyType, false, initVal, nameTok.line, nameTok.col)
+                if parser.matchToken TokenType.TOK_SEMICOLON {
+                    // optional delimiter
+                }
+            } els if cTok.kind == TokenType.TOK_RET {
+                rTok: Token = parser.advance
+                rExpr: ASTNode = ParseExpression parser, 1
+                stmts.psh (ASTNode.createRet rExpr, rTok.line, rTok.col)
+                if parser.matchToken TokenType.TOK_SEMICOLON {
+                    // optional delimiter
+                }
+            } els {
+                sExpr: ASTNode = ParseExpression parser, 1
+                stmts.psh (ASTNode.createExprStmt sExpr, sExpr.line, sExpr.col)
+                if parser.matchToken TokenType.TOK_SEMICOLON {
+                    // optional delimiter
+                }
+            }
+            afterTok: Token = parser.cur
+            if parser.isAtEnd || afterTok.line == tLine || afterTok.col < indentCol {
+                brk
+            }
+        }
+        bodyBlock = ASTNode.createBlock stmts, line, col
+    }
+
+    parser.exitScope()
+
+    lambdaFunc: ASTNode = ASTNode.createFuncDecl lambdaName, "", false, false, line, col
+    lambdaFunc.params = params
+    lambdaFunc.children.psh bodyBlock
+
+    parser.lambdas.psh lambdaFunc
+
+    identNode: ASTNode = ASTNode.createIdent lambdaName, line, col
+    -> identNode
+}
+
+/**
  * Parses a primary atom expression (literal, identifier, grouped, array, or object literal).
  *
  * @param {Parser} parser - Parser coordinator instance
@@ -293,14 +437,71 @@ ParsePrimary parser: Parser :: ASTNode {
         -> ASTNode.createUnd uTok.line, uTok.col
     }
 
+    // Arrow Lambdas: x => expr or fn => expr
+    peekTok: Token = parser.peek
+    if (tok.kind == TokenType.TOK_IDENT || tok.kind == TokenType.TOK_FN) && peekTok.kind == TokenType.TOK_FAT_ARROW {
+        pTok: Token = parser.advance
+        parser.advance // consume '=>'
+        -> ParseLambda parser, [pTok.val], pTok.line, pTok.col
+    }
+
     // Identifiers & Variable References / Built-in Names
-    if tok.kind == TokenType.TOK_IDENT || tok.kind == TokenType.TOK_PRNT ||
+    if tok.kind == TokenType.TOK_IDENT || tok.kind == TokenType.TOK_FN || tok.kind == TokenType.TOK_PRNT ||
        tok.kind == TokenType.TOK_LOG || tok.kind == TokenType.TOK_WARN ||
        tok.kind == TokenType.TOK_INFO || tok.kind == TokenType.TOK_PANIC ||
        tok.kind == TokenType.TOK_SIZEOF || tok.kind == TokenType.TOK_SZ ||
        tok.kind == TokenType.TOK_ERR || tok.kind == TokenType.TOK_OK {
         idTok: Token = parser.advance
-        -> ASTNode.createIdent idTok.val, idTok.line, idTok.col
+        identNode = ASTNode.createIdent idTok.val, idTok.line, idTok.col
+
+        curTok: Token = parser.cur
+        if !parser.isAtEnd && curTok.line == idTok.line &&
+           (curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_STRING ||
+            curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
+            curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
+            curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT || curTok.kind == TokenType.TOK_FN) {
+            args: ASTNode[] = []
+            wh true {
+                argExpr: ASTNode = ParseExpression parser, 1
+                args.psh argExpr
+                if parser.matchToken TokenType.TOK_COMMA {
+                    // continue
+                } els {
+                    brk
+                }
+            }
+            -> ASTNode.createCall identNode, args, idTok.line, idTok.col
+        }
+
+        // Check if typed struct literal: Point{ x: 1, y: 2 }
+        if parser.check TokenType.TOK_LBRACE {
+            isObjLit: bool = false
+            if (parser.checkPeek TokenType.TOK_RBRACE) || (parser.checkPeek TokenType.TOK_ELLIPSIS) {
+                isObjLit = true
+            } els if parser.checkPeek TokenType.TOK_IDENT {
+                t2: Token = parser.peekAhead 2
+                if t2.kind == TokenType.TOK_COLON || t2.kind == TokenType.TOK_COMMA || t2.kind == TokenType.TOK_RBRACE {
+                    isObjLit = true
+                }
+            }
+            if isObjLit {
+                objExpr: ASTNode = ParseObjectLiteral parser
+                objExpr.name = idTok.val
+                -> objExpr
+            }
+        }
+
+        // Check if zero-argument function call shorthand
+        if parser.isZeroArgFunc idTok.val {
+            if parser.isAtEnd || curTok.line != idTok.line ||
+               curTok.kind == TokenType.TOK_SEMICOLON || curTok.kind == TokenType.TOK_RBRACE ||
+               curTok.kind == TokenType.TOK_RPAREN || curTok.kind == TokenType.TOK_COMMA {
+                emptyArgs: ASTNode[] = []
+                -> ASTNode.createCall identNode, emptyArgs, idTok.line, idTok.col
+            }
+        }
+
+        -> identNode
     }
 
     // Array Literals: [1, 2, 3]
@@ -313,8 +514,48 @@ ParsePrimary parser: Parser :: ASTNode {
         -> ParseObjectLiteral parser
     }
 
-    // Parenthesized Expressions: (expr)
+    // Parenthesized Expressions & Parameterized Arrow Lambdas: (a, b) => expr
     if tok.kind == TokenType.TOK_LPAREN {
+        // Look ahead for (params) =>
+        isLambda: bool = false
+        off: num = 1
+        wh true {
+            tAhead: Token = parser.peekAhead off
+            if tAhead.kind == TokenType.TOK_EOF || tAhead.kind == TokenType.TOK_SEMICOLON {
+                brk
+            }
+            if tAhead.kind == TokenType.TOK_RPAREN {
+                nextAfterParen: Token = parser.peekAhead (off + 1)
+                if nextAfterParen.kind == TokenType.TOK_FAT_ARROW {
+                    isLambda = true
+                }
+                brk
+            }
+            off = off + 1
+        }
+
+        if isLambda {
+            parser.advance // consume '('
+            paramNames: str[] = []
+            wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+                pTok: Token = parser.cur
+                if pTok.kind == TokenType.TOK_IDENT || pTok.kind == TokenType.TOK_FN {
+                    paramNames.psh pTok.val
+                    parser.advance
+                } els {
+                    pTok = parser.consume TokenType.TOK_IDENT, "Expected parameter identifier"
+                }
+                if parser.matchToken TokenType.TOK_COMMA {
+                    cont
+                } els {
+                    brk
+                }
+            }
+            parser.consume TokenType.TOK_RPAREN, "Expected ')' after lambda parameter list"
+            parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after lambda parameter list"
+            -> ParseLambda parser, paramNames, tok.line, tok.col
+        }
+
         parser.advance // consume '('
         inner: ASTNode = ParseExpression parser, 1
         parser.consume TokenType.TOK_RPAREN, "Expected ')' after grouped expression"
@@ -328,13 +569,110 @@ ParsePrimary parser: Parser :: ASTNode {
 }
 
 /**
- * Parses prefix unary expressions (`!x`, `-x`, `~x`, `&x`, `await x`).
+ * Parses a 'new' instantiation expression (`new TypeName(...)`, `new TypeName{...}`, `new Prm ...`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} NewExpr AST node
+ */
+ParseNewExpr parser: Parser :: ASTNode {
+    newTok: Token = parser.advance // consume 'new'
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type name after 'new'"
+    typeName: str = nameTok.val
+
+    if parser.check TokenType.TOK_LBRACE {
+        objExpr: ASTNode = ParseObjectLiteral parser
+        -> ASTNode.createNew typeName, [objExpr], newTok.line, newTok.col
+    }
+
+    if parser.matchToken TokenType.TOK_LPAREN {
+        args: ASTNode[] = []
+        wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+            arg: ASTNode = ParseExpression parser, 1
+            args.psh arg
+            if parser.matchToken TokenType.TOK_COMMA {
+                cont
+            } els {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_RPAREN, "Expected ')' after constructor arguments"
+        -> ASTNode.createNew typeName, args, newTok.line, newTok.col
+    }
+
+    // Check for lambda parameter list followed by =>: param1, param2 => body
+    isLambda: bool = false
+    off: num = 0
+    curLTok: Token = parser.cur
+    curL: num = curLTok.line
+    wh true {
+        tAhead: Token = parser.peekAhead off
+        if tAhead.kind == TokenType.TOK_EOF || tAhead.kind == TokenType.TOK_SEMICOLON || tAhead.line != curL {
+            brk
+        }
+        if tAhead.kind == TokenType.TOK_FAT_ARROW {
+            isLambda = true
+            brk
+        }
+        off = off + 1
+    }
+
+    if isLambda {
+        paramNames: str[] = []
+        wh true {
+            pTokParam: Token = parser.cur
+            if pTokParam.kind == TokenType.TOK_IDENT || pTokParam.kind == TokenType.TOK_FN {
+                paramNames.psh pTokParam.val
+                parser.advance
+                if parser.matchToken TokenType.TOK_COMMA {
+                    cont
+                } els {
+                    brk
+                }
+            } els {
+                brk
+            }
+        }
+        arrowTok: Token = parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after lambda parameters"
+        lambdaNode: ASTNode = ParseLambda parser, paramNames, nameTok.line, nameTok.col
+        -> ASTNode.createNew typeName, [lambdaNode], newTok.line, newTok.col
+    }
+
+    // Check for juxtaposed constructor arguments on the same line: new User "Charlie", 42
+    cTok: Token = parser.cur
+    if !parser.isAtEnd && cTok.line == nameTok.line &&
+       cTok.kind != TokenType.TOK_SEMICOLON && cTok.kind != TokenType.TOK_RBRACE &&
+       cTok.kind != TokenType.TOK_RPAREN && cTok.kind != TokenType.TOK_RBRACKET &&
+       cTok.kind != TokenType.TOK_COMMA && cTok.kind != TokenType.TOK_ASSIGN &&
+       cTok.kind != TokenType.TOK_DOT && cTok.kind != TokenType.TOK_COLON &&
+       cTok.kind != TokenType.TOK_FAT_ARROW {
+        args: ASTNode[] = []
+        wh true {
+            argExpr: ASTNode = ParseExpression parser, 1
+            args.psh argExpr
+            if parser.matchToken TokenType.TOK_COMMA {
+                cont
+            } els {
+                brk
+            }
+        }
+        -> ASTNode.createNew typeName, args, newTok.line, newTok.col
+    }
+
+    -> ASTNode.createNew typeName, [], newTok.line, newTok.col
+}
+
+/**
+ * Parses prefix unary expressions (`!x`, `-x`, `~x`, `&x`, `await x`, `new T`).
  *
  * @param {Parser} parser - Parser coordinator instance
  * @returns {ASTNode} Unary or primary expression AST node
  */
 ParsePrefixExpr parser: Parser :: ASTNode {
     tok: Token = parser.cur
+
+    if tok.kind == TokenType.TOK_NEW {
+        -> ParseNewExpr parser
+    }
 
     if tok.kind == TokenType.TOK_NOT || tok.kind == TokenType.TOK_MINUS || tok.kind == TokenType.TOK_TILDE {
         opTok: Token = parser.advance
@@ -375,6 +713,52 @@ ParsePrefixExpr parser: Parser :: ASTNode {
 }
 
 /**
+ * Parses a target type name in an 'as' cast expression.
+ *
+ * Handles primitive type keywords (num, str, bool, void), custom types/identifiers,
+ * pointer prefixes (*, &), and array suffixes ([]).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {str} The parsed type signature string
+ */
+ParseCastType parser: Parser :: str {
+    prefix: str = ""
+    wh parser.matchToken TokenType.TOK_ASTERISK {
+        prefix = prefix + "*"
+    }
+    if prefix.ln == 0 && parser.matchToken TokenType.TOK_AMP {
+        prefix = "&"
+    }
+
+    curTok: Token = parser.cur
+    baseType: str = ""
+    if curTok.kind == TokenType.TOK_IDENT || curTok.kind == TokenType.TOK_TYPE_NUM ||
+       curTok.kind == TokenType.TOK_TYPE_STR || curTok.kind == TokenType.TOK_TYPE_BOOL ||
+       curTok.kind == TokenType.TOK_TYPE_VOID {
+        baseType = curTok.val
+        parser.advance
+    } els {
+        parser.addError("E0102", "Expected type name after 'as'", curTok.line, curTok.col, curTok.len, "expected token")
+        -> ""
+    }
+
+    wh parser.check TokenType.TOK_LBRACKET {
+        if parser.checkPeek TokenType.TOK_RBRACKET {
+            parser.advance
+            parser.advance
+            baseType = baseType + "[]"
+        } els {
+            brk
+        }
+    }
+
+    if prefix.ln > 0 {
+        -> prefix + baseType
+    }
+    -> baseType
+}
+
+/**
  * Parses postfix operations and binary infix expressions using Pratt precedence climbing.
  *
  * Handles calls `f(x)`, indexing `a[i]`, property access `o.p`, safe navigation `o?.p`,
@@ -404,6 +788,11 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
         parser.consume TokenType.TOK_RPAREN, "Expected ')' after call arguments"
         if left.kind == NodeKind.PropExpr {
             target = left.children[0]
+            if target.kind == NodeKind.IdentExpr && (target.name == "fs" || target.name == "net" || target.name == "os" || target.name == "sys" || target.name == "io" || target.name == "Prm" || target.name == "Promise") {
+                cName: str = target.name + "." + left.name
+                calleeNode = ASTNode.createIdent cName, left.line, left.col
+                -> ASTNode.createCall calleeNode, args, left.line, left.col
+            }
             -> ASTNode.createMethodCall target, left.name, args, left.line, left.col
         }
         -> ASTNode.createCall left, args, left.line, left.col
@@ -424,12 +813,64 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
         propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
         propNode.name = propTok.val
         propNode.children = [left]
+
+        if left.kind == NodeKind.IdentExpr && (left.name == "fs" || left.name == "net" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise") {
+            curTok: Token = parser.cur
+            if !parser.isAtEnd && curTok.line == propTok.line &&
+               curTok.kind != TokenType.TOK_SEMICOLON && curTok.kind != TokenType.TOK_EOF &&
+               curTok.kind != TokenType.TOK_RPAREN && curTok.kind != TokenType.TOK_RBRACE &&
+               curTok.kind != TokenType.TOK_COMMA && curTok.kind != TokenType.TOK_ASSIGN &&
+               curTok.kind != TokenType.TOK_LPAREN && curTok.kind != TokenType.TOK_LBRACKET &&
+               curTok.kind != TokenType.TOK_DOT && curTok.kind != TokenType.TOK_FAT_ARROW {
+                args: ASTNode[] = []
+                wh true {
+                    argExpr: ASTNode = ParseExpression parser, 1
+                    args.psh argExpr
+                    if parser.matchToken TokenType.TOK_COMMA {
+                        // continue
+                    } els {
+                        brk
+                    }
+                }
+                cName: str = left.name + "." + propTok.val
+                calleeNode = ASTNode.createIdent cName, propTok.line, propTok.col
+                -> ASTNode.createCall calleeNode, args, propTok.line, propTok.col
+            }
+        }
+
+        curTok: Token = parser.cur
+        if !parser.isAtEnd && curTok.line == propTok.line &&
+           (curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_STRING ||
+            curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
+            curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
+            curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT) {
+            args: ASTNode[] = []
+            wh true {
+                argExpr: ASTNode = ParseExpression parser, 1
+                args.psh argExpr
+                if parser.matchToken TokenType.TOK_COMMA {
+                    // continue
+                } els {
+                    brk
+                }
+            }
+            -> ASTNode.createMethodCall left, propTok.val, args, propTok.line, propTok.col
+        }
+
         -> propNode
     }
 
-    // Postfix Safe Navigation: target?.property
+    // Postfix Safe Navigation: target?.property or target?.[index]
     if opTok.kind == TokenType.TOK_OPT_DOT {
         parser.advance // consume '?.'
+        if parser.check TokenType.TOK_LBRACKET {
+            parser.advance // consume '['
+            idxExpr: ASTNode = ParseExpression parser, 1
+            parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
+            idxNode = ASTNode.createIndex left, idxExpr, opTok.line, opTok.col
+            idxNode.op = "?."
+            -> idxNode
+        }
         propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '?.'"
         propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
         propNode.name = propTok.val
@@ -451,11 +892,8 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     // Type Cast: expr as Type
     if opTok.kind == TokenType.TOK_AS {
         parser.advance // consume 'as'
-        typeTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type name after 'as'"
-        castNode = ASTNode.createBase NodeKind.CastExpr, opTok.line, opTok.col
-        castNode.typeAnnotation = typeTok.val
-        castNode.children = [left]
-        -> castNode
+        castType: str = ParseCastType parser
+        -> ASTNode.createCast left, castType, opTok.line, opTok.col
     }
 
     // Ternary Conditional: cond ? thenVal : elseVal
@@ -493,7 +931,8 @@ ParseExpression parser: Parser, minPrec: num :: ASTNode {
     left: ASTNode = ParsePrefixExpr parser
 
     wh !(parser.isAtEnd) {
-        curPrec: num = GetTokenPrecedence parser.cur.kind
+        cTokPrec: Token = parser.cur
+        curPrec: num = GetTokenPrecedence cTokPrec.kind
         if curPrec <= minPrec {
             brk
         }

@@ -57,7 +57,7 @@ ParseJuxtaposedArgs parser: Parser, callee: ASTNode :: ASTNode {
        curTok.kind == TokenType.TOK_PLUS_EQ || curTok.kind == TokenType.TOK_MINUS_EQ ||
        curTok.kind == TokenType.TOK_COLON || curTok.kind == TokenType.TOK_COLON_COLON ||
        curTok.kind == TokenType.TOK_FAT_ARROW || curTok.kind == TokenType.TOK_ARROW ||
-       curTok.kind == TokenType.TOK_LBRACE {
+       curTok.kind == TokenType.TOK_LBRACE || curTok.kind == TokenType.TOK_ELS {
         -> callee
     }
 
@@ -68,7 +68,8 @@ ParseJuxtaposedArgs parser: Parser, callee: ASTNode :: ASTNode {
        loopTok.kind != TokenType.TOK_RBRACE &&
        loopTok.kind != TokenType.TOK_RPAREN &&
        loopTok.kind != TokenType.TOK_RBRACKET &&
-       loopTok.kind != TokenType.TOK_LBRACE {
+       loopTok.kind != TokenType.TOK_LBRACE &&
+       loopTok.kind != TokenType.TOK_ELS {
         argExpr: ASTNode = ParseExpr parser
         args.psh argExpr
         if parser.matchToken TokenType.TOK_COMMA {
@@ -135,6 +136,20 @@ ParseVarDecl parser: Parser :: ASTNode {
 }
 
 /**
+ * Parses a braced block of statements or a single statement wrapped in a block.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} BlockStmt AST node
+ */
+ParseStatementOrBlock parser: Parser :: ASTNode {
+    if parser.check TokenType.TOK_LBRACE {
+        -> ParseBlockStmt parser
+    }
+    stmt: ASTNode = ParseStatement parser
+    -> ASTNode.createBlock [stmt], stmt.line, stmt.col
+}
+
+/**
  * Parses an if statement with optional else / else-if branches.
  *
  * @param {Parser} parser - Parser coordinator instance
@@ -143,7 +158,7 @@ ParseVarDecl parser: Parser :: ASTNode {
 ParseIfStmt parser: Parser :: ASTNode {
     ifTok: Token = parser.consume TokenType.TOK_IF, "Expected 'if'"
     condNode: ASTNode = ParseExpr parser
-    thenBlock: ASTNode = ParseBlockStmt parser
+    thenBlock: ASTNode = ParseStatementOrBlock parser
     elseBlock = ASTNode.createNil ifTok.line, ifTok.col
 
     if parser.matchToken TokenType.TOK_ELS {
@@ -151,7 +166,7 @@ ParseIfStmt parser: Parser :: ASTNode {
             nestedIf: ASTNode = ParseIfStmt parser
             elseBlock = ASTNode.createBlock [nestedIf], nestedIf.line, nestedIf.col
         } els {
-            elseBlock = ParseBlockStmt parser
+            elseBlock = ParseStatementOrBlock parser
         }
     }
 
@@ -159,7 +174,7 @@ ParseIfStmt parser: Parser :: ASTNode {
 }
 
 /**
- * Parses a while loop statement (`wh condition { body }`).
+ * Parses a while loop statement (`wh condition { body }` or `wh condition stmt`).
  *
  * @param {Parser} parser - Parser coordinator instance
  * @returns {ASTNode} WhStmt AST node
@@ -167,7 +182,7 @@ ParseIfStmt parser: Parser :: ASTNode {
 ParseWhileStmt parser: Parser :: ASTNode {
     whTok: Token = parser.consume TokenType.TOK_WH, "Expected 'wh'"
     condNode: ASTNode = ParseExpr parser
-    bodyBlock: ASTNode = ParseBlockStmt parser
+    bodyBlock: ASTNode = ParseStatementOrBlock parser
     -> ASTNode.createWh condNode, bodyBlock, whTok.line, whTok.col
 }
 
@@ -180,19 +195,50 @@ ParseWhileStmt parser: Parser :: ASTNode {
 ParseForStmt parser: Parser :: ASTNode {
     frTok: Token = parser.consume TokenType.TOK_FOR, "Expected 'fr'"
 
-    // Check for for-in / for-of: fr item in collection { ... }
+    // Check for for-in / for-of:
+    // Pair form: fr item, idx of coll { ... } | fr key, val in coll { ... }
+    // Single form: fr item in coll { ... } | fr item of coll { ... }
     if parser.check TokenType.TOK_IDENT {
         peekTok: Token = parser.peek
+        if peekTok.kind == TokenType.TOK_COMMA {
+            t2: Token = parser.peekAhead 2
+            t3: Token = parser.peekAhead 3
+            if t2.kind == TokenType.TOK_IDENT && (t3.kind == TokenType.TOK_IN || t3.kind == TokenType.TOK_OF) {
+                firstTok: Token = parser.advance
+                parser.consume TokenType.TOK_COMMA, "Expected ','"
+                secondTok: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier after ','"
+                isIn: bool = parser.matchToken TokenType.TOK_IN
+                if !isIn {
+                    parser.consume TokenType.TOK_OF, "Expected 'in' or 'of'"
+                }
+                iterExpr: ASTNode = ParseExpr parser
+                parser.enterScope()
+                parser.addVar firstTok.val
+                parser.addVar secondTok.val
+                bodyBlock: ASTNode = ParseStatementOrBlock parser
+                parser.exitScope()
+
+                node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
+                if !isIn {
+                    node.kind = NodeKind.FrOfStmt
+                }
+                node.name = firstTok.val
+                node.val = secondTok.val
+                node.children = [iterExpr, bodyBlock]
+                -> node
+            }
+        }
         if peekTok.kind == TokenType.TOK_IN {
             itemTok: Token = parser.advance
             parser.advance // consume 'in'
             iterExpr: ASTNode = ParseExpr parser
             parser.enterScope()
             parser.addVar itemTok.val
-            bodyBlock: ASTNode = ParseBlockStmt parser
+            bodyBlock: ASTNode = ParseStatementOrBlock parser
             parser.exitScope()
             node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
             node.name = itemTok.val
+            node.val = ""
             node.children = [iterExpr, bodyBlock]
             -> node
         } els if peekTok.kind == TokenType.TOK_OF {
@@ -201,10 +247,11 @@ ParseForStmt parser: Parser :: ASTNode {
             iterExpr: ASTNode = ParseExpr parser
             parser.enterScope()
             parser.addVar itemTok.val
-            bodyBlock: ASTNode = ParseBlockStmt parser
+            bodyBlock: ASTNode = ParseStatementOrBlock parser
             parser.exitScope()
             node = ASTNode.createBase NodeKind.FrOfStmt, frTok.line, frTok.col
             node.name = itemTok.val
+            node.val = ""
             node.children = [iterExpr, bodyBlock]
             -> node
         }
@@ -220,7 +267,7 @@ ParseForStmt parser: Parser :: ASTNode {
         // optional semicolon after cond
     }
     postExpr: ASTNode = ParseExpr parser
-    bodyBlock: ASTNode = ParseBlockStmt parser
+    bodyBlock: ASTNode = ParseStatementOrBlock parser
 
     node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
     node.children = [initStmt, condExpr, postExpr, bodyBlock]
@@ -326,6 +373,60 @@ ParseTryStmt parser: Parser :: ASTNode {
  * @param {Parser} parser - Parser coordinator instance
  * @returns {ASTNode} SwStmt AST node
  */
+/**
+ * Parses a match arm pattern (wildcard '_', number/string/bool literal, enum member, or identifier).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Pattern AST node
+ */
+ParseMatchPattern parser: Parser :: ASTNode {
+    pTok: Token = parser.cur
+    if pTok.kind == TokenType.TOK_NUMBER {
+        numTok: Token = parser.advance
+        numNode: ASTNode = ASTNode.createNum 0, numTok.line, numTok.col
+        numNode.val = numTok.val
+        -> numNode
+    }
+    if pTok.kind == TokenType.TOK_STRING {
+        strTok: Token = parser.advance
+        -> ASTNode.createStr strTok.val, strTok.line, strTok.col
+    }
+    if pTok.kind == TokenType.TOK_TRUE {
+        bTok: Token = parser.advance
+        -> ASTNode.createBool true, bTok.line, bTok.col
+    }
+    if pTok.kind == TokenType.TOK_FALSE {
+        bTok: Token = parser.advance
+        -> ASTNode.createBool false, bTok.line, bTok.col
+    }
+    if pTok.kind == TokenType.TOK_IDENT || pTok.kind == TokenType.TOK_OK || pTok.kind == TokenType.TOK_ERR {
+        idTok: Token = parser.advance
+        identNode: ASTNode = ASTNode.createIdent idTok.val, idTok.line, idTok.col
+        if parser.matchToken TokenType.TOK_DOT {
+            memberTok: Token = parser.consume TokenType.TOK_IDENT, "Expected member name after '.'"
+            propNode: ASTNode = ASTNode.createBase NodeKind.PropExpr, memberTok.line, memberTok.col
+            propNode.name = memberTok.val
+            propNode.children = [identNode]
+            -> propNode
+        }
+        if parser.matchToken TokenType.TOK_LPAREN {
+            argTok: Token = parser.consume TokenType.TOK_IDENT, "Expected variable name in pattern"
+            parser.consume TokenType.TOK_RPAREN, "Expected ')' after pattern argument"
+            argNode: ASTNode = ASTNode.createIdent argTok.val, argTok.line, argTok.col
+            identNode.children.psh argNode
+            -> identNode
+        }
+        -> identNode
+    }
+    -> ParseExpr parser
+}
+
+/**
+ * Parses a pattern matching block (`sw target { val1 => body1, _ => body2 }` or `mch`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} SwStmt AST node
+ */
 ParseMatchStmt parser: Parser :: ASTNode {
     swTok: Token = parser.advance // consume 'sw' / 'mch'
     targetExpr: ASTNode = ParseExpr parser
@@ -339,7 +440,7 @@ ParseMatchStmt parser: Parser :: ASTNode {
             cont
         }
 
-        patExpr: ASTNode = ParseExpr parser
+        patExpr: ASTNode = ParseMatchPattern parser
         parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after match pattern"
 
         armBody = ASTNode.createNil patExpr.line, patExpr.col
@@ -347,6 +448,7 @@ ParseMatchStmt parser: Parser :: ASTNode {
             armBody = ParseBlockStmt parser
         } els {
             exprArm: ASTNode = ParseExpr parser
+            exprArm = ParseJuxtaposedArgs parser, exprArm
             armBody = ASTNode.createBlock [exprArm], patExpr.line, patExpr.col
         }
 
@@ -436,7 +538,8 @@ ParseExpressionStmt parser: Parser :: ASTNode {
  */
 IsTypedVarDecl parser: Parser :: bool {
     cTok: Token = parser.cur
-    if cTok.kind != TokenType.TOK_IDENT || parser.peek.kind != TokenType.TOK_COLON {
+    pTok: Token = parser.peek
+    if cTok.kind != TokenType.TOK_IDENT || pTok.kind != TokenType.TOK_COLON {
         -> false
     }
     curLine: num = cTok.line
@@ -467,6 +570,22 @@ IsTypedVarDecl parser: Parser :: bool {
  */
 ParseStatement parser: Parser :: ASTNode {
     curTok: Token = parser.cur
+
+    if curTok.kind == TokenType.TOK_AT {
+        wh parser.check TokenType.TOK_AT {
+            parser.advance
+            if parser.check TokenType.TOK_IDENT {
+                parser.advance
+            }
+            if parser.matchToken TokenType.TOK_LPAREN {
+                wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+                    parser.advance
+                }
+                parser.consume TokenType.TOK_RPAREN, "Expected ')' after attribute arguments"
+            }
+        }
+        -> ParseStatement parser
+    }
 
     if curTok.kind == TokenType.TOK_LET || curTok.kind == TokenType.TOK_AMP_LET {
         -> ParseVarDecl parser
@@ -503,7 +622,8 @@ ParseStatement parser: Parser :: ASTNode {
     }
 
     // Implicit variable declaration without 'let': ident = expr (when not previously declared)
-    if curTok.kind == TokenType.TOK_IDENT && parser.peek.kind == TokenType.TOK_ASSIGN {
+    peekTok: Token = parser.peek
+    if curTok.kind == TokenType.TOK_IDENT && peekTok.kind == TokenType.TOK_ASSIGN {
         if !(parser.hasVar curTok.val) {
             nameTok: Token = parser.advance
             parser.advance // consume '='

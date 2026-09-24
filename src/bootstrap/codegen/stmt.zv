@@ -33,6 +33,9 @@ obj StmtCodegen {
     continueLabels: str[],
     returnType: TypeKind,
     isTopLevel: bool,
+    isAsync: bool,
+    asyncPrmReg: str,
+    asyncPrevModeReg: str,
 
     /**
      * Initializes a new StmtCodegen coordinator instance.
@@ -50,8 +53,23 @@ obj StmtCodegen {
             breakLabels: emptyBrk,
             continueLabels: emptyCont,
             returnType: TypeKind.Void,
-            isTopLevel: false
+            isTopLevel: false,
+            isAsync: false,
+            asyncPrmReg: "",
+            asyncPrevModeReg: ""
         }
+    },
+
+    setAsyncFunc: prmReg: str, prevModeReg: str :: void => {
+        self.isAsync = true
+        self.asyncPrmReg = prmReg
+        self.asyncPrevModeReg = prevModeReg
+    },
+
+    clearAsyncFunc: :: void => {
+        self.isAsync = false
+        self.asyncPrmReg = ""
+        self.asyncPrevModeReg = ""
     },
 
     /**
@@ -131,19 +149,27 @@ obj StmtCodegen {
         slotReg: str = ""
         isGlobal: bool = false
 
+        effTypeName: str = node.typeAnnotation
+        if effTypeName.ln == 0 && node.children.ln > 0 {
+            effTypeName = node.children[0].typeAnnotation
+            if effTypeName.ln == 0 && node.children[0].name.ln > 0 {
+                effTypeName = node.children[0].name
+            }
+        }
+
         if self.isTopLevel {
             existingGlobal: ScopeSymbol = self.exprGen.findGlobalSymbol node.name
             if existingGlobal.name.ln > 0 {
                 slotReg = existingGlobal.reg
                 isGlobal = true
-                self.exprGen.setGlobalSymbolType node.name, varType
+                self.exprGen.setGlobalSymbolType node.name, varType, effTypeName
             }
         }
 
         if !isGlobal {
             slotReg = self.codegen.newReg
             self.codegen.emit `${slotReg} = alloca ${stType}`
-            self.exprGen.addSymbol node.name, slotReg, varType, false, true
+            self.exprGen.addSymbolWithType node.name, slotReg, varType, effTypeName, false, true
         }
         if initReg.ln > 0 {
             storeVal: str = initReg
@@ -301,20 +327,33 @@ obj StmtCodegen {
      */
     emitFrOf: node: ASTNode :: void => {
         arrRes: ExprResult = self.exprGen.emitExpr node.children[0]
-        lenReg: str = self.exprGen.arrGen.emitLength arrRes.reg
+        arrPtrReg: str = arrRes.reg
+        if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${arrRes.reg} to ptr`
+            arrPtrReg = convReg
+        }
+        lenReg: str = self.exprGen.arrGen.emitLength arrPtrReg
 
         idxSlot: str = self.codegen.newReg
         self.codegen.emit `${idxSlot} = alloca i64`
         self.codegen.emit `store i64 0, ptr ${idxSlot}`
 
         itemType = node.inferredType
-        if itemType == TypeKind.Unknown {
-            itemType = TypeKind.I64
+        if itemType == TypeKind.Unknown || itemType == TypeKind.I64 {
+            itemType = TypeKind.Num
         }
         itemSlot: str = self.codegen.newReg
         stType: str = llvmStackType itemType
         self.codegen.emit `${itemSlot} = alloca ${stType}`
         self.exprGen.addSymbol node.name, itemSlot, itemType, false, true
+
+        userIdxSlot: str = ""
+        if node.val.ln > 0 {
+            userIdxSlot = self.codegen.newReg
+            self.codegen.emit `${userIdxSlot} = alloca double`
+            self.exprGen.addSymbol node.val, userIdxSlot, TypeKind.Num, false, true
+        }
 
         condLbl: str = self.codegen.newLabel "frof_cond"
         bodyLbl: str = self.codegen.newLabel "frof_body"
@@ -334,9 +373,23 @@ obj StmtCodegen {
         self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
 
         self.codegen.emitLabel bodyLbl
-        elemRaw: str = self.exprGen.arrGen.emitGetElement arrRes.reg, curIdxReg, false, node.line
-        elemVal: str = unboxValueFromI64 self.codegen, elemRaw, itemType
+        elemRaw: str = self.exprGen.arrGen.emitGetElement arrPtrReg, curIdxReg, false, node.line
+        elemVal: str = elemRaw
+        if itemType == TypeKind.Num {
+            elemDbl: str = self.codegen.newReg
+            self.codegen.emit `${elemDbl} = sitofp i64 ${elemRaw} to double`
+            elemVal = elemDbl
+        } els {
+            elemVal = unboxValueFromI64 self.codegen, elemRaw, itemType
+        }
         self.codegen.emit `store ${stType} ${elemVal}, ptr ${itemSlot}`
+
+        if userIdxSlot.ln > 0 {
+            idxDbl: str = self.codegen.newReg
+            self.codegen.emit `${idxDbl} = sitofp i64 ${curIdxReg} to double`
+            self.codegen.emit `store double ${idxDbl}, ptr ${userIdxSlot}`
+        }
+
         self.emitStmt node.children[1]
         self.codegen.emit `br label %${stepLbl}`
 
@@ -406,7 +459,153 @@ obj StmtCodegen {
             self.continueLabels.pp
             ->
         }
-        self.emitFrOf node
+
+        collRes: ExprResult = self.exprGen.emitExpr node.children[0]
+        isArr: bool = (collRes.typeKind == TypeKind.Arr || node.children[0].inferredType == TypeKind.Arr)
+
+        condLbl: str = self.codegen.newLabel "frin_cond"
+        bodyLbl: str = self.codegen.newLabel "frin_body"
+        stepLbl: str = self.codegen.newLabel "frin_step"
+        endLbl: str = self.codegen.newLabel "frin_end"
+
+        self.breakLabels.psh endLbl
+        self.continueLabels.psh stepLbl
+
+        idxSlot: str = self.codegen.newReg
+        self.codegen.emit `${idxSlot} = alloca i64`
+        self.codegen.emit `store i64 0, ptr ${idxSlot}`
+
+        if isArr {
+            arrPtrReg: str = collRes.reg
+            if collRes.typeKind != TypeKind.Arr && collRes.typeKind != TypeKind.Ptr {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${collRes.reg} to ptr`
+                arrPtrReg = convReg
+            }
+            lenReg: str = self.exprGen.arrGen.emitLength arrPtrReg
+            firstSlot: str = self.codegen.newReg
+            self.codegen.emit `${firstSlot} = alloca double`
+            self.exprGen.addSymbol node.name, firstSlot, TypeKind.Num, false, true
+
+            secondSlot: str = ""
+            if node.val.ln > 0 {
+                secondSlot = self.codegen.newReg
+                self.codegen.emit `${secondSlot} = alloca double`
+                self.exprGen.addSymbol node.val, secondSlot, TypeKind.Num, false, true
+            }
+
+            self.codegen.emit `br label %${condLbl}`
+            self.codegen.emitLabel condLbl
+
+            curIdxReg: str = self.codegen.newReg
+            self.codegen.emit `${curIdxReg} = load i64, ptr ${idxSlot}`
+            hasMore: str = self.codegen.newReg
+            self.codegen.emit `${hasMore} = icmp ult i64 ${curIdxReg}, ${lenReg}`
+            self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
+
+            self.codegen.emitLabel bodyLbl
+            idxDbl: str = self.codegen.newReg
+            self.codegen.emit `${idxDbl} = sitofp i64 ${curIdxReg} to double`
+            self.codegen.emit `store double ${idxDbl}, ptr ${firstSlot}`
+
+            if secondSlot.ln > 0 {
+                elemRaw: str = self.exprGen.arrGen.emitGetElement arrPtrReg, curIdxReg, false, node.line
+                elemDbl: str = self.codegen.newReg
+                self.codegen.emit `${elemDbl} = sitofp i64 ${elemRaw} to double`
+                self.codegen.emit `store double ${elemDbl}, ptr ${secondSlot}`
+            }
+
+            self.emitStmt node.children[1]
+            self.codegen.emit `br label %${stepLbl}`
+
+            self.codegen.emitLabel stepLbl
+            sIdx: str = self.codegen.newReg
+            self.codegen.emit `${sIdx} = load i64, ptr ${idxSlot}`
+            nextIdx: str = self.codegen.newReg
+            self.codegen.emit `${nextIdx} = add i64 ${sIdx}, 1`
+            self.codegen.emit `store i64 ${nextIdx}, ptr ${idxSlot}`
+            self.codegen.emit `br label %${condLbl}`
+
+            self.codegen.emitLabel endLbl
+            self.breakLabels.pp
+            self.continueLabels.pp
+            ->
+        }
+
+        // Object iteration
+        keysOff: num = self.exprGen.objGen.registry.getFieldOffset "", "__keys"
+        kSlotGep: str = self.codegen.newReg
+        self.codegen.emit `${kSlotGep} = getelementptr inbounds i64, ptr ${collRes.reg}, i64 ${keysOff}`
+        keysInt: str = self.codegen.newReg
+        self.codegen.emit `${keysInt} = load i64, ptr ${kSlotGep}`
+        keysBuf: str = self.codegen.newReg
+        self.codegen.emit `${keysBuf} = inttoptr i64 ${keysInt} to ptr`
+
+        objLenReg: str = self.codegen.newReg
+        self.codegen.emit `${objLenReg} = load i64, ptr ${keysBuf}`
+
+        firstSlot: str = self.codegen.newReg
+        self.codegen.emit `${firstSlot} = alloca ptr`
+        self.exprGen.addSymbol node.name, firstSlot, TypeKind.Str, false, true
+
+        secondSlot: str = ""
+        valsBuf: str = ""
+        if node.val.ln > 0 {
+            valsOff: num = self.exprGen.objGen.registry.getFieldOffset "", "__vals"
+            vSlotGep: str = self.codegen.newReg
+            self.codegen.emit `${vSlotGep} = getelementptr inbounds i64, ptr ${collRes.reg}, i64 ${valsOff}`
+            valsInt: str = self.codegen.newReg
+            self.codegen.emit `${valsInt} = load i64, ptr ${vSlotGep}`
+            valsBuf = self.codegen.newReg
+            self.codegen.emit `${valsBuf} = inttoptr i64 ${valsInt} to ptr`
+
+            secondSlot = self.codegen.newReg
+            self.codegen.emit `${secondSlot} = alloca i64`
+            self.exprGen.addSymbol node.val, secondSlot, TypeKind.I64, false, true
+        }
+
+        self.codegen.emit `br label %${condLbl}`
+        self.codegen.emitLabel condLbl
+
+        curIdxReg: str = self.codegen.newReg
+        self.codegen.emit `${curIdxReg} = load i64, ptr ${idxSlot}`
+        hasMore: str = self.codegen.newReg
+        self.codegen.emit `${hasMore} = icmp ult i64 ${curIdxReg}, ${objLenReg}`
+        self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
+
+        self.codegen.emitLabel bodyLbl
+        kElemOffset: str = self.codegen.newReg
+        self.codegen.emit `${kElemOffset} = add i64 ${curIdxReg}, 1`
+        kGep: str = self.codegen.newReg
+        self.codegen.emit `${kGep} = getelementptr inbounds i64, ptr ${keysBuf}, i64 ${kElemOffset}`
+        kInt: str = self.codegen.newReg
+        self.codegen.emit `${kInt} = load i64, ptr ${kGep}`
+        kPtr: str = self.codegen.newReg
+        self.codegen.emit `${kPtr} = inttoptr i64 ${kInt} to ptr`
+        self.codegen.emit `store ptr ${kPtr}, ptr ${firstSlot}`
+
+        if secondSlot.ln > 0 {
+            vGep: str = self.codegen.newReg
+            self.codegen.emit `${vGep} = getelementptr inbounds i64, ptr ${valsBuf}, i64 ${kElemOffset}`
+            vInt: str = self.codegen.newReg
+            self.codegen.emit `${vInt} = load i64, ptr ${vGep}`
+            self.codegen.emit `store i64 ${vInt}, ptr ${secondSlot}`
+        }
+
+        self.emitStmt node.children[1]
+        self.codegen.emit `br label %${stepLbl}`
+
+        self.codegen.emitLabel stepLbl
+        sIdx: str = self.codegen.newReg
+        self.codegen.emit `${sIdx} = load i64, ptr ${idxSlot}`
+        nextIdx: str = self.codegen.newReg
+        self.codegen.emit `${nextIdx} = add i64 ${sIdx}, 1`
+        self.codegen.emit `store i64 ${nextIdx}, ptr ${idxSlot}`
+        self.codegen.emit `br label %${condLbl}`
+
+        self.codegen.emitLabel endLbl
+        self.breakLabels.pp
+        self.continueLabels.pp
     },
 
     /**
@@ -494,6 +693,41 @@ obj StmtCodegen {
      */
     emitRet: node: ASTNode :: void => {
         hasVal: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
+
+        if self.isAsync {
+            retValReg: str = "0"
+            if hasVal {
+                retRes: ExprResult = self.exprGen.emitExpr node.children[0]
+                if retRes.typeKind == TypeKind.Num {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = fptosi double ${retRes.reg} to i64`
+                    retValReg = cReg
+                } els if retRes.typeKind == TypeKind.Bool || retRes.typeKind == TypeKind.I8 {
+                    cReg: str = self.codegen.newReg
+                    srcLLVM: str = (retRes.typeKind == TypeKind.Bool) ? "i1" : "i8"
+                    self.codegen.emit `${cReg} = zext ${srcLLVM} ${retRes.reg} to i64`
+                    retValReg = cReg
+                } els if retRes.typeKind == TypeKind.I32 {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = sext i32 ${retRes.reg} to i64`
+                    retValReg = cReg
+                } els if retRes.typeKind == TypeKind.Str || retRes.typeKind == TypeKind.Ptr || retRes.typeKind == TypeKind.Arr || retRes.typeKind == TypeKind.Obj {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = ptrtoint ptr ${retRes.reg} to i64`
+                    retValReg = cReg
+                } els {
+                    retValReg = retRes.reg
+                }
+            }
+            self.codegen.emit `call void @zuv_prm_resolve(ptr ${self.asyncPrmReg}, i64 ${retValReg})`
+            if self.asyncPrevModeReg.ln > 0 {
+                self.codegen.emit `call void @zuv_set_async_context(i32 ${self.asyncPrevModeReg})`
+            }
+            prmInt: str = self.codegen.newReg
+            self.codegen.emit `${prmInt} = ptrtoint ptr ${self.asyncPrmReg} to i64`
+            self.codegen.emit `ret i64 ${prmInt}`
+            ->
+        }
 
         if hasVal {
             retRes: ExprResult = self.exprGen.emitExpr node.children[0]
@@ -591,10 +825,19 @@ obj StmtCodegen {
      * @returns {void}
      */
     emitPanic: node: ASTNode :: void => {
+        msgPtr: str = ""
         if node.children.ln > 0 {
-            self.exprGen.emitExpr node.children[0]
+            cRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            if cRes.typeKind == TypeKind.Str || cRes.typeKind == TypeKind.Ptr {
+                msgPtr = cRes.reg
+            } els {
+                msgPtr = self.codegen.addStringConstant "panic"
+            }
+        } els {
+            msgPtr = self.codegen.addStringConstant "panic"
         }
-        self.codegen.emit `call void @abort()`
+        fileSym: str = self.codegen.addStringConstant "main.zv"
+        self.codegen.emit `call void @zuv_panic(ptr ${msgPtr}, ptr ${fileSym}, i32 ${node.line})`
         self.codegen.emit `unreachable`
     },
 
@@ -605,11 +848,40 @@ obj StmtCodegen {
      * @returns {void}
      */
     emitTryCth: node: ASTNode :: void => {
+        tryLbl: str = self.codegen.newLabel "try_body"
+        catchLbl: str = self.codegen.newLabel "try_catch"
+        endLbl: str = self.codegen.newLabel "try_end"
+
+        oldCatch: str = self.exprGen.activeCatchLabel
+        self.exprGen.activeCatchLabel = catchLbl
+
+        self.codegen.emit `br label %${tryLbl}`
+        self.codegen.emitLabel tryLbl
+
         if node.children.ln > 0 {
             self.emitStmt node.children[0]
         }
-        if node.children.ln > 2 && node.children[2].kind != NodeKind.NilExpr {
-            self.emitStmt node.children[2]
+
+        self.codegen.emit `br label %${endLbl}`
+
+        self.exprGen.activeCatchLabel = oldCatch
+
+        self.codegen.emitLabel catchLbl
+        errVarName: str = node.name
+        if errVarName.ln > 0 {
+            errSlot: str = self.codegen.newReg
+            self.codegen.emit `${errSlot} = alloca i64`
+            eLoaded: str = self.codegen.newReg
+            self.codegen.emit `${eLoaded} = load i64, ptr @zuv_exc_value`
+            self.codegen.emit `store i64 ${eLoaded}, ptr ${errSlot}`
+            self.exprGen.addSymbol errVarName, errSlot, TypeKind.I64, false, true
         }
+
+        if node.children.ln > 1 && node.children[1].kind != NodeKind.NilExpr {
+            self.emitStmt node.children[1]
+        }
+
+        self.codegen.emit `br label %${endLbl}`
+        self.codegen.emitLabel endLbl
     }
 }

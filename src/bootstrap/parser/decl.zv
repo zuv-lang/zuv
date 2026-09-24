@@ -31,9 +31,12 @@ imp ParseStatement, ParseBlockStmt, ParseMatchStmt, ParseExpr frm stmt
  * @returns {str} The parsed type signature string
  */
 ParseTypeString parser: Parser :: str {
-    isPtr: bool = false
-    if parser.matchToken TokenType.TOK_AMP {
-        isPtr = true
+    prefix: str = ""
+    wh parser.matchToken TokenType.TOK_ASTERISK {
+        prefix = prefix + "*"
+    }
+    if prefix.ln == 0 && parser.matchToken TokenType.TOK_AMP {
+        prefix = "&"
     }
 
     curTok: Token = parser.cur
@@ -51,8 +54,8 @@ ParseTypeString parser: Parser :: str {
         }
     }
 
-    if isPtr {
-        -> "&" + baseType
+    if prefix.ln > 0 {
+        -> prefix + baseType
     }
     -> baseType
 }
@@ -83,7 +86,12 @@ ParseParamList parser: Parser :: Param[] {
             isRest = true
         }
 
-        pTok: Token = parser.consume TokenType.TOK_IDENT, "Expected parameter identifier"
+        pTok: Token = parser.cur
+        if pTok.kind == TokenType.TOK_IDENT || pTok.kind == TokenType.TOK_FN || pTok.kind == TokenType.TOK_TYPE_NUM || pTok.kind == TokenType.TOK_TYPE_STR || pTok.kind == TokenType.TOK_TYPE_BOOL {
+            parser.advance
+        } els {
+            pTok = parser.consume TokenType.TOK_IDENT, "Expected parameter identifier"
+        }
         pName: str = pTok.val
         pType: str = ""
         isOpt: bool = false
@@ -330,13 +338,17 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
         params = ParseParamList parser
     }
 
-    returnType: str = "i64"
+    returnType: str = ""
     if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) {
         returnType = ParseTypeString parser
     }
 
     node = ASTNode.createFuncDecl name, returnType, isAsync, isPub, nameTok.line, nameTok.col
     node.params = params
+
+    if params.ln == 0 {
+        parser.addZeroArgFunc name
+    }
 
     parser.enterScope()
     fr p of params {
@@ -345,14 +357,107 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
 
     if parser.matchToken TokenType.TOK_FAT_ARROW {
         if parser.check TokenType.TOK_LBRACE {
-            bodyBlock: ASTNode = ParseBlockStmt parser
-            node.children.psh bodyBlock
+            isObjLit: bool = false
+            peekTok: Token = parser.peek
+            if peekTok.kind == TokenType.TOK_RBRACE || peekTok.kind == TokenType.TOK_ELLIPSIS {
+                isObjLit = true
+            } els if peekTok.kind == TokenType.TOK_IDENT {
+                peek2: Token = parser.peekAhead 2
+                if peek2.kind == TokenType.TOK_COLON || peek2.kind == TokenType.TOK_COMMA || peek2.kind == TokenType.TOK_RBRACE {
+                    isObjLit = true
+                }
+            }
+            if isObjLit {
+                objExpr: ASTNode = ParseExpr parser
+                retNode: ASTNode = ASTNode.createRet objExpr, objExpr.line, objExpr.col
+                bodyBlock: ASTNode = ASTNode.createBlock [retNode], objExpr.line, objExpr.col
+                node.children.psh bodyBlock
+            } els {
+                bodyBlock: ASTNode = ParseBlockStmt parser
+                node.children.psh bodyBlock
+            }
         } els if parser.check TokenType.TOK_MATCH {
             matchNode: ASTNode = ParseMatchStmt parser
-            node.children.psh matchNode
+            fr armBody of matchNode.children {
+                if armBody.kind == NodeKind.BlockStmt && armBody.children.ln > 0 {
+                    firstStmt: ASTNode = armBody.children[0]
+                    if firstStmt.kind != NodeKind.RetStmt {
+                        retArm: ASTNode = ASTNode.createRet firstStmt, firstStmt.line, firstStmt.col
+                        armBody.children = [retArm]
+                    }
+                }
+            }
+            bodyBlock: ASTNode = ASTNode.createBlock [matchNode], matchNode.line, matchNode.col
+            node.children.psh bodyBlock
         } els {
-            exprNode: ASTNode = ParseExpr parser
-            node.children.psh exprNode
+            curLTok: Token = parser.cur
+            prevLTok: Token = parser.prev
+            isSameLine: bool = (curLTok.line == prevLTok.line)
+            hasExplicitRet: bool = false
+            if !isSameLine {
+                off: num = 0
+                braceDepth: num = 0
+                wh true {
+                    tAhead: Token = parser.peekAhead off
+                    if tAhead.kind == TokenType.TOK_EOF {
+                        brk
+                    }
+                    if tAhead.kind == TokenType.TOK_LBRACE {
+                        braceDepth = braceDepth + 1
+                    } els if tAhead.kind == TokenType.TOK_RBRACE {
+                        braceDepth = braceDepth - 1
+                    }
+                    if braceDepth == 0 {
+                        if tAhead.kind == TokenType.TOK_ARROW || tAhead.kind == TokenType.TOK_RET {
+                            hasExplicitRet = true
+                            brk
+                        }
+                        if tAhead.kind == TokenType.TOK_IMP || tAhead.kind == TokenType.TOK_ENUM || tAhead.kind == TokenType.TOK_STRUCT || tAhead.kind == TokenType.TOK_PUB || tAhead.kind == TokenType.TOK_EXTERN {
+                            brk
+                        }
+                        if tAhead.kind == TokenType.TOK_FN {
+                            brk
+                        }
+                        if tAhead.kind == TokenType.TOK_IDENT {
+                            isOtherFn: bool = false
+                            fnOff: num = off + 1
+                            wh true {
+                                nTok: Token = parser.peekAhead fnOff
+                                if nTok.kind == TokenType.TOK_EOF || nTok.line != tAhead.line {
+                                    brk
+                                }
+                                if nTok.kind == TokenType.TOK_FAT_ARROW || nTok.kind == TokenType.TOK_LBRACE {
+                                    isOtherFn = true
+                                    brk
+                                }
+                                fnOff = fnOff + 1
+                            }
+                            if isOtherFn {
+                                brk
+                            }
+                        }
+                    }
+                    off = off + 1
+                }
+            }
+            if hasExplicitRet {
+                stmts: ASTNode[] = []
+                wh !(parser.isAtEnd) {
+                    s: ASTNode = ParseStatement parser
+                    stmts.psh s
+                    if s.kind == NodeKind.RetStmt {
+                        brk
+                    }
+                }
+                bodyBlock: ASTNode = ASTNode.createBlock stmts, node.line, node.col
+                node.children.psh bodyBlock
+            } els {
+                exprNode: ASTNode = ParseExpr parser
+                exprNode = ParseJuxtaposedArgs parser, exprNode
+                retNode: ASTNode = ASTNode.createRet exprNode, exprNode.line, exprNode.col
+                bodyBlock: ASTNode = ASTNode.createBlock [retNode], exprNode.line, exprNode.col
+                node.children.psh bodyBlock
+            }
         }
     } els if parser.check TokenType.TOK_LBRACE {
         bodyBlock: ASTNode = ParseBlockStmt parser
@@ -523,13 +628,34 @@ ParseImportDecl parser: Parser :: ASTNode {
  */
 ParseDeclaration parser: Parser :: ASTNode {
     isPub: bool = false
+    isAsync: bool = false
+    isAsyncST: bool = false
+
+    wh parser.check TokenType.TOK_AT {
+        parser.advance // consume '@'
+        attrTok: Token = parser.consume TokenType.TOK_IDENT, "Expected attribute name after '@'"
+        attrName: str = attrTok.val
+        if attrName == "st" || attrName == "single_threaded" {
+            isAsync = true
+            isAsyncST = true
+        }
+        if parser.matchToken TokenType.TOK_LPAREN {
+            wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+                parser.advance
+            }
+            parser.consume TokenType.TOK_RPAREN, "Expected ')' after attribute arguments"
+        }
+    }
+
     if parser.matchToken TokenType.TOK_PUB {
         isPub = true
     }
 
-    isAsync: bool = false
-    if (parser.matchToken TokenType.TOK_ASYNC) || (parser.matchToken TokenType.TOK_ASYNC_ST) {
+    if parser.matchToken TokenType.TOK_ASYNC {
         isAsync = true
+    } els if parser.matchToken TokenType.TOK_ASYNC_ST {
+        isAsync = true
+        isAsyncST = true
     }
 
     curTok: Token = parser.cur
@@ -549,7 +675,11 @@ ParseDeclaration parser: Parser :: ASTNode {
         -> ParseImportDecl parser
     }
     if curTok.kind == TokenType.TOK_FN || curTok.kind == TokenType.TOK_IDENT {
-        -> ParseFuncDecl parser, isPub, isAsync
+        fnNode: ASTNode = ParseFuncDecl parser, isPub, isAsync
+        if isAsyncST {
+            fnNode.val = "st"
+        }
+        -> fnNode
     }
 
     // Default error recovery fallback

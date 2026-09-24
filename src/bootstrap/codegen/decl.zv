@@ -56,6 +56,12 @@ createStructField name: str, offset: num, typeKind: TypeKind, typeName: str :: S
  */
 resolveFieldTypeKind typeName: str :: TypeKind {
     nameLen: num = typeName.ln
+    if nameLen >= 1 {
+        firstChar: str = typeName.sub 0, 1
+        if firstChar == "*" || firstChar == "&" {
+            -> TypeKind.Ptr
+        }
+    }
     if nameLen >= 2 {
         subSuffix: str = typeName.sub nameLen - 2, 2
         if subSuffix == "[]" {
@@ -69,6 +75,8 @@ resolveFieldTypeKind typeName: str :: TypeKind {
         "num"    => TypeKind.Num
         "double" => TypeKind.Num
         "f64"    => TypeKind.Num
+        "int"    => TypeKind.I32
+        "uint"   => TypeKind.I32
         "i64"    => TypeKind.I64
         "u64"    => TypeKind.I64
         "i32"    => TypeKind.I32
@@ -438,6 +446,12 @@ obj ObjectCodegen {
     emitObjectLit: typeName: str, fieldNames: str[], valRegs: str[], valTypes: TypeKind[] :: str => {
         count: num = fieldNames.ln
         maxOffset: num = count
+        if typeName.ln > 0 {
+            layout: StructLayout = self.registry.getLayout typeName
+            if layout.fieldCount > maxOffset {
+                maxOffset = layout.fieldCount
+            }
+        }
         fr fName of fieldNames {
             curOff: num = 0
             if typeName.ln > 0 {
@@ -449,6 +463,18 @@ obj ObjectCodegen {
                 maxOffset = curOff + 1
             }
         }
+        keysOff: num = 0
+        valsOff: num = 0
+        if typeName.ln == 0 {
+            keysOff = self.registry.getFieldOffset "", "__keys"
+            valsOff = self.registry.getFieldOffset "", "__vals"
+            if keysOff >= maxOffset {
+                maxOffset = keysOff + 1
+            }
+            if valsOff >= maxOffset {
+                maxOffset = valsOff + 1
+            }
+        }
         totalBytes: num = (maxOffset == 0) ? 8 : maxOffset * 8
 
         rawPtr: str = self.codegen.newReg
@@ -458,12 +484,39 @@ obj ObjectCodegen {
         fr fName of fieldNames {
             valReg: str = valRegs[fieldIdx]
             valType = valTypes[fieldIdx]
+
+            expectedFieldType: TypeKind = TypeKind.Unknown
+            effTypeName: str = typeName
+            if effTypeName.ln > 0 {
+                expectedFieldType = self.registry.getFieldType effTypeName, fName
+            } els {
+                fr l of self.registry.layouts {
+                    if l.hasField fName {
+                        effTypeName = l.typeName
+                        expectedFieldType = l.getFieldType fName
+                        brk
+                    }
+                }
+            }
+
+            if expectedFieldType == TypeKind.Num && valType != TypeKind.Num {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = sitofp i64 ${valReg} to double`
+                valReg = convReg
+                valType = TypeKind.Num
+            } els if expectedFieldType == TypeKind.I64 && valType == TypeKind.Num {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = fptosi double ${valReg} to i64`
+                valReg = convReg
+                valType = TypeKind.I64
+            }
+
             self.registry.setDynamicFieldType fName, valType
             boxedVal: str = boxValueToI64 self.codegen, valReg, valType
 
             offset: num = fieldIdx
-            if typeName.ln > 0 {
-                regOffset: num = self.registry.getFieldOffset typeName, fName
+            if effTypeName.ln > 0 {
+                regOffset: num = self.registry.getFieldOffset effTypeName, fName
                 if regOffset >= 0 {
                     offset = regOffset
                 }
@@ -475,6 +528,52 @@ obj ObjectCodegen {
             self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${rawPtr}, i64 ${offset}`
             self.codegen.emit `store i64 ${boxedVal}, ptr ${gepReg}`
             fieldIdx++
+        }
+
+        if typeName.ln == 0 {
+            keysWords: num = count + 1
+            keysBytes: num = keysWords * 8
+            keysBuf: str = self.codegen.newReg
+            self.codegen.emit `${keysBuf} = call ptr @malloc(i64 ${keysBytes})`
+            self.codegen.emit `store i64 ${count}, ptr ${keysBuf}`
+
+            valsBuf: str = self.codegen.newReg
+            self.codegen.emit `${valsBuf} = call ptr @malloc(i64 ${keysBytes})`
+            self.codegen.emit `store i64 ${count}, ptr ${valsBuf}`
+
+            kIdx: num = 0
+            fr fName of fieldNames {
+                kSlotIdx: num = kIdx + 1
+                strConst: str = self.codegen.addStringConstant fName
+                sPtr: str = self.codegen.newReg
+                self.codegen.emit `${sPtr} = getelementptr inbounds i8, ptr ${strConst}, i64 0`
+                sInt: str = self.codegen.newReg
+                self.codegen.emit `${sInt} = ptrtoint ptr ${sPtr} to i64`
+                kGep: str = self.codegen.newReg
+                self.codegen.emit `${kGep} = getelementptr inbounds i64, ptr ${keysBuf}, i64 ${kSlotIdx}`
+                self.codegen.emit `store i64 ${sInt}, ptr ${kGep}`
+
+                valReg: str = valRegs[kIdx]
+                valType = valTypes[kIdx]
+                boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+                vGep: str = self.codegen.newReg
+                self.codegen.emit `${vGep} = getelementptr inbounds i64, ptr ${valsBuf}, i64 ${kSlotIdx}`
+                self.codegen.emit `store i64 ${boxedVal}, ptr ${vGep}`
+
+                kIdx++
+            }
+
+            keysInt: str = self.codegen.newReg
+            self.codegen.emit `${keysInt} = ptrtoint ptr ${keysBuf} to i64`
+            kSlotReg: str = self.codegen.newReg
+            self.codegen.emit `${kSlotReg} = getelementptr inbounds i64, ptr ${rawPtr}, i64 ${keysOff}`
+            self.codegen.emit `store i64 ${keysInt}, ptr ${kSlotReg}`
+
+            valsInt: str = self.codegen.newReg
+            self.codegen.emit `${valsInt} = ptrtoint ptr ${valsBuf} to i64`
+            vSlotReg: str = self.codegen.newReg
+            self.codegen.emit `${vSlotReg} = getelementptr inbounds i64, ptr ${rawPtr}, i64 ${valsOff}`
+            self.codegen.emit `store i64 ${valsInt}, ptr ${vSlotReg}`
         }
 
         -> rawPtr

@@ -104,12 +104,16 @@ obj Checker {
         symInf = Symbol.create "inf", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symErr = Symbol.create "err", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symPanic = Symbol.create "panic", TypeKind.Func, "fn(str)->void", false, true, 0, 0, 0
+        symSh = Symbol.create "sh", TypeKind.Func, "fn(str)->i64", false, true, 0, 0, 0
+        symArgs = Symbol.create "args", TypeKind.Arr, "str[]", false, true, 0, 0, 0
         rootSyms.psh symPrnt
         rootSyms.psh symLg
         rootSyms.psh symWrn
         rootSyms.psh symInf
         rootSyms.psh symErr
         rootSyms.psh symPanic
+        rootSyms.psh symSh
+        rootSyms.psh symArgs
 
         rootScope = Scope.create 0, rootSyms
         rootScopes: Scope[] = [rootScope]
@@ -195,14 +199,23 @@ obj Checker {
         topIdx: num = self.scopes.ln - 1
         curScope: Scope = self.scopes[topIdx]
         symList: Symbol[] = curScope.symbols
+        idx: num = 0
         fr existing of symList {
             if existing.name == targetSym.name {
-                sLine: num = targetSym.line
-                sCol: num = targetSym.col
-                sLen: num = targetSym.name.ln
-                self.addError "E0301", "Variable '" + targetSym.name + "' is already declared in the current scope", sLine, sCol, sLen, "consider reusing or renaming variable"
-                -> false
+                if existing.line > 0 || existing.col > 0 {
+                    sLine: num = targetSym.line
+                    sCol: num = targetSym.col
+                    sLen: num = targetSym.name.ln
+                    self.addError "E0301", "Variable '" + targetSym.name + "' is already declared in the current scope", sLine, sCol, sLen, "consider reusing or renaming variable"
+                    -> false
+                }
+                targetSym.scopeLevel = topIdx
+                symList[idx] = targetSym
+                curScope.symbols = symList
+                self.scopes[topIdx] = curScope
+                -> true
             }
+            idx++
         }
         targetSym.scopeLevel = topIdx
         symList.psh targetSym

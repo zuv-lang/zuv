@@ -632,6 +632,9 @@ BorrowCheckStatement checker: BorrowChecker, stmt: ASTNode :: void {
         }
         checker.enterScope
         checker.defineVar stmt.name, false, "", true, stmt.line, stmt.col
+        if stmt.val.ln > 0 {
+            checker.defineVar stmt.val, false, "", true, stmt.line, stmt.col
+        }
         if stmt.children.ln > 1 {
             BorrowCheckStatement checker, stmt.children[1]
         }

@@ -40,6 +40,9 @@ obj Parser {
     source: str,
     errors: Diagnostic[],
     scopes: ParserScope[],
+    lambdas: ASTNode[],
+    lambdaCounter: num,
+    zeroArgFuncs: str[],
 
     /**
      * Creates and initializes a new Parser instance for the provided tokens.
@@ -54,6 +57,8 @@ obj Parser {
         errs: Diagnostic[] = []
         initScope: ParserScope = ParserScope.create()
         initScopes: ParserScope[] = [initScope]
+        emptyLambdas: ASTNode[] = []
+        emptyZeroArg: str[] = []
         -> {
             tokens,
             pos: 0,
@@ -61,7 +66,10 @@ obj Parser {
             file,
             source,
             errors: errs,
-            scopes: initScopes
+            scopes: initScopes,
+            lambdas: emptyLambdas,
+            lambdaCounter: 0,
+            zeroArgFuncs: emptyZeroArg
         }
     },
 
@@ -335,6 +343,19 @@ obj Parser {
                 if n == name {
                     -> true
                 }
+            }
+        }
+        -> false
+    },
+
+    addZeroArgFunc: name: str :: void => {
+        self.zeroArgFuncs.psh name
+    },
+
+    isZeroArgFunc: name: str :: bool => {
+        fr f of self.zeroArgFuncs {
+            if f == name {
+                -> true
             }
         }
         -> false
