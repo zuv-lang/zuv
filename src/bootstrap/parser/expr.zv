@@ -709,6 +709,20 @@ ParsePrefixExpr parser: Parser :: ASTNode {
         -> node
     }
 
+    if tok.kind == TokenType.TOK_ELLIPSIS {
+        opTok: Token = parser.advance
+        pNext: Token = parser.cur
+        pAfter: Token = parser.peek
+        if (pNext.kind == TokenType.TOK_IDENT || pNext.kind == TokenType.TOK_FN) && pAfter.kind == TokenType.TOK_FAT_ARROW {
+            paramName: str = "..." + pNext.val
+            parser.advance
+            parser.advance
+            -> ParseLambda parser, [paramName], opTok.line, opTok.col
+        }
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
+    }
+
     -> ParsePrimary parser
 }
 
@@ -814,7 +828,7 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
         propNode.name = propTok.val
         propNode.children = [left]
 
-        if left.kind == NodeKind.IdentExpr && (left.name == "fs" || left.name == "net" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise") {
+        if left.kind == NodeKind.IdentExpr && (left.name == "fs" || left.name == "net" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise" || left.name == "mem") {
             curTok: Token = parser.cur
             if !parser.isAtEnd && curTok.line == propTok.line &&
                curTok.kind != TokenType.TOK_SEMICOLON && curTok.kind != TokenType.TOK_EOF &&
@@ -843,7 +857,8 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
            (curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_STRING ||
             curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
             curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
-            curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT) {
+            curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT ||
+            curTok.kind == TokenType.TOK_AMP) {
             args: ASTNode[] = []
             wh true {
                 argExpr: ASTNode = ParseExpression parser, 1

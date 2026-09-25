@@ -20,7 +20,7 @@ imp TypeKind, TypeKindToStr, IsNumericType frm ../types
 imp ASTNode, NodeKind, FieldEntry frm ../ast
 imp Codegen frm codegen/codegen
 imp llvmType, llvmStackType, isPointerType, isIntegerType, isFloatType, selectBinaryOp, selectCmpOp, selectCastOp, selectDefaultValue frm codegen/types
-imp ArrayCodegen, boxValueToI64, unboxValueFromI64, ArraySpreadPart frm codegen/array
+imp ArrayCodegen, boxValueToI64, unboxValueFromI64, ArraySpreadPart, emitArrayBoundsCheck frm codegen/array
 imp ObjectCodegen, StructLayoutRegistry, resolveFieldTypeKind frm codegen/decl
 
 /**
@@ -304,6 +304,7 @@ obj ExprCodegen {
         NodeKind.TypExpr        => self.emitTyp node
         NodeKind.AwaitExpr      => self.emitAwait node
         NodeKind.NewExpr        => self.emitNew node
+        NodeKind.BorrowExpr     => self.emitBorrow node
         _                       => self.emitDefault node
     },
 
@@ -940,6 +941,25 @@ obj ExprCodegen {
             }
         }
 
+        if op == "-" && (leftRes.typeKind == TypeKind.Ptr || rightRes.typeKind == TypeKind.Ptr) {
+            pLeft: str = leftRes.reg
+            if leftRes.typeKind == TypeKind.Ptr {
+                intReg: str = self.codegen.newReg
+                self.codegen.emit `${intReg} = ptrtoint ptr ${leftRes.reg} to i64`
+                pLeft = intReg
+            }
+            pRight: str = rightRes.reg
+            if rightRes.typeKind == TypeKind.Ptr {
+                intReg: str = self.codegen.newReg
+                self.codegen.emit `${intReg} = ptrtoint ptr ${rightRes.reg} to i64`
+                pRight = intReg
+            }
+            diffReg: str = self.codegen.newReg
+            self.codegen.emit `${diffReg} = sub i64 ${pLeft}, ${pRight}`
+            res: ExprResult = { reg: diffReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
         leftReg: str = leftRes.reg
         rightReg: str = rightRes.reg
         targetType = leftRes.typeKind
@@ -1198,6 +1218,35 @@ obj ExprCodegen {
             -> res
         }
 
+        if (calleeName == "memcpy" || calleeName == "mem.cp" || calleeName == "mem.copy") && argRegs.ln >= 3 {
+            dPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Ptr && argTypes[0] != TypeKind.Str {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                dPtr = cReg
+            }
+            sPtr: str = argRegs[1]
+            if argTypes[1] != TypeKind.Ptr && argTypes[1] != TypeKind.Str {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[1]} to ptr`
+                sPtr = cReg
+            }
+            lenReg: str = argRegs[2]
+            if argTypes[2] != TypeKind.I64 {
+                cReg: str = self.codegen.newReg
+                if argTypes[2] == TypeKind.Num {
+                    self.codegen.emit `${cReg} = fptosi double ${argRegs[2]} to i64`
+                } els {
+                    iType: str = llvmType argTypes[2]
+                    self.codegen.emit `${cReg} = sext ${iType} ${argRegs[2]} to i64`
+                }
+                lenReg = cReg
+            }
+            self.codegen.emit `call ptr @memcpy(ptr ${dPtr}, ptr ${sPtr}, i64 ${lenReg})`
+            res: ExprResult = { reg: argRegs[0], typeKind: TypeKind.I64 }
+            -> res
+        }
+
         if (calleeName == "fs.rm" || calleeName == "rm" || calleeName == "rmF" || calleeName == "fs.rmF") && argRegs.ln >= 1 {
             pPtr: str = argRegs[0]
             if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
@@ -1264,6 +1313,9 @@ obj ExprCodegen {
                     self.codegen.emit `${sextReg} = sext i32 ${firstArgReg} to i64`
                     numFmt: str = self.codegen.addStringConstant numFmtStr
                     self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${sextReg})`
+                } els if firstArgType == TypeKind.I64 {
+                    numFmt: str = self.codegen.addStringConstant numFmtStr
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
                 } els {
                     unwrappedReg: str = self.codegen.newReg
                     self.codegen.emit `${unwrappedReg} = call i64 @zuv_prm_await(i64 ${firstArgReg})`
@@ -1462,7 +1514,7 @@ obj ExprCodegen {
         targetNode: ASTNode = node.children[0]
         methodName: str = node.name
 
-        if targetNode.kind == NodeKind.IdentExpr && (targetNode.name == "fs" || targetNode.name == "net" || targetNode.name == "os" || targetNode.name == "sys" || targetNode.name == "io") {
+        if targetNode.kind == NodeKind.IdentExpr && (targetNode.name == "fs" || targetNode.name == "net" || targetNode.name == "os" || targetNode.name == "sys" || targetNode.name == "io" || targetNode.name == "mem") {
             cName: str = targetNode.name + "." + methodName
             cNode: ASTNode = ASTNode.createIdent cName, node.line, node.col
             callChildren: ASTNode[] = [cNode]
@@ -1816,6 +1868,18 @@ obj ExprCodegen {
             -> res
         }
 
+        if propName == "cap" || propName == "capacity" {
+            arrPtrReg: str = targetRes.reg
+            if targetRes.typeKind != TypeKind.Arr && targetRes.typeKind != TypeKind.Ptr {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
+                arrPtrReg = convReg
+            }
+            capReg: str = self.arrGen.emitCapacity arrPtrReg
+            res: ExprResult = { reg: capReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
         structTypeName: str = targetNode.typeAnnotation
         if structTypeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
             targetSym = self.findSymbol targetNode.name
@@ -1875,12 +1939,11 @@ obj ExprCodegen {
                         self.codegen.emit `${convReg} = inttoptr i64 ${spRes.reg} to ptr`
                         arrPtrReg = convReg
                     }
-                    spLen: str = self.arrGen.emitLength arrPtrReg
                     spPart: ArraySpreadPart = {
                         isSpread: true,
                         valReg: arrPtrReg,
                         valType: spRes.typeKind,
-                        lenReg: spLen
+                        lenReg: ""
                     }
                     parts.psh spPart
                 } els {
@@ -2306,6 +2369,65 @@ obj ExprCodegen {
             -> res
         }
         res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
+        -> res
+    },
+
+    /**
+     * Emits a borrow/address-of expression (&target).
+     *
+     * @param {ASTNode} node - Borrow expression AST node
+     * @returns {ExprResult} Address pointer result descriptor
+     */
+    emitBorrow: node: ASTNode :: ExprResult => {
+        if node.children.ln == 0 {
+            res: ExprResult = { reg: "null", typeKind: TypeKind.Ptr }
+            -> res
+        }
+        target: ASTNode = node.children[0]
+        if target.kind == NodeKind.IdentExpr {
+            foundSym: ScopeSymbol = self.findSymbol target.name
+            if foundSym.name.ln > 0 && foundSym.reg.ln > 0 {
+                res: ExprResult = { reg: foundSym.reg, typeKind: TypeKind.Ptr }
+                -> res
+            }
+        }
+        if target.kind == NodeKind.IndexExpr {
+            arrNode: ASTNode = target.children[0]
+            idxNode: ASTNode = target.children[1]
+            arrRes: ExprResult = self.emitExpr arrNode
+            arrPtrReg: str = arrRes.reg
+            if isFloatType arrRes.typeKind {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = fptosi double ${arrRes.reg} to i64`
+                arrPtrReg = convReg
+            }
+            if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${arrPtrReg} to ptr`
+                arrPtrReg = convReg
+            }
+            idxRes: ExprResult = self.emitExpr idxNode
+            idxReg: str = idxRes.reg
+            if idxRes.typeKind != TypeKind.I64 {
+                convReg: str = self.codegen.newReg
+                if idxRes.typeKind == TypeKind.Num {
+                    self.codegen.emit `${convReg} = fptosi double ${idxRes.reg} to i64`
+                } els {
+                    iType: str = llvmType idxRes.typeKind
+                    self.codegen.emit `${convReg} = sext ${iType} ${idxRes.reg} to i64`
+                }
+                idxReg = convReg
+            }
+            emitArrayBoundsCheck self.codegen, arrPtrReg, idxReg, target.line
+            elemIdx: str = self.codegen.newReg
+            self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+            gep: str = self.codegen.newReg
+            self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdx}`
+            res: ExprResult = { reg: gep, typeKind: TypeKind.Ptr }
+            -> res
+        }
+        targetRes: ExprResult = self.emitExpr target
+        res: ExprResult = { reg: targetRes.reg, typeKind: TypeKind.Ptr }
         -> res
     },
 

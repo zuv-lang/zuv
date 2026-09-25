@@ -587,6 +587,10 @@ ParseStatement parser: Parser :: ASTNode {
         -> ParseStatement parser
     }
 
+    if curTok.kind == TokenType.TOK_UNSAFE {
+        parser.advance
+        -> ParseStatementOrBlock parser
+    }
     if curTok.kind == TokenType.TOK_LET || curTok.kind == TokenType.TOK_AMP_LET {
         -> ParseVarDecl parser
     }

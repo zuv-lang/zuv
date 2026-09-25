@@ -340,8 +340,8 @@ obj StmtCodegen {
         self.codegen.emit `store i64 0, ptr ${idxSlot}`
 
         itemType = node.inferredType
-        if itemType == TypeKind.Unknown || itemType == TypeKind.I64 {
-            itemType = TypeKind.Num
+        if itemType == TypeKind.Unknown {
+            itemType = TypeKind.I64
         }
         itemSlot: str = self.codegen.newReg
         stType: str = llvmStackType itemType
@@ -484,8 +484,8 @@ obj StmtCodegen {
             }
             lenReg: str = self.exprGen.arrGen.emitLength arrPtrReg
             firstSlot: str = self.codegen.newReg
-            self.codegen.emit `${firstSlot} = alloca double`
-            self.exprGen.addSymbol node.name, firstSlot, TypeKind.Num, false, true
+            self.codegen.emit `${firstSlot} = alloca i64`
+            self.exprGen.addSymbol node.name, firstSlot, TypeKind.I64, false, true
 
             secondSlot: str = ""
             if node.val.ln > 0 {
@@ -504,9 +504,7 @@ obj StmtCodegen {
             self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
 
             self.codegen.emitLabel bodyLbl
-            idxDbl: str = self.codegen.newReg
-            self.codegen.emit `${idxDbl} = sitofp i64 ${curIdxReg} to double`
-            self.codegen.emit `store double ${idxDbl}, ptr ${firstSlot}`
+            self.codegen.emit `store i64 ${curIdxReg}, ptr ${firstSlot}`
 
             if secondSlot.ln > 0 {
                 elemRaw: str = self.exprGen.arrGen.emitGetElement arrPtrReg, curIdxReg, false, node.line

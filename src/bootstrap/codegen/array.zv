@@ -175,27 +175,12 @@ unboxValueFromI64 codegen: Codegen, valReg: str, targetType: TypeKind :: str {
  * @returns {void}
  */
 emitArrayBoundsCheck codegen: Codegen, arrPtrReg: str, idxReg: str, lineNum: num :: void {
-    isNull: str = codegen.newReg
-    codegen.emit `${isNull} = icmp eq ptr ${arrPtrReg}, null`
-
-    checkLbl: str = codegen.newLabel "arr_bchk_chk"
-    failLbl: str = codegen.newLabel "arr_bchk_fail"
-    okLbl: str = codegen.newLabel "arr_bchk_ok"
-
-    codegen.emit `br i1 ${isNull}, label %${failLbl}, label %${checkLbl}`
-
-    codegen.emitLabel checkLbl
-    lenReg: str = codegen.newReg
-    codegen.emit `${lenReg} = load i64, ptr ${arrPtrReg}`
-    inBounds: str = codegen.newReg
-    codegen.emit `${inBounds} = icmp ult i64 ${idxReg}, ${lenReg}`
-    codegen.emit `br i1 ${inBounds}, label %${okLbl}, label %${failLbl}`
-
-    codegen.emitLabel failLbl
-    codegen.emit "call void @exit(i32 101)"
-    codegen.emit "unreachable"
-
-    codegen.emitLabel okLbl
+    sFile: str = codegen.sourceFile
+    if sFile.ln == 0 {
+        sFile = "main.zv"
+    }
+    fileSym: str = codegen.addStringConstant sFile
+    codegen.emit `call void @zuv_check_bounds(ptr ${arrPtrReg}, i64 ${idxReg}, ptr ${fileSym}, i32 ${lineNum})`
 }
 
 /**
@@ -578,7 +563,25 @@ obj ArrayCodegen {
 
         fr p of parts {
             if p.isSpread {
-                sLen: str = self.emitLength p.valReg
+                isNull: str = self.codegen.newReg
+                self.codegen.emit `${isNull} = icmp eq ptr ${p.valReg}, null`
+                lenSlot: str = self.codegen.newReg
+                self.codegen.emit `${lenSlot} = alloca i64`
+                self.codegen.emit `store i64 0, ptr ${lenSlot}`
+
+                loadLbl: str = self.codegen.newLabel "sp_len_load"
+                contLbl: str = self.codegen.newLabel "sp_len_cont"
+
+                self.codegen.emit `br i1 ${isNull}, label %${contLbl}, label %${loadLbl}`
+                self.codegen.emitLabel loadLbl
+                loadedLen: str = self.emitLength p.valReg
+                self.codegen.emit `store i64 ${loadedLen}, ptr ${lenSlot}`
+                self.codegen.emit `br label %${contLbl}`
+
+                self.codegen.emitLabel contLbl
+                sLen: str = self.codegen.newReg
+                self.codegen.emit `${sLen} = load i64, ptr ${lenSlot}`
+
                 prevTot: str = self.codegen.newReg
                 self.codegen.emit `${prevTot} = load i64, ptr ${totLenSlot}`
                 newTot: str = self.codegen.newReg
@@ -624,7 +627,21 @@ obj ArrayCodegen {
 
         fr p of parts {
             if p.isSpread {
+                isNull: str = self.codegen.newReg
+                self.codegen.emit `${isNull} = icmp eq ptr ${p.valReg}, null`
+                copyChkLbl: str = self.codegen.newLabel "sp_cpy_chk"
+                copyDoLbl: str = self.codegen.newLabel "sp_cpy_do"
+                copySkipLbl: str = self.codegen.newLabel "sp_cpy_skip"
+
+                self.codegen.emit `br i1 ${isNull}, label %${copySkipLbl}, label %${copyChkLbl}`
+
+                self.codegen.emitLabel copyChkLbl
                 sLen: str = self.emitLength p.valReg
+                hasElems: str = self.codegen.newReg
+                self.codegen.emit `${hasElems} = icmp ugt i64 ${sLen}, 0`
+                self.codegen.emit `br i1 ${hasElems}, label %${copyDoLbl}, label %${copySkipLbl}`
+
+                self.codegen.emitLabel copyDoLbl
                 curIdx: str = self.codegen.newReg
                 self.codegen.emit `${curIdx} = load i64, ptr ${curWriteIdx}`
                 dstGep: str = self.codegen.newReg
@@ -637,6 +654,9 @@ obj ArrayCodegen {
                 nextIdx: str = self.codegen.newReg
                 self.codegen.emit `${nextIdx} = add i64 ${curIdx}, ${sLen}`
                 self.codegen.emit `store i64 ${nextIdx}, ptr ${curWriteIdx}`
+                self.codegen.emit `br label %${copySkipLbl}`
+
+                self.codegen.emitLabel copySkipLbl
             } els {
                 curIdx: str = self.codegen.newReg
                 self.codegen.emit `${curIdx} = load i64, ptr ${curWriteIdx}`

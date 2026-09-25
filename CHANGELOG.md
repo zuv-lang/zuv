@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Async Promise Contexts**: Lowered `@st`/`ascST` single-thread contexts, `Prm` unwrapping, rejection propagation, and `try`/`cth` blocks (`tests/async_prm.test.zv`).
 - **Attributes & Struct Instantiation**: Supported attribute annotations (`@inline`, `@derive`), typed struct literal instantiation, field type coercions, and member offset resolution (`tests/attributes.test.zv`).
 - **BigInt Primitives**: Implemented BigInt literals (`123n`), `BigInt` constructor, `typ` introspection, and equality comparisons (`tests/bigint.test.zv`).
+- **Bounds Guard & Optional Indexing**: Added optional index navigation (`?.[i]`), global `args`/`os.args` CLI runtime, `sh` command execution, and runtime array bounds panic with exit code 101 (`tests/bounds_guard_task6.test.zv`).
+- **Bulk Memcpy & Array Spreads**: Added prefix `...` spread operator parsing, exact capacity allocation, null/nil spread guards, and bulk memory block copying (`tests/bulk_memcpy_task9.test.zv`).
+- **Cache Locality & Unsafe Blocks**: Added `unsafe` blocks, element address-of (`&arr[i]`), pointer subtraction byte offsets, `mem.cp` memory copy intrinsic, and 64-bit integer `fr in` index iteration (`tests/cache_locality_task7.test.zv`).
 
 
 ## [0.13.0] - 2026-09-17

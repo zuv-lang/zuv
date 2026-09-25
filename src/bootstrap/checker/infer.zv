@@ -164,6 +164,34 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             expr.inferredType = TypeKind.I64
             -> TypeKind.I64
         }
+        if expr.op == "..." {
+            elemType = TypeKind.Unknown
+            if expr.children.ln > 0 {
+                childNode = expr.children[0]
+                tName = childNode.typeAnnotation
+                if tName.ln == 0 && childNode.kind == NodeKind.IdentExpr {
+                    foundSym = checker.resolveSymbol(childNode.name)
+                    if foundSym.name.ln > 0 {
+                        tName = foundSym.typeName
+                    }
+                }
+                if tName.ln >= 2 {
+                    subSuffix = tName.sub tName.ln - 2, 2
+                    if subSuffix == "[]" {
+                        baseName = tName.sub 0, tName.ln - 2
+                        elemType = StrToTypeKind(baseName)
+                    }
+                }
+            }
+            if elemType == TypeKind.Unknown && opKind == TypeKind.Arr {
+                elemType = TypeKind.I64
+            }
+            if elemType == TypeKind.Unknown {
+                elemType = opKind
+            }
+            expr.inferredType = elemType
+            -> elemType
+        }
         expr.inferredType = opKind
         -> opKind
     }
@@ -179,6 +207,10 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         if expr.op == "+" && (leftKind == TypeKind.Str || rightKind == TypeKind.Str) {
             expr.inferredType = TypeKind.Str
             -> TypeKind.Str
+        }
+        if expr.op == "-" && (leftKind == TypeKind.Ptr || rightKind == TypeKind.Ptr) {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
         }
         if expr.op == "+" || expr.op == "-" || expr.op == "*" || expr.op == "/" || expr.op == "%" || expr.op == "**" {
             if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
@@ -249,7 +281,11 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         targetNode = expr.children[0]
         targetKind = InferExpression(checker, targetNode)
         propName = expr.name
-        if (targetKind == TypeKind.Arr || targetKind == TypeKind.Str) && (propName == "ln" || propName == "length") {
+        if (propName == "ln" || propName == "length") && (targetKind == TypeKind.Arr || targetKind == TypeKind.Str || targetKind == TypeKind.Unknown) {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        if (propName == "cap" || propName == "capacity") && (targetKind == TypeKind.Arr || targetKind == TypeKind.Unknown) {
             expr.inferredType = TypeKind.I64
             -> TypeKind.I64
         }
@@ -366,6 +402,7 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             }
             if (calleeName.ln >= 3 && calleeName.sub 0, 3 == "fs.") ||
                (calleeName.ln >= 4 && (calleeName.sub 0, 4 == "net." || calleeName.sub 0, 4 == "sys.")) ||
+               (calleeName.ln >= 4 && (calleeName.sub 0, 4 == "mem.")) ||
                (calleeName.ln >= 3 && (calleeName.sub 0, 3 == "os." || calleeName.sub 0, 3 == "io.")) {
                 if calleeName == "fs.rF" || calleeName == "fs.read" {
                     expr.inferredType = TypeKind.Str
@@ -591,7 +628,7 @@ InferStatement checker: Checker, stmt: ASTNode :: void {
         itemKind = TypeKind.I64
         if k == NodeKind.FrInStmt {
             if collKind == TypeKind.Arr {
-                itemKind = TypeKind.Num
+                itemKind = TypeKind.I64
             } els {
                 itemKind = TypeKind.Str
             }
@@ -618,7 +655,7 @@ InferStatement checker: Checker, stmt: ASTNode :: void {
                 if elemType != TypeKind.Unknown {
                     itemKind = elemType
                 } els {
-                    itemKind = TypeKind.Num
+                    itemKind = TypeKind.I64
                 }
             }
         }
