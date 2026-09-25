@@ -260,8 +260,12 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             -> TypeKind.Bool
         }
         if expr.op == "??" {
-            expr.inferredType = leftKind
-            -> leftKind
+            resType = leftKind
+            if leftKind == TypeKind.Nil || leftKind == TypeKind.Und || leftKind == TypeKind.Unknown {
+                resType = rightKind
+            }
+            expr.inferredType = resType
+            -> resType
         }
         if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" ||
            expr.op == "%=" || expr.op == "**=" || expr.op == "&=" || expr.op == "|=" || expr.op == "^=" {
@@ -389,9 +393,13 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         }
         if calleeNode.kind == NodeKind.IdentExpr {
             calleeName = calleeNode.name
-            if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "inf" || calleeName == "err" || calleeName == "panic" {
+            if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "inf" || calleeName == "err" || calleeName == "panic" || calleeName == "exit" {
                 expr.inferredType = TypeKind.Void
                 -> TypeKind.Void
+            }
+            if calleeName == "ok" {
+                expr.inferredType = TypeKind.Unknown
+                -> TypeKind.Unknown
             }
             if calleeName == "sh" || calleeName == "sys" || calleeName == "exec" {
                 expr.inferredType = TypeKind.I64
@@ -407,10 +415,20 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 expr.inferredType = TypeKind.I64
                 -> TypeKind.I64
             }
-            if (calleeName.ln >= 3 && calleeName.sub 0, 3 == "fs.") ||
-               (calleeName.ln >= 4 && (calleeName.sub 0, 4 == "net." || calleeName.sub 0, 4 == "sys.")) ||
-               (calleeName.ln >= 4 && (calleeName.sub 0, 4 == "mem.")) ||
-               (calleeName.ln >= 3 && (calleeName.sub 0, 3 == "os." || calleeName.sub 0, 3 == "io.")) {
+            isStdLibCall: bool = false
+            if calleeName.ln >= 3 {
+                p3: str = calleeName.sub(0, 3)
+                if p3 == "fs." || p3 == "os." || p3 == "io." {
+                    isStdLibCall = true
+                }
+            }
+            if !isStdLibCall && calleeName.ln >= 4 {
+                p4: str = calleeName.sub(0, 4)
+                if p4 == "net." || p4 == "sys." || p4 == "mem." || p4 == "ffi." {
+                    isStdLibCall = true
+                }
+            }
+            if isStdLibCall {
                 if calleeName == "fs.rF" || calleeName == "fs.read" {
                     expr.inferredType = TypeKind.Str
                     -> TypeKind.Str
@@ -745,6 +763,9 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
             tInfo.addField(fEntry.name, fKind)
         }
         checker.registerType(tInfo)
+        fr child of decl.children {
+            InferDeclaration checker, child
+        }
         ->
     }
     if k == NodeKind.ObjDecl {
@@ -841,6 +862,25 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         }
         ->
     }
+    if k == NodeKind.ExternDecl {
+        fr fnChild of decl.children {
+            retKind = TypeKind.Unknown
+            if fnChild.typeAnnotation.ln > 0 {
+                retKind = StrToTypeKind(fnChild.typeAnnotation)
+            }
+            paramTypeNames: str[] = []
+            fr pItem of fnChild.params {
+                paramTypeNames.psh(pItem.typeAnnotation)
+            }
+            fnTypeName = "fn_" + fnChild.name
+            fnTypeInfo = TypeInfo.createFunc(retKind, fnChild.typeAnnotation, paramTypeNames)
+            fnTypeInfo.name = fnTypeName
+            checker.registerType(fnTypeInfo)
+            fnSym = Symbol.create(fnChild.name, TypeKind.Func, fnTypeName, false, true, 0, fnChild.line, fnChild.col)
+            checker.defineSymbol(fnSym)
+        }
+        ->
+    }
     if k == NodeKind.VarDecl {
         InferStatement(checker, decl)
         ->
@@ -874,9 +914,40 @@ InferProgram checker: Checker, program: ASTNode :: void {
                 checker.registerType(fnTypeInfo)
                 fnSym = Symbol.create(child.name, TypeKind.Func, fnTypeName, false, true, 0, child.line, child.col)
                 checker.defineSymbol(fnSym)
+            } els if k == NodeKind.ExternDecl {
+                fr fnChild of child.children {
+                    retKind = TypeKind.Unknown
+                    if fnChild.typeAnnotation.ln > 0 {
+                        retKind = StrToTypeKind(fnChild.typeAnnotation)
+                    }
+                    paramTypeNames: str[] = []
+                    fr pItem of fnChild.params {
+                        paramTypeNames.psh(pItem.typeAnnotation)
+                    }
+                    fnTypeName = "fn_" + fnChild.name
+                    fnTypeInfo = TypeInfo.createFunc(retKind, fnChild.typeAnnotation, paramTypeNames)
+                    fnTypeInfo.name = fnTypeName
+                    checker.registerType(fnTypeInfo)
+                    fnSym = Symbol.create(fnChild.name, TypeKind.Func, fnTypeName, false, true, 0, fnChild.line, fnChild.col)
+                    checker.defineSymbol(fnSym)
+                }
             } els if k == NodeKind.TypeDecl {
                 tInfo = TypeInfo.createObject(child.name)
+                fr fEntry of child.fields {
+                    fKind = StrToTypeKind(fEntry.valStr)
+                    tInfo.addField(fEntry.name, fKind)
+                }
                 checker.registerType(tInfo)
+                fr sub of child.children {
+                    if sub.kind == NodeKind.TypeDecl || sub.kind == NodeKind.ObjDecl {
+                        sInfo = TypeInfo.createObject(sub.name)
+                        fr sf of sub.fields {
+                            sfKind = StrToTypeKind(sf.valStr)
+                            sInfo.addField(sf.name, sfKind)
+                        }
+                        checker.registerType(sInfo)
+                    }
+                }
             } els if k == NodeKind.EnumDecl {
                 eInfo = TypeInfo.createEnum(child.name)
                 fr fld of child.fields {
@@ -917,7 +988,7 @@ InferProgram checker: Checker, program: ASTNode :: void {
                 }
                 checker.exitScope()
                 checker.currentFuncName = prevFn
-            } els if child.kind != NodeKind.ImportDecl && child.kind != NodeKind.EnumDecl {
+            } els if child.kind != NodeKind.ImportDecl && child.kind != NodeKind.EnumDecl && child.kind != NodeKind.ExternDecl {
                 InferDeclaration(checker, child)
             }
         } els {

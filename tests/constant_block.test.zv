@@ -1,0 +1,35 @@
+// Unit test for block letter constants and mutable let block-letter variables
+ABC = 10
+ABC_ABA1 = 20
+
+// User explicit 'let' on block letters makes it mutable
+let MUTABLE_BLOCK = 30
+MUTABLE_BLOCK = 40
+
+ARRAY = [1]
+ARRAY.psh 3
+prnt ARRAY[0]
+prnt ARRAY[1]
+
+
+OBJECT = { a: 111 }
+prnt OBJECT.a
+OBJECT.a = 222
+prnt OBJECT.a
+
+prnt ABC
+prnt ABC_ABA1
+prnt MUTABLE_BLOCK
+
+testScope {
+    LOCAL_CONST = 50
+
+    prnt LOCAL_CONST
+
+    let LOCAL_MUT = 60
+    LOCAL_MUT = 70
+    prnt LOCAL_MUT
+}
+
+testScope
+prnt "CONSTANTS TEST PASSED"

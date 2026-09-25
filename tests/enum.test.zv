@@ -38,7 +38,7 @@ if d2 == 2 {
     prnt "enum disc Archived=2 ok"
 }
 
-mch s {
+sw s {
     Status.Pending => {
         prnt "match pending"
     }
@@ -51,7 +51,7 @@ mch s {
 }
 
 let t = Status.Pending
-mch t {
+sw t {
     Pending => {
         prnt "bare Pending ok"
     }

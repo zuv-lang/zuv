@@ -1,0 +1,152 @@
+imp arr
+
+
+let users: User[] = []
+
+greet name :: str => {
+    -> "hi " + name
+}
+
+obj User {
+    name: str,
+    age: num,
+    status: bool,
+    no: i64,
+
+    fullLabel: ::str => {
+        -> self.name
+    },
+    create: n: str, a: num, status: bool, no: i64 :: User => {
+        u = { name: n, age: a, status: status, no: no }
+        users.psh(u)
+        -> u
+    },
+    add: n: str, a: num, status: bool, no: i64 :: User => {
+        u = User{ name: n, age: a, status: status, no: no }
+        users.psh(u)
+        -> u
+    },
+    get: i: num :: User => {
+        -> users[i]
+    },
+    update: i: num, n: str, a: num, status: bool, no: i64 :: User => {
+        users[i] = User{ name: n, age: a, status: status, no: no }
+        -> users[i]
+    },
+    arrowMethod: i => users[i],
+    twoLineArowMethod: i => 
+        users[i],
+    multiLineArowMethod: i => 
+        let s ='daddsdd'
+        -> s,
+    delete: i: num :: User[] => {
+        out = []
+        j = 0
+        wh j < users.ln {
+            if j != i {
+                out.psh users[j]
+            }
+            j = j + 1
+        }
+        users = out
+        -> users
+    },
+
+    greet,
+    hello: greet
+}
+
+User.bumpAge a: num {
+    self.age = self.age + a
+    -> self
+}
+
+sayBye {
+    -> "bye"
+}
+User.sayBye = sayBye
+
+User.add "Ada", 30, true, 1001
+User.add "Bob", 25, false, 1002
+prnt users.ln
+
+u = User.get 0
+lbl = u.fullLabel
+prnt lbl
+prnt `name: ${u.name}`
+prnt `age: ${u.age}`
+prnt `status: ${u.status}`
+prnt `no: ${u.no}`
+
+u2 = User.update 0, "AdaL", 36, true, 1001
+
+lbl2 = u2.fullLabel
+prnt lbl2
+
+User.delete 1
+prnt users.ln
+
+u3 = User.create "Eve", 20
+prnt u3.age
+msg = u3.greet "Eve"
+prnt msg
+msg2 = u3.hello "Eve"
+prnt msg2
+
+u4 = User.create "Zoe", 10
+u4 = u4.bumpAge 5
+prnt u4.age
+prnt u4.sayBye
+
+let u1 = new User{ name: "Alice", age: 28 }
+u1.fullLabel
+
+prnt u1
+
+let u5 = new User({ name: "Alice", age: 28 })
+
+
+prnt u5.fullLabel
+prnt`========u6========`
+let u6 = new User({ name: "Alice", age: 28 }).fullLabel
+
+prnt u6
+
+let rec = { title: "Zuv", version: 2, isFast: true }
+prnt rec
+
+let rec2 = { active: false, count: 0, tag: "demo" }
+prnt rec2
+
+
+prnt`====arrowMethod====`
+prnt u5.arrowMethod
+
+
+prnt`====twoLineArowMethod====`
+prnt u5.twoLineArowMethod
+
+prnt`====multiLineArowMethod====`
+prnt u5.multiLineArowMethod
+
+prnt`====nested====`
+let nested = {
+    id: 1,
+    tags: ["a", "b", "c"],
+    address: { city: "Paris", zip: 75001, geo: { lat: 48.85, lon: 2.35 } },
+    scores: [ [1, 2], [3, 4] ]
+}
+prnt nested
+prnt nested.address.city
+prnt nested.address.geo.lat
+prnt nested.tags[1]
+prnt nested.scores[0][1]
+
+let inventory = [
+    { name: "apple", stock: 10 },
+    { name: "pear", stock: 5 }
+]
+prnt inventory.ln
+prnt inventory[0].name
+prnt inventory[1].stock
+

@@ -22,8 +22,8 @@ createUser name, age, role => {
     isActive: yes
 }
 
-// 5. Direct Pattern Matching (mch) expression return
-describeStatus status => mch status {
+// 5. Direct Pattern Matching (sw) expression return
+describeStatus status => sw status {
     200 => "OK"
     404 => "Not Found"
     500 => "Internal Server Error"

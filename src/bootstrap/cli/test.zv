@@ -19,13 +19,18 @@ HandleTest :: num {
     failCount: num = 0
     startMs = nw
 
+    compExe: str = ".\\zuv_bootstrap.exe"
+    if !(fE compExe) {
+        compExe = ".\\zuv.exe"
+    }
+
     fr tFile of testFiles {
         caseStart = nw
         tmpExe: str = "test_run_temp.exe"
         if fE tmpExe {
             rmF tmpExe
         }
-        buildCmd: str = ".\\zuv.exe build \"" + tFile + "\" -o \"" + tmpExe + "\" -q"
+        buildCmd: str = compExe + " build \"" + tFile + "\" -o \"" + tmpExe + "\" -q"
         bRes: num = sh buildCmd
         if bRes != 0 || !(fE tmpExe) {
             elapsedFail = nw - caseStart

@@ -30,7 +30,7 @@ imp ParseStatement, ParseBlockStmt, ParseMatchStmt, ParseExpr frm stmt
  * @param {Parser} parser - Parser coordinator instance
  * @returns {str} The parsed type signature string
  */
-ParseTypeString parser: Parser :: str {
+ParseSingleType parser: Parser, parentName: str, targetParentNode: ASTNode :: str {
     prefix: str = ""
     wh parser.matchToken TokenType.TOK_ASTERISK {
         prefix = prefix + "*"
@@ -39,25 +39,99 @@ ParseTypeString parser: Parser :: str {
         prefix = "&"
     }
 
-    curTok: Token = parser.cur
-    baseType: str = curTok.val
-    parser.advance
+    res: str = ""
+    if parser.matchToken TokenType.TOK_LBRACE {
+        subNode: ASTNode = ASTNode.createTypeDecl parentName, false, 0, 0
+        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+            if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+                cont
+            }
+            if !(parser.check TokenType.TOK_IDENT) {
+                errTok: Token = parser.advance
+                parser.addError "E0102", "Expected field identifier in type record, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
+                cont
+            }
+            fTok: Token = parser.consume TokenType.TOK_IDENT, "Expected field identifier in type record"
+            subSubName: str = parentName + "_" + fTok.val
+            fType: str = "any"
+            if parser.matchToken TokenType.TOK_COLON {
+                fType = ParseTypeStringFull parser, subSubName, targetParentNode
+            }
+            entry: FieldEntry = {
+                name: fTok.val,
+                valStr: fType,
+                isSpread: false,
+                line: fTok.line,
+                col: fTok.col
+            }
+            subNode.fields.psh entry
+            if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+                // delimiter
+            }
+        }
+        parser.consume TokenType.TOK_RBRACE, "Expected '}' after type record body"
+        subNode.typeAnnotation = parentName
+        targetParentNode.children.psh subNode
+        res = parentName
+    } els if parser.matchToken TokenType.TOK_LBRACKET {
+        res = "["
+        first: bool = true
+        wh !(parser.check TokenType.TOK_RBRACKET) && !(parser.isAtEnd) {
+            if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+                cont
+            }
+            if !first {
+                res = res + ", "
+            }
+            elemT: str = ParseTypeStringFull parser, parentName, targetParentNode
+            res = res + elemT
+            first = false
+            if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+                // delimiter
+            }
+        }
+        parser.consume TokenType.TOK_RBRACKET, "Expected ']' after bracket type"
+        res = res + "]"
+    } els {
+        curTok: Token = parser.cur
+        res = curTok.val
+        parser.advance
+    }
 
-    // Check for array dimensions: T[] or T[][]
     wh parser.check TokenType.TOK_LBRACKET {
         if parser.checkPeek TokenType.TOK_RBRACKET {
             parser.advance // consume '['
             parser.advance // consume ']'
-            baseType = baseType + "[]"
+            res = res + "[]"
         } els {
             brk
         }
     }
 
-    if prefix.ln > 0 {
-        -> prefix + baseType
+    if parser.matchToken TokenType.TOK_QUESTION {
+        res = res + "?"
     }
-    -> baseType
+
+    if prefix.ln > 0 {
+        -> prefix + res
+    }
+    -> res
+}
+
+ParseTypeStringFull parser: Parser, parentName: str, targetParentNode: ASTNode :: str {
+    res: str = ParseSingleType parser, parentName, targetParentNode
+    wh (parser.check TokenType.TOK_PIPE) || (parser.check TokenType.TOK_AMP) {
+        opTok: Token = parser.advance
+        opStr: str = (opTok.kind == TokenType.TOK_PIPE) ? " | " : " & "
+        nextT: str = ParseSingleType parser, parentName, targetParentNode
+        res = res + opStr + nextT
+    }
+    -> res
+}
+
+ParseTypeString parser: Parser :: str {
+    dummyNode: ASTNode = ASTNode.createNil 0, 0
+    -> ParseTypeStringFull parser, "", dummyNode
 }
 
 /**
@@ -142,10 +216,10 @@ ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
 
     parser.consume TokenType.TOK_ASSIGN, "Expected '=' after type name"
 
-    node = ASTNode.createTypeDecl name, isPub, nameTok.line, nameTok.col
+    node: ASTNode = ASTNode.createTypeDecl name, isPub, nameTok.line, nameTok.col
 
-    if parser.matchToken TokenType.TOK_LBRACE {
-        // Record schema definition: { field1: type; field2: type; }
+    if parser.check TokenType.TOK_LBRACE {
+        parser.advance // consume '{'
         wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
             if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
                 cont
@@ -156,9 +230,11 @@ ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
                 cont
             }
             fTok: Token = parser.consume TokenType.TOK_IDENT, "Expected field identifier in type record"
-            parser.consume TokenType.TOK_COLON, "Expected ':' after field name"
-            fType: str = ParseTypeString parser
-
+            subName: str = name + "_" + fTok.val
+            fType: str = "any"
+            if parser.matchToken TokenType.TOK_COLON {
+                fType = ParseTypeStringFull parser, subName, node
+            }
             entry: FieldEntry = {
                 name: fTok.val,
                 valStr: fType,
@@ -167,15 +243,14 @@ ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
                 col: fTok.col
             }
             node.fields.psh entry
-
             if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
-                // consume delimiter
+                // delimiter
             }
         }
         parser.consume TokenType.TOK_RBRACE, "Expected '}' after type record body"
+        node.typeAnnotation = name
     } els {
-        // Simple type alias: type ID = num
-        aliasType: str = ParseTypeString parser
+        aliasType: str = ParseTypeStringFull parser, name, node
         node.typeAnnotation = aliasType
     }
 
@@ -717,7 +792,7 @@ ParseDeclaration parser: Parser :: ASTNode {
         declNode = ParseObjDecl parser, isPub
     } els if curTok.kind == TokenType.TOK_ENUM {
         declNode = ParseEnumDecl parser, isPub
-    } els if curTok.kind == TokenType.TOK_EXTERN {
+    } els if curTok.kind == TokenType.TOK_EXTERN || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "ffi" && (parser.peek.kind == TokenType.TOK_STRING || parser.peek.kind == TokenType.TOK_LBRACE)) {
         declNode = ParseExternDecl parser
     } els if curTok.kind == TokenType.TOK_IMP {
         declNode = ParseImportDecl parser

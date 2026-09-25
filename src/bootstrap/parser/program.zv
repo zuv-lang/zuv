@@ -72,7 +72,7 @@ ParseProgram parser: Parser :: ASTNode {
            curTok.kind == TokenType.TOK_FN || curTok.kind == TokenType.TOK_AT {
             declNode: ASTNode = ParseDeclaration parser
             progNode.children.psh declNode
-        } els if curTok.kind == TokenType.TOK_IDENT && (curTok.val == "type" || curTok.val == "obj") {
+        } els if curTok.kind == TokenType.TOK_IDENT && (curTok.val == "type" || curTok.val == "obj" || (curTok.val == "ffi" && (parser.peek.kind == TokenType.TOK_STRING || parser.peek.kind == TokenType.TOK_LBRACE))) {
             declNode: ASTNode = ParseDeclaration parser
             progNode.children.psh declNode
         } els if curTok.kind == TokenType.TOK_IDENT && IsFuncDecl(parser) {

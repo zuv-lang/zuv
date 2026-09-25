@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bounds Guard & Optional Indexing**: Added optional index navigation (`?.[i]`), global `args`/`os.args` CLI runtime, `sh` command execution, and runtime array bounds panic with exit code 101 (`tests/bounds_guard_task6.test.zv`).
 - **Bulk Memcpy & Array Spreads**: Added prefix `...` spread operator parsing, exact capacity allocation, null/nil spread guards, and bulk memory block copying (`tests/bulk_memcpy_task9.test.zv`).
 - **Cache Locality & Unsafe Blocks**: Added `unsafe` blocks, element address-of (`&arr[i]`), pointer subtraction byte offsets, `mem.cp` memory copy intrinsic, and 64-bit integer `fr in` index iteration (`tests/cache_locality_task7.test.zv`).
+- **External C FFI & DLL Linking**: Mapped C ABI `num` to `double` and passed external `.lib` dependencies to `lld-link` (`tests/call_cdylib.test.zv`).
+- **Logical Short-Circuit (`&&`, `||`)**: Added branching basic blocks to avoid eager evaluation and out-of-bounds evaluation (`tests/panic_backtrace.test.zv`).
+- **Nullish Coalescing (`??`)**: Added code generation and inferred fallback type when left operand is `nil`/`und` (`tests/nullish.test.zv`).
+- **Power Operator (`**`)**: Fixed double operand promotion in LLVM emission (`tests/pow.test.zv`).
+- **Scientific Notation**: Formatted float literals missing decimal points (e.g. `123e2` -> `123.0e2`) for LLVM IR compatibility (`tests/sci_notation.test.zv`).
+- **Typed Array Objects**: Added `isPointerType` guards, type alias tracking (`StructLayoutRegistry`), and string numeric index resolution (`tests/array_object_typed.test.zv`).
+- **Test Runner (`zuv test`)**: Switched runner to invoke `zuv_bootstrap.exe` over `zuv.exe` (`cli/test.zv`).
+- **Switch Syntax (`sw`)**: Replaced deprecated `mch` with `sw` across all tests.
 
 
 ## [0.13.0] - 2026-09-17

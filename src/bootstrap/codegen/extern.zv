@@ -22,7 +22,7 @@ ToLLVMExternType typeStr: str :: str {
     if typeStr == "void" {
         -> "void"
     }
-    if typeStr == "double" || typeStr == "f64" || typeStr == "float" {
+    if typeStr == "num" || typeStr == "double" || typeStr == "f64" || typeStr == "float" {
         -> "double"
     }
     if typeStr == "i64" || typeStr == "int64" || typeStr == "size_t" || typeStr == "u64" {
@@ -237,13 +237,16 @@ obj ExternManager {
 
         fr fnChild of node.children {
             fnName = fnChild.name
-            retType = ToLLVMExternType fnChild.typeAnnotation
+            isWin32IntFn: bool = (fnName == "GetCurrentProcessId" || fnName == "GetSystemMetrics" || fnName == "Sleep" || fnName == "puts")
+            retType = isWin32IntFn ? ((fnChild.typeAnnotation == "void") ? "void" : "i32") : (ToLLVMExternType fnChild.typeAnnotation)
             paramTypes: str[] = []
             isVarArg = false
 
-            // Special Win32 Sleep ABI handling: Sleep ms: num -> void (ms is DWORD / i32)
-            if fnName == "Sleep" && fnChild.params.ln > 0 {
-                paramTypes.psh "i32"
+            if isWin32IntFn {
+                fr p of fnChild.params {
+                    pType = (p.typeAnnotation == "str" || p.typeAnnotation == "ptr") ? "ptr" : "i32"
+                    paramTypes.psh pType
+                }
             } els {
                 fr p of fnChild.params {
                     if p.isRest {

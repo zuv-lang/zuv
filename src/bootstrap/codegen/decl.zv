@@ -61,11 +61,19 @@ resolveFieldTypeKind typeName: str :: TypeKind {
         if firstChar == "*" || firstChar == "&" {
             -> TypeKind.Ptr
         }
+        if firstChar == "[" {
+            -> TypeKind.Arr
+        }
     }
     if nameLen >= 2 {
         subSuffix: str = typeName.sub nameLen - 2, 2
         if subSuffix == "[]" {
             -> TypeKind.Arr
+        }
+    }
+    fr i = 0; i < nameLen; i++ {
+        if typeName.chr(i) == "|" {
+            -> TypeKind.Obj
         }
     }
     -> sw typeName {
@@ -79,12 +87,16 @@ resolveFieldTypeKind typeName: str :: TypeKind {
         "uint"   => TypeKind.I32
         "i64"    => TypeKind.I64
         "u64"    => TypeKind.I64
+        "int64"  => TypeKind.I64
         "i32"    => TypeKind.I32
         "u32"    => TypeKind.I32
+        "int32"  => TypeKind.I32
         "i16"    => TypeKind.I16
         "u16"    => TypeKind.I16
+        "int16"  => TypeKind.I16
         "i8"     => TypeKind.I8
         "u8"     => TypeKind.I8
+        "int8"   => TypeKind.I8
         "byte"   => TypeKind.I8
         "bool"   => TypeKind.Bool
         "str"    => TypeKind.Str
@@ -95,6 +107,38 @@ resolveFieldTypeKind typeName: str :: TypeKind {
         "nil"    => TypeKind.Nil
         _        => TypeKind.Obj
     }
+}
+
+/**
+ * Resolves the element TypeKind of an array type annotation string.
+ *
+ * @param {str} typeName - Array type annotation identifier (e.g. "[str]", "num[]", "[bool]")
+ * @returns {TypeKind} Inferred element TypeKind variant
+ */
+StrToElemTypeKind typeName: str :: TypeKind {
+    nameLen: num = typeName.ln
+    if nameLen >= 2 {
+        if (typeName.sub 0, 1) == "[" && (typeName.sub nameLen - 1, 1) == "]" {
+            inner: str = typeName.sub 1, nameLen - 2
+            commaIdx: num = -1
+            fr i = 0; i < inner.ln; i++ {
+                if inner.chr(i) == "," {
+                    commaIdx = i
+                    brk
+                }
+            }
+            if commaIdx > 0 {
+                firstElem: str = inner.sub 0, commaIdx
+                -> resolveFieldTypeKind firstElem
+            }
+            -> resolveFieldTypeKind inner
+        }
+        if (typeName.sub nameLen - 2, 2) == "[]" {
+            inner: str = typeName.sub 0, nameLen - 2
+            -> resolveFieldTypeKind inner
+        }
+    }
+    -> TypeKind.Unknown
 }
 
 /**
@@ -116,7 +160,7 @@ obj StructLayout {
     create: typeName: str, fields: StructField[] :: StructLayout => {
         count: num = fields.ln
         bytes: num = (count == 0) ? 8 : count * 8
-        -> StructLayout {
+        -> {
             typeName,
             fields,
             fieldCount: count,
@@ -180,7 +224,7 @@ obj StructLayout {
      * @param {str} name - Field identifier
      * @returns {TypeKind} Inferred TypeKind or TypeKind.Unknown
      */
-    getFieldType: name: str :: TypeKind => {
+    resolveFieldType: name: str :: TypeKind => {
         fld: StructField = self.getField name
         -> fld.typeKind
     }
@@ -194,6 +238,8 @@ obj StructLayoutRegistry {
     dynamicFields: str[],
     dynamicFieldTypes: TypeKind[],
     enumNames: str[],
+    aliasNames: str[],
+    aliasTargets: str[],
 
     /**
      * Initializes an empty StructLayoutRegistry coordinator instance.
@@ -211,12 +257,45 @@ obj StructLayoutRegistry {
         ]
         emptyDynTypes: TypeKind[] = []
         emptyEnumNames: str[] = []
-        -> StructLayoutRegistry {
+        emptyAliasNames: str[] = []
+        emptyAliasTargets: str[] = []
+        -> {
             layouts: emptyLayouts,
             dynamicFields: initialDynFields,
             dynamicFieldTypes: emptyDynTypes,
-            enumNames: emptyEnumNames
+            enumNames: emptyEnumNames,
+            aliasNames: emptyAliasNames,
+            aliasTargets: emptyAliasTargets
         }
+    },
+
+    registerAlias: name: str, target: str :: void => {
+        fr n, i of self.aliasNames {
+            if n == name {
+                self.aliasTargets[i] = target
+                ret
+            }
+        }
+        self.aliasNames.psh name
+        self.aliasTargets.psh target
+    },
+
+    resolveAlias: name: str :: str => {
+        cur: str = name
+        fr step = 0; step < 10; step++ {
+            found: bool = false
+            fr n, i of self.aliasNames {
+                if n == cur {
+                    cur = self.aliasTargets[i]
+                    found = true
+                    brk
+                }
+            }
+            if !found {
+                brk
+            }
+        }
+        -> cur
     },
 
     /**
@@ -248,16 +327,25 @@ obj StructLayoutRegistry {
      * @returns {StructLayout} Constructed and registered StructLayout
      */
     registerFromAST: node: ASTNode :: StructLayout => {
+        if node.fields.ln == 0 && node.typeAnnotation.ln > 0 {
+            self.registerAlias node.name, node.typeAnnotation
+        }
         builtFields: StructField[] = []
         curIdx: num = 0
         fr fEntry of node.fields {
-            fType = resolveFieldTypeKind fEntry.valStr
-            fDesc: StructField = createStructField fEntry.name, curIdx, fType, fEntry.valStr
+            resolvedValStr: str = self.resolveAlias fEntry.valStr
+            fType = resolveFieldTypeKind resolvedValStr
+            fDesc: StructField = createStructField fEntry.name, curIdx, fType, resolvedValStr
             builtFields.psh fDesc
             curIdx++
         }
         layout: StructLayout = StructLayout.create node.name, builtFields
         self.layouts.psh layout
+        fr child of node.children {
+            if child.kind == NodeKind.TypeDecl || child.kind == NodeKind.ObjDecl {
+                self.registerFromAST child
+            }
+        }
         -> layout
     },
 
@@ -354,12 +442,29 @@ obj StructLayoutRegistry {
     getFieldType: typeName: str, fieldName: str :: TypeKind => {
         if typeName.ln > 0 {
             layout: StructLayout = self.getLayout typeName
-            fType = layout.getFieldType fieldName
+            fType = layout.resolveFieldType fieldName
             if fType != TypeKind.Unknown {
                 -> fType
             }
         }
         -> self.getDynamicFieldType fieldName
+    },
+
+    getFieldField: typeName: str, fieldName: str :: StructField => {
+        if typeName.ln > 0 {
+            layout: StructLayout = self.getLayout typeName
+            fDesc: StructField = layout.getField fieldName
+            if fDesc.name.ln > 0 {
+                -> fDesc
+            }
+        }
+        fr l of self.layouts {
+            if l.hasField fieldName {
+                -> l.getField fieldName
+            }
+        }
+        notF: StructField = createStructField "", -1, TypeKind.Unknown, ""
+        -> notF
     },
 
     /**
@@ -442,7 +547,7 @@ obj ObjectCodegen {
      * @returns {ObjectCodegen} Initialized ObjectCodegen instance
      */
     create: codegen: Codegen, registry: StructLayoutRegistry :: ObjectCodegen => {
-        -> ObjectCodegen {
+        -> {
             codegen,
             registry
         }
@@ -508,7 +613,7 @@ obj ObjectCodegen {
                 fr l of self.registry.layouts {
                     if l.hasField fName {
                         effTypeName = l.typeName
-                        expectedFieldType = l.getFieldType fName
+                        expectedFieldType = l.resolveFieldType fName
                         brk
                     }
                 }

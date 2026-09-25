@@ -332,6 +332,16 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
  * @param {str} typeName - Type name annotation string (e.g. "num", "str", "bool", "i64")
  * @returns {TypeKind} Corresponding TypeKind variant
  */
+StrHasChar s: str, target: str :: bool {
+    sLen: num = s.ln
+    fr i = 0; i < sLen; i++ {
+        if s.chr(i) == target {
+            -> true
+        }
+    }
+    -> false
+}
+
 StrToTypeKind typeName: str :: TypeKind {
     nameLen: num = typeName.ln
     if nameLen >= 1 {
@@ -339,12 +349,18 @@ StrToTypeKind typeName: str :: TypeKind {
         if firstChar == "*" || firstChar == "&" {
             -> TypeKind.Ptr
         }
+        if firstChar == "[" {
+            -> TypeKind.Arr
+        }
     }
     if nameLen >= 2 {
         subSuffix: str = typeName.sub nameLen - 2, 2
         if subSuffix == "[]" {
             -> TypeKind.Arr
         }
+    }
+    if StrHasChar typeName, "|" {
+        -> TypeKind.Obj
     }
     -> sw typeName {
         ""       => TypeKind.Unknown
@@ -357,12 +373,16 @@ StrToTypeKind typeName: str :: TypeKind {
         "uint"   => TypeKind.I32
         "i64"    => TypeKind.I64
         "u64"    => TypeKind.I64
+        "int64"  => TypeKind.I64
         "i32"    => TypeKind.I32
         "u32"    => TypeKind.I32
+        "int32"  => TypeKind.I32
         "i16"    => TypeKind.I16
         "u16"    => TypeKind.I16
+        "int16"  => TypeKind.I16
         "i8"     => TypeKind.I8
         "u8"     => TypeKind.I8
+        "int8"   => TypeKind.I8
         "byte"   => TypeKind.I8
         "bool"   => TypeKind.Bool
         "str"    => TypeKind.Str

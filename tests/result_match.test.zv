@@ -1,7 +1,7 @@
 resOk = ok(200)
 resErr = err(404)
 
-mch resOk {
+sw resOk {
     ok(v) => {
         lg "Ok status:"
         lg v
@@ -12,7 +12,7 @@ mch resOk {
     }
 }
 
-mch resErr {
+sw resErr {
     ok(v) => {
         lg "Ok status:"
         lg v

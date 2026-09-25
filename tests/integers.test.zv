@@ -1,0 +1,62 @@
+// Integer types test: i8, i16, i32, i64
+
+let a: i8 = 42
+let b: i16 = 1000
+let c: i32 = 100000
+let d: i64 = 5000000000
+
+if a == 42 {
+    prnt "i8 value ok"
+}
+
+if b == 1000 {
+    prnt "i16 value ok"
+}
+
+if c == 100000 {
+    prnt "i32 value ok"
+}
+
+if d == 5000000000 {
+    prnt "i64 value ok"
+}
+
+if typ a == "i8" {
+    prnt "typ i8 ok"
+}
+
+if typ b == "i16" {
+    prnt "typ i16 ok"
+}
+
+if typ c == "i32" {
+    prnt "typ i32 ok"
+}
+
+if typ d == "i64" {
+    prnt "typ i64 ok"
+}
+
+// Cast tests
+let ca = 10 as i8
+let cb = 200 as i16
+let cc = 30000 as i32
+let cd = 400000 as i64
+
+if typ ca == "i8" {
+    prnt "cast to i8 typ ok"
+}
+
+if typ cb == "i16" {
+    prnt "cast to i16 typ ok"
+}
+
+if typ cc == "i32" {
+    prnt "cast to i32 typ ok"
+}
+
+if typ cd == "i64" {
+    prnt "cast to i64 typ ok"
+}
+
+prnt "all integer tests completed successfully"

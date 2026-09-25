@@ -90,6 +90,8 @@ obj Checker {
         symTime = Symbol.create "time", TypeKind.Obj, "time", false, true, 0, 0, 0
         symNet = Symbol.create "net", TypeKind.Obj, "net", false, true, 0, 0, 0
         symHttp = Symbol.create "http", TypeKind.Obj, "http", false, true, 0, 0, 0
+        symFfi = Symbol.create "ffi", TypeKind.Obj, "ffi", false, true, 0, 0, 0
+        symMem = Symbol.create "mem", TypeKind.Obj, "mem", false, true, 0, 0, 0
         rootSyms.psh symOs
         rootSyms.psh symFs
         rootSyms.psh symStr
@@ -97,6 +99,8 @@ obj Checker {
         rootSyms.psh symTime
         rootSyms.psh symNet
         rootSyms.psh symHttp
+        rootSyms.psh symFfi
+        rootSyms.psh symMem
 
         // Built-in runtime utility functions
         symPrnt = Symbol.create "prnt", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
@@ -107,6 +111,8 @@ obj Checker {
         symPanic = Symbol.create "panic", TypeKind.Func, "fn(str)->void", false, true, 0, 0, 0
         symSh = Symbol.create "sh", TypeKind.Func, "fn(str)->i64", false, true, 0, 0, 0
         symArgs = Symbol.create "args", TypeKind.Arr, "str[]", false, true, 0, 0, 0
+        symOk = Symbol.create "ok", TypeKind.Func, "fn(...any)->any", false, true, 0, 0, 0
+        symExit = Symbol.create "exit", TypeKind.Func, "fn(i32)->void", false, true, 0, 0, 0
         rootSyms.psh symPrnt
         rootSyms.psh symLg
         rootSyms.psh symWrn
@@ -115,6 +121,8 @@ obj Checker {
         rootSyms.psh symPanic
         rootSyms.psh symSh
         rootSyms.psh symArgs
+        rootSyms.psh symOk
+        rootSyms.psh symExit
 
         rootScope = Scope.create 0, rootSyms
         rootScopes: Scope[] = [rootScope]
@@ -267,6 +275,12 @@ obj Checker {
     },
 
     registerType: info: TypeInfo :: void => {
+        fr i = 0; i < self.types.ln; i++ {
+            if self.types[i].name == info.name {
+                self.types[i] = info
+                ->
+            }
+        }
         self.types.psh info
     },
 

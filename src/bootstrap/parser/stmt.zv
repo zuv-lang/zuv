@@ -82,6 +82,11 @@ ParseJuxtaposedArgs parser: Parser, callee: ASTNode :: ASTNode {
 
     if callee.kind == NodeKind.PropExpr {
         target = callee.children[0]
+        if target.kind == NodeKind.IdentExpr && (target.name == "ffi" || target.name == "fs" || target.name == "os" || target.name == "net" || target.name == "sys" || target.name == "io" || target.name == "mem") {
+            cName: str = target.name + "." + callee.name
+            calleeNode = ASTNode.createIdent cName, callee.line, callee.col
+            -> ASTNode.createCall calleeNode, args, callee.line, callee.col
+        }
         -> ASTNode.createMethodCall target, callee.name, args, callee.line, callee.col
     }
     -> ASTNode.createCall callee, args, callee.line, callee.col
@@ -285,6 +290,20 @@ ParseReturnStmt parser: Parser :: ASTNode {
     retExpr = ASTNode.createNil retTok.line, retTok.col
 
     if !(parser.check TokenType.TOK_SEMICOLON) && !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if parser.check TokenType.TOK_MATCH {
+            matchNode: ASTNode = ParseMatchStmt parser
+            fr armBody of matchNode.children {
+                if armBody.kind == NodeKind.BlockStmt && armBody.children.ln > 0 {
+                    lastIdx: num = armBody.children.ln - 1
+                    lastStmt: ASTNode = armBody.children[lastIdx]
+                    if lastStmt.kind != NodeKind.RetStmt {
+                        retArm: ASTNode = ASTNode.createRet lastStmt, lastStmt.line, lastStmt.col
+                        armBody.children[lastIdx] = retArm
+                    }
+                }
+            }
+            -> matchNode
+        }
         rawExpr: ASTNode = ParseExpr parser
         retExpr = ParseJuxtaposedArgs parser, rawExpr
     }
@@ -449,7 +468,8 @@ ParseMatchStmt parser: Parser :: ASTNode {
         } els {
             exprArm: ASTNode = ParseExpr parser
             exprArm = ParseJuxtaposedArgs parser, exprArm
-            armBody = ASTNode.createBlock [exprArm], patExpr.line, patExpr.col
+            exprStmt: ASTNode = ASTNode.createExprStmt exprArm, exprArm.line, exprArm.col
+            armBody = ASTNode.createBlock [exprStmt], patExpr.line, patExpr.col
         }
 
         patText: str = ""

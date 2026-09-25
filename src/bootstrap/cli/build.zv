@@ -195,7 +195,7 @@ ResolveTargetTriple alias: str :: str => sw alias {
  * @param {bool} isCdylib - True to build a shared library (.dll), false for standalone executable
  * @returns {num} 0 on successful linkage, non-zero on failure
  */
-linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool :: num {
+linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, extraLibs: str[] :: num {
     lldBin: str = "lld-link"
     if fE "D:/LLVM/bin/lld-link.exe" {
         lldBin = "D:/LLVM/bin/lld-link.exe"
@@ -222,7 +222,24 @@ linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool :: num {
         dllFlags = "-dll -implib:\"" + outLibPath + "\" -noentry -defaultlib:ucrt -defaultlib:vcruntime"
     }
 
-    cmd: str = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" " + dllFlags + " -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -defaultlib:ws2_32 -nologo"
+    extraLibFlags: str = ""
+    fr extraLib of extraLibs {
+        libToLink: str = extraLib
+        if StrEndsWith(libToLink, ".dll") || StrEndsWith(libToLink, ".DLL") {
+            libToLink = libToLink.slc(0, libToLink.ln - 4) + ".lib"
+        }
+        resolvedLib: str = libToLink
+        if fE libToLink {
+            resolvedLib = libToLink
+        } els if fE ("tests/" + libToLink) {
+            resolvedLib = "tests/" + libToLink
+        } els if fE ("sub_projects/zuv/" + libToLink) {
+            resolvedLib = "sub_projects/zuv/" + libToLink
+        }
+        extraLibFlags = extraLibFlags + " \"" + resolvedLib + "\" "
+    }
+
+    cmd: str = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" " + dllFlags + extraLibFlags + " -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -defaultlib:ws2_32 -nologo"
     res: num = sh cmd
     -> res
 }
@@ -493,6 +510,10 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                 }
                 exprGen.registerFunc(topNode.name, retLLVM, pTypes)
             }
+        }
+
+        fr extFn of extMgr.functions {
+            exprGen.registerFunc(extFn.name, extFn.retType, extFn.paramTypes)
         }
 
         // Pre-register top-level global variables
@@ -1147,7 +1168,7 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
         }
 
         // 2. Link executable or library via lld-link
-        linkRes: num = linkDirectObjectFile(tmpObj, targetExe, isCdylib)
+        linkRes: num = linkDirectObjectFile(tmpObj, targetExe, isCdylib, extMgr.getExternLibs())
         if fE tmpObj {
             rmF tmpObj
         }

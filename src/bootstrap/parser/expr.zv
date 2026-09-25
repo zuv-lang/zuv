@@ -361,9 +361,39 @@ ParseLambda parser: Parser, paramNames: str[], line: num, col: num :: ASTNode {
             bodyBlock = ASTNode.createBlock stmts, line, col
         }
     } els {
-        sExpr: ASTNode = ParseExpression parser, 1
-        retNode: ASTNode = ASTNode.createRet sExpr, sExpr.line, sExpr.col
-        bodyBlock = ASTNode.createBlock [retNode], line, col
+        curLTok: Token = parser.cur
+        if curLTok.line > line {
+            indentCol: num = curLTok.col
+            stmts: ASTNode[] = []
+            wh !(parser.isAtEnd) && !(parser.check TokenType.TOK_RBRACE) && !(parser.check TokenType.TOK_RPAREN) && !(parser.check TokenType.TOK_RBRACKET) {
+                pTok: Token = parser.cur
+                if pTok.line > line && pTok.col < indentCol {
+                    brk
+                }
+                stmtNode: ASTNode = ParseStatement parser
+                stmts.psh stmtNode
+                nextTok: Token = parser.cur
+                if nextTok.line > pTok.line && nextTok.col < indentCol {
+                    brk
+                }
+            }
+            if stmts.ln > 0 {
+                lastIdx: num = stmts.ln - 1
+                lastNode: ASTNode = stmts[lastIdx]
+                if lastNode.kind == NodeKind.ExprStmt && lastNode.children.ln > 0 {
+                    stmts[lastIdx] = ASTNode.createRet lastNode.children[0], lastNode.line, lastNode.col
+                }
+                bodyBlock = ASTNode.createBlock stmts, line, col
+            } els {
+                nilNode: ASTNode = ASTNode.createNil line, col
+                retNode: ASTNode = ASTNode.createRet nilNode, line, col
+                bodyBlock = ASTNode.createBlock [retNode], line, col
+            }
+        } els {
+            sExpr: ASTNode = ParseExpression parser, 1
+            retNode: ASTNode = ASTNode.createRet sExpr, sExpr.line, sExpr.col
+            bodyBlock = ASTNode.createBlock [retNode], line, col
+        }
     }
 
     parser.exitScope()
@@ -455,7 +485,7 @@ ParsePrimary parser: Parser :: ASTNode {
             curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
             curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
             curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT || curTok.kind == TokenType.TOK_FN ||
-            curTok.kind == TokenType.TOK_ELLIPSIS || curTok.kind == TokenType.TOK_AMP || curTok.kind == TokenType.TOK_LBRACKET) {
+            curTok.kind == TokenType.TOK_ELLIPSIS) {
             args: ASTNode[] = []
             wh true {
                 argExpr: ASTNode = ParseExpression parser, 1
@@ -819,18 +849,24 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
     // Postfix Member Access: target.property
     if opTok.kind == TokenType.TOK_DOT {
         parser.advance // consume '.'
-        propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
+        propTok: Token = parser.cur
+        if propTok.kind == TokenType.TOK_IDENT || propTok.isKeyword {
+            parser.advance
+        } els {
+            parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
+        }
         propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
         propNode.name = propTok.val
         propNode.children = [left]
 
-        if left.kind == NodeKind.IdentExpr && (left.name == "fs" || left.name == "net" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise" || left.name == "mem") {
+        if left.kind == NodeKind.IdentExpr && (left.name == "fs" || left.name == "net" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise" || left.name == "mem" || left.name == "ffi") {
             curTok: Token = parser.cur
+            allowBracket: bool = (left.name == "Prm" || left.name == "Promise")
             if !parser.isAtEnd && curTok.line == propTok.line &&
                curTok.kind != TokenType.TOK_SEMICOLON && curTok.kind != TokenType.TOK_EOF &&
                curTok.kind != TokenType.TOK_RPAREN && curTok.kind != TokenType.TOK_RBRACE &&
                curTok.kind != TokenType.TOK_COMMA && curTok.kind != TokenType.TOK_ASSIGN &&
-               curTok.kind != TokenType.TOK_LPAREN && curTok.kind != TokenType.TOK_LBRACKET &&
+               curTok.kind != TokenType.TOK_LPAREN && (!allowBracket ? curTok.kind != TokenType.TOK_LBRACKET : true) &&
                curTok.kind != TokenType.TOK_DOT && curTok.kind != TokenType.TOK_FAT_ARROW {
                 args: ASTNode[] = []
                 wh true {
@@ -854,7 +890,7 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
             curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
             curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
             curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT ||
-            curTok.kind == TokenType.TOK_AMP || curTok.kind == TokenType.TOK_ELLIPSIS || curTok.kind == TokenType.TOK_LBRACKET) {
+            curTok.kind == TokenType.TOK_ELLIPSIS) {
             args: ASTNode[] = []
             wh true {
                 argExpr: ASTNode = ParseExpression parser, 1
@@ -882,7 +918,12 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
             idxNode.op = "?."
             -> idxNode
         }
-        propTok: Token = parser.consume TokenType.TOK_IDENT, "Expected property name after '?.'"
+        propTok: Token = parser.cur
+        if propTok.kind == TokenType.TOK_IDENT || propTok.isKeyword {
+            parser.advance
+        } els {
+            parser.consume TokenType.TOK_IDENT, "Expected property name after '?.'"
+        }
         propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
         propNode.name = propTok.val
         propNode.op = "?."

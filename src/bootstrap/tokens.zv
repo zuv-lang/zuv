@@ -215,7 +215,7 @@ TokenTypeToStr kind: TokenType :: str => sw kind {
     TokenType.TOK_AND             => "and"
     TokenType.TOK_OR              => "or"
     TokenType.TOK_NOT             => "not"
-    TokenType.TOK_MATCH           => "mch"
+    TokenType.TOK_MATCH           => "sw"
     TokenType.TOK_OK              => "ok"
     TokenType.TOK_ERR             => "err"
     TokenType.TOK_FAT_ARROW       => "=>"
@@ -470,7 +470,6 @@ LookupKeyword text: str :: TokenType => sw text {
     "enum"     => TokenType.TOK_ENUM
     "pub"      => TokenType.TOK_PUB
     "extern"   => TokenType.TOK_EXTERN
-    "ffi"      => TokenType.TOK_EXTERN
     "if"       => TokenType.TOK_IF
     "els"      => TokenType.TOK_ELS
     "and"      => TokenType.TOK_AND

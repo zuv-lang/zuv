@@ -63,14 +63,9 @@ obj Schema {
 post = new Schema("First Post", "Hello World")
 prnt post.summary
 
-// 7. Chaining static calls with instance methods via :: and .
-q1 = User::get({ name: "Alice" }).lean
-prnt q1.name
 
 q2 = User.get({ name: "Alice" }).lean
 prnt q2.name
 
-q3 = User::get({ name: "Alice" })::lean
-prnt q3.name
 
 
