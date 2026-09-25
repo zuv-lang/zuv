@@ -1,0 +1,34 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Help Subcommand Handler
+ * Path: sub_projects/zuv/src/bootstrap/cli/help.zv
+ * =============================================================================
+ *
+ * Displays comprehensive CLI usage and options documentation.
+ */
+
+HandleHelp :: num {
+    prnt "Usage: zuv [SUBCOMMAND] [OPTIONS] [FILE]"
+    prnt ""
+    prnt "Subcommands:"
+    prnt "  build <file>       Compile a Zuv source file into a native binary"
+    prnt "  run <file>         Compile and execute a Zuv source file"
+    prnt "  check <file>       Run lexing, parsing, and type checking without code generation"
+    prnt "  checkall           Run static type checking across all test suites"
+    prnt "  test               Execute the full Zuv compiler test suite"
+    prnt "  verify             Run the 19-stage bootstrap compiler pipeline verification"
+    prnt "  version            Show compiler version information"
+    prnt "  help               Display this help text"
+    prnt ""
+    prnt "Options:"
+    prnt "  -o <path>          Specify output executable/library path"
+    prnt "  -r, --release      Enable release mode optimizations (-O3)"
+    prnt "  -S, --emit-llvm    Emit LLVM IR (.ll) rather than linking executable"
+    prnt "  -l, --cdylib       Produce a shared C dynamic library (.dll)"
+    prnt "  -t, --target <t>   Target triple or alias (win64, linux-x64, macos-arm64)"
+    prnt "  -q, --quiet        Suppress informational compiler output"
+    prnt "  -V, --verbose      Enable detailed diagnostic and pipeline output"
+    prnt "  -v, --version      Display compiler version and exit"
+    prnt "  -h, --help         Display this help message and exit"
+    -> 0
+}

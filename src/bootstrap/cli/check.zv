@@ -1,0 +1,56 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Check Subcommand Handler
+ * Path: sub_projects/zuv/src/bootstrap/cli/check.zv
+ * =============================================================================
+ *
+ * Checks a single source file for syntax, semantic, and borrow checker errors.
+ */
+
+imp Token frm ../tokens
+imp ASTNode frm ../ast
+imp Lexer frm ../lexer
+imp Parser frm ../parser/parser
+imp ParseProgram frm ../parser/program
+imp Checker frm ../checker/checker
+imp InferProgram frm ../checker/infer
+imp BorrowChecker, BorrowCheckProgram frm ../checker/borrow
+
+HandleCheck file: str, isQuiet: bool :: num {
+    if !(fE file) {
+        prnt "error: source file not found: " + file
+        -> 1
+    }
+    code: str = rF file
+    lex = Lexer.create(code)
+    tokens: Token[] = lex.tokenizeAll()
+
+    parser = Parser.create(tokens, file, code)
+    prog: ASTNode = ParseProgram(parser)
+    if parser.hasErrors() {
+        prnt parser.formatErrors()
+        prnt " FAIL " + file + " (Parser Errors)"
+        -> 1
+    }
+
+    checker = Checker.create file, code
+    InferProgram checker, prog
+    if checker.hasErrors() {
+        prnt checker.formatErrors()
+        prnt " FAIL " + file + " (Type/Semantic Errors)"
+        -> 1
+    }
+
+    borrow = BorrowChecker.create(file, code)
+    BorrowCheckProgram(borrow, prog)
+    if borrow.hasErrors() {
+        prnt borrow.formatErrors()
+        prnt " FAIL " + file + " (Borrow Errors)"
+        -> 1
+    }
+
+    if !(isQuiet) {
+        prnt " PASS " + file
+    }
+    -> 0
+}

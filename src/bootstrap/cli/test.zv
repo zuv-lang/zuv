@@ -1,0 +1,64 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Test Subcommand Handler
+ * Path: sub_projects/zuv/src/bootstrap/cli/test.zv
+ * =============================================================================
+ *
+ * Discovers all *.test.zv files in tests/ and runs each as an automated test case.
+ */
+
+HandleTest :: num {
+    prnt ""
+    prnt " ZUV TEST v0.6.0 (Bootstrap Automated Test Runner)"
+    prnt ""
+    testFiles: str[] = sF "tests", ".test.zv"
+    prnt "Total test suites discovered: " + testFiles.ln
+    prnt ""
+
+    passCount: num = 0
+    failCount: num = 0
+    startMs = nw
+
+    fr tFile of testFiles {
+        caseStart = nw
+        tmpExe: str = "test_run_temp.exe"
+        if fE tmpExe {
+            rmF tmpExe
+        }
+        buildCmd: str = ".\\zuv.exe build \"" + tFile + "\" -o \"" + tmpExe + "\" -q"
+        bRes: num = sh buildCmd
+        if bRes != 0 || !(fE tmpExe) {
+            elapsedFail = nw - caseStart
+            prnt " FAIL " + tFile + " (" + elapsedFail + "ms) [Compilation Failed]"
+            failCount = failCount + 1
+        } els {
+            rCmd: str = ".\\" + tmpExe
+            rRes: num = sh rCmd
+            elapsedPass = nw - caseStart
+            if rRes == 0 {
+                prnt " PASS " + tFile + " (" + elapsedPass + "ms)"
+                passCount = passCount + 1
+            } els {
+                prnt " FAIL " + tFile + " (" + elapsedPass + "ms) [Exit code " + rRes + "]"
+                failCount = failCount + 1
+            }
+        }
+        if fE tmpExe {
+            rmF tmpExe
+        }
+    }
+
+    totalElapsed = nw - startMs
+    totalCases: num = passCount + failCount
+    prnt ""
+    if failCount == 0 {
+        prnt " Test Files: " + passCount + " passed (" + totalCases + ")"
+        prnt "      Tests: " + passCount + " passed"
+    } els {
+        prnt " Test Files: " + failCount + " failed, " + passCount + " passed (" + totalCases + ")"
+        prnt "      Tests: " + failCount + " failed, " + passCount + " passed"
+    }
+    prnt "   Duration: " + totalElapsed + "ms"
+    prnt ""
+    -> (failCount > 0 ? 1 : 0)
+}

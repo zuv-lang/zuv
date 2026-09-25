@@ -10,7 +10,7 @@
  */
 
 imp os
-imp Cli frm cli
+imp Cli frm cli/cli
 
 main {
     cli: Cli = Cli.create os.args

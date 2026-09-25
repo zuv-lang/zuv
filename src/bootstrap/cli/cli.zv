@@ -1,0 +1,175 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Command-Line Interface Driver & Coordinator
+ * Path: sub_projects/zuv/src/bootstrap/cli/cli.zv
+ * =============================================================================
+ *
+ * Implements the command-line interface driver for the bootstrap compiler:
+ * - Parses subcommands: build, run, test, check, checkall, verify, version, help
+ * - Parses flags: -o, --release, --target, --emit-llvm, --cdylib, --quiet, --verbose
+ * - Orchestrates dedicated subcommand handlers in src/bootstrap/cli/
+ */
+
+imp HandleVersion frm version
+imp HandleHelp frm help
+imp HandleCheck frm check
+imp HandleCheckAll frm checkall
+imp HandleVerify frm verify
+imp HandleTest frm test
+imp HandleBuild, StrEndsWith, ResolveTargetTriple frm build
+imp HandleRun frm run
+
+/**
+ * Command-Line Interface controller coordinating argument parsing, diagnostics, and compilation stages.
+ */
+obj Cli {
+    args: str[],
+    subcommand: str,
+    targetFile: str,
+    outputFile: str,
+    targetTriple: str,
+    targetAlias: str,
+    isRelease: bool,
+    emitLlvm: bool,
+    isCdylib: bool,
+    isQuiet: bool,
+    isVerbose: bool,
+
+    /**
+     * Creates and initializes a new Cli coordinator instance with command line arguments.
+     *
+     * @param {str[]} rawArgs - Raw arguments array from os.args
+     * @returns {Cli} Initialized Cli instance
+     */
+    create: rawArgs: str[] :: Cli => {
+        cli: Cli = {
+            args: rawArgs,
+            subcommand: "",
+            targetFile: "",
+            outputFile: "",
+            targetTriple: "x86_64-pc-windows-msvc",
+            targetAlias: "",
+            isRelease: false,
+            emitLlvm: false,
+            isCdylib: false,
+            isQuiet: false,
+            isVerbose: false
+        }
+        cli.parseArgs()
+        -> cli
+    },
+
+    /**
+     * Parses the command-line argument tokens into subcommands, target files, and compiler flags.
+     *
+     * @returns {void}
+     */
+    parseArgs: :: void => {
+        total: num = self.args.ln
+        if total <= 1 {
+            self.subcommand = "help"
+            ret
+        }
+
+        startIdx: num = 1
+        firstArg: str = self.args[1]
+        if StrEndsWith(firstArg, ".zv") || firstArg == "main.zv" {
+            startIdx = 2
+        }
+
+        if startIdx >= total {
+            self.subcommand = "help"
+            ret
+        }
+
+        leadArg: str = self.args[startIdx]
+        posIndex: num = startIdx
+
+        // Check if leading argument is a flag or subcommand
+        if leadArg == "-v" || leadArg == "--version" || leadArg == "version" {
+            self.subcommand = "version"
+            ret
+        }
+        if leadArg == "-h" || leadArg == "--help" || leadArg == "help" {
+            self.subcommand = "help"
+            ret
+        }
+
+        if leadArg == "build" || leadArg == "run" || leadArg == "check" ||
+           leadArg == "checkall" || leadArg == "test" || leadArg == "verify" {
+            self.subcommand = leadArg
+            posIndex = startIdx + 1
+        } els if StrEndsWith(leadArg, ".zv") {
+            self.subcommand = "run"
+            self.targetFile = leadArg
+            posIndex = startIdx + 1
+        } els {
+            self.subcommand = "help"
+            ret
+        }
+
+        // Process flags and positional parameters
+        i: num = posIndex
+        wh i < total {
+            arg: str = self.args[i]
+            if arg == "-o" && i + 1 < total {
+                i = i + 1
+                self.outputFile = self.args[i]
+            } els if arg == "-r" || arg == "--release" {
+                self.isRelease = true
+            } els if arg == "-S" || arg == "--emit-llvm" {
+                self.emitLlvm = true
+            } els if arg == "-l" || arg == "--lib" || arg == "--cdylib" {
+                self.isCdylib = true
+            } els if arg == "-q" || arg == "--quiet" {
+                self.isQuiet = true
+            } els if arg == "-V" || arg == "--verbose" {
+                self.isVerbose = true
+            } els if (arg == "-t" || arg == "--target") && i + 1 < total {
+                i = i + 1
+                self.targetAlias = self.args[i]
+                self.targetTriple = ResolveTargetTriple(self.targetAlias)
+            } els if (self.targetFile.ln == 0) && !(arg.slc(0, 1) == "-") {
+                self.targetFile = arg
+            }
+            i = i + 1
+        }
+
+        if (self.subcommand == "build" || self.subcommand == "run" || self.subcommand == "check") && self.targetFile.ln == 0 {
+            if fE "src/main.zv" {
+                self.targetFile = "src/main.zv"
+            } els {
+                if fE "main.zv" {
+                    self.targetFile = "main.zv"
+                }
+            }
+        }
+    },
+
+    HandleVersion,
+    HandleHelp,
+    HandleVerify,
+    HandleTest,
+
+    handleCheck: file: str :: num => HandleCheck(file, self.isQuiet),
+    handleCheckAll: :: num => HandleCheckAll(self.isQuiet),
+    handleBuild: file: str :: num => HandleBuild(file, self.outputFile, self.targetTriple, self.isRelease, self.emitLlvm, self.isCdylib, self.isQuiet, self.isVerbose),
+    handleRun: file: str :: num => HandleRun(file, self.outputFile, self.targetTriple, self.isRelease, self.emitLlvm, self.isCdylib, self.isQuiet, self.isVerbose),
+
+    /**
+     * Executes the parsed command and returns an operating system exit code.
+     *
+     * @returns {num} Process exit status code (0 for success, non-zero for failure)
+     */
+    run: :: num => sw self.subcommand {
+        "version"  => self.HandleVersion()
+        "help"     => self.HandleHelp()
+        "check"    => self.handleCheck(self.targetFile)
+        "checkall" => self.handleCheckAll()
+        "test"     => self.HandleTest()
+        "verify"   => self.HandleVerify()
+        "build"    => self.handleBuild(self.targetFile)
+        "run"      => self.handleRun(self.targetFile)
+        _          => self.HandleHelp()
+    }
+}

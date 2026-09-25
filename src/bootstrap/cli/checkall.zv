@@ -1,0 +1,40 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — CheckAll Subcommand Handler
+ * Path: sub_projects/zuv/src/bootstrap/cli/checkall.zv
+ * =============================================================================
+ *
+ * Scans tests/ directory and performs semantic checking across all discovered Zuv test files.
+ */
+
+imp HandleCheck frm check
+
+HandleCheckAll isQuiet: bool :: num {
+    prnt ""
+    prnt " ZUV CHECKALL v0.6.0 (Bootstrap Static & Type Checker)"
+    prnt ""
+    testFiles: str[] = sF "tests", ".zv"
+    passCount: num = 0
+    failCount: num = 0
+
+    fr testPath of testFiles {
+        res: num = HandleCheck(testPath, true)
+        if res == 0 {
+            passCount = passCount + 1
+        } els {
+            failCount = failCount + 1
+        }
+    }
+
+    totalFiles: num = passCount + failCount
+    prnt ""
+    if failCount == 0 {
+        prnt " Checked Files: " + passCount + " passed (" + totalFiles + ")"
+        prnt "        Status: " + passCount + " passed"
+    } els {
+        prnt " Checked Files: " + failCount + " failed, " + passCount + " passed (" + totalFiles + ")"
+        prnt "        Status: " + failCount + " failed, " + passCount + " passed"
+    }
+    prnt ""
+    -> (failCount > 0 ? 1 : 0)
+}

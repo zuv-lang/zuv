@@ -1,0 +1,21 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Verify Subcommand Handler
+ * Path: sub_projects/zuv/src/bootstrap/cli/verify.zv
+ * =============================================================================
+ *
+ * Executes the comprehensive 19-stage bootstrap compiler pipeline verification suite.
+ */
+
+HandleVerify :: num {
+    prnt "Running Zuv Bootstrap 19-Stage Verification Suite..."
+    if !(fE "verify.exe") {
+        buildRes: num = sh ".\\zuv.exe build sub_projects/zuv/src/bootstrap/verify.zv -o verify.exe"
+        if buildRes != 0 {
+            prnt "error: failed to build verify.exe"
+            -> buildRes
+        }
+    }
+    runRes: num = sh ".\\verify.exe"
+    -> runRes
+}
