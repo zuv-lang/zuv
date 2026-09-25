@@ -15,7 +15,7 @@
 
 imp str, arr
 imp Token, TokenType frm ../tokens
-imp ASTNode, NodeKind, Param, FieldEntry frm ../ast
+imp ASTNode, NodeKind, Param, FieldEntry, Attribute frm ../ast
 imp TypeInfo, TypeKind frm ../types
 imp Diagnostic frm ../diagnostics
 imp Parser frm parser
@@ -215,6 +215,56 @@ IsMethodMember parser: Parser :: bool {
 }
 
 /**
+ * Parses zero or more leading decorators / attributes (@ident[(args)] or @ident "arg").
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {Attribute[]} Array of parsed Attribute records
+ */
+ParseAttributes parser: Parser :: Attribute[] {
+    attrs: Attribute[] = []
+    wh parser.check TokenType.TOK_AT {
+        atTok: Token = parser.advance // consume '@'
+        nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected attribute name after '@'"
+        attrArgs: str[] = []
+        if parser.matchToken TokenType.TOK_LPAREN {
+            wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+                argTok: Token = parser.cur
+                if argTok.kind == TokenType.TOK_IDENT || argTok.kind == TokenType.TOK_STRING || argTok.kind == TokenType.TOK_NUMBER {
+                    attrArgs.psh argTok.val
+                    parser.advance
+                    if parser.matchToken TokenType.TOK_COMMA {
+                        // continue
+                    }
+                } els {
+                    parser.advance
+                }
+            }
+            parser.consume TokenType.TOK_RPAREN, "Expected ')' after attribute arguments"
+        } els {
+            curArg: Token = parser.cur
+            wh curArg.line == nameTok.line && (curArg.kind == TokenType.TOK_STRING || curArg.kind == TokenType.TOK_NUMBER || curArg.kind == TokenType.TOK_IDENT) {
+                argTok: Token = parser.advance
+                attrArgs.psh argTok.val
+                curArg = parser.cur
+                if curArg.line == nameTok.line && parser.matchToken TokenType.TOK_COMMA {
+                    curArg = parser.cur
+                } els {
+                    brk
+                }
+            }
+        }
+        attr: Attribute = {
+            name: nameTok.val,
+            args: attrArgs,
+            line: atTok.line,
+            col: atTok.col
+        }
+        attrs.psh attr
+    }
+    -> attrs
+}
+
+/**
  * Parses an object / struct declaration (`obj Name { field: Type, method: => { ... } }`).
  *
  * @param {Parser} parser - Parser coordinator instance
@@ -235,6 +285,11 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
             cont
         }
 
+        mAttrs: Attribute[] = ParseAttributes parser
+        if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+            cont
+        }
+
         if !(parser.check TokenType.TOK_IDENT) {
             errTok: Token = parser.advance
             parser.addError "E0102", "Expected member name in object declaration, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
@@ -249,7 +304,7 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
             if IsMethodMember parser {
                 // Method definition: method: params :: Ret => { ... }
                 mParams: Param[] = []
-                mRet: str = "void"
+                mRet: str = ""
 
                 if !(parser.check TokenType.TOK_FAT_ARROW) && !(parser.check TokenType.TOK_COLON_COLON) {
                     mParams = ParseParamList parser
@@ -263,6 +318,7 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
 
                 mNode = ASTNode.createFuncDecl mName, mRet, false, true, mTok.line, mTok.col
                 mNode.params = mParams
+                mNode.attributes = mAttrs
 
                 parser.enterScope()
                 parser.addVar "self"
@@ -332,6 +388,8 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
 
     nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected function name identifier"
     name: str = nameTok.val
+    prevFnName: str = parser.curFuncName
+    parser.curFuncName = name
 
     params: Param[] = []
     if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_ARROW) && !(parser.check TokenType.TOK_FAT_ARROW) {
@@ -465,6 +523,7 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
     }
 
     parser.exitScope()
+    parser.curFuncName = prevFnName
 
     -> node
 }
@@ -631,19 +690,11 @@ ParseDeclaration parser: Parser :: ASTNode {
     isAsync: bool = false
     isAsyncST: bool = false
 
-    wh parser.check TokenType.TOK_AT {
-        parser.advance // consume '@'
-        attrTok: Token = parser.consume TokenType.TOK_IDENT, "Expected attribute name after '@'"
-        attrName: str = attrTok.val
-        if attrName == "st" || attrName == "single_threaded" {
+    attrs: Attribute[] = ParseAttributes parser
+    fr a of attrs {
+        if a.name == "st" || a.name == "single_threaded" {
             isAsync = true
             isAsyncST = true
-        }
-        if parser.matchToken TokenType.TOK_LPAREN {
-            wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
-                parser.advance
-            }
-            parser.consume TokenType.TOK_RPAREN, "Expected ')' after attribute arguments"
         }
     }
 
@@ -659,31 +710,28 @@ ParseDeclaration parser: Parser :: ASTNode {
     }
 
     curTok: Token = parser.cur
+    declNode: ASTNode = ASTNode.createBase NodeKind.ProgramDecl, curTok.line, curTok.col
     if curTok.kind == TokenType.TOK_TYP || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "type") {
-        -> ParseTypeDecl parser, isPub
-    }
-    if curTok.kind == TokenType.TOK_STRUCT || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "obj") {
-        -> ParseObjDecl parser, isPub
-    }
-    if curTok.kind == TokenType.TOK_ENUM {
-        -> ParseEnumDecl parser, isPub
-    }
-    if curTok.kind == TokenType.TOK_EXTERN {
-        -> ParseExternDecl parser
-    }
-    if curTok.kind == TokenType.TOK_IMP {
-        -> ParseImportDecl parser
-    }
-    if curTok.kind == TokenType.TOK_FN || curTok.kind == TokenType.TOK_IDENT {
-        fnNode: ASTNode = ParseFuncDecl parser, isPub, isAsync
+        declNode = ParseTypeDecl parser, isPub
+    } els if curTok.kind == TokenType.TOK_STRUCT || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "obj") {
+        declNode = ParseObjDecl parser, isPub
+    } els if curTok.kind == TokenType.TOK_ENUM {
+        declNode = ParseEnumDecl parser, isPub
+    } els if curTok.kind == TokenType.TOK_EXTERN {
+        declNode = ParseExternDecl parser
+    } els if curTok.kind == TokenType.TOK_IMP {
+        declNode = ParseImportDecl parser
+    } els if curTok.kind == TokenType.TOK_FN || curTok.kind == TokenType.TOK_IDENT {
+        declNode = ParseFuncDecl parser, isPub, isAsync
         if isAsyncST {
-            fnNode.val = "st"
+            declNode.val = "st"
         }
-        -> fnNode
+    } els {
+        // Default error recovery fallback
+        errTok: Token = parser.advance
+        parser.addError "E0101", "Expected declaration statement, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected declaration"
+        -> ASTNode.createBase NodeKind.ProgramDecl, errTok.line, errTok.col
     }
-
-    // Default error recovery fallback
-    errTok: Token = parser.advance
-    parser.addError "E0101", "Expected declaration statement, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected declaration"
-    -> ASTNode.createBase NodeKind.ProgramDecl, errTok.line, errTok.col
+    declNode.attributes = attrs
+    -> declNode
 }

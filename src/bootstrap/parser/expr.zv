@@ -255,21 +255,29 @@ ParseLambda parser: Parser, paramNames: str[], line: num, col: num :: ASTNode {
     lambdaName: str = "__lambda_" + lambdaId
 
     params: Param[] = []
+    cleanNames: str[] = []
     fr pName of paramNames {
+        isRest: bool = false
+        cleanName: str = pName
+        if pName.ln >= 3 && pName[0] == "." && pName[1] == "." && pName[2] == "." {
+            isRest = true
+            cleanName = pName.sub 3, (pName.ln - 3)
+        }
         p: Param = {
-            name: pName,
+            name: cleanName,
             typeAnnotation: "",
-            isRest: false,
+            isRest,
             isOptional: false,
             line,
             col
         }
         params.psh p
+        cleanNames.psh cleanName
     }
 
     parser.enterScope()
-    fr pName of paramNames {
-        parser.addVar pName
+    fr cName of cleanNames {
+        parser.addVar cName
     }
 
     bodyBlock: ASTNode = ASTNode.createBlock [], line, col
@@ -297,7 +305,7 @@ ParseLambda parser: Parser, paramNames: str[], line: num, col: num :: ASTNode {
                 }
                 cTok: Token = parser.cur
                 pTok: Token = parser.peek
-                if cTok.kind == TokenType.TOK_IDENT && pTok.kind == TokenType.TOK_ASSIGN {
+                if cTok.kind == TokenType.TOK_IDENT && pTok.kind == TokenType.TOK_ASSIGN && !(parser.hasVar cTok.val) {
                     nameTok: Token = parser.advance
                     parser.advance // consume '='
                     initVal: ASTNode = ParseExpression parser, 1
@@ -309,13 +317,38 @@ ParseLambda parser: Parser, paramNames: str[], line: num, col: num :: ASTNode {
                     }
                     cont
                 }
-                if cTok.kind == TokenType.TOK_RET {
+                if cTok.kind == TokenType.TOK_RET || cTok.kind == TokenType.TOK_ARROW {
                     rTok: Token = parser.advance
                     rExpr: ASTNode = ParseExpression parser, 1
                     stmts.psh (ASTNode.createRet rExpr, rTok.line, rTok.col)
                     if parser.matchToken TokenType.TOK_SEMICOLON {
                         // optional delimiter
                     }
+                    cont
+                }
+                if cTok.kind == TokenType.TOK_WH {
+                    whTok: Token = parser.advance
+                    condNode: ASTNode = ParseExpression parser, 1
+                    whBlock: ASTNode = ASTNode.createBlock [], whTok.line, whTok.col
+                    if parser.check TokenType.TOK_LBRACE {
+                        parser.advance
+                        whStmts: ASTNode[] = []
+                        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+                            if parser.matchToken TokenType.TOK_SEMICOLON {
+                                cont
+                            }
+                            whStmtExpr: ASTNode = ParseExpression parser, 1
+                            whStmts.psh (ASTNode.createExprStmt whStmtExpr, whStmtExpr.line, whStmtExpr.col)
+                            if parser.matchToken TokenType.TOK_SEMICOLON {
+                                // optional delimiter
+                            }
+                        }
+                        parser.consume TokenType.TOK_RBRACE, "Expected '}' after while body"
+                        whBlock = ASTNode.createBlock whStmts, whTok.line, whTok.col
+                    }
+                    nodeWh: ASTNode = ASTNode.createBase NodeKind.WhStmt, whTok.line, whTok.col
+                    nodeWh.children = [condNode, whBlock]
+                    stmts.psh nodeWh
                     cont
                 }
                 sExpr: ASTNode = ParseExpression parser, 1
@@ -328,54 +361,16 @@ ParseLambda parser: Parser, paramNames: str[], line: num, col: num :: ASTNode {
             bodyBlock = ASTNode.createBlock stmts, line, col
         }
     } els {
-        stmts: ASTNode[] = []
-        cTokStart: Token = parser.cur
-        curL: num = cTokStart.line
-        indentCol: num = cTokStart.col
-        wh !parser.isAtEnd {
-            cTok: Token = parser.cur
-            tCol: num = cTok.col
-            tLine: num = cTok.line
-            if tLine > curL && tCol < indentCol {
-                brk
-            }
-            pTok: Token = parser.peek
-            if cTok.kind == TokenType.TOK_IDENT && pTok.kind == TokenType.TOK_ASSIGN {
-                nameTok: Token = parser.advance
-                parser.advance // consume '='
-                initVal: ASTNode = ParseExpression parser, 1
-                parser.addVar nameTok.val
-                emptyType: str = ""
-                stmts.psh (ASTNode.createVarDecl nameTok.val, emptyType, false, initVal, nameTok.line, nameTok.col)
-                if parser.matchToken TokenType.TOK_SEMICOLON {
-                    // optional delimiter
-                }
-            } els if cTok.kind == TokenType.TOK_RET {
-                rTok: Token = parser.advance
-                rExpr: ASTNode = ParseExpression parser, 1
-                stmts.psh (ASTNode.createRet rExpr, rTok.line, rTok.col)
-                if parser.matchToken TokenType.TOK_SEMICOLON {
-                    // optional delimiter
-                }
-            } els {
-                sExpr: ASTNode = ParseExpression parser, 1
-                stmts.psh (ASTNode.createExprStmt sExpr, sExpr.line, sExpr.col)
-                if parser.matchToken TokenType.TOK_SEMICOLON {
-                    // optional delimiter
-                }
-            }
-            afterTok: Token = parser.cur
-            if parser.isAtEnd || afterTok.line == tLine || afterTok.col < indentCol {
-                brk
-            }
-        }
-        bodyBlock = ASTNode.createBlock stmts, line, col
+        sExpr: ASTNode = ParseExpression parser, 1
+        retNode: ASTNode = ASTNode.createRet sExpr, sExpr.line, sExpr.col
+        bodyBlock = ASTNode.createBlock [retNode], line, col
     }
 
     parser.exitScope()
 
     lambdaFunc: ASTNode = ASTNode.createFuncDecl lambdaName, "", false, false, line, col
     lambdaFunc.params = params
+    lambdaFunc.val = parser.curFuncName
     lambdaFunc.children.psh bodyBlock
 
     parser.lambdas.psh lambdaFunc
@@ -459,7 +454,8 @@ ParsePrimary parser: Parser :: ASTNode {
            (curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_STRING ||
             curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
             curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
-            curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT || curTok.kind == TokenType.TOK_FN) {
+            curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT || curTok.kind == TokenType.TOK_FN ||
+            curTok.kind == TokenType.TOK_ELLIPSIS || curTok.kind == TokenType.TOK_AMP || curTok.kind == TokenType.TOK_LBRACKET) {
             args: ASTNode[] = []
             wh true {
                 argExpr: ASTNode = ParseExpression parser, 1
@@ -858,7 +854,7 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
             curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
             curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
             curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT ||
-            curTok.kind == TokenType.TOK_AMP) {
+            curTok.kind == TokenType.TOK_AMP || curTok.kind == TokenType.TOK_ELLIPSIS || curTok.kind == TokenType.TOK_LBRACKET) {
             args: ASTNode[] = []
             wh true {
                 argExpr: ASTNode = ParseExpression parser, 1

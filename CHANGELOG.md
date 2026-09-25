@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### ⚙️ Self-Host Compiler Frontend & Codegen Improvements
+- **User-Defined Decorators**: Added AST-driven, generalized decorator support for class/object decorators, method decorators, parameterized decorator factories, profiling/timing behavior-changing wrappers, and free-function decorators. Supported rest-parameter lambda wrapping, dynamic prototype mutation, and return type propagation (`tests/decorators.test.zv`).
 - **Compound Assignment**: Supported `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `|=`, `^=` with memory store lowering and string `+=` concatenation (`tests/compound_assign.test.zv`).
 - **Base Literals**: Added standalone parser/converter for binary (`0b`), octal (`0o`), and hex (`0x`) numbers before LLVM IR emission (`tests/bases.test.zv`).
 - **Type Inspection (`typ`)**: Fixed `emitTyp` to classify numeric expressions as `"num"`, preserving `"i8"` for enum variants and `"obj"` for enums (`tests/typ.test.zv`).

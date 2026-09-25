@@ -92,6 +92,13 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             }
             -> foundSym.typeKind
         }
+        if checker.currentFuncName.ln >= 9 {
+            fnPrefix = checker.currentFuncName.sub 0, 9
+            if fnPrefix == "__lambda_" {
+                expr.inferredType = TypeKind.Unknown
+                -> TypeKind.Unknown
+            }
+        }
         checker.addError("E0202", "Undefined identifier '" + symName + "'", expr.line, expr.col, symName.ln, "check variable spelling or define variable")
         expr.inferredType = TypeKind.Unknown
         -> TypeKind.Unknown
@@ -563,7 +570,9 @@ InferStatement checker: Checker, stmt: ASTNode :: void {
         }
         tName = stmt.typeAnnotation
         if tName.ln == 0 {
-            if stmt.children.ln > 0 && stmt.children[0].typeAnnotation.ln > 0 {
+            if stmt.children.ln > 0 && stmt.children[0].kind == NodeKind.NewExpr && stmt.children[0].name.ln > 0 {
+                tName = stmt.children[0].name
+            } els if stmt.children.ln > 0 && stmt.children[0].typeAnnotation.ln > 0 {
                 tName = stmt.children[0].typeAnnotation
             } els {
                 tName = TypeKindToStr(finalKind)
@@ -794,6 +803,8 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         fnSym = Symbol.create(decl.name, TypeKind.Func, fnTypeName, false, true, checker.currentLevel(), decl.line, decl.col)
         checker.defineSymbol(fnSym)
 
+        prevFnName = checker.currentFuncName
+        checker.currentFuncName = decl.name
         checker.enterScope()
         fr param of decl.params {
             pKind = StrToTypeKind(param.typeAnnotation)
@@ -804,6 +815,7 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
             InferStatement(checker, bStmt)
         }
         checker.exitScope()
+        checker.currentFuncName = prevFnName
         ->
     }
     if k == NodeKind.EnumDecl {
@@ -892,6 +904,8 @@ InferProgram checker: Checker, program: ASTNode :: void {
     fr child of program.children {
         if child.isDecl() {
             if child.kind == NodeKind.FuncDecl {
+                prevFn = checker.currentFuncName
+                checker.currentFuncName = child.name
                 checker.enterScope()
                 fr param of child.params {
                     pKind = StrToTypeKind(param.typeAnnotation)
@@ -902,6 +916,7 @@ InferProgram checker: Checker, program: ASTNode :: void {
                     InferStatement(checker, bStmt)
                 }
                 checker.exitScope()
+                checker.currentFuncName = prevFn
             } els if child.kind != NodeKind.ImportDecl && child.kind != NodeKind.EnumDecl {
                 InferDeclaration(checker, child)
             }

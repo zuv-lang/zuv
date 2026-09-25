@@ -614,6 +614,115 @@ obj Cli {
             targetExe = (self.isCdylib ? "output.dll" : "output.exe")
         }
 
+        // Expand ObjDecl methods into synthetic FuncDecls so codegen emits their definitions
+        expandedChildren: ASTNode[] = []
+        fr topNode of prog.children {
+            expandedChildren.psh topNode
+            if topNode.kind == NodeKind.ObjDecl {
+                fr mNode of topNode.children {
+                    mangledName: str = topNode.name + "_" + mNode.name
+                    mRetType: str = mNode.typeAnnotation
+                    if mRetType.ln == 0 && mNode.children.ln > 0 {
+                        retExpr: ASTNode = ASTNode.createNil(0, 0)
+                        if mNode.children[0].kind == NodeKind.BlockStmt && mNode.children[0].children.ln > 0 {
+                            lastStmt: ASTNode = mNode.children[0].children[mNode.children[0].children.ln - 1]
+                            if lastStmt.kind == NodeKind.RetStmt && lastStmt.children.ln > 0 {
+                                retExpr = lastStmt.children[0]
+                            }
+                        } els if mNode.children[0].kind != NodeKind.BlockStmt {
+                            retExpr = mNode.children[0]
+                        }
+                        if retExpr.kind == NodeKind.StrExpr || (retExpr.kind == NodeKind.BinaryExpr && retExpr.op == "+") {
+                            mRetType = "str"
+                        } els if retExpr.kind == NodeKind.ArrExpr {
+                            mRetType = "arr"
+                        }
+                    }
+                    synthFn: ASTNode = ASTNode.createFuncDecl mangledName, mRetType, false, false, mNode.line, mNode.col
+                    synthFn.params = mNode.params
+                    if mRetType == "str" && synthFn.params.ln > 0 && synthFn.params[0].typeAnnotation.ln == 0 {
+                        synthFn.params[0].typeAnnotation = "str"
+                    }
+                    if mNode.children.ln > 0 && mNode.children[0].kind != NodeKind.BlockStmt {
+                        retNode: ASTNode = ASTNode.createRet mNode.children[0], mNode.children[0].line, mNode.children[0].col
+                        synthBlock: ASTNode = ASTNode.createBlock [retNode], mNode.children[0].line, mNode.children[0].col
+                        synthFn.children = [synthBlock]
+                    } els {
+                        synthFn.children = mNode.children
+                    }
+                    synthFn.attributes = []
+                    expandedChildren.psh synthFn
+                }
+            }
+        }
+        prog.children = expandedChildren
+
+        // Decorator tracking
+        userDecorators: str[] = []
+        decoratorFactories: str[] = []
+        objDecorators: str[] = []
+        decoratedFuncNames: str[] = []
+        decoratedMethodNames: str[] = []
+
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.FuncDecl {
+                fr attr of topNode.attributes {
+                    aName: str = attr.name
+                    if aName != "st" && aName != "single_threaded" && aName != "inline" && aName != "noinline" && aName != "test" && aName != "derive" && aName != "custom" {
+                        userDecorators.psh aName
+                        if attr.args.ln > 0 {
+                            decoratorFactories.psh aName
+                        }
+                        decoratedFuncNames.psh topNode.name
+                    }
+                }
+            } els if topNode.kind == NodeKind.ObjDecl {
+                fr attr of topNode.attributes {
+                    aName: str = attr.name
+                    if aName != "st" && aName != "single_threaded" && aName != "inline" && aName != "noinline" && aName != "test" && aName != "derive" && aName != "custom" {
+                        userDecorators.psh aName
+                        if attr.args.ln > 0 {
+                            decoratorFactories.psh aName
+                        }
+                        objDecorators.psh aName
+                    }
+                }
+                fr mNode of topNode.children {
+                    mName: str = topNode.name + "_" + mNode.name
+                    fr mAttr of mNode.attributes {
+                        aName: str = mAttr.name
+                        if aName != "st" && aName != "single_threaded" && aName != "inline" && aName != "noinline" && aName != "test" && aName != "derive" && aName != "custom" {
+                            userDecorators.psh aName
+                            if mAttr.args.ln > 0 {
+                                decoratorFactories.psh aName
+                            }
+                            decoratedMethodNames.psh mName
+                        }
+                    }
+                }
+            }
+        }
+
+        cg.emitExtern "@__active_decor_orig = global i64 0"
+        cg.emitExtern "@__active_decor_ctx = global i64 0"
+        cg.emitExtern "@__active_factory_arg = global i64 0"
+
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.ObjDecl {
+                cg.emitExtern ("@" + topNode.name + "_prototype = global i64 0")
+            }
+        }
+        fr dm of decoratedMethodNames {
+            cg.emitExtern ("@" + dm + "_orig = global i64 0")
+            cg.emitExtern ("@" + dm + "_ctx = global i64 0")
+            cg.emitExtern ("@" + dm + "_fnptr = global i64 0")
+        }
+        fr df of decoratedFuncNames {
+            cg.emitExtern ("@" + df + "_orig = global i64 0")
+            cg.emitExtern ("@" + df + "_ctx = global i64 0")
+            cg.emitExtern ("@" + df + "_fnptr = global i64 0")
+        }
+
         // Emit functions and statements
         topLevelStmts: ASTNode[] = []
         hasExplicitMain: bool = false
@@ -640,6 +749,43 @@ obj Cli {
         arrGen = ArrayCodegen.create(cg)
         exprGen = ExprCodegen.create(cg, objGen, arrGen)
         stmtGen = StmtCodegen.create(cg, exprGen)
+
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.ObjDecl {
+                fr mNode of topNode.children {
+                    mName: str = topNode.name + "_" + mNode.name
+                    exprGen.addMethodMapping mNode.name, mName
+                }
+            }
+        }
+        fr dm of decoratedMethodNames {
+            exprGen.decoratedMethods.psh dm
+        }
+        fr df of decoratedFuncNames {
+            exprGen.decoratedMethods.psh df
+        }
+
+        // Pre-register user function signatures
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.FuncDecl {
+                retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (topNode.typeAnnotation == "str" ? "ptr" : "i64"))
+                pTypes: str[] = []
+                fr p of topNode.params {
+                    pLLVM: str = "i64"
+                    if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                        pLLVM = "ptr"
+                    } els if p.typeAnnotation == "bool" {
+                        pLLVM = "i1"
+                    } els if p.typeAnnotation == "i32" {
+                        pLLVM = "i32"
+                    } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                        pLLVM = "double"
+                    }
+                    pTypes.psh(pLLVM)
+                }
+                exprGen.registerFunc(topNode.name, retLLVM, pTypes)
+            }
+        }
 
         // Pre-register top-level global variables
         declaredGlobals: str[] = []
@@ -690,6 +836,52 @@ obj Cli {
                                 gType = TypeKind.Bool
                             } els if mName == "ln" || mName == "length" || mName == "psh" || mName == "push" {
                                 gType = TypeKind.I64
+                            } els {
+                                mTarget: str = ""
+                                if cNode.children.ln > 0 && cNode.children[0].kind == NodeKind.IdentExpr {
+                                    mTarget = cNode.children[0].name
+                                }
+                                mangled: str = exprGen.getMethodMapping mName
+                                if mangled.ln == 0 && mTarget.ln > 0 {
+                                    mangled = mTarget + "_" + mName
+                                }
+                                if mangled.ln > 0 {
+                                    mSig: FuncSignature = exprGen.findFunc mangled
+                                    if mSig.name.ln > 0 {
+                                        if mSig.retType == "ptr" {
+                                            gType = TypeKind.Str
+                                        } els if mSig.retType == "void" {
+                                            gType = TypeKind.Void
+                                        } els if mSig.retType == "double" {
+                                            gType = TypeKind.Num
+                                        } els if mSig.retType == "i1" {
+                                            gType = TypeKind.Bool
+                                        } els {
+                                            gType = TypeKind.I64
+                                        }
+                                    }
+                                }
+                            }
+                        } els if cNode.kind == NodeKind.CallExpr {
+                            cName: str = ""
+                            if cNode.children.ln > 0 && cNode.children[0].kind == NodeKind.IdentExpr {
+                                cName = cNode.children[0].name
+                            }
+                            if cName.ln > 0 {
+                                cSig: FuncSignature = exprGen.findFunc cName
+                                if cSig.name.ln > 0 {
+                                    if cSig.retType == "ptr" {
+                                        gType = TypeKind.Str
+                                    } els if cSig.retType == "void" {
+                                        gType = TypeKind.Void
+                                    } els if cSig.retType == "double" {
+                                        gType = TypeKind.Num
+                                    } els if cSig.retType == "i1" {
+                                        gType = TypeKind.Bool
+                                    } els {
+                                        gType = TypeKind.I64
+                                    }
+                                }
                             }
                         } els if cNode.kind == NodeKind.IndexExpr {
                             if cNode.children.ln > 0 {
@@ -705,7 +897,7 @@ obj Cli {
                             }
                         }
                     }
-                    if gType == TypeKind.Unknown {
+                    if gType == TypeKind.Unknown || gType == TypeKind.Void {
                         gType = TypeKind.I64
                     }
                     stType: str = llvmStackType(gType)
@@ -720,57 +912,79 @@ obj Cli {
             }
         }
 
-        // Pre-register user function signatures
-        fr topNode of prog.children {
-            if topNode.kind == NodeKind.FuncDecl {
-                retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : "i64")
-                pTypes: str[] = []
-                fr p of topNode.params {
-                    pLLVM: str = "i64"
-                    if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
-                        pLLVM = "ptr"
-                    } els if p.typeAnnotation == "bool" {
-                        pLLVM = "i1"
-                    } els if p.typeAnnotation == "i32" {
-                        pLLVM = "i32"
-                    } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
-                        pLLVM = "double"
-                    }
-                    pTypes.psh(pLLVM)
-                }
-                exprGen.registerFunc(topNode.name, retLLVM, pTypes)
-            }
-        }
-
         // Emit custom functions (excluding main)
         stmtGen.setTopLevel(false)
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
                 if topNode.name != "main" {
                     exprGen.clearSymbols()
-                    retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : "i64")
+
+                    parentFuncName: str = topNode.val
+                    parentIsDecor: bool = false
+                    parentIsFactory: bool = false
+                    if parentFuncName.ln > 0 {
+                        fr dec of userDecorators {
+                            if dec == parentFuncName { parentIsDecor = true }
+                        }
+                        fr fac of decoratorFactories {
+                            if fac == parentFuncName { parentIsFactory = true }
+                        }
+                    }
+                    if parentIsDecor {
+                        fr pNode of prog.children {
+                            if pNode.kind == NodeKind.FuncDecl && pNode.name == parentFuncName {
+                                if parentIsFactory {
+                                    if pNode.params.ln > 0 {
+                                        exprGen.setDecorRole pNode.params[0].name, 3
+                                    }
+                                    if topNode.params.ln > 0 {
+                                        exprGen.setDecorRole topNode.params[0].name, 1
+                                    }
+                                    if topNode.params.ln > 1 {
+                                        exprGen.setDecorRole topNode.params[1].name, 2
+                                    }
+                                } els {
+                                    if pNode.params.ln > 0 {
+                                        exprGen.setDecorRole pNode.params[0].name, 1
+                                    }
+                                    if pNode.params.ln > 1 {
+                                        exprGen.setDecorRole pNode.params[1].name, 2
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    hasRest: bool = (topNode.params.ln == 1 && topNode.params[0].isRest)
+                    retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (topNode.typeAnnotation == "str" ? "ptr" : "i64"))
                     paramsSig: str = ""
-                    isFirstP = true
-                    fr p of topNode.params {
-                        pLLVM: str = "i64"
-                        if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
-                            pLLVM = "ptr"
-                        } els if p.typeAnnotation == "bool" {
-                            pLLVM = "i1"
-                        } els if p.typeAnnotation == "i32" {
-                            pLLVM = "i32"
-                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
-                            pLLVM = "double"
+                    if hasRest {
+                        paramsSig = "i64 %arg_a0, i64 %arg_a1, i64 %arg_a2, i64 %arg_a3"
+                    } els {
+                        isFirstP = true
+                        fr p of topNode.params {
+                            pLLVM: str = "i64"
+                            if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                                pLLVM = "ptr"
+                            } els if p.typeAnnotation == "bool" {
+                                pLLVM = "i1"
+                            } els if p.typeAnnotation == "i32" {
+                                pLLVM = "i32"
+                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                                pLLVM = "double"
+                            }
+                            if !isFirstP {
+                                paramsSig = paramsSig + ", "
+                            }
+                            paramsSig = paramsSig + pLLVM + " %arg_" + p.name
+                            isFirstP = false
                         }
-                        if !isFirstP {
-                            paramsSig = paramsSig + ", "
-                        }
-                        paramsSig = paramsSig + pLLVM + " %arg_" + p.name
-                        isFirstP = false
                     }
                     cg.startFunction("define " + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
                     if retLLVM == "void" {
                         stmtGen.setReturnType(TypeKind.Void)
+                    } els if retLLVM == "ptr" && topNode.typeAnnotation == "str" {
+                        stmtGen.setReturnType(TypeKind.Str)
                     } els {
                         stmtGen.setReturnType(TypeKind.I64)
                     }
@@ -790,29 +1004,54 @@ obj Cli {
                         stmtGen.setAsyncFunc(prmReg, prevModeReg)
                     }
 
-                    fr p of topNode.params {
-                        pLLVM: str = "i64"
-                        pKind = TypeKind.Unknown
-                        if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
-                            pLLVM = "ptr"
-                            pKind = TypeKind.Str
-                        } els if p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
-                            pLLVM = "ptr"
-                            pKind = TypeKind.Arr
-                        } els if p.typeAnnotation == "bool" {
-                            pLLVM = "i1"
-                            pKind = TypeKind.Bool
-                        } els if p.typeAnnotation == "i32" {
-                            pLLVM = "i32"
-                            pKind = TypeKind.I32
-                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
-                            pLLVM = "double"
-                            pKind = TypeKind.Num
-                        }
+                    if hasRest {
+                        rawArr: str = cg.newReg
+                        cg.emit `${rawArr} = call ptr @malloc(i64 48)`
+                        cg.emit `store i64 4, ptr ${rawArr}`
+                        arrPtr: str = cg.newReg
+                        cg.emit `${arrPtr} = getelementptr inbounds i64, ptr ${rawArr}, i64 1`
+                        cg.emit `store i64 4, ptr ${arrPtr}`
+                        gep0: str = cg.newReg
+                        cg.emit `${gep0} = getelementptr inbounds i64, ptr ${arrPtr}, i64 1`
+                        cg.emit `store i64 %arg_a0, ptr ${gep0}`
+                        gep1: str = cg.newReg
+                        cg.emit `${gep1} = getelementptr inbounds i64, ptr ${arrPtr}, i64 2`
+                        cg.emit `store i64 %arg_a1, ptr ${gep1}`
+                        gep2: str = cg.newReg
+                        cg.emit `${gep2} = getelementptr inbounds i64, ptr ${arrPtr}, i64 3`
+                        cg.emit `store i64 %arg_a2, ptr ${gep2}`
+                        gep3: str = cg.newReg
+                        cg.emit `${gep3} = getelementptr inbounds i64, ptr ${arrPtr}, i64 4`
+                        cg.emit `store i64 %arg_a3, ptr ${gep3}`
                         slotReg: str = cg.newReg
-                        cg.emit(`${slotReg} = alloca ${pLLVM}`)
-                        cg.emit(`store ${pLLVM} %arg_${p.name}, ptr ${slotReg}`)
-                        exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                        cg.emit `${slotReg} = alloca ptr`
+                        cg.emit `store ptr ${arrPtr}, ptr ${slotReg}`
+                        exprGen.addSymbol(topNode.params[0].name, slotReg, TypeKind.Arr, true, true)
+                    } els {
+                        fr p of topNode.params {
+                            pLLVM: str = "i64"
+                            pKind = TypeKind.Unknown
+                            if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                                pLLVM = "ptr"
+                                pKind = TypeKind.Str
+                            } els if p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                                pLLVM = "ptr"
+                                pKind = TypeKind.Arr
+                            } els if p.typeAnnotation == "bool" {
+                                pLLVM = "i1"
+                                pKind = TypeKind.Bool
+                            } els if p.typeAnnotation == "i32" {
+                                pLLVM = "i32"
+                                pKind = TypeKind.I32
+                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                                pLLVM = "double"
+                                pKind = TypeKind.Num
+                            }
+                            slotReg: str = cg.newReg
+                            cg.emit(`${slotReg} = alloca ${pLLVM}`)
+                            cg.emit(`store ${pLLVM} %arg_${p.name}, ptr ${slotReg}`)
+                            exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                        }
                     }
 
                     hasExplicitRet: bool = false
@@ -844,6 +1083,8 @@ obj Cli {
                         if !hasExplicitRet {
                             if retLLVM == "void" {
                                 cg.emit("ret void")
+                            } els if retLLVM == "ptr" {
+                                cg.emit("ret ptr null")
                             } els {
                                 cg.emit("ret i64 0")
                             }
@@ -860,6 +1101,149 @@ obj Cli {
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
             rtGen.emitInitArgsCall(self.targetFile)
             rtGen.emitInitCrashHandlerCall()
+
+            // 1. Initialize decorated free functions
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.FuncDecl && topNode.name != "main" {
+                    fr attr of topNode.attributes {
+                        aName: str = attr.name
+                        isUserDec: bool = false
+                        fr uDec of userDecorators {
+                            if uDec == aName { isUserDec = true }
+                        }
+                        if isUserDec {
+                            fnName: str = topNode.name
+                            fnBits: str = cg.newReg
+                            cg.emit `${fnBits} = ptrtoint ptr @${fnName} to i64`
+                            cg.emit `store i64 ${fnBits}, ptr @${fnName}_orig`
+
+                            ctxAlloc: str = cg.newReg
+                            cg.emit `${ctxAlloc} = call ptr @malloc(i64 8192)`
+                            cg.emit `call ptr @memset(ptr ${ctxAlloc}, i32 0, i64 8192)`
+                            nameConst: str = cg.addStringConstant fnName
+                            nameBits: str = cg.newReg
+                            cg.emit `${nameBits} = ptrtoint ptr ${nameConst} to i64`
+                            cg.emit `store i64 ${nameBits}, ptr ${ctxAlloc}`
+                            ctxGep: str = cg.newReg
+                            cg.emit `${ctxGep} = getelementptr inbounds i64, ptr ${ctxAlloc}, i64 5`
+                            cg.emit `store i64 ${nameBits}, ptr ${ctxGep}`
+                            ctxInt: str = cg.newReg
+                            cg.emit `${ctxInt} = ptrtoint ptr ${ctxAlloc} to i64`
+                            cg.emit `store i64 ${ctxInt}, ptr @${fnName}_ctx`
+
+                            cg.emit `store i64 ${fnBits}, ptr @__active_decor_orig`
+                            cg.emit `store i64 ${ctxInt}, ptr @__active_decor_ctx`
+
+                            if attr.args.ln > 0 {
+                                rawArg: str = attr.args[0]
+                                if rawArg.ln >= 2 && ((rawArg[0] == 34 && rawArg[rawArg.ln - 1] == 34) || (rawArg[0] == 39 && rawArg[rawArg.ln - 1] == 39)) {
+                                    rawArg = rawArg.sub 1, (rawArg.ln - 2)
+                                }
+                                argConst: str = cg.addStringConstant rawArg
+                                argBits: str = cg.newReg
+                                cg.emit `${argBits} = ptrtoint ptr ${argConst} to i64`
+                                cg.emit `store i64 ${argBits}, ptr @__active_factory_arg`
+                                facRes: str = cg.newReg
+                                cg.emit `${facRes} = call i64 @${aName}(i64 ${argBits})`
+                                facPtr: str = cg.newReg
+                                cg.emit `${facPtr} = inttoptr i64 ${facRes} to ptr`
+                                wrapRes: str = cg.newReg
+                                cg.emit `${wrapRes} = call i64 ${facPtr}(i64 ${fnBits}, i64 ${ctxInt})`
+                                cg.emit `store i64 ${wrapRes}, ptr @${fnName}_fnptr`
+                            } els {
+                                wrapRes: str = cg.newReg
+                                cg.emit `${wrapRes} = call i64 @${aName}(i64 ${fnBits}, i64 ${ctxInt})`
+                                cg.emit `store i64 ${wrapRes}, ptr @${fnName}_fnptr`
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Initialize Object prototypes and Class Decorators
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.ObjDecl {
+                    protoReg: str = "@" + topNode.name + "_prototype"
+                    pAlloc: str = cg.newReg
+                    cg.emit `${pAlloc} = call ptr @malloc(i64 8192)`
+                    cg.emit `call ptr @memset(ptr ${pAlloc}, i32 0, i64 8192)`
+                    pAllocInt: str = cg.newReg
+                    cg.emit `${pAllocInt} = ptrtoint ptr ${pAlloc} to i64`
+                    cg.emit `store i64 ${pAllocInt}, ptr ${protoReg}`
+
+                    fr attr of topNode.attributes {
+                        aName: str = attr.name
+                        isUserDec: bool = false
+                        fr uDec of userDecorators {
+                            if uDec == aName { isUserDec = true }
+                        }
+                        if isUserDec {
+                            cg.emit `call i64 @${aName}(i64 ${pAllocInt})`
+                        }
+                    }
+                }
+            }
+
+            // 3. Initialize decorated methods
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.ObjDecl {
+                    fr mNode of topNode.children {
+                        fr mAttr of mNode.attributes {
+                            aName: str = mAttr.name
+                            isUserDec: bool = false
+                            fr uDec of userDecorators {
+                                if uDec == aName { isUserDec = true }
+                            }
+                            if isUserDec {
+                                mangledName: str = topNode.name + "_" + mNode.name
+                                fnBits: str = cg.newReg
+                                cg.emit `${fnBits} = ptrtoint ptr @${mangledName} to i64`
+                                cg.emit `store i64 ${fnBits}, ptr @${mangledName}_orig`
+
+                                ctxAlloc: str = cg.newReg
+                                cg.emit `${ctxAlloc} = call ptr @malloc(i64 8192)`
+                                cg.emit `call ptr @memset(ptr ${ctxAlloc}, i32 0, i64 8192)`
+                                nameConst: str = cg.addStringConstant mNode.name
+                                nameBits: str = cg.newReg
+                                cg.emit `${nameBits} = ptrtoint ptr ${nameConst} to i64`
+                                cg.emit `store i64 ${nameBits}, ptr ${ctxAlloc}`
+                                ctxGep: str = cg.newReg
+                                cg.emit `${ctxGep} = getelementptr inbounds i64, ptr ${ctxAlloc}, i64 5`
+                                cg.emit `store i64 ${nameBits}, ptr ${ctxGep}`
+                                ctxInt: str = cg.newReg
+                                cg.emit `${ctxInt} = ptrtoint ptr ${ctxAlloc} to i64`
+                                cg.emit `store i64 ${ctxInt}, ptr @${mangledName}_ctx`
+
+                                cg.emit `store i64 ${fnBits}, ptr @__active_decor_orig`
+                                cg.emit `store i64 ${ctxInt}, ptr @__active_decor_ctx`
+
+                                if mAttr.args.ln > 0 {
+                                    rawArg: str = mAttr.args[0]
+                                    if rawArg.ln >= 2 && ((rawArg[0] == 34 && rawArg[rawArg.ln - 1] == 34) || (rawArg[0] == 39 && rawArg[rawArg.ln - 1] == 39)) {
+                                        rawArg = rawArg.sub 1, (rawArg.ln - 2)
+                                    }
+                                    argConst: str = cg.addStringConstant rawArg
+                                    argBits: str = cg.newReg
+                                    cg.emit `${argBits} = ptrtoint ptr ${argConst} to i64`
+                                    cg.emit `store i64 ${argBits}, ptr @__active_factory_arg`
+                                    facRes: str = cg.newReg
+                                    cg.emit `${facRes} = call i64 @${aName}(i64 ${argBits})`
+                                    facPtr: str = cg.newReg
+                                    cg.emit `${facPtr} = inttoptr i64 ${facRes} to ptr`
+                                    wrapRes: str = cg.newReg
+                                    cg.emit `${wrapRes} = call i64 ${facPtr}(i64 ${fnBits}, i64 ${ctxInt})`
+                                    cg.emit `store i64 ${wrapRes}, ptr @${mangledName}_fnptr`
+                                } els {
+                                    wrapRes: str = cg.newReg
+                                    cg.emit `${wrapRes} = call i64 @${aName}(i64 ${fnBits}, i64 ${ctxInt})`
+                                    cg.emit `store i64 ${wrapRes}, ptr @${mangledName}_fnptr`
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             stmtGen.setReturnType(TypeKind.I32)
             stmtGen.setTopLevel(true)
             fr topStmt of topLevelStmts {
@@ -877,6 +1261,149 @@ obj Cli {
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
             rtGen.emitInitArgsCall(self.targetFile)
             rtGen.emitInitCrashHandlerCall()
+
+            // 1. Initialize decorated free functions
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.FuncDecl && topNode.name != "main" {
+                    fr attr of topNode.attributes {
+                        aName: str = attr.name
+                        isUserDec: bool = false
+                        fr uDec of userDecorators {
+                            if uDec == aName { isUserDec = true }
+                        }
+                        if isUserDec {
+                            fnName: str = topNode.name
+                            fnBits: str = cg.newReg
+                            cg.emit `${fnBits} = ptrtoint ptr @${fnName} to i64`
+                            cg.emit `store i64 ${fnBits}, ptr @${fnName}_orig`
+
+                            ctxAlloc: str = cg.newReg
+                            cg.emit `${ctxAlloc} = call ptr @malloc(i64 8192)`
+                            cg.emit `call ptr @memset(ptr ${ctxAlloc}, i32 0, i64 8192)`
+                            nameConst: str = cg.addStringConstant fnName
+                            nameBits: str = cg.newReg
+                            cg.emit `${nameBits} = ptrtoint ptr ${nameConst} to i64`
+                            cg.emit `store i64 ${nameBits}, ptr ${ctxAlloc}`
+                            ctxGep: str = cg.newReg
+                            cg.emit `${ctxGep} = getelementptr inbounds i64, ptr ${ctxAlloc}, i64 5`
+                            cg.emit `store i64 ${nameBits}, ptr ${ctxGep}`
+                            ctxInt: str = cg.newReg
+                            cg.emit `${ctxInt} = ptrtoint ptr ${ctxAlloc} to i64`
+                            cg.emit `store i64 ${ctxInt}, ptr @${fnName}_ctx`
+
+                            cg.emit `store i64 ${fnBits}, ptr @__active_decor_orig`
+                            cg.emit `store i64 ${ctxInt}, ptr @__active_decor_ctx`
+
+                            if attr.args.ln > 0 {
+                                rawArg: str = attr.args[0]
+                                if rawArg.ln >= 2 && ((rawArg[0] == 34 && rawArg[rawArg.ln - 1] == 34) || (rawArg[0] == 39 && rawArg[rawArg.ln - 1] == 39)) {
+                                    rawArg = rawArg.sub 1, (rawArg.ln - 2)
+                                }
+                                argConst: str = cg.addStringConstant rawArg
+                                argBits: str = cg.newReg
+                                cg.emit `${argBits} = ptrtoint ptr ${argConst} to i64`
+                                cg.emit `store i64 ${argBits}, ptr @__active_factory_arg`
+                                facRes: str = cg.newReg
+                                cg.emit `${facRes} = call i64 @${aName}(i64 ${argBits})`
+                                facPtr: str = cg.newReg
+                                cg.emit `${facPtr} = inttoptr i64 ${facRes} to ptr`
+                                wrapRes: str = cg.newReg
+                                cg.emit `${wrapRes} = call i64 ${facPtr}(i64 ${fnBits}, i64 ${ctxInt})`
+                                cg.emit `store i64 ${wrapRes}, ptr @${fnName}_fnptr`
+                            } els {
+                                wrapRes: str = cg.newReg
+                                cg.emit `${wrapRes} = call i64 @${aName}(i64 ${fnBits}, i64 ${ctxInt})`
+                                cg.emit `store i64 ${wrapRes}, ptr @${fnName}_fnptr`
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Initialize Object prototypes and Class Decorators
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.ObjDecl {
+                    protoReg: str = "@" + topNode.name + "_prototype"
+                    pAlloc: str = cg.newReg
+                    cg.emit `${pAlloc} = call ptr @malloc(i64 8192)`
+                    cg.emit `call ptr @memset(ptr ${pAlloc}, i32 0, i64 8192)`
+                    pAllocInt: str = cg.newReg
+                    cg.emit `${pAllocInt} = ptrtoint ptr ${pAlloc} to i64`
+                    cg.emit `store i64 ${pAllocInt}, ptr ${protoReg}`
+
+                    fr attr of topNode.attributes {
+                        aName: str = attr.name
+                        isUserDec: bool = false
+                        fr uDec of userDecorators {
+                            if uDec == aName { isUserDec = true }
+                        }
+                        if isUserDec {
+                            cg.emit `call i64 @${aName}(i64 ${pAllocInt})`
+                        }
+                    }
+                }
+            }
+
+            // 3. Initialize decorated methods
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.ObjDecl {
+                    fr mNode of topNode.children {
+                        fr mAttr of mNode.attributes {
+                            aName: str = mAttr.name
+                            isUserDec: bool = false
+                            fr uDec of userDecorators {
+                                if uDec == aName { isUserDec = true }
+                            }
+                            if isUserDec {
+                                mangledName: str = topNode.name + "_" + mNode.name
+                                fnBits: str = cg.newReg
+                                cg.emit `${fnBits} = ptrtoint ptr @${mangledName} to i64`
+                                cg.emit `store i64 ${fnBits}, ptr @${mangledName}_orig`
+
+                                ctxAlloc: str = cg.newReg
+                                cg.emit `${ctxAlloc} = call ptr @malloc(i64 8192)`
+                                cg.emit `call ptr @memset(ptr ${ctxAlloc}, i32 0, i64 8192)`
+                                nameConst: str = cg.addStringConstant mNode.name
+                                nameBits: str = cg.newReg
+                                cg.emit `${nameBits} = ptrtoint ptr ${nameConst} to i64`
+                                cg.emit `store i64 ${nameBits}, ptr ${ctxAlloc}`
+                                ctxGep: str = cg.newReg
+                                cg.emit `${ctxGep} = getelementptr inbounds i64, ptr ${ctxAlloc}, i64 5`
+                                cg.emit `store i64 ${nameBits}, ptr ${ctxGep}`
+                                ctxInt: str = cg.newReg
+                                cg.emit `${ctxInt} = ptrtoint ptr ${ctxAlloc} to i64`
+                                cg.emit `store i64 ${ctxInt}, ptr @${mangledName}_ctx`
+
+                                cg.emit `store i64 ${fnBits}, ptr @__active_decor_orig`
+                                cg.emit `store i64 ${ctxInt}, ptr @__active_decor_ctx`
+
+                                if mAttr.args.ln > 0 {
+                                    rawArg: str = mAttr.args[0]
+                                    if rawArg.ln >= 2 && ((rawArg[0] == 34 && rawArg[rawArg.ln - 1] == 34) || (rawArg[0] == 39 && rawArg[rawArg.ln - 1] == 39)) {
+                                        rawArg = rawArg.sub 1, (rawArg.ln - 2)
+                                    }
+                                    argConst: str = cg.addStringConstant rawArg
+                                    argBits: str = cg.newReg
+                                    cg.emit `${argBits} = ptrtoint ptr ${argConst} to i64`
+                                    cg.emit `store i64 ${argBits}, ptr @__active_factory_arg`
+                                    facRes: str = cg.newReg
+                                    cg.emit `${facRes} = call i64 @${aName}(i64 ${argBits})`
+                                    facPtr: str = cg.newReg
+                                    cg.emit `${facPtr} = inttoptr i64 ${facRes} to ptr`
+                                    wrapRes: str = cg.newReg
+                                    cg.emit `${wrapRes} = call i64 ${facPtr}(i64 ${fnBits}, i64 ${ctxInt})`
+                                    cg.emit `store i64 ${wrapRes}, ptr @${mangledName}_fnptr`
+                                } els {
+                                    wrapRes: str = cg.newReg
+                                    cg.emit `${wrapRes} = call i64 @${aName}(i64 ${fnBits}, i64 ${ctxInt})`
+                                    cg.emit `store i64 ${wrapRes}, ptr @${mangledName}_fnptr`
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             stmtGen.setReturnType(TypeKind.I32)
             stmtGen.setTopLevel(true)
             fr topStmt of topLevelStmts {

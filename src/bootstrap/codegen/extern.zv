@@ -215,6 +215,10 @@ obj ExternManager {
         self.emitFunctionDecl "exit", "c", "void", ["i32"], false, codegen
         self.emitFunctionDecl "system", "c", "i32", ["ptr"], false, codegen
         self.emitFunctionDecl "getenv", "c", "ptr", ["ptr"], false, codegen
+
+        // High-resolution timing
+        self.emitFunctionDecl "QueryPerformanceCounter", "kernel32", "i32", ["ptr"], false, codegen
+        self.emitFunctionDecl "QueryPerformanceFrequency", "kernel32", "i32", ["ptr"], false, codegen
     },
 
     /**

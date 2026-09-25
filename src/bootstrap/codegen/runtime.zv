@@ -1144,6 +1144,27 @@ obj RuntimeCodegen {
         `
     },
 
+    emitTimeMono: :: void => {
+        self.codegen.emitExtern "declare i32 @QueryPerformanceCounter(ptr)"
+        self.codegen.emitExtern "declare i32 @QueryPerformanceFrequency(ptr)"
+        self.codegen.funcs += `
+        define double @zuv_time_mono() {
+        entry:
+          %pCount = alloca i64
+          %pFreq = alloca i64
+          call i32 @QueryPerformanceCounter(ptr %pCount)
+          call i32 @QueryPerformanceFrequency(ptr %pFreq)
+          %count = load i64, ptr %pCount
+          %freq = load i64, ptr %pFreq
+          %countDbl = sitofp i64 %count to double
+          %freqDbl = sitofp i64 %freq to double
+          %sec = fdiv double %countDbl, %freqDbl
+          %ns = fmul double %sec, 1000000000.0
+          ret double %ns
+        }
+        `
+    },
+
     /**
      * Emits the complete suite of runtime intrinsics, crash handling, and backtrace handlers.
      *
@@ -1165,6 +1186,7 @@ obj RuntimeCodegen {
         self.emitInitCrashHandler
         self.emitInitArgs
         self.emitPromiseRuntime
+        self.emitTimeMono
         self.runtimeEmitted = true
     },
 

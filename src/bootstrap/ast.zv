@@ -83,6 +83,13 @@ type FieldEntry = {
     col: num;
 };
 
+type Attribute = {
+    name: str;
+    args: str[];
+    line: num;
+    col: num;
+};
+
 obj ASTNode {
     kind: NodeKind,
     inferredType: TypeKind,
@@ -103,6 +110,7 @@ obj ASTNode {
     children: ASTNode[],
     cases: MatchArm[],
     fields: FieldEntry[],
+    attributes: Attribute[],
 
     /**
      * Creates a base ASTNode with default initializers.
@@ -132,7 +140,8 @@ obj ASTNode {
             params: [],
             children: [],
             cases: [],
-            fields: []
+            fields: [],
+            attributes: []
         }
     },
 

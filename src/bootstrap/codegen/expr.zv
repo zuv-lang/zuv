@@ -47,6 +47,7 @@ type ScopeSymbol = {
     typeName: str;
     isPtr: bool;
     isAlloca: bool;
+    decorRole: num;
 };
 
 /**
@@ -60,6 +61,9 @@ obj ExprCodegen {
     arrGen: ArrayCodegen,
     funcSigs: FuncSignature[],
     activeCatchLabel: str,
+    decorRoles: FieldEntry[],
+    decoratedMethods: str[],
+    methodMappings: FieldEntry[],
 
     /**
      * Initializes a new ExprCodegen coordinator.
@@ -73,6 +77,9 @@ obj ExprCodegen {
         emptySymbols: ScopeSymbol[] = []
         emptyGlobals: ScopeSymbol[] = []
         emptySigs: FuncSignature[] = []
+        emptyDecorRoles: FieldEntry[] = []
+        emptyDecorMethods: str[] = []
+        emptyMappings: FieldEntry[] = []
         -> {
             codegen,
             symbols: emptySymbols,
@@ -80,8 +87,62 @@ obj ExprCodegen {
             objGen,
             arrGen,
             funcSigs: emptySigs,
-            activeCatchLabel: ""
+            activeCatchLabel: "",
+            decorRoles: emptyDecorRoles,
+            decoratedMethods: emptyDecorMethods,
+            methodMappings: emptyMappings
         }
+    },
+
+    setDecorRole: name: str, role: num :: void => {
+        entry: FieldEntry = {
+            name: name,
+            valStr: "" + role,
+            isSpread: false,
+            line: 0,
+            col: 0
+        }
+        self.decorRoles.psh entry
+    },
+
+    getDecorRole: name: str :: num => {
+        fr item of self.decorRoles {
+            if item.name == name {
+                if item.valStr == "1" { -> 1 }
+                if item.valStr == "2" { -> 2 }
+                if item.valStr == "3" { -> 3 }
+            }
+        }
+        -> 0
+    },
+
+    addMethodMapping: mName: str, mangled: str :: void => {
+        entry: FieldEntry = {
+            name: mName,
+            valStr: mangled,
+            isSpread: false,
+            line: 0,
+            col: 0
+        }
+        self.methodMappings.psh entry
+    },
+
+    getMethodMapping: mName: str :: str => {
+        fr item of self.methodMappings {
+            if item.name == mName {
+                -> item.valStr
+            }
+        }
+        -> ""
+    },
+
+    isDecoratedMethod: name: str :: bool => {
+        fr dm of self.decoratedMethods {
+            if dm == name {
+                -> true
+            }
+        }
+        -> false
     },
 
     /**
@@ -101,7 +162,21 @@ obj ExprCodegen {
             typeKind,
             typeName: "",
             isPtr,
-            isAlloca
+            isAlloca,
+            decorRole: 0
+        }
+        self.symbols.psh newSym
+    },
+
+    addSymbolWithRole: name: str, reg: str, typeKind: TypeKind, isPtr: bool, isAlloca: bool, decorRole: num :: void => {
+        newSym: ScopeSymbol = {
+            name,
+            reg,
+            typeKind,
+            typeName: "",
+            isPtr,
+            isAlloca,
+            decorRole
         }
         self.symbols.psh newSym
     },
@@ -113,7 +188,8 @@ obj ExprCodegen {
             typeKind,
             typeName,
             isPtr,
-            isAlloca
+            isAlloca,
+            decorRole: 0
         }
         self.symbols.psh newSym
     },
@@ -133,7 +209,8 @@ obj ExprCodegen {
             typeKind,
             typeName: "",
             isPtr: false,
-            isAlloca: true
+            isAlloca: true,
+            decorRole: 0
         }
         self.globalSymbols.psh newSym
     },
@@ -145,7 +222,8 @@ obj ExprCodegen {
             typeKind,
             typeName,
             isPtr: false,
-            isAlloca: true
+            isAlloca: true,
+            decorRole: 0
         }
         self.globalSymbols.psh newSym
     },
@@ -163,7 +241,8 @@ obj ExprCodegen {
             typeKind: TypeKind.Unknown,
             typeName: "",
             isPtr: false,
-            isAlloca: false
+            isAlloca: false,
+            decorRole: 0
         }
         fr gItem of self.globalSymbols {
             if gItem.name == name {
@@ -192,7 +271,8 @@ obj ExprCodegen {
                     typeKind,
                     typeName: effTypeName,
                     isPtr: gItem.isPtr,
-                    isAlloca: gItem.isAlloca
+                    isAlloca: gItem.isAlloca,
+                    decorRole: gItem.decorRole
                 }
                 self.globalSymbols[idx] = updated
             }
@@ -213,7 +293,8 @@ obj ExprCodegen {
             typeKind: TypeKind.Unknown,
             typeName: "",
             isPtr: false,
-            isAlloca: false
+            isAlloca: false,
+            decorRole: 0
         }
         fr item of self.symbols {
             if item.name == name {
@@ -413,11 +494,48 @@ obj ExprCodegen {
      */
     emitIdent: node: ASTNode :: ExprResult => {
         foundSym = self.findSymbol node.name
-        if foundSym.isAlloca {
+        if foundSym.name.ln > 0 && foundSym.isAlloca {
             stType: str = llvmStackType foundSym.typeKind
             loadReg: str = self.codegen.newReg
             self.codegen.emit `${loadReg} = load ${stType}, ptr ${foundSym.reg}`
             res: ExprResult = { reg: loadReg, typeKind: foundSym.typeKind }
+            -> res
+        }
+        if foundSym.reg.ln > 0 && !(foundSym.isAlloca) {
+            res: ExprResult = { reg: foundSym.reg, typeKind: foundSym.typeKind }
+            -> res
+        }
+
+        dRole: num = 0
+        if foundSym.name.ln > 0 && foundSym.decorRole > 0 {
+            dRole = foundSym.decorRole
+        } els {
+            dRole = self.getDecorRole node.name
+        }
+        if dRole == 1 {
+            valReg: str = self.codegen.newReg
+            self.codegen.emit `${valReg} = load i64, ptr @__active_decor_orig`
+            res: ExprResult = { reg: valReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+        if dRole == 2 {
+            rawReg: str = self.codegen.newReg
+            self.codegen.emit `${rawReg} = load i64, ptr @__active_decor_ctx`
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = inttoptr i64 ${rawReg} to ptr`
+            res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Obj }
+            -> res
+        }
+        if dRole == 3 {
+            rawReg: str = self.codegen.newReg
+            self.codegen.emit `${rawReg} = load i64, ptr @__active_factory_arg`
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = inttoptr i64 ${rawReg} to ptr`
+            res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+            -> res
+        }
+        if node.name == "time" || node.name == "os" {
+            res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
             -> res
         }
         if foundSym.reg.ln > 0 {
@@ -649,7 +767,7 @@ obj ExprCodegen {
                         objTypeName = targetSym.typeName
                     }
                 }
-                if objTypeName.ln == 0 {
+                if objTypeName.ln == 0 || !(self.objGen.registry.hasType objTypeName) {
                     fr l of self.objGen.registry.layouts {
                         if l.hasField propName {
                             objTypeName = l.typeName
@@ -1344,6 +1462,74 @@ obj ExprCodegen {
             -> vRes
         }
 
+        if self.isDecoratedMethod calleeName {
+            origLoad: str = self.codegen.newReg
+            self.codegen.emit `${origLoad} = load i64, ptr @${calleeName}_orig`
+            self.codegen.emit `store i64 ${origLoad}, ptr @__active_decor_orig`
+            ctxLoad: str = self.codegen.newReg
+            self.codegen.emit `${ctxLoad} = load i64, ptr @${calleeName}_ctx`
+            self.codegen.emit `store i64 ${ctxLoad}, ptr @__active_decor_ctx`
+            fnBits: str = self.codegen.newReg
+            self.codegen.emit `${fnBits} = load i64, ptr @${calleeName}_fnptr`
+            fnPtr: str = self.codegen.newReg
+            self.codegen.emit `${fnPtr} = inttoptr i64 ${fnBits} to ptr`
+
+            boxedArgs: str[] = []
+            fr child, cIdx of node.children {
+                if cIdx == 0 { cont }
+                cRes: ExprResult = self.emitExpr child
+                bVal: str = cRes.reg
+                if cRes.typeKind == TypeKind.Num {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = fptosi double ${cRes.reg} to i64`
+                    bVal = cReg
+                } els if cRes.typeKind == TypeKind.Str || cRes.typeKind == TypeKind.Ptr || cRes.typeKind == TypeKind.Arr || cRes.typeKind == TypeKind.Obj {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = ptrtoint ptr ${cRes.reg} to i64`
+                    bVal = cReg
+                }
+                boxedArgs.psh bVal
+            }
+            wh boxedArgs.ln < 4 {
+                boxedArgs.psh "0"
+            }
+            argsCallStr: str = ""
+            firstArg: bool = true
+            fr bArg of boxedArgs {
+                if !firstArg { argsCallStr = argsCallStr + ", " }
+                argsCallStr = argsCallStr + "i64 " + bArg
+                firstArg = false
+            }
+            callRes: str = self.codegen.newReg
+            self.codegen.emit `${callRes} = call i64 ${fnPtr}(${argsCallStr})`
+            origSig: FuncSignature = self.findFunc calleeName
+            retKind = node.inferredType
+            if retKind == TypeKind.Unknown && origSig.name.ln > 0 {
+                if origSig.retType == "ptr" {
+                    retKind = TypeKind.Str
+                } els if origSig.retType == "void" {
+                    retKind = TypeKind.Void
+                } els if origSig.retType == "double" {
+                    retKind = TypeKind.Num
+                } els if origSig.retType == "i1" {
+                    retKind = TypeKind.Bool
+                } els {
+                    retKind = TypeKind.I64
+                }
+            }
+            if retKind == TypeKind.Unknown {
+                retKind = TypeKind.I64
+            }
+            finalReg: str = callRes
+            if retKind == TypeKind.Str || retKind == TypeKind.Ptr || retKind == TypeKind.Arr || retKind == TypeKind.Obj {
+                ptrReg: str = self.codegen.newReg
+                self.codegen.emit `${ptrReg} = inttoptr i64 ${callRes} to ptr`
+                finalReg = ptrReg
+            }
+            res: ExprResult = { reg: finalReg, typeKind: retKind }
+            -> res
+        }
+
         fnSig: FuncSignature = self.findFunc calleeName
         if fnSig.name.ln > 0 {
             userArgsStr: str = ""
@@ -1419,7 +1605,67 @@ obj ExprCodegen {
             -> res
         }
 
+        targetRole: num = 0
         calleeSym: ScopeSymbol = self.findSymbol calleeName
+        if calleeSym.name.ln > 0 && calleeSym.decorRole > 0 {
+            targetRole = calleeSym.decorRole
+        } els {
+            targetRole = self.getDecorRole calleeName
+        }
+        if targetRole == 1 {
+            fnBits: str = self.codegen.newReg
+            self.codegen.emit `${fnBits} = load i64, ptr @__active_decor_orig`
+            fnPtr: str = self.codegen.newReg
+            self.codegen.emit `${fnPtr} = inttoptr i64 ${fnBits} to ptr`
+
+            unpackedRegs: str[] = []
+            fr child, cIdx of node.children {
+                if cIdx == 0 { cont }
+                if child.kind == NodeKind.UnaryExpr && child.op == "..." {
+                    spRes: ExprResult = self.emitExpr child.children[0]
+                    arrPtrReg: str = spRes.reg
+                    if spRes.typeKind != TypeKind.Arr && spRes.typeKind != TypeKind.Ptr {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = inttoptr i64 ${spRes.reg} to ptr`
+                        arrPtrReg = convReg
+                    }
+                    k: num = 1
+                    wh k <= 4 {
+                        eGep: str = self.codegen.newReg
+                        self.codegen.emit `${eGep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${k}`
+                        eVal: str = self.codegen.newReg
+                        self.codegen.emit `${eVal} = load i64, ptr ${eGep}`
+                        unpackedRegs.psh eVal
+                        k++
+                    }
+                } els {
+                    cRes: ExprResult = self.emitExpr child
+                    bVal: str = cRes.reg
+                    if cRes.typeKind == TypeKind.Num {
+                        cReg: str = self.codegen.newReg
+                        self.codegen.emit `${cReg} = fptosi double ${cRes.reg} to i64`
+                        bVal = cReg
+                    } els if cRes.typeKind == TypeKind.Str || cRes.typeKind == TypeKind.Ptr || cRes.typeKind == TypeKind.Arr || cRes.typeKind == TypeKind.Obj {
+                        cReg: str = self.codegen.newReg
+                        self.codegen.emit `${cReg} = ptrtoint ptr ${cRes.reg} to i64`
+                        bVal = cReg
+                    }
+                    unpackedRegs.psh bVal
+                }
+            }
+            callArgsStr: str = ""
+            firstArg: bool = true
+            fr uReg of unpackedRegs {
+                if !firstArg { callArgsStr = callArgsStr + ", " }
+                callArgsStr = callArgsStr + "i64 " + uReg
+                firstArg = false
+            }
+            callRes: str = self.codegen.newReg
+            self.codegen.emit `${callRes} = call i64 ${fnPtr}(${callArgsStr})`
+            res: ExprResult = { reg: callRes, typeKind: TypeKind.I64 }
+            -> res
+        }
+
         if calleeSym.name.ln > 0 || calleeNode.kind != NodeKind.IdentExpr {
             calleePtrReg: str = ""
             if calleeNode.kind != NodeKind.IdentExpr {
@@ -1709,25 +1955,128 @@ obj ExprCodegen {
         }
 
         targetRes: ExprResult = self.emitExpr targetNode
-        argsStr: str = "ptr " + targetRes.reg
-        isTarget: bool = true
-        fr child of node.children {
-            if isTarget {
-                isTarget = false
-                cont
+
+        // Resolve mangled method name (e.g. Greeter_hello, User_greet, App_calculate, UserController_getUsers)
+        mangledName: str = ""
+        isStaticCall: bool = false
+        if targetNode.kind == NodeKind.IdentExpr {
+            tName: str = targetNode.name
+            if self.objGen.registry.hasType tName {
+                mangledName = tName + "_" + methodName
+                isStaticCall = true
             }
-            cRes: ExprResult = self.emitExpr child
-            tStr: str = llvmType cRes.typeKind
-            argsStr = argsStr + ", " + tStr + " " + cRes.reg
+        }
+        if mangledName.ln == 0 {
+            mangledName = self.getMethodMapping methodName
+        }
+        if mangledName.ln == 0 {
+            mangledName = methodName
         }
 
+        if self.isDecoratedMethod mangledName {
+            origLoad: str = self.codegen.newReg
+            self.codegen.emit `${origLoad} = load i64, ptr @${mangledName}_orig`
+            self.codegen.emit `store i64 ${origLoad}, ptr @__active_decor_orig`
+            ctxLoad: str = self.codegen.newReg
+            self.codegen.emit `${ctxLoad} = load i64, ptr @${mangledName}_ctx`
+            self.codegen.emit `store i64 ${ctxLoad}, ptr @__active_decor_ctx`
+            fnBits: str = self.codegen.newReg
+            self.codegen.emit `${fnBits} = load i64, ptr @${mangledName}_fnptr`
+            fnPtr: str = self.codegen.newReg
+            self.codegen.emit `${fnPtr} = inttoptr i64 ${fnBits} to ptr`
+
+            boxedMethodArgs: str[] = []
+            fr child, cIdx of node.children {
+                if cIdx == 0 { cont }
+                cRes: ExprResult = self.emitExpr child
+                bVal: str = cRes.reg
+                if cRes.typeKind == TypeKind.Num {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = fptosi double ${cRes.reg} to i64`
+                    bVal = cReg
+                } els if cRes.typeKind == TypeKind.Str || cRes.typeKind == TypeKind.Ptr || cRes.typeKind == TypeKind.Arr || cRes.typeKind == TypeKind.Obj {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = ptrtoint ptr ${cRes.reg} to i64`
+                    bVal = cReg
+                }
+                boxedMethodArgs.psh bVal
+            }
+            wh boxedMethodArgs.ln < 4 {
+                boxedMethodArgs.psh "0"
+            }
+            mCallArgsStr: str = ""
+            firstMArg: bool = true
+            fr bArg of boxedMethodArgs {
+                if !firstMArg { mCallArgsStr = mCallArgsStr + ", " }
+                mCallArgsStr = mCallArgsStr + "i64 " + bArg
+                firstMArg = false
+            }
+            callReg: str = self.codegen.newReg
+            self.codegen.emit `${callReg} = call i64 ${fnPtr}(${mCallArgsStr})`
+            origSig: FuncSignature = self.findFunc mangledName
+            retKind = node.inferredType
+            if retKind == TypeKind.Unknown && origSig.name.ln > 0 {
+                if origSig.retType == "ptr" {
+                    retKind = TypeKind.Str
+                } els if origSig.retType == "void" {
+                    retKind = TypeKind.Void
+                } els if origSig.retType == "double" {
+                    retKind = TypeKind.Num
+                } els if origSig.retType == "i1" {
+                    retKind = TypeKind.Bool
+                } els {
+                    retKind = TypeKind.I64
+                }
+            }
+            if retKind == TypeKind.Unknown {
+                retKind = TypeKind.I64
+            }
+            finalReg: str = callReg
+            if retKind == TypeKind.Str || retKind == TypeKind.Ptr || retKind == TypeKind.Arr || retKind == TypeKind.Obj {
+                ptrReg: str = self.codegen.newReg
+                self.codegen.emit `${ptrReg} = inttoptr i64 ${callReg} to ptr`
+                finalReg = ptrReg
+            }
+            res: ExprResult = { reg: finalReg, typeKind: retKind }
+            -> res
+        }
+
+        callMethodArgsStr: str = ""
+        firstArg: bool = true
+        if !isStaticCall {
+            callMethodArgsStr = "ptr " + targetRes.reg
+            firstArg = false
+        }
+        fr child, cIdx of node.children {
+            if cIdx == 0 { cont }
+            cRes: ExprResult = self.emitExpr child
+            tStr: str = llvmType cRes.typeKind
+            if !firstArg { callMethodArgsStr = callMethodArgsStr + ", " }
+            callMethodArgsStr = callMethodArgsStr + tStr + " " + cRes.reg
+            firstArg = false
+        }
         retType = node.inferredType
         if retType == TypeKind.Unknown {
-            retType = TypeKind.I64
+            fnSig: FuncSignature = self.findFunc mangledName
+            if fnSig.name.ln > 0 {
+                if fnSig.retType == "ptr" {
+                    retType = TypeKind.Str
+                } els if fnSig.retType == "void" {
+                    retType = TypeKind.Void
+                } els if fnSig.retType == "double" {
+                    retType = TypeKind.Num
+                } els if fnSig.retType == "i1" {
+                    retType = TypeKind.Bool
+                } els {
+                    retType = TypeKind.I64
+                }
+            } els {
+                retType = TypeKind.I64
+            }
         }
         retTypeStr: str = llvmType retType
         callReg: str = self.codegen.newReg
-        self.codegen.emit `${callReg} = call ${retTypeStr} @${methodName}(${argsStr})`
+        self.codegen.emit `${callReg} = call ${retTypeStr} @${mangledName}(${callMethodArgsStr})`
         res: ExprResult = { reg: callReg, typeKind: retType }
         -> res
     },
@@ -1813,6 +2162,14 @@ obj ExprCodegen {
             -> res
         }
 
+        // Check for time.mono
+        if targetNode.kind == NodeKind.IdentExpr && targetNode.name == "time" && propName == "mono" {
+            valReg: str = self.codegen.newReg
+            self.codegen.emit `${valReg} = call double @zuv_time_mono()`
+            res: ExprResult = { reg: valReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
         // Check for enum property access, e.g. Status.Active
         if targetNode.kind == NodeKind.IdentExpr {
             objName: str = targetNode.val
@@ -1887,7 +2244,7 @@ obj ExprCodegen {
                 structTypeName = targetSym.typeName
             }
         }
-        if structTypeName.ln == 0 {
+        if structTypeName.ln == 0 || !(self.objGen.registry.hasType structTypeName) {
             fr l of self.objGen.registry.layouts {
                 if l.hasField propName {
                     structTypeName = l.typeName
@@ -2368,7 +2725,19 @@ obj ExprCodegen {
             res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
             -> res
         }
-        res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
+        bufReg: str = self.codegen.newReg
+        self.codegen.emit `${bufReg} = call ptr @malloc(i64 8192)`
+        setReg: str = self.codegen.newReg
+        self.codegen.emit `${setReg} = call ptr @memset(ptr ${bufReg}, i32 0, i64 8192)`
+        if self.codegen.header.cnt("@" + typeName + "_prototype") {
+            protoLoad: str = self.codegen.newReg
+            self.codegen.emit `${protoLoad} = load i64, ptr @${typeName}_prototype`
+            protoPtr: str = self.codegen.newReg
+            self.codegen.emit `${protoPtr} = inttoptr i64 ${protoLoad} to ptr`
+            cpyReg: str = self.codegen.newReg
+            self.codegen.emit `${cpyReg} = call ptr @memcpy(ptr ${bufReg}, ptr ${protoPtr}, i64 8192)`
+        }
+        res: ExprResult = { reg: bufReg, typeKind: TypeKind.Obj }
         -> res
     },
 
