@@ -86,6 +86,18 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         symName = expr.name
         foundSym = checker.resolveSymbol(symName)
         if foundSym.name.ln > 0 {
+            if foundSym.scopeLevel > 0 {
+                expr.inferredType = foundSym.typeKind
+                if expr.typeAnnotation.ln == 0 {
+                    expr.typeAnnotation = foundSym.typeName
+                }
+                -> foundSym.typeKind
+            }
+            if symName == "inf" || symName == "Infinity" || symName == "nan" {
+                expr.inferredType = TypeKind.Num
+                expr.typeAnnotation = "num"
+                -> TypeKind.Num
+            }
             expr.inferredType = foundSym.typeKind
             if expr.typeAnnotation.ln == 0 {
                 expr.typeAnnotation = foundSym.typeName
@@ -300,11 +312,23 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             expr.inferredType = TypeKind.I64
             -> TypeKind.I64
         }
+        if targetNode.kind == NodeKind.IdentExpr && (targetNode.name == "mth" || targetNode.name == "Math") {
+            if propName == "isNan" || propName == "isFin" {
+                expr.inferredType = TypeKind.Func
+                -> TypeKind.Func
+            }
+            expr.inferredType = TypeKind.Num
+            -> TypeKind.Num
+        }
         typeName = targetNode.typeAnnotation
         if typeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
             targetIdent = targetNode.name.ln > 0 ? targetNode.name : targetNode.val
             foundSym = checker.resolveSymbol(targetIdent)
             typeName = foundSym.typeName
+        }
+        if expr.op == "?." && (targetKind == TypeKind.Nil || targetKind == TypeKind.Und || typeName == "nil" || typeName == "und") {
+            expr.inferredType = TypeKind.Nil
+            -> TypeKind.Nil
         }
         if typeName.ln > 0 {
             typeInfo = checker.resolveType(typeName)
@@ -415,23 +439,109 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 expr.inferredType = TypeKind.I64
                 -> TypeKind.I64
             }
+            if calleeName == "ln" || calleeName == "cap" {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            if calleeName == "cnt" || calleeName == "contains" {
+                expr.inferredType = TypeKind.Bool
+                -> TypeKind.Bool
+            }
+            if calleeName == "mmap" || calleeName == "ipc.mmap" {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            if calleeName == "munmap" || calleeName == "ipc.munmap" || calleeName == "ipc.unmap" {
+                expr.inferredType = TypeKind.Num
+                -> TypeKind.Num
+            }
+            if calleeName == "isNan" || calleeName == "isFin" ||
+               calleeName == "mth.isNan" || calleeName == "mth.isFin" ||
+               calleeName == "Math.isNan" || calleeName == "Math.isFin" {
+                expr.inferredType = TypeKind.Bool
+                -> TypeKind.Bool
+            }
+            if calleeName == "abs" || calleeName == "mth.abs" || calleeName == "Math.abs" {
+                expr.inferredType = TypeKind.Num
+                if argCount > 0 {
+                    k0: TypeKind = expr.children[1].inferredType
+                    if k0 == TypeKind.I64 || k0 == TypeKind.I32 {
+                        expr.inferredType = k0
+                        -> k0
+                    }
+                }
+                -> TypeKind.Num
+            }
+            if calleeName == "min" || calleeName == "max" ||
+               calleeName == "mth.min" || calleeName == "mth.max" ||
+               calleeName == "Math.min" || calleeName == "Math.max" {
+                expr.inferredType = TypeKind.Num
+                if argCount >= 2 {
+                    k0: TypeKind = expr.children[1].inferredType
+                    k1: TypeKind = expr.children[2].inferredType
+                    if (k0 == TypeKind.I64 || k0 == TypeKind.I32) && (k1 == TypeKind.I64 || k1 == TypeKind.I32) {
+                        expr.inferredType = TypeKind.I64
+                        -> TypeKind.I64
+                    }
+                }
+                -> TypeKind.Num
+            }
+            if calleeName == "ceil" || calleeName == "floor" || calleeName == "round" ||
+               calleeName == "trunc" || calleeName == "sqrt" || calleeName == "pow" ||
+               calleeName == "sin" || calleeName == "cos" || calleeName == "tan" ||
+               calleeName == "asin" || calleeName == "acos" || calleeName == "atan" ||
+               calleeName == "atan2" || calleeName == "log" || calleeName == "exp" ||
+               calleeName == "rand" ||
+               calleeName == "mth.ceil" || calleeName == "mth.floor" || calleeName == "mth.round" ||
+               calleeName == "mth.trunc" || calleeName == "mth.sqrt" || calleeName == "mth.pow" ||
+               calleeName == "mth.sin" || calleeName == "mth.cos" || calleeName == "mth.tan" ||
+               calleeName == "mth.asin" || calleeName == "mth.acos" || calleeName == "mth.atan" ||
+               calleeName == "mth.atan2" || calleeName == "mth.log" || calleeName == "mth.exp" ||
+               calleeName == "mth.rand" ||
+               calleeName == "Math.ceil" || calleeName == "Math.floor" || calleeName == "Math.round" ||
+               calleeName == "Math.trunc" || calleeName == "Math.sqrt" || calleeName == "Math.pow" ||
+               calleeName == "Math.sin" || calleeName == "Math.cos" || calleeName == "Math.tan" ||
+               calleeName == "Math.asin" || calleeName == "Math.acos" || calleeName == "Math.atan" ||
+               calleeName == "Math.atan2" || calleeName == "Math.log" || calleeName == "Math.exp" ||
+               calleeName == "Math.rand" {
+                expr.inferredType = TypeKind.Num
+                -> TypeKind.Num
+            }
             isStdLibCall: bool = false
             if calleeName.ln >= 3 {
                 p3: str = calleeName.sub(0, 3)
-                if p3 == "fs." || p3 == "os." || p3 == "io." {
+                if p3 == "fs." || p3 == "os." || p3 == "io." || p3 == "ws." {
                     isStdLibCall = true
                 }
             }
             if !isStdLibCall && calleeName.ln >= 4 {
                 p4: str = calleeName.sub(0, 4)
-                if p4 == "net." || p4 == "sys." || p4 == "mem." || p4 == "ffi." {
+                if p4 == "net." || p4 == "sys." || p4 == "mem." || p4 == "ffi." || p4 == "dns." || p4 == "ipc." || p4 == "pty." {
+                    isStdLibCall = true
+                }
+            }
+            if !isStdLibCall && calleeName.ln >= 5 {
+                p5: str = calleeName.sub(0, 5)
+                if p5 == "http." || p5 == "time." || p5 == "term." {
                     isStdLibCall = true
                 }
             }
             if isStdLibCall {
-                if calleeName == "fs.rF" || calleeName == "fs.read" {
+                if calleeName == "fs.rF" || calleeName == "fs.read" || calleeName == "dns.lookup" || calleeName == "dns.resolve" || calleeName == "dns.reverseLookup" || calleeName == "dns.reverse_lookup" || calleeName == "net.recv" || calleeName == "net.rcv" || calleeName == "http.fmtRes" || calleeName == "http.formatResponse" || calleeName == "ipc.readStr" || calleeName == "pty.read" || calleeName == "pty.readStr" || calleeName == "term.readKey" || calleeName == "term.size" || calleeName == "term.color" || calleeName == "term.bold" || calleeName == "term.dim" || calleeName == "term.italic" || calleeName == "term.underline" || calleeName == "term.red" || calleeName == "term.green" || calleeName == "term.yellow" || calleeName == "term.blue" || calleeName == "term.magenta" || calleeName == "term.cyan" || calleeName == "term.reset" {
                     expr.inferredType = TypeKind.Str
                     -> TypeKind.Str
+                }
+                if calleeName == "term.isRaw" || calleeName == "term.hasKey" {
+                    expr.inferredType = TypeKind.Bool
+                    -> TypeKind.Bool
+                }
+                if calleeName == "term.width" || calleeName == "term.height" || calleeName == "term.makeRaw" || calleeName == "term.restore" || calleeName == "pty.resize" || calleeName == "pty.close" || calleeName == "time.sleep" || calleeName == "time.sl" {
+                    expr.inferredType = TypeKind.Num
+                    -> TypeKind.Num
+                }
+                if calleeName == "http.parseReq" || calleeName == "http.parseRequest" {
+                    expr.inferredType = TypeKind.Obj
+                    -> TypeKind.Obj
                 }
                 expr.inferredType = TypeKind.I64
                 -> TypeKind.I64
@@ -440,16 +550,32 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             if fnSym.name.ln > 0 {
                 fnInfo = checker.resolveType(fnSym.typeName)
                 if fnInfo.kind == TypeKind.Func {
-                    expectedParamCount = fnInfo.fields.ln
-                    if argCount != expectedParamCount {
-                        checker.addError("E0308", "Function '" + calleeName + "' expects " + expectedParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                    hasRest: bool = false
+                    minParamCount: num = fnInfo.fields.ln
+                    fr fld of fnInfo.fields {
+                        if fld.ln >= 3 && fld[0] == "." && fld[1] == "." && fld[2] == "." {
+                            hasRest = true
+                            minParamCount = fnInfo.fields.ln - 1
+                        }
+                    }
+                    if hasRest {
+                        if argCount < minParamCount {
+                            checker.addError("E0308", "Function '" + calleeName + "' expects at least " + minParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                        }
+                    } els {
+                        expectedParamCount = fnInfo.fields.ln
+                        if argCount != expectedParamCount {
+                            checker.addError("E0308", "Function '" + calleeName + "' expects " + expectedParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                        }
                     }
                     fr fieldStr, pIdx of fnInfo.fields {
-                        if pIdx < argCount {
-                            expectedKind = StrToTypeKind(fieldStr)
-                            argNode = expr.children[pIdx + 1]
-                            if !(AreTypesCompatible expectedKind, argNode.inferredType) && argNode.inferredType != TypeKind.Unknown {
-                                checker.addError("E0306", "Argument " + (pIdx + 1) + " of '" + calleeName + "' expects " + (TypeKindToStr expectedKind) + ", got " + (TypeKindToStr argNode.inferredType), argNode.line, argNode.col, 1, "pass a compatible argument type")
+                        if !(fieldStr.ln >= 3 && fieldStr[0] == "." && fieldStr[1] == "." && fieldStr[2] == ".") {
+                            if pIdx < argCount {
+                                expectedKind = StrToTypeKind(fieldStr)
+                                argNode = expr.children[pIdx + 1]
+                                if !(AreTypesCompatible expectedKind, argNode.inferredType) && argNode.inferredType != TypeKind.Unknown {
+                                    checker.addError("E0306", "Argument " + (pIdx + 1) + " of '" + calleeName + "' expects " + (TypeKindToStr expectedKind) + ", got " + (TypeKindToStr argNode.inferredType), argNode.line, argNode.col, 1, "pass a compatible argument type")
+                                }
                             }
                         }
                     }
@@ -814,7 +940,11 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         }
         paramTypeNames: str[] = []
         fr pItem of decl.params {
-            paramTypeNames.psh(pItem.typeAnnotation)
+            if pItem.isRest {
+                paramTypeNames.psh("..." + pItem.typeAnnotation)
+            } els {
+                paramTypeNames.psh(pItem.typeAnnotation)
+            }
         }
         fnTypeName = "fn_" + decl.name
         fnTypeInfo = TypeInfo.createFunc(retKind, decl.typeAnnotation, paramTypeNames)
@@ -829,6 +959,9 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         checker.enterScope()
         fr param of decl.params {
             pKind = StrToTypeKind(param.typeAnnotation)
+            if param.isRest {
+                pKind = TypeKind.Arr
+            }
             pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
             checker.defineSymbol(pSym)
         }
@@ -906,7 +1039,11 @@ InferProgram checker: Checker, program: ASTNode :: void {
                 }
                 paramTypeNames: str[] = []
                 fr pItem of child.params {
-                    paramTypeNames.psh(pItem.typeAnnotation)
+                    if pItem.isRest {
+                        paramTypeNames.psh("..." + pItem.typeAnnotation)
+                    } els {
+                        paramTypeNames.psh(pItem.typeAnnotation)
+                    }
                 }
                 fnTypeName = "fn_" + child.name
                 fnTypeInfo = TypeInfo.createFunc(retKind, child.typeAnnotation, paramTypeNames)
@@ -922,7 +1059,11 @@ InferProgram checker: Checker, program: ASTNode :: void {
                     }
                     paramTypeNames: str[] = []
                     fr pItem of fnChild.params {
-                        paramTypeNames.psh(pItem.typeAnnotation)
+                        if pItem.isRest {
+                            paramTypeNames.psh("..." + pItem.typeAnnotation)
+                        } els {
+                            paramTypeNames.psh(pItem.typeAnnotation)
+                        }
                     }
                     fnTypeName = "fn_" + fnChild.name
                     fnTypeInfo = TypeInfo.createFunc(retKind, fnChild.typeAnnotation, paramTypeNames)

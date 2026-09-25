@@ -17,6 +17,8 @@
 
 imp str, arr
 imp Codegen frm codegen
+imp StructLayoutRegistry frm decl
+imp TypeKind frm ../types
 
 /**
  * Holds function metadata for backtrace symbol resolution.
@@ -53,6 +55,7 @@ obj RuntimeCodegen {
     codegen: Codegen,
     runtimeEmitted: bool,
     funcDescs: FunctionDescriptor[],
+    registry: StructLayoutRegistry,
 
     /**
      * Creates a new RuntimeCodegen coordinator.
@@ -62,10 +65,12 @@ obj RuntimeCodegen {
      */
     create: codegen: Codegen :: RuntimeCodegen => {
         descs: FunctionDescriptor[] = []
+        reg = StructLayoutRegistry.create()
         -> {
             codegen,
             runtimeEmitted: false,
-            funcDescs: descs
+            funcDescs: descs,
+            registry: reg
         }
     },
 
@@ -1165,6 +1170,500 @@ obj RuntimeCodegen {
         `
     },
 
+    emitNetRuntime: :: void => {
+        self.emitRuntimeDecl "declare i32 @WSAStartup(i32, ptr)", "@WSAStartup"
+        self.emitRuntimeDecl "declare i64 @socket(i32, i32, i32)", "@socket"
+        self.emitRuntimeDecl "declare i32 @bind(i64, ptr, i32)", "@bind"
+        self.emitRuntimeDecl "declare i32 @listen(i64, i32)", "@listen"
+        self.emitRuntimeDecl "declare i64 @accept(i64, ptr, ptr)", "@accept"
+        self.emitRuntimeDecl "declare i32 @connect(i64, ptr, i32)", "@connect"
+        self.emitRuntimeDecl "declare i32 @send(i64, ptr, i32, i32)", "@send"
+        self.emitRuntimeDecl "declare i32 @recv(i64, ptr, i32, i32)", "@recv"
+        self.emitRuntimeDecl "declare i32 @closesocket(i64)", "@closesocket"
+        self.emitRuntimeDecl "declare i32 @sendto(i64, ptr, i32, i32, ptr, i32)", "@sendto"
+        self.emitRuntimeDecl "declare i32 @recvfrom(i64, ptr, i32, i32, ptr, ptr)", "@recvfrom"
+        self.emitRuntimeDecl "declare i32 @ioctlsocket(i64, i32, ptr)", "@ioctlsocket"
+        self.emitRuntimeDecl "declare i32 @setsockopt(i64, i32, i32, ptr, i32)", "@setsockopt"
+        self.emitRuntimeDecl "declare i16 @htons(i16)", "@htons"
+        self.emitRuntimeDecl "declare i32 @inet_addr(ptr)", "@inet_addr"
+        self.emitRuntimeDecl "declare ptr @inet_ntoa(i32)", "@inet_ntoa"
+        self.emitRuntimeDecl "declare i32 @getaddrinfo(ptr, ptr, ptr, ptr)", "@getaddrinfo"
+        self.emitRuntimeDecl "declare void @freeaddrinfo(ptr)", "@freeaddrinfo"
+        self.emitRuntimeDecl "declare i32 @getnameinfo(ptr, i32, ptr, i32, ptr, i32, i32)", "@getnameinfo"
+        self.emitRuntimeDecl "declare ptr @strchr(ptr, i32)", "@strchr"
+        self.emitRuntimeDecl "declare ptr @strstr(ptr, ptr)", "@strstr"
+        self.emitRuntimeDecl "declare ptr @memset(ptr, i32, i64)", "@memset"
+        self.emitRuntimeDecl "declare void @free(ptr)", "@free"
+        self.emitRuntimeDecl "declare i32 @ConnectNamedPipe(ptr, ptr)", "@ConnectNamedPipe"
+        self.emitRuntimeDecl "declare i32 @WriteFile(ptr, ptr, i32, ptr, ptr)", "@WriteFile"
+        self.emitRuntimeDecl "declare i32 @ReadFile(ptr, ptr, i32, ptr, ptr)", "@ReadFile"
+        self.emitRuntimeDecl "declare i32 @DisconnectNamedPipe(ptr)", "@DisconnectNamedPipe"
+        self.emitRuntimeDecl "declare i32 @CloseHandle(ptr)", "@CloseHandle"
+
+        self.emitRuntimeDecl "@zuv_ws2_inited = internal global i32 0", "@zuv_ws2_inited"
+        self.emitRuntimeDecl "@zuv_wsa_data = internal global [408 x i8] zeroinitializer", "@zuv_wsa_data"
+        self.emitRuntimeDecl "@fmt_http_res = private unnamed_addr constant [61 x i8] c\"HTTP/1.1 %d OK\\0D\\0AContent-Type: %s\\0D\\0AContent-Length: %lld\\0D\\0A\\0D\\0A%s\\00\"", "@fmt_http_res"
+        self.emitRuntimeDecl "@str_crlf2 = private unnamed_addr constant [5 x i8] c\"\\0D\\0A\\0D\\0A\\00\"", "@str_crlf2"
+        self.emitRuntimeDecl "@str_http_ver = private unnamed_addr constant [9 x i8] c\"HTTP/1.1\\00\"", "@str_http_ver"
+        self.emitRuntimeDecl "@str_localhost = private unnamed_addr constant [10 x i8] c\"127.0.0.1\\00\"", "@str_localhost"
+        self.emitRuntimeDecl "@empty_str = private unnamed_addr constant [1 x i8] c\"\\00\"", "@empty_str"
+
+        mOff: num = self.registry.getFieldOffset("", "method")
+        pOff: num = self.registry.getFieldOffset("", "path")
+        bOff: num = self.registry.getFieldOffset("", "body")
+        vOff: num = self.registry.getFieldOffset("", "version")
+        self.registry.setDynamicFieldType "method", TypeKind.Str
+        self.registry.setDynamicFieldType "path", TypeKind.Str
+        self.registry.setDynamicFieldType "body", TypeKind.Str
+        self.registry.setDynamicFieldType "version", TypeKind.Str
+
+        self.codegen.funcs += `
+        define internal void @zuv_net_init() {
+        entry:
+          %inited = load i32, ptr @zuv_ws2_inited
+          %cmp = icmp eq i32 %inited, 0
+          br i1 %cmp, label %do_init, label %done
+        do_init:
+          %wsaRes = call i32 @WSAStartup(i32 514, ptr @zuv_wsa_data)
+          store i32 1, ptr @zuv_ws2_inited
+          br label %done
+        done:
+          ret void
+        }
+
+        define internal i64 @zuv_net_sock(i32 %af, i32 %type, i32 %proto) {
+        entry:
+          call void @zuv_net_init()
+          %s = call i64 @socket(i32 %af, i32 %type, i32 %proto)
+          ret i64 %s
+        }
+
+        define internal double @zuv_net_bind(i64 %s, ptr %host, i32 %port) {
+        entry:
+          call void @zuv_net_init()
+          %addr = alloca [16 x i8], align 4
+          call ptr @memset(ptr %addr, i32 0, i64 16)
+          store i16 2, ptr %addr
+          %p16 = trunc i32 %port to i16
+          %netPort = call i16 @htons(i16 %p16)
+          %portPtr = getelementptr inbounds i8, ptr %addr, i64 2
+          store i16 %netPort, ptr %portPtr
+          %addrPtr = getelementptr inbounds i8, ptr %addr, i64 4
+          %isHostNull = icmp eq ptr %host, null
+          br i1 %isHostNull, label %bind_any, label %check_host
+        check_host:
+          %ch = load i8, ptr %host
+          %isEmpty = icmp eq i8 %ch, 0
+          br i1 %isEmpty, label %bind_any, label %parse_host
+        parse_host:
+          %ip32 = call i32 @inet_addr(ptr %host)
+          %cmpNone = icmp eq i32 %ip32, -1
+          br i1 %cmpNone, label %bind_any, label %store_ip
+        store_ip:
+          store i32 %ip32, ptr %addrPtr
+          br label %do_bind
+        bind_any:
+          store i32 0, ptr %addrPtr
+          br label %do_bind
+        do_bind:
+          %res = call i32 @bind(i64 %s, ptr %addr, i32 16)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal double @zuv_net_listen(i64 %s, i32 %backlog) {
+        entry:
+          %res = call i32 @listen(i64 %s, i32 %backlog)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal i64 @zuv_net_accept(i64 %s) {
+        entry:
+          %isPipe = and i64 %s, 281474976710656
+          %cmpPipe = icmp ne i64 %isPipe, 0
+          br i1 %cmpPipe, label %do_pipe, label %do_sock
+        do_pipe:
+          %rawHandleI64 = and i64 %s, -281474976710657
+          %rawHandle = inttoptr i64 %rawHandleI64 to ptr
+          %cres = call i32 @ConnectNamedPipe(ptr %rawHandle, ptr null)
+          ret i64 %s
+        do_sock:
+          %client = call i64 @accept(i64 %s, ptr null, ptr null)
+          ret i64 %client
+        }
+
+        define internal double @zuv_net_connect(i64 %s, ptr %host, i32 %port) {
+        entry:
+          call void @zuv_net_init()
+          %addr = alloca [16 x i8], align 4
+          call ptr @memset(ptr %addr, i32 0, i64 16)
+          store i16 2, ptr %addr
+          %p16 = trunc i32 %port to i16
+          %netPort = call i16 @htons(i16 %p16)
+          %portPtr = getelementptr inbounds i8, ptr %addr, i64 2
+          store i16 %netPort, ptr %portPtr
+          %addrPtr = getelementptr inbounds i8, ptr %addr, i64 4
+          %ip32 = call i32 @inet_addr(ptr %host)
+          %cmpNone = icmp eq i32 %ip32, -1
+          br i1 %cmpNone, label %resolve_dns, label %store_ip
+        resolve_dns:
+          %resHolder = alloca ptr, align 8
+          store ptr null, ptr %resHolder
+          %aiRes = call i32 @getaddrinfo(ptr %host, ptr null, ptr null, ptr %resHolder)
+          %aiPtr = load ptr, ptr %resHolder
+          %cmpAi = icmp ne ptr %aiPtr, null
+          br i1 %cmpAi, label %extract_ai, label %store_fail
+        extract_ai:
+          %gepAddr = getelementptr inbounds i8, ptr %aiPtr, i64 32
+          %sockAddrPtr = load ptr, ptr %gepAddr
+          %gepIp = getelementptr inbounds i8, ptr %sockAddrPtr, i64 4
+          %resolvedIp = load i32, ptr %gepIp
+          store i32 %resolvedIp, ptr %addrPtr
+          call void @freeaddrinfo(ptr %aiPtr)
+          br label %do_conn
+        store_fail:
+          ret double -1.0
+        store_ip:
+          store i32 %ip32, ptr %addrPtr
+          br label %do_conn
+        do_conn:
+          %res = call i32 @connect(i64 %s, ptr %addr, i32 16)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal i64 @zuv_net_tcp_cli(ptr %host, i32 %port) {
+        entry:
+          %s = call i64 @zuv_net_sock(i32 2, i32 1, i32 6)
+          %cmpBad = icmp slt i64 %s, 0
+          br i1 %cmpBad, label %err, label %try_conn
+        try_conn:
+          %cres = call double @zuv_net_connect(i64 %s, ptr %host, i32 %port)
+          %cmpOk = fcmp oeq double %cres, 0.0
+          br i1 %cmpOk, label %done, label %close_and_err
+        close_and_err:
+          %c = call i32 @closesocket(i64 %s)
+          ret i64 -1
+        err:
+          ret i64 -1
+        done:
+          ret i64 %s
+        }
+
+        define internal i64 @zuv_net_tcp_srv(i32 %port) {
+        entry:
+          call void @zuv_net_init()
+          %s = call i64 @zuv_net_sock(i32 2, i32 1, i32 6)
+          %cmpBad = icmp slt i64 %s, 0
+          br i1 %cmpBad, label %err, label %set_opt
+        set_opt:
+          %optVal = alloca i32, align 4
+          store i32 1, ptr %optVal
+          %optRes = call i32 @setsockopt(i64 %s, i32 65535, i32 4, ptr %optVal, i32 4)
+          br label %try_bind
+        try_bind:
+          %bres = call double @zuv_net_bind(i64 %s, ptr null, i32 %port)
+          %cmpOk = fcmp oeq double %bres, 0.0
+          br i1 %cmpOk, label %try_listen, label %close_and_err
+        try_listen:
+          %lres = call double @zuv_net_listen(i64 %s, i32 128)
+          %cmpLOk = fcmp oeq double %lres, 0.0
+          br i1 %cmpLOk, label %done_srv, label %close_and_err
+        close_and_err:
+          %c = call i32 @closesocket(i64 %s)
+          ret i64 -1
+        err:
+          ret i64 -1
+        done_srv:
+          ret i64 %s
+        }
+
+        define internal i64 @zuv_net_send(i64 %s, ptr %data) {
+        entry:
+          %isDataNull = icmp eq ptr %data, null
+          br i1 %isDataNull, label %ret_zero, label %check_pipe
+        check_pipe:
+          %isPipe = and i64 %s, 281474976710656
+          %cmpPipe = icmp ne i64 %isPipe, 0
+          br i1 %cmpPipe, label %do_pipe, label %do_send
+        do_pipe:
+          %rawHandleI64 = and i64 %s, -281474976710657
+          %rawHandle = inttoptr i64 %rawHandleI64 to ptr
+          %lenP = call i64 @strlen(ptr %data)
+          %lenP32 = trunc i64 %lenP to i32
+          %written = alloca i32, align 4
+          store i32 0, ptr %written
+          %wres = call i32 @WriteFile(ptr %rawHandle, ptr %data, i32 %lenP32, ptr %written, ptr null)
+          %w = load i32, ptr %written
+          %w64 = sext i32 %w to i64
+          ret i64 %w64
+        do_send:
+          %len = call i64 @strlen(ptr %data)
+          %len32 = trunc i64 %len to i32
+          %sent = call i32 @send(i64 %s, ptr %data, i32 %len32, i32 0)
+          %sent64 = sext i32 %sent to i64
+          ret i64 %sent64
+        ret_zero:
+          ret i64 0
+        }
+
+        define internal ptr @zuv_net_recv(i64 %s, i32 %maxLen) {
+        entry:
+          %allocSz = add i32 %maxLen, 1
+          %sz64 = sext i32 %allocSz to i64
+          %buf = call ptr @malloc(i64 %sz64)
+          %isPipe = and i64 %s, 281474976710656
+          %cmpPipe = icmp ne i64 %isPipe, 0
+          br i1 %cmpPipe, label %do_pipe, label %do_sock
+        do_pipe:
+          %rawHandleI64 = and i64 %s, -281474976710657
+          %rawHandle = inttoptr i64 %rawHandleI64 to ptr
+          %readBytes = alloca i32, align 4
+          store i32 0, ptr %readBytes
+          %rres = call i32 @ReadFile(ptr %rawHandle, ptr %buf, i32 %maxLen, ptr %readBytes, ptr null)
+          %rCount = load i32, ptr %readBytes
+          %cmpR = icmp sle i32 %rCount, 0
+          br i1 %cmpR, label %empty, label %ok_pipe
+        ok_pipe:
+          %rCount64 = sext i32 %rCount to i64
+          %endPipe = getelementptr inbounds i8, ptr %buf, i64 %rCount64
+          store i8 0, ptr %endPipe
+          ret ptr %buf
+        do_sock:
+          %n = call i32 @recv(i64 %s, ptr %buf, i32 %maxLen, i32 0)
+          %cmpLe = icmp sle i32 %n, 0
+          br i1 %cmpLe, label %empty, label %ok
+        empty:
+          call void @free(ptr %buf)
+          ret ptr @empty_str
+        ok:
+          %n64 = sext i32 %n to i64
+          %endPtr = getelementptr inbounds i8, ptr %buf, i64 %n64
+          store i8 0, ptr %endPtr
+          ret ptr %buf
+        }
+
+        define internal double @zuv_net_close(i64 %s) {
+        entry:
+          %isPipe = and i64 %s, 281474976710656
+          %cmpPipe = icmp ne i64 %isPipe, 0
+          br i1 %cmpPipe, label %do_pipe, label %do_sock
+        do_pipe:
+          %rawHandleI64 = and i64 %s, -281474976710657
+          %rawHandle = inttoptr i64 %rawHandleI64 to ptr
+          %dp = call i32 @DisconnectNamedPipe(ptr %rawHandle)
+          %cres = call i32 @CloseHandle(ptr %rawHandle)
+          ret double 0.0
+        do_sock:
+          %res = call i32 @closesocket(i64 %s)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal i64 @zuv_net_sendto(i64 %s, ptr %data, ptr %host, i32 %port) {
+        entry:
+          call void @zuv_net_init()
+          %addr = alloca [16 x i8], align 4
+          call ptr @memset(ptr %addr, i32 0, i64 16)
+          store i16 2, ptr %addr
+          %p16 = trunc i32 %port to i16
+          %netPort = call i16 @htons(i16 %p16)
+          %portPtr = getelementptr inbounds i8, ptr %addr, i64 2
+          store i16 %netPort, ptr %portPtr
+          %addrPtr = getelementptr inbounds i8, ptr %addr, i64 4
+          %ip32 = call i32 @inet_addr(ptr %host)
+          store i32 %ip32, ptr %addrPtr
+          %len = call i64 @strlen(ptr %data)
+          %len32 = trunc i64 %len to i32
+          %sent = call i32 @sendto(i64 %s, ptr %data, i32 %len32, i32 0, ptr %addr, i32 16)
+          %sent64 = sext i32 %sent to i64
+          ret i64 %sent64
+        }
+
+        define internal ptr @zuv_net_recvfrom(i64 %s, i32 %maxLen) {
+        entry:
+          %allocSz = add i32 %maxLen, 1
+          %sz64 = sext i32 %allocSz to i64
+          %buf = call ptr @malloc(i64 %sz64)
+          %fromAddr = alloca [16 x i8], align 4
+          %fromLen = alloca i32, align 4
+          store i32 16, ptr %fromLen
+          %n = call i32 @recvfrom(i64 %s, ptr %buf, i32 %maxLen, i32 0, ptr %fromAddr, ptr %fromLen)
+          %cmpLe = icmp sle i32 %n, 0
+          br i1 %cmpLe, label %empty, label %ok
+        empty:
+          call void @free(ptr %buf)
+          ret ptr @empty_str
+        ok:
+          %n64 = sext i32 %n to i64
+          %endPtr = getelementptr inbounds i8, ptr %buf, i64 %n64
+          store i8 0, ptr %endPtr
+          ret ptr %buf
+        }
+
+        define internal double @zuv_net_set_nonblocking(i64 %s, i32 %mode) {
+        entry:
+          %arg = alloca i32, align 4
+          store i32 %mode, ptr %arg
+          %res = call i32 @ioctlsocket(i64 %s, i32 -2147195266, ptr %arg)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal double @zuv_net_set_timeout(i64 %s, i32 %ms) {
+        entry:
+          %arg = alloca i32, align 4
+          store i32 %ms, ptr %arg
+          %r1 = call i32 @setsockopt(i64 %s, i32 65535, i32 4102, ptr %arg, i32 4)
+          %r2 = call i32 @setsockopt(i64 %s, i32 65535, i32 4101, ptr %arg, i32 4)
+          ret double 0.0
+        }
+
+        define internal ptr @zuv_dns_lookup(ptr %host) {
+        entry:
+          call void @zuv_net_init()
+          %resHolder = alloca ptr, align 8
+          store ptr null, ptr %resHolder
+          %rc = call i32 @getaddrinfo(ptr %host, ptr null, ptr null, ptr %resHolder)
+          %ai = load ptr, ptr %resHolder
+          %cmpNull = icmp eq ptr %ai, null
+          br i1 %cmpNull, label %fallback, label %get_ip
+        get_ip:
+          %gepAddr = getelementptr inbounds i8, ptr %ai, i64 32
+          %saddr = load ptr, ptr %gepAddr
+          %gepIp = getelementptr inbounds i8, ptr %saddr, i64 4
+          %ipVal = load i32, ptr %gepIp
+          %ipStr = call ptr @inet_ntoa(i32 %ipVal)
+          %len = call i64 @strlen(ptr %ipStr)
+          %sz = add i64 %len, 1
+          %out = call ptr @malloc(i64 %sz)
+          call ptr @memcpy(ptr %out, ptr %ipStr, i64 %sz)
+          call void @freeaddrinfo(ptr %ai)
+          ret ptr %out
+        fallback:
+          ret ptr %host
+        }
+
+        define internal ptr @zuv_dns_reverse_lookup(ptr %ip) {
+        entry:
+          call void @zuv_net_init()
+          %addr = alloca [16 x i8], align 4
+          call ptr @memset(ptr %addr, i32 0, i64 16)
+          store i16 2, ptr %addr
+          %addrPtr = getelementptr inbounds i8, ptr %addr, i64 4
+          %ip32 = call i32 @inet_addr(ptr %ip)
+          store i32 %ip32, ptr %addrPtr
+          %hostBuf = call ptr @malloc(i64 256)
+          %rc = call i32 @getnameinfo(ptr %addr, i32 16, ptr %hostBuf, i32 256, ptr null, i32 0, i32 0)
+          %cmpOk = icmp eq i32 %rc, 0
+          br i1 %cmpOk, label %ok, label %fail
+        ok:
+          ret ptr %hostBuf
+        fail:
+          ret ptr %ip
+        }
+
+        define internal ptr @zuv_http_fmt_res(i32 %statusCode, ptr %contentType, ptr %body) {
+        entry:
+          %bodyLen = call i64 @strlen(ptr %body)
+          %totLen = add i64 %bodyLen, 256
+          %out = call ptr @malloc(i64 %totLen)
+          %n = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %out, i64 %totLen, ptr @fmt_http_res, i32 %statusCode, ptr %contentType, i64 %bodyLen, ptr %body)
+          ret ptr %out
+        }
+
+        define internal ptr @zuv_http_parse_req(ptr %raw) {
+        entry:
+          %obj = call ptr @malloc(i64 8192)
+          call ptr @memset(ptr %obj, i32 0, i64 8192)
+          %space1 = call ptr @strchr(ptr %raw, i32 32)
+          %cmpSp1 = icmp ne ptr %space1, null
+          br i1 %cmpSp1, label %parse_method, label %done
+        parse_method:
+          %rawInt = ptrtoint ptr %raw to i64
+          %sp1Int = ptrtoint ptr %space1 to i64
+          %mLen = sub i64 %sp1Int, %rawInt
+          %mLenPlus1 = add i64 %mLen, 1
+          %mBuf = call ptr @malloc(i64 %mLenPlus1)
+          call ptr @memcpy(ptr %mBuf, ptr %raw, i64 %mLen)
+          %mEnd = getelementptr inbounds i8, ptr %mBuf, i64 %mLen
+          store i8 0, ptr %mEnd
+          %mInt = ptrtoint ptr %mBuf to i64
+          %gepM = getelementptr inbounds i64, ptr %obj, i64 ${mOff}
+          store i64 %mInt, ptr %gepM
+          %pathStart = getelementptr inbounds i8, ptr %space1, i64 1
+          %space2 = call ptr @strchr(ptr %pathStart, i32 32)
+          %cmpSp2 = icmp ne ptr %space2, null
+          br i1 %cmpSp2, label %parse_path, label %check_body
+        parse_path:
+          %pStartInt = ptrtoint ptr %pathStart to i64
+          %sp2Int = ptrtoint ptr %space2 to i64
+          %pLen = sub i64 %sp2Int, %pStartInt
+          %pLenPlus1 = add i64 %pLen, 1
+          %pBuf = call ptr @malloc(i64 %pLenPlus1)
+          call ptr @memcpy(ptr %pBuf, ptr %pathStart, i64 %pLen)
+          %pEnd = getelementptr inbounds i8, ptr %pBuf, i64 %pLen
+          store i8 0, ptr %pEnd
+          %pInt = ptrtoint ptr %pBuf to i64
+          %gepP = getelementptr inbounds i64, ptr %obj, i64 ${pOff}
+          store i64 %pInt, ptr %gepP
+          br label %check_body
+        check_body:
+          %bodySep = call ptr @strstr(ptr %raw, ptr @str_crlf2)
+          %hasBody = icmp ne ptr %bodySep, null
+          br i1 %hasBody, label %parse_body, label %no_body
+        parse_body:
+          %bodyPtr = getelementptr inbounds i8, ptr %bodySep, i64 4
+          %bLen = call i64 @strlen(ptr %bodyPtr)
+          %bLenPlus1 = add i64 %bLen, 1
+          %bBuf = call ptr @malloc(i64 %bLenPlus1)
+          call ptr @memcpy(ptr %bBuf, ptr %bodyPtr, i64 %bLenPlus1)
+          %bInt = ptrtoint ptr %bBuf to i64
+          %gepB = getelementptr inbounds i64, ptr %obj, i64 ${bOff}
+          store i64 %bInt, ptr %gepB
+          br label %set_version
+        no_body:
+          %empInt = ptrtoint ptr @empty_str to i64
+          %gepB2 = getelementptr inbounds i64, ptr %obj, i64 ${bOff}
+          store i64 %empInt, ptr %gepB2
+          br label %set_version
+        set_version:
+          %vInt = ptrtoint ptr @str_http_ver to i64
+          %gepV = getelementptr inbounds i64, ptr %obj, i64 ${vOff}
+          store i64 %vInt, ptr %gepV
+          br label %done
+        done:
+          ret ptr %obj
+        }
+
+        define internal i64 @zuv_ws_conn(ptr %url) {
+        entry:
+          %s = call i64 @zuv_net_sock(i32 2, i32 1, i32 6)
+          %res = call double @zuv_net_connect(i64 %s, ptr @str_localhost, i32 80)
+          ret i64 %s
+        }
+
+        define internal i64 @zuv_ws_send(i64 %s, ptr %msg) {
+        entry:
+          %len = call i64 @strlen(ptr %msg)
+          %frameSz = add i64 %len, 2
+          %fbuf = call ptr @malloc(i64 %frameSz)
+          store i8 -127, ptr %fbuf
+          %lenTrunc = trunc i64 %len to i8
+          %gep1 = getelementptr inbounds i8, ptr %fbuf, i64 1
+          store i8 %lenTrunc, ptr %gep1
+          %gep2 = getelementptr inbounds i8, ptr %fbuf, i64 2
+          call ptr @memcpy(ptr %gep2, ptr %msg, i64 %len)
+          %frameSz32 = trunc i64 %frameSz to i32
+          %sent = call i32 @send(i64 %s, ptr %fbuf, i32 %frameSz32, i32 0)
+          call void @free(ptr %fbuf)
+          %sent64 = sext i32 %sent to i64
+          ret i64 %sent64
+        }
+        `
+    },
+
     /**
      * Emits the complete suite of runtime intrinsics, crash handling, and backtrace handlers.
      *
@@ -1187,7 +1686,1066 @@ obj RuntimeCodegen {
         self.emitInitArgs
         self.emitPromiseRuntime
         self.emitTimeMono
+        self.emitNetRuntime
+        self.emitIpcRuntime
+        self.emitTermRuntime
+        self.emitPtyRuntime
         self.runtimeEmitted = true
+    },
+
+    /**
+     * Emits the runtime routines for IPC and shared memory.
+     *
+     * @returns {void}
+     */
+    emitIpcRuntime: :: void => {
+        self.emitRuntimeDecl "declare ptr @CreateNamedPipeA(ptr, i32, i32, i32, i32, i32, i32, ptr)", "@CreateNamedPipeA"
+        self.emitRuntimeDecl "declare ptr @CreateFileA(ptr, i32, i32, ptr, i32, i32, ptr)", "@CreateFileA"
+        self.emitRuntimeDecl "declare i32 @GetFileSize(ptr, ptr)", "@GetFileSize"
+        self.emitRuntimeDecl "declare ptr @CreateFileMappingA(ptr, ptr, i32, i32, i32, ptr)", "@CreateFileMappingA"
+        self.emitRuntimeDecl "declare ptr @OpenFileMappingA(i32, i32, ptr)", "@OpenFileMappingA"
+        self.emitRuntimeDecl "declare ptr @MapViewOfFile(ptr, i32, i32, i32, i64)", "@MapViewOfFile"
+        self.emitRuntimeDecl "declare i32 @UnmapViewOfFile(ptr)", "@UnmapViewOfFile"
+        self.emitRuntimeDecl "declare i32 @FlushViewOfFile(ptr, i64)", "@FlushViewOfFile"
+        self.emitRuntimeDecl "declare ptr @CreateMutexA(ptr, i32, ptr)", "@CreateMutexA"
+        self.emitRuntimeDecl "declare i32 @WaitForSingleObject(ptr, i32)", "@WaitForSingleObject"
+        self.emitRuntimeDecl "declare i32 @ReleaseMutex(ptr)", "@ReleaseMutex"
+        self.emitRuntimeDecl "declare ptr @CreateSemaphoreA(ptr, i32, i32, ptr)", "@CreateSemaphoreA"
+        self.emitRuntimeDecl "declare i32 @ReleaseSemaphore(ptr, i32, ptr)", "@ReleaseSemaphore"
+        self.emitRuntimeDecl "declare ptr @CreateEventA(ptr, i32, i32, ptr)", "@CreateEventA"
+        self.emitRuntimeDecl "declare i32 @SetEvent(ptr)", "@SetEvent"
+        self.emitRuntimeDecl "declare i32 @ResetEvent(ptr)", "@ResetEvent"
+
+        self.emitRuntimeDecl "@str_pipe_fmt = private unnamed_addr constant [12 x i8] c\"\\5C\\5C.\\5Cpipe\\5C%s\\00\"", "@str_pipe_fmt"
+        self.emitRuntimeDecl "@str_pipe_pattern = private unnamed_addr constant [9 x i8] c\"\\5C\\5C.\\5Cpipe\\00\"", "@str_pipe_pattern"
+
+        self.codegen.funcs += `
+        define internal ptr @zuv_ipc_format_pipename(ptr %name) {
+        entry:
+          %isNameNull = icmp eq ptr %name, null
+          br i1 %isNameNull, label %ret_default, label %check_pattern
+        ret_default:
+          %defBuf = call ptr @malloc(i64 32)
+          %defRet = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %defBuf, i64 32, ptr @str_pipe_fmt, ptr @empty_str)
+          ret ptr %defBuf
+        check_pattern:
+          %buf = call ptr @malloc(i64 260)
+          %hasPattern = call ptr @strstr(ptr %name, ptr @str_pipe_pattern)
+          %cmpHas = icmp ne ptr %hasPattern, null
+          br i1 %cmpHas, label %copy_direct, label %do_fmt
+        copy_direct:
+          %len = call i64 @strlen(ptr %name)
+          %allocSz = add i64 %len, 1
+          call ptr @memcpy(ptr %buf, ptr %name, i64 %allocSz)
+          ret ptr %buf
+        do_fmt:
+          %n = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 260, ptr @str_pipe_fmt, ptr %name)
+          ret ptr %buf
+        }
+
+        define internal i64 @zuv_ipc_pipe_server(ptr %name) {
+        entry:
+          %pipeName = call ptr @zuv_ipc_format_pipename(ptr %name)
+          %h = call ptr @CreateNamedPipeA(ptr %pipeName, i32 3, i32 0, i32 255, i32 65536, i32 65536, i32 0, ptr null)
+          call void @free(ptr %pipeName)
+          %inv = inttoptr i64 -1 to ptr
+          %cmpBad = icmp eq ptr %h, %inv
+          br i1 %cmpBad, label %ret_err, label %ret_ok
+        ret_err:
+          ret i64 -1
+        ret_ok:
+          %hInt = ptrtoint ptr %h to i64
+          %tagged = or i64 %hInt, 281474976710656
+          ret i64 %tagged
+        }
+
+        define internal i64 @zuv_ipc_pipe_client(ptr %name) {
+        entry:
+          %pipeName = call ptr @zuv_ipc_format_pipename(ptr %name)
+          %h = call ptr @CreateFileA(ptr %pipeName, i32 -1073741824, i32 0, ptr null, i32 3, i32 0, ptr null)
+          call void @free(ptr %pipeName)
+          %inv = inttoptr i64 -1 to ptr
+          %cmpBad = icmp eq ptr %h, %inv
+          br i1 %cmpBad, label %ret_err, label %ret_ok
+        ret_err:
+          ret i64 -1
+        ret_ok:
+          %hInt = ptrtoint ptr %h to i64
+          %tagged = or i64 %hInt, 281474976710656
+          ret i64 %tagged
+        }
+
+        define internal ptr @zuv_ipc_mmap(ptr %path, i64 %len) {
+        entry:
+          %hFile = call ptr @CreateFileA(ptr %path, i32 -1073741824, i32 3, ptr null, i32 4, i32 128, ptr null)
+          %inv = inttoptr i64 -1 to ptr
+          %cmpBad = icmp eq ptr %hFile, %inv
+          br i1 %cmpBad, label %ret_null, label %check_len
+        check_len:
+          %cmpLe = icmp sle i64 %len, 0
+          br i1 %cmpLe, label %query_sz, label %do_map_create
+        query_sz:
+          %fsz = call i32 @GetFileSize(ptr %hFile, ptr null)
+          %fsz64 = zext i32 %fsz to i64
+          br label %do_map_create
+        do_map_create:
+          %actualLen = phi i64 [ %len, %check_len ], [ %fsz64, %query_sz ]
+          %len32 = trunc i64 %actualLen to i32
+          %hMap = call ptr @CreateFileMappingA(ptr %hFile, ptr null, i32 4, i32 0, i32 %len32, ptr null)
+          call i32 @CloseHandle(ptr %hFile)
+          %cmpBadMap = icmp eq ptr %hMap, null
+          br i1 %cmpBadMap, label %ret_null, label %do_view
+        do_view:
+          %viewPtr = call ptr @MapViewOfFile(ptr %hMap, i32 6, i32 0, i32 0, i64 %actualLen)
+          call i32 @CloseHandle(ptr %hMap)
+          ret ptr %viewPtr
+        ret_null:
+          ret ptr null
+        }
+
+        define internal ptr @zuv_ipc_shm(ptr %name, i64 %size) {
+        entry:
+          %inv = inttoptr i64 -1 to ptr
+          %sizeHigh = lshr i64 %size, 32
+          %sizeHigh32 = trunc i64 %sizeHigh to i32
+          %sizeLow32 = trunc i64 %size to i32
+          %isNameNull = icmp eq ptr %name, null
+          br i1 %isNameNull, label %check_empty_done, label %check_empty
+        check_empty:
+          %c0 = load i8, ptr %name
+          %isEmpty = icmp eq i8 %c0, 0
+          br label %check_empty_done
+        check_empty_done:
+          %noName = phi i1 [ true, %entry ], [ %isEmpty, %check_empty ]
+          %realName = select i1 %noName, ptr null, ptr %name
+          %hMap = call ptr @CreateFileMappingA(ptr %inv, ptr null, i32 4, i32 %sizeHigh32, i32 %sizeLow32, ptr %realName)
+          %cmpBad = icmp eq ptr %hMap, null
+          br i1 %cmpBad, label %ret_null, label %do_view
+        do_view:
+          %viewPtr = call ptr @MapViewOfFile(ptr %hMap, i32 6, i32 0, i32 0, i64 %size)
+          br i1 %noName, label %close_h, label %done
+        close_h:
+          call i32 @CloseHandle(ptr %hMap)
+          br label %done
+        done:
+          ret ptr %viewPtr
+        ret_null:
+          ret ptr null
+        }
+
+        define internal ptr @zuv_ipc_open_shm(ptr %name, i64 %size) {
+        entry:
+          %isNameNull = icmp eq ptr %name, null
+          br i1 %isNameNull, label %ret_null, label %do_open
+        do_open:
+          %hMap = call ptr @OpenFileMappingA(i32 6, i32 0, ptr %name)
+          %cmpBad = icmp eq ptr %hMap, null
+          br i1 %cmpBad, label %ret_null, label %do_view
+        do_view:
+          %viewPtr = call ptr @MapViewOfFile(ptr %hMap, i32 6, i32 0, i32 0, i64 %size)
+          call i32 @CloseHandle(ptr %hMap)
+          ret ptr %viewPtr
+        ret_null:
+          ret ptr null
+        }
+
+        define internal double @zuv_ipc_unmap(ptr %ptr) {
+        entry:
+          %isN = icmp eq ptr %ptr, null
+          br i1 %isN, label %ret_zero, label %do_unmap
+        do_unmap:
+          %res = call i32 @UnmapViewOfFile(ptr %ptr)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        ret_zero:
+          ret double 0.0
+        }
+
+        define internal double @zuv_ipc_flush(ptr %ptr, i64 %len) {
+        entry:
+          %isN = icmp eq ptr %ptr, null
+          br i1 %isN, label %ret_zero, label %do_flush
+        do_flush:
+          %res = call i32 @FlushViewOfFile(ptr %ptr, i64 %len)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        ret_zero:
+          ret double 0.0
+        }
+
+        define internal i64 @zuv_ipc_write(ptr %ptr, i64 %offset, ptr %data) {
+        entry:
+          %cmpP = icmp eq ptr %ptr, null
+          %cmpD = icmp eq ptr %data, null
+          %cmpOr = or i1 %cmpP, %cmpD
+          br i1 %cmpOr, label %ret_zero, label %do_write
+        do_write:
+          %dst = getelementptr inbounds i8, ptr %ptr, i64 %offset
+          %len = call i64 @strlen(ptr %data)
+          call ptr @memcpy(ptr %dst, ptr %data, i64 %len)
+          ret i64 %len
+        ret_zero:
+          ret i64 0
+        }
+
+        define internal ptr @zuv_ipc_read(ptr %ptr, i64 %offset, i64 %len) {
+        entry:
+          %cmpP = icmp eq ptr %ptr, null
+          %cmpL = icmp sle i64 %len, 0
+          %cmpOr = or i1 %cmpP, %cmpL
+          br i1 %cmpOr, label %ret_empty, label %do_read
+        do_read:
+          %allocSz = add i64 %len, 1
+          %buf = call ptr @malloc(i64 %allocSz)
+          %src = getelementptr inbounds i8, ptr %ptr, i64 %offset
+          call ptr @memcpy(ptr %buf, ptr %src, i64 %len)
+          %endPtr = getelementptr inbounds i8, ptr %buf, i64 %len
+          store i8 0, ptr %endPtr
+          ret ptr %buf
+        ret_empty:
+          ret ptr @empty_str
+        }
+
+        define internal ptr @zuv_ipc_read_str(ptr %ptr, i64 %offset) {
+        entry:
+          %cmpP = icmp eq ptr %ptr, null
+          br i1 %cmpP, label %ret_empty, label %do_read
+        do_read:
+          %src = getelementptr inbounds i8, ptr %ptr, i64 %offset
+          %len = call i64 @strlen(ptr %src)
+          %allocSz = add i64 %len, 1
+          %buf = call ptr @malloc(i64 %allocSz)
+          call ptr @memcpy(ptr %buf, ptr %src, i64 %allocSz)
+          ret ptr %buf
+        ret_empty:
+          ret ptr @empty_str
+        }
+
+        define internal i64 @zuv_ipc_mutex(ptr %name) {
+        entry:
+          %h = call ptr @CreateMutexA(ptr null, i32 0, ptr %name)
+          %h64 = ptrtoint ptr %h to i64
+          ret i64 %h64
+        }
+
+        define internal double @zuv_ipc_mutex_lock(i64 %h) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %res = call i32 @WaitForSingleObject(ptr %hPtr, i32 -1)
+          %cmp = icmp eq i32 %res, 0
+          %sel = select i1 %cmp, double 1.0, double 0.0
+          ret double %sel
+        }
+
+        define internal double @zuv_ipc_mutex_trylock(i64 %h) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %res = call i32 @WaitForSingleObject(ptr %hPtr, i32 0)
+          %cmp = icmp eq i32 %res, 0
+          %sel = select i1 %cmp, double 1.0, double 0.0
+          ret double %sel
+        }
+
+        define internal double @zuv_ipc_mutex_unlock(i64 %h) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %res = call i32 @ReleaseMutex(ptr %hPtr)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal i64 @zuv_ipc_sem(ptr %name, i32 %init, i32 %max) {
+        entry:
+          %h = call ptr @CreateSemaphoreA(ptr null, i32 %init, i32 %max, ptr %name)
+          %h64 = ptrtoint ptr %h to i64
+          ret i64 %h64
+        }
+
+        define internal double @zuv_ipc_sem_wait(i64 %h, i32 %timeoutMs) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %res = call i32 @WaitForSingleObject(ptr %hPtr, i32 %timeoutMs)
+          %cmp = icmp eq i32 %res, 0
+          %sel = select i1 %cmp, double 1.0, double 0.0
+          ret double %sel
+        }
+
+        define internal double @zuv_ipc_sem_post(i64 %h, i32 %count) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %cmpLe = icmp sle i32 %count, 0
+          %c = select i1 %cmpLe, i32 1, i32 %count
+          %res = call i32 @ReleaseSemaphore(ptr %hPtr, i32 %c, ptr null)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal i64 @zuv_ipc_event(ptr %name, i32 %manualReset, i32 %initialState) {
+        entry:
+          %h = call ptr @CreateEventA(ptr null, i32 %manualReset, i32 %initialState, ptr %name)
+          %h64 = ptrtoint ptr %h to i64
+          ret i64 %h64
+        }
+
+        define internal double @zuv_ipc_event_set(i64 %h) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %res = call i32 @SetEvent(ptr %hPtr)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal double @zuv_ipc_event_reset(i64 %h) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %res = call i32 @ResetEvent(ptr %hPtr)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+
+        define internal double @zuv_ipc_event_wait(i64 %h, i32 %timeoutMs) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %res = call i32 @WaitForSingleObject(ptr %hPtr, i32 %timeoutMs)
+          %cmp = icmp eq i32 %res, 0
+          %sel = select i1 %cmp, double 1.0, double 0.0
+          ret double %sel
+        }
+
+        define internal double @zuv_ipc_close(i64 %h) {
+        entry:
+          %rawI64 = and i64 %h, -281474976710657
+          %hPtr = inttoptr i64 %rawI64 to ptr
+          %res = call i32 @CloseHandle(ptr %hPtr)
+          %dres = sitofp i32 %res to double
+          ret double %dres
+        }
+        `
+    },
+
+    /**
+     * Emits the runtime routines for raw terminal controls and ANSI virtual console.
+     *
+     * @returns {void}
+     */
+    emitTermRuntime: :: void => {
+        self.emitRuntimeDecl "declare ptr @GetStdHandle(i32)", "@GetStdHandle"
+        self.emitRuntimeDecl "declare i32 @GetConsoleMode(ptr, ptr)", "@GetConsoleMode"
+        self.emitRuntimeDecl "declare i32 @SetConsoleMode(ptr, i32)", "@SetConsoleMode"
+        self.emitRuntimeDecl "declare i32 @GetConsoleScreenBufferInfo(ptr, ptr)", "@GetConsoleScreenBufferInfo"
+        self.emitRuntimeDecl "declare i32 @_kbhit()", "@_kbhit"
+        self.emitRuntimeDecl "declare i32 @_getch()", "@_getch"
+        self.emitRuntimeDecl "declare void @Sleep(i32)", "@Sleep"
+        self.emitRuntimeDecl "declare i32 @_stricmp(ptr, ptr)", "@_stricmp"
+
+        self.emitRuntimeDecl "@zuv_term_orig_in = internal global i32 0", "@zuv_term_orig_in"
+        self.emitRuntimeDecl "@zuv_term_orig_out = internal global i32 0", "@zuv_term_orig_out"
+        self.emitRuntimeDecl "@zuv_term_raw_active = internal global i32 0", "@zuv_term_raw_active"
+        self.emitRuntimeDecl "@zuv_term_saved = internal global i32 0", "@zuv_term_saved"
+
+        self.emitRuntimeDecl "@zuv_term_str_empty = private unnamed_addr constant [1 x i8] c\"\\00\"", "@zuv_term_str_empty"
+        self.emitRuntimeDecl "@zuv_term_str_up = private unnamed_addr constant [3 x i8] c\"up\\00\"", "@zuv_term_str_up"
+        self.emitRuntimeDecl "@zuv_term_str_down = private unnamed_addr constant [5 x i8] c\"down\\00\"", "@zuv_term_str_down"
+        self.emitRuntimeDecl "@zuv_term_str_left = private unnamed_addr constant [5 x i8] c\"left\\00\"", "@zuv_term_str_left"
+        self.emitRuntimeDecl "@zuv_term_str_right = private unnamed_addr constant [6 x i8] c\"right\\00\"", "@zuv_term_str_right"
+        self.emitRuntimeDecl "@zuv_term_str_home = private unnamed_addr constant [5 x i8] c\"home\\00\"", "@zuv_term_str_home"
+        self.emitRuntimeDecl "@zuv_term_str_end = private unnamed_addr constant [4 x i8] c\"end\\00\"", "@zuv_term_str_end"
+        self.emitRuntimeDecl "@zuv_term_str_delete = private unnamed_addr constant [7 x i8] c\"delete\\00\"", "@zuv_term_str_delete"
+        self.emitRuntimeDecl "@zuv_term_str_insert = private unnamed_addr constant [7 x i8] c\"insert\\00\"", "@zuv_term_str_insert"
+        self.emitRuntimeDecl "@zuv_term_str_pageup = private unnamed_addr constant [7 x i8] c\"pageup\\00\"", "@zuv_term_str_pageup"
+        self.emitRuntimeDecl "@zuv_term_str_pagedown = private unnamed_addr constant [9 x i8] c\"pagedown\\00\"", "@zuv_term_str_pagedown"
+        self.emitRuntimeDecl "@zuv_term_str_f1 = private unnamed_addr constant [3 x i8] c\"f1\\00\"", "@zuv_term_str_f1"
+        self.emitRuntimeDecl "@zuv_term_str_f2 = private unnamed_addr constant [3 x i8] c\"f2\\00\"", "@zuv_term_str_f2"
+        self.emitRuntimeDecl "@zuv_term_str_f3 = private unnamed_addr constant [3 x i8] c\"f3\\00\"", "@zuv_term_str_f3"
+        self.emitRuntimeDecl "@zuv_term_str_f4 = private unnamed_addr constant [3 x i8] c\"f4\\00\"", "@zuv_term_str_f4"
+        self.emitRuntimeDecl "@zuv_term_str_f5 = private unnamed_addr constant [3 x i8] c\"f5\\00\"", "@zuv_term_str_f5"
+        self.emitRuntimeDecl "@zuv_term_str_f6 = private unnamed_addr constant [3 x i8] c\"f6\\00\"", "@zuv_term_str_f6"
+        self.emitRuntimeDecl "@zuv_term_str_f7 = private unnamed_addr constant [3 x i8] c\"f7\\00\"", "@zuv_term_str_f7"
+        self.emitRuntimeDecl "@zuv_term_str_f8 = private unnamed_addr constant [3 x i8] c\"f8\\00\"", "@zuv_term_str_f8"
+        self.emitRuntimeDecl "@zuv_term_str_f9 = private unnamed_addr constant [3 x i8] c\"f9\\00\"", "@zuv_term_str_f9"
+        self.emitRuntimeDecl "@zuv_term_str_f10 = private unnamed_addr constant [4 x i8] c\"f10\\00\"", "@zuv_term_str_f10"
+        self.emitRuntimeDecl "@zuv_term_str_special = private unnamed_addr constant [8 x i8] c\"special\\00\"", "@zuv_term_str_special"
+        self.emitRuntimeDecl "@zuv_term_str_enter = private unnamed_addr constant [6 x i8] c\"enter\\00\"", "@zuv_term_str_enter"
+        self.emitRuntimeDecl "@zuv_term_str_backspace = private unnamed_addr constant [10 x i8] c\"backspace\\00\"", "@zuv_term_str_backspace"
+        self.emitRuntimeDecl "@zuv_term_str_tab = private unnamed_addr constant [4 x i8] c\"tab\\00\"", "@zuv_term_str_tab"
+        self.emitRuntimeDecl "@zuv_term_str_esc = private unnamed_addr constant [4 x i8] c\"esc\\00\"", "@zuv_term_str_esc"
+
+        self.emitRuntimeDecl "@zuv_term_fmt_str = private unnamed_addr constant [3 x i8] c\"%s\\00\"", "@zuv_term_fmt_str"
+        self.emitRuntimeDecl "@zuv_term_fmt_cur = private unnamed_addr constant [9 x i8] c\"\\1B[%d;%dH\\00\"", "@zuv_term_fmt_cur"
+        self.emitRuntimeDecl "@zuv_term_fmt_up = private unnamed_addr constant [6 x i8] c\"\\1B[%dA\\00\"", "@zuv_term_fmt_up"
+        self.emitRuntimeDecl "@zuv_term_fmt_down = private unnamed_addr constant [6 x i8] c\"\\1B[%dB\\00\"", "@zuv_term_fmt_down"
+        self.emitRuntimeDecl "@zuv_term_fmt_fwd = private unnamed_addr constant [6 x i8] c\"\\1B[%dC\\00\"", "@zuv_term_fmt_fwd"
+        self.emitRuntimeDecl "@zuv_term_fmt_back = private unnamed_addr constant [6 x i8] c\"\\1B[%dD\\00\"", "@zuv_term_fmt_back"
+        self.emitRuntimeDecl "@zuv_term_str_clear = private unnamed_addr constant [8 x i8] c\"\\1B[2J\\1B[H\\00\"", "@zuv_term_str_clear"
+        self.emitRuntimeDecl "@zuv_term_str_clear_line = private unnamed_addr constant [6 x i8] c\"\\1B[2K\\0D\\00\"", "@zuv_term_str_clear_line"
+        self.emitRuntimeDecl "@zuv_term_str_hide_cur = private unnamed_addr constant [7 x i8] c\"\\1B[?25l\\00\"", "@zuv_term_str_hide_cur"
+        self.emitRuntimeDecl "@zuv_term_str_show_cur = private unnamed_addr constant [7 x i8] c\"\\1B[?25h\\00\"", "@zuv_term_str_show_cur"
+        self.emitRuntimeDecl "@zuv_term_str_enter_alt = private unnamed_addr constant [9 x i8] c\"\\1B[?1049h\\00\"", "@zuv_term_str_enter_alt"
+        self.emitRuntimeDecl "@zuv_term_str_exit_alt = private unnamed_addr constant [9 x i8] c\"\\1B[?1049l\\00\"", "@zuv_term_str_exit_alt"
+        self.emitRuntimeDecl "@zuv_term_str_reset = private unnamed_addr constant [5 x i8] c\"\\1B[0m\\00\"", "@zuv_term_str_reset"
+        self.emitRuntimeDecl "@zuv_term_fmt_size = private unnamed_addr constant [6 x i8] c\"%dx%d\\00\"", "@zuv_term_fmt_size"
+        self.emitRuntimeDecl "@zuv_term_fmt_style = private unnamed_addr constant [9 x i8] c\"%s%s\\1B[0m\\00\"", "@zuv_term_fmt_style"
+        self.emitRuntimeDecl "@zuv_term_fmt_color = private unnamed_addr constant [12 x i8] c\"\\1B[%dm%s\\1B[0m\\00\"", "@zuv_term_fmt_color"
+        self.emitRuntimeDecl "@zuv_term_fmt_color_only = private unnamed_addr constant [6 x i8] c\"\\1B[%dm\\00\"", "@zuv_term_fmt_color_only"
+
+        self.emitRuntimeDecl "@zuv_term_code_bold = private unnamed_addr constant [5 x i8] c\"\\1B[1m\\00\"", "@zuv_term_code_bold"
+        self.emitRuntimeDecl "@zuv_term_code_dim = private unnamed_addr constant [5 x i8] c\"\\1B[2m\\00\"", "@zuv_term_code_dim"
+        self.emitRuntimeDecl "@zuv_term_code_italic = private unnamed_addr constant [5 x i8] c\"\\1B[3m\\00\"", "@zuv_term_code_italic"
+        self.emitRuntimeDecl "@zuv_term_code_underline = private unnamed_addr constant [5 x i8] c\"\\1B[4m\\00\"", "@zuv_term_code_underline"
+        self.emitRuntimeDecl "@zuv_term_code_red = private unnamed_addr constant [6 x i8] c\"\\1B[31m\\00\"", "@zuv_term_code_red"
+        self.emitRuntimeDecl "@zuv_term_code_green = private unnamed_addr constant [6 x i8] c\"\\1B[32m\\00\"", "@zuv_term_code_green"
+        self.emitRuntimeDecl "@zuv_term_code_yellow = private unnamed_addr constant [6 x i8] c\"\\1B[33m\\00\"", "@zuv_term_code_yellow"
+        self.emitRuntimeDecl "@zuv_term_code_blue = private unnamed_addr constant [6 x i8] c\"\\1B[34m\\00\"", "@zuv_term_code_blue"
+        self.emitRuntimeDecl "@zuv_term_code_magenta = private unnamed_addr constant [6 x i8] c\"\\1B[35m\\00\"", "@zuv_term_code_magenta"
+        self.emitRuntimeDecl "@zuv_term_code_cyan = private unnamed_addr constant [6 x i8] c\"\\1B[36m\\00\"", "@zuv_term_code_cyan"
+
+        self.emitRuntimeDecl "@zuv_term_pfx_bold = private unnamed_addr constant [5 x i8] c\"\\1B[1m\\00\"", "@zuv_term_pfx_bold"
+        self.emitRuntimeDecl "@zuv_term_pfx_dim = private unnamed_addr constant [5 x i8] c\"\\1B[2m\\00\"", "@zuv_term_pfx_dim"
+        self.emitRuntimeDecl "@zuv_term_pfx_italic = private unnamed_addr constant [5 x i8] c\"\\1B[3m\\00\"", "@zuv_term_pfx_italic"
+        self.emitRuntimeDecl "@zuv_term_pfx_underline = private unnamed_addr constant [5 x i8] c\"\\1B[4m\\00\"", "@zuv_term_pfx_underline"
+        self.emitRuntimeDecl "@zuv_term_pfx_red = private unnamed_addr constant [6 x i8] c\"\\1B[31m\\00\"", "@zuv_term_pfx_red"
+        self.emitRuntimeDecl "@zuv_term_pfx_green = private unnamed_addr constant [6 x i8] c\"\\1B[32m\\00\"", "@zuv_term_pfx_green"
+        self.emitRuntimeDecl "@zuv_term_pfx_yellow = private unnamed_addr constant [6 x i8] c\"\\1B[33m\\00\"", "@zuv_term_pfx_yellow"
+        self.emitRuntimeDecl "@zuv_term_pfx_blue = private unnamed_addr constant [6 x i8] c\"\\1B[34m\\00\"", "@zuv_term_pfx_blue"
+        self.emitRuntimeDecl "@zuv_term_pfx_magenta = private unnamed_addr constant [6 x i8] c\"\\1B[35m\\00\"", "@zuv_term_pfx_magenta"
+        self.emitRuntimeDecl "@zuv_term_pfx_cyan = private unnamed_addr constant [6 x i8] c\"\\1B[36m\\00\"", "@zuv_term_pfx_cyan"
+
+        self.emitRuntimeDecl "@zuv_term_col_red = private unnamed_addr constant [4 x i8] c\"red\\00\"", "@zuv_term_col_red"
+        self.emitRuntimeDecl "@zuv_term_col_green = private unnamed_addr constant [6 x i8] c\"green\\00\"", "@zuv_term_col_green"
+        self.emitRuntimeDecl "@zuv_term_col_yellow = private unnamed_addr constant [7 x i8] c\"yellow\\00\"", "@zuv_term_col_yellow"
+        self.emitRuntimeDecl "@zuv_term_col_blue = private unnamed_addr constant [5 x i8] c\"blue\\00\"", "@zuv_term_col_blue"
+        self.emitRuntimeDecl "@zuv_term_col_magenta = private unnamed_addr constant [8 x i8] c\"magenta\\00\"", "@zuv_term_col_magenta"
+        self.emitRuntimeDecl "@zuv_term_col_cyan = private unnamed_addr constant [5 x i8] c\"cyan\\00\"", "@zuv_term_col_cyan"
+        self.emitRuntimeDecl "@zuv_term_col_white = private unnamed_addr constant [6 x i8] c\"white\\00\"", "@zuv_term_col_white"
+        self.emitRuntimeDecl "@zuv_term_col_gray = private unnamed_addr constant [5 x i8] c\"gray\\00\"", "@zuv_term_col_gray"
+        self.emitRuntimeDecl "@zuv_term_col_black = private unnamed_addr constant [6 x i8] c\"black\\00\"", "@zuv_term_col_black"
+
+        self.codegen.funcs += `
+        define internal double @zuv_term_make_raw() {
+        entry:
+          %inH = call ptr @GetStdHandle(i32 -10)
+          %outH = call ptr @GetStdHandle(i32 -11)
+          %saved = load i32, ptr @zuv_term_saved
+          %isSaved = icmp ne i32 %saved, 0
+          br i1 %isSaved, label %set_raw, label %save_modes
+        save_modes:
+          call i32 @GetConsoleMode(ptr %inH, ptr @zuv_term_orig_in)
+          call i32 @GetConsoleMode(ptr %outH, ptr @zuv_term_orig_out)
+          store i32 1, ptr @zuv_term_saved
+          br label %set_raw
+        set_raw:
+          call i32 @SetConsoleMode(ptr %inH, i32 512)
+          call i32 @SetConsoleMode(ptr %outH, i32 7)
+          store i32 1, ptr @zuv_term_raw_active
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_restore() {
+        entry:
+          %saved = load i32, ptr @zuv_term_saved
+          %isSaved = icmp ne i32 %saved, 0
+          br i1 %isSaved, label %do_restore, label %done
+        do_restore:
+          %inH = call ptr @GetStdHandle(i32 -10)
+          %outH = call ptr @GetStdHandle(i32 -11)
+          %origIn = load i32, ptr @zuv_term_orig_in
+          %origOut = load i32, ptr @zuv_term_orig_out
+          call i32 @SetConsoleMode(ptr %inH, i32 %origIn)
+          call i32 @SetConsoleMode(ptr %outH, i32 %origOut)
+          store i32 0, ptr @zuv_term_raw_active
+          br label %done
+        done:
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_is_raw() {
+        entry:
+          %raw = load i32, ptr @zuv_term_raw_active
+          %d = sitofp i32 %raw to double
+          ret double %d
+        }
+
+        define internal double @zuv_term_has_key() {
+        entry:
+          %hit = call i32 @_kbhit()
+          %cmp = icmp ne i32 %hit, 0
+          %sel = select i1 %cmp, double 1.0, double 0.0
+          ret double %sel
+        }
+
+        define internal ptr @zuv_term_read_key(i32 %timeoutMs) {
+        entry:
+          %cmpTo = icmp sgt i32 %timeoutMs, 0
+          br i1 %cmpTo, label %loop_check, label %check_hit
+        loop_check:
+          %rem = phi i32 [ %timeoutMs, %entry ], [ %remNext, %loop_sleep ]
+          %h = call i32 @_kbhit()
+          %isHit = icmp ne i32 %h, 0
+          br i1 %isHit, label %read_char, label %loop_sleep
+        loop_sleep:
+          call void @Sleep(i32 10)
+          %remNext = sub i32 %rem, 10
+          %stillWait = icmp sgt i32 %remNext, 0
+          br i1 %stillWait, label %loop_check, label %ret_empty
+        check_hit:
+          %cmpInf = icmp slt i32 %timeoutMs, 0
+          br i1 %cmpInf, label %read_char, label %check_zero
+        check_zero:
+          %h0 = call i32 @_kbhit()
+          %isHit0 = icmp ne i32 %h0, 0
+          br i1 %isHit0, label %read_char, label %ret_empty
+        read_char:
+          %c = call i32 @_getch()
+          %isExt0 = icmp eq i32 %c, 0
+          %isExtE0 = icmp eq i32 %c, 224
+          %isExt = or i1 %isExt0, %isExtE0
+          br i1 %isExt, label %read_extended, label %check_control
+        read_extended:
+          %c2 = call i32 @_getch()
+          switch i32 %c2, label %ext_special [
+            i32 72, label %ext_up
+            i32 80, label %ext_down
+            i32 75, label %ext_left
+            i32 77, label %ext_right
+            i32 71, label %ext_home
+            i32 79, label %ext_end
+            i32 83, label %ext_del
+            i32 82, label %ext_ins
+            i32 73, label %ext_pgup
+            i32 81, label %ext_pgdn
+            i32 59, label %ext_f1
+            i32 60, label %ext_f2
+            i32 61, label %ext_f3
+            i32 62, label %ext_f4
+            i32 63, label %ext_f5
+            i32 64, label %ext_f6
+            i32 65, label %ext_f7
+            i32 66, label %ext_f8
+            i32 67, label %ext_f9
+            i32 68, label %ext_f10
+          ]
+        ext_up: ret ptr @zuv_term_str_up
+        ext_down: ret ptr @zuv_term_str_down
+        ext_left: ret ptr @zuv_term_str_left
+        ext_right: ret ptr @zuv_term_str_right
+        ext_home: ret ptr @zuv_term_str_home
+        ext_end: ret ptr @zuv_term_str_end
+        ext_del: ret ptr @zuv_term_str_delete
+        ext_ins: ret ptr @zuv_term_str_insert
+        ext_pgup: ret ptr @zuv_term_str_pageup
+        ext_pgdn: ret ptr @zuv_term_str_pagedown
+        ext_f1: ret ptr @zuv_term_str_f1
+        ext_f2: ret ptr @zuv_term_str_f2
+        ext_f3: ret ptr @zuv_term_str_f3
+        ext_f4: ret ptr @zuv_term_str_f4
+        ext_f5: ret ptr @zuv_term_str_f5
+        ext_f6: ret ptr @zuv_term_str_f6
+        ext_f7: ret ptr @zuv_term_str_f7
+        ext_f8: ret ptr @zuv_term_str_f8
+        ext_f9: ret ptr @zuv_term_str_f9
+        ext_f10: ret ptr @zuv_term_str_f10
+        ext_special: ret ptr @zuv_term_str_special
+        check_control:
+          switch i32 %c, label %ret_char [
+            i32 13, label %ctrl_enter
+            i32 8, label %ctrl_backspace
+            i32 9, label %ctrl_tab
+            i32 27, label %ctrl_esc
+          ]
+        ctrl_enter: ret ptr @zuv_term_str_enter
+        ctrl_backspace: ret ptr @zuv_term_str_backspace
+        ctrl_tab: ret ptr @zuv_term_str_tab
+        ctrl_esc: ret ptr @zuv_term_str_esc
+        ret_char:
+          %buf = call ptr @malloc(i64 2)
+          %c8 = trunc i32 %c to i8
+          store i8 %c8, ptr %buf
+          %buf1 = getelementptr inbounds i8, ptr %buf, i64 1
+          store i8 0, ptr %buf1
+          ret ptr %buf
+        ret_empty:
+          ret ptr @zuv_term_str_empty
+        }
+
+        define internal double @zuv_term_width() {
+        entry:
+          %csbi = alloca [24 x i8], align 4
+          %outH = call ptr @GetStdHandle(i32 -11)
+          %ok = call i32 @GetConsoleScreenBufferInfo(ptr %outH, ptr %csbi)
+          %isOk = icmp ne i32 %ok, 0
+          br i1 %isOk, label %calc, label %fallback
+        calc:
+          %leftPtr = getelementptr inbounds i8, ptr %csbi, i64 10
+          %rightPtr = getelementptr inbounds i8, ptr %csbi, i64 14
+          %left = load i16, ptr %leftPtr
+          %right = load i16, ptr %rightPtr
+          %w16 = sub i16 %right, %left
+          %w16_1 = add i16 %w16, 1
+          %w32 = sext i16 %w16_1 to i32
+          %wDbl = sitofp i32 %w32 to double
+          ret double %wDbl
+        fallback:
+          ret double 80.0
+        }
+
+        define internal double @zuv_term_height() {
+        entry:
+          %csbi = alloca [24 x i8], align 4
+          %outH = call ptr @GetStdHandle(i32 -11)
+          %ok = call i32 @GetConsoleScreenBufferInfo(ptr %outH, ptr %csbi)
+          %isOk = icmp ne i32 %ok, 0
+          br i1 %isOk, label %calc, label %fallback
+        calc:
+          %topPtr = getelementptr inbounds i8, ptr %csbi, i64 12
+          %botPtr = getelementptr inbounds i8, ptr %csbi, i64 16
+          %top = load i16, ptr %topPtr
+          %bot = load i16, ptr %botPtr
+          %h16 = sub i16 %bot, %top
+          %h16_1 = add i16 %h16, 1
+          %h32 = sext i16 %h16_1 to i32
+          %hDbl = sitofp i32 %h32 to double
+          ret double %hDbl
+        fallback:
+          ret double 24.0
+        }
+
+        define internal ptr @zuv_term_size() {
+        entry:
+          %csbi = alloca [24 x i8], align 4
+          %outH = call ptr @GetStdHandle(i32 -11)
+          %ok = call i32 @GetConsoleScreenBufferInfo(ptr %outH, ptr %csbi)
+          %isOk = icmp ne i32 %ok, 0
+          br i1 %isOk, label %calc, label %fallback
+        calc:
+          %leftPtr = getelementptr inbounds i8, ptr %csbi, i64 10
+          %rightPtr = getelementptr inbounds i8, ptr %csbi, i64 14
+          %left = load i16, ptr %leftPtr
+          %right = load i16, ptr %rightPtr
+          %w16 = sub i16 %right, %left
+          %w16_1 = add i16 %w16, 1
+          %w32 = sext i16 %w16_1 to i32
+          %topPtr = getelementptr inbounds i8, ptr %csbi, i64 12
+          %botPtr = getelementptr inbounds i8, ptr %csbi, i64 16
+          %top = load i16, ptr %topPtr
+          %bot = load i16, ptr %botPtr
+          %h16 = sub i16 %bot, %top
+          %h16_1 = add i16 %h16, 1
+          %h32 = sext i16 %h16_1 to i32
+          %buf = call ptr @malloc(i64 32)
+          call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 32, ptr @zuv_term_fmt_size, i32 %w32, i32 %h32)
+          ret ptr %buf
+        fallback:
+          %buf2 = call ptr @malloc(i64 32)
+          call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf2, i64 32, ptr @zuv_term_fmt_size, i32 80, i32 24)
+          ret ptr %buf2
+        }
+
+        define internal double @zuv_term_write(ptr %s) {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_str, ptr %s)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_cursor_to(i32 %x, i32 %y) {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_cur, i32 %y, i32 %x)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_cursor_up(i32 %n) {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_up, i32 %n)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_cursor_down(i32 %n) {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_down, i32 %n)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_cursor_forward(i32 %n) {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_fwd, i32 %n)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_cursor_back(i32 %n) {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_back, i32 %n)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_clear() {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_str, ptr @zuv_term_str_clear)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_clear_line() {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_str, ptr @zuv_term_str_clear_line)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_hide_cursor() {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_str, ptr @zuv_term_str_hide_cur)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_show_cursor() {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_str, ptr @zuv_term_str_show_cur)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_enter_alt() {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_str, ptr @zuv_term_str_enter_alt)
+          ret double 0.0
+        }
+
+        define internal double @zuv_term_exit_alt() {
+        entry:
+          call i32 (ptr, ...) @printf(ptr @zuv_term_fmt_str, ptr @zuv_term_str_exit_alt)
+          ret double 0.0
+        }
+
+        define internal ptr @zuv_term_reset() {
+        entry:
+          ret ptr @zuv_term_str_reset
+        }
+
+        define internal ptr @zuv_term_style_code(ptr %code) {
+        entry:
+          ret ptr %code
+        }
+
+        define internal ptr @zuv_term_style(ptr %pfx, ptr %s) {
+        entry:
+          %pLen = call i64 @strlen(ptr %pfx)
+          %sLen = call i64 @strlen(ptr %s)
+          %tot = add i64 %pLen, %sLen
+          %tot1 = add i64 %tot, 8
+          %buf = call ptr @malloc(i64 %tot1)
+          call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 %tot1, ptr @zuv_term_fmt_style, ptr %pfx, ptr %s)
+          ret ptr %buf
+        }
+
+        define internal i32 @zuv_term_resolve_color(ptr %name) {
+        entry:
+          %c1 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_red)
+          %e1 = icmp eq i32 %c1, 0
+          br i1 %e1, label %ret_31, label %ck_green
+        ret_31: ret i32 31
+        ck_green:
+          %c2 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_green)
+          %e2 = icmp eq i32 %c2, 0
+          br i1 %e2, label %ret_32, label %ck_yellow
+        ret_32: ret i32 32
+        ck_yellow:
+          %c3 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_yellow)
+          %e3 = icmp eq i32 %c3, 0
+          br i1 %e3, label %ret_33, label %ck_blue
+        ret_33: ret i32 33
+        ck_blue:
+          %c4 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_blue)
+          %e4 = icmp eq i32 %c4, 0
+          br i1 %e4, label %ret_34, label %ck_magenta
+        ret_34: ret i32 34
+        ck_magenta:
+          %c5 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_magenta)
+          %e5 = icmp eq i32 %c5, 0
+          br i1 %e5, label %ret_35, label %ck_cyan
+        ret_35: ret i32 35
+        ck_cyan:
+          %c6 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_cyan)
+          %e6 = icmp eq i32 %c6, 0
+          br i1 %e6, label %ret_36, label %ck_white
+        ret_36: ret i32 36
+        ck_white:
+          %c7 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_white)
+          %e7 = icmp eq i32 %c7, 0
+          br i1 %e7, label %ret_37, label %ck_gray
+        ret_37: ret i32 37
+        ck_gray:
+          %c8 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_gray)
+          %e8 = icmp eq i32 %c8, 0
+          br i1 %e8, label %ret_90, label %ck_black
+        ret_90: ret i32 90
+        ck_black:
+          %c9 = call i32 @_stricmp(ptr %name, ptr @zuv_term_col_black)
+          %e9 = icmp eq i32 %c9, 0
+          br i1 %e9, label %ret_30, label %ret_def
+        ret_30: ret i32 30
+        ret_def:
+          ret i32 37
+        }
+
+        define internal ptr @zuv_term_color_code(ptr %name) {
+        entry:
+          %code = call i32 @zuv_term_resolve_color(ptr %name)
+          %buf = call ptr @malloc(i64 16)
+          call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 16, ptr @zuv_term_fmt_color_only, i32 %code)
+          ret ptr %buf
+        }
+
+        define internal ptr @zuv_term_color(ptr %name, ptr %s) {
+        entry:
+          %code = call i32 @zuv_term_resolve_color(ptr %name)
+          %sLen = call i64 @strlen(ptr %s)
+          %tot = add i64 %sLen, 16
+          %buf = call ptr @malloc(i64 %tot)
+          call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 %tot, ptr @zuv_term_fmt_color, i32 %code, ptr %s)
+          ret ptr %buf
+        }
+        `
+    },
+
+    /**
+     * Emits the runtime routines for pseudo-terminal (pty) operations.
+     *
+     * @returns {void}
+     */
+    emitPtyRuntime: :: void => {
+        self.emitRuntimeDecl "declare i32 @CreatePipe(ptr, ptr, ptr, i32)", "@CreatePipe"
+        self.emitRuntimeDecl "declare i32 @PeekNamedPipe(ptr, ptr, i32, ptr, ptr, ptr)", "@PeekNamedPipe"
+        self.emitRuntimeDecl "declare i32 @CreatePseudoConsole(i32, ptr, ptr, i32, ptr)", "@CreatePseudoConsole"
+        self.emitRuntimeDecl "declare i32 @ResizePseudoConsole(ptr, i32)", "@ResizePseudoConsole"
+        self.emitRuntimeDecl "declare void @ClosePseudoConsole(ptr)", "@ClosePseudoConsole"
+        self.emitRuntimeDecl "declare i32 @CreateProcessA(ptr, ptr, ptr, ptr, i32, i32, ptr, ptr, ptr, ptr)", "@CreateProcessA"
+        self.emitRuntimeDecl "declare i32 @InitializeProcThreadAttributeList(ptr, i32, i32, ptr)", "@InitializeProcThreadAttributeList"
+        self.emitRuntimeDecl "declare i32 @UpdateProcThreadAttribute(ptr, i32, i64, ptr, i64, ptr, ptr)", "@UpdateProcThreadAttribute"
+        self.emitRuntimeDecl "declare void @DeleteProcThreadAttributeList(ptr)", "@DeleteProcThreadAttributeList"
+        self.emitRuntimeDecl "declare i32 @TerminateProcess(ptr, i32)", "@TerminateProcess"
+
+        self.codegen.funcs += `
+        define internal i64 @zuv_pty_open(i32 %cols, i32 %rows) {
+        entry:
+          %inRead = alloca ptr, align 8
+          %inWrite = alloca ptr, align 8
+          %outRead = alloca ptr, align 8
+          %outWrite = alloca ptr, align 8
+          %hPC = alloca ptr, align 8
+          store ptr null, ptr %inRead
+          store ptr null, ptr %inWrite
+          store ptr null, ptr %outRead
+          store ptr null, ptr %outWrite
+          store ptr null, ptr %hPC
+          call i32 @CreatePipe(ptr %inRead, ptr %inWrite, ptr null, i32 0)
+          call i32 @CreatePipe(ptr %outRead, ptr %outWrite, ptr null, i32 0)
+          %r16 = shl i32 %rows, 16
+          %c16 = and i32 %cols, 65535
+          %coord = or i32 %r16, %c16
+          %inR = load ptr, ptr %inRead
+          %outW = load ptr, ptr %outWrite
+          %hr = call i32 @CreatePseudoConsole(i32 %coord, ptr %inR, ptr %outW, i32 0, ptr %hPC)
+          %pcOk = icmp eq i32 %hr, 0
+          br i1 %pcOk, label %pc_success, label %alloc_desc
+        pc_success:
+          call i32 @CloseHandle(ptr %inR)
+          call i32 @CloseHandle(ptr %outW)
+          br label %alloc_desc
+        alloc_desc:
+          %desc = call ptr @malloc(i64 32)
+          %inW = load ptr, ptr %inWrite
+          %outR = load ptr, ptr %outRead
+          %pc = load ptr, ptr %hPC
+          %inW64 = ptrtoint ptr %inW to i64
+          %outR64 = ptrtoint ptr %outR to i64
+          %pc64 = ptrtoint ptr %pc to i64
+          %p0 = getelementptr inbounds i64, ptr %desc, i64 0
+          %p1p = getelementptr inbounds i64, ptr %desc, i64 1
+          %p2p = getelementptr inbounds i64, ptr %desc, i64 2
+          %p3p = getelementptr inbounds i64, ptr %desc, i64 3
+          store i64 %inW64, ptr %p0
+          store i64 %outR64, ptr %p1p
+          store i64 0, ptr %p2p
+          store i64 %pc64, ptr %p3p
+          %desc64 = ptrtoint ptr %desc to i64
+          ret i64 %desc64
+        }
+
+        define internal i64 @zuv_pty_spawn(ptr %cmd, i32 %cols, i32 %rows) {
+        entry:
+          %p64 = call i64 @zuv_pty_open(i32 %cols, i32 %rows)
+          %pPtr = inttoptr i64 %p64 to ptr
+          %pcPtr = getelementptr inbounds i64, ptr %pPtr, i64 3
+          %pc64 = load i64, ptr %pcPtr
+          %hasPC = icmp ne i64 %pc64, 0
+          br i1 %hasPC, label %spawn_conpty, label %done
+        spawn_conpty:
+          %pcHandle = inttoptr i64 %pc64 to ptr
+          %attrSize = alloca i64, align 8
+          store i64 0, ptr %attrSize
+          call i32 @InitializeProcThreadAttributeList(ptr null, i32 1, i32 0, ptr %attrSize)
+          %size = load i64, ptr %attrSize
+          %attrList = call ptr @malloc(i64 %size)
+          call i32 @InitializeProcThreadAttributeList(ptr %attrList, i32 1, i32 0, ptr %attrSize)
+          %pcVar = alloca ptr, align 8
+          store ptr %pcHandle, ptr %pcVar
+          call i32 @UpdateProcThreadAttribute(ptr %attrList, i32 0, i64 131094, ptr %pcVar, i64 8, ptr null, ptr null)
+          %siEx = alloca [112 x i8], align 8
+          call ptr @memset(ptr %siEx, i32 0, i64 112)
+          store i32 112, ptr %siEx
+          %attrField = getelementptr inbounds i8, ptr %siEx, i64 104
+          store ptr %attrList, ptr %attrField
+          %pi = alloca [24 x i8], align 8
+          call ptr @memset(ptr %pi, i32 0, i64 24)
+          %cpOk = call i32 @CreateProcessA(ptr null, ptr %cmd, ptr null, ptr null, i32 0, i32 524288, ptr null, ptr null, ptr %siEx, ptr %pi)
+          call void @DeleteProcThreadAttributeList(ptr %attrList)
+          call void @free(ptr %attrList)
+          %isOk = icmp ne i32 %cpOk, 0
+          br i1 %isOk, label %save_proc, label %done
+        save_proc:
+          %hProc = load ptr, ptr %pi
+          %hProc64 = ptrtoint ptr %hProc to i64
+          %procField = getelementptr inbounds i64, ptr %pPtr, i64 2
+          store i64 %hProc64, ptr %procField
+          %hThrdPtr = getelementptr inbounds i8, ptr %pi, i64 8
+          %hThrd = load ptr, ptr %hThrdPtr
+          call i32 @CloseHandle(ptr %hThrd)
+          br label %done
+        done:
+          ret i64 %p64
+        }
+
+        define internal i64 @zuv_pty_write(i64 %h, ptr %data) {
+        entry:
+          %cmpZ = icmp eq i64 %h, 0
+          br i1 %cmpZ, label %ret_zero, label %do_write
+        do_write:
+          %rawI64 = and i64 %h, -281474976710657
+          %desc = inttoptr i64 %rawI64 to ptr
+          %inW64 = load i64, ptr %desc
+          %inW = inttoptr i64 %inW64 to ptr
+          %len = call i64 @strlen(ptr %data)
+          %len32 = trunc i64 %len to i32
+          %written = alloca i32, align 4
+          store i32 0, ptr %written
+          call i32 @WriteFile(ptr %inW, ptr %data, i32 %len32, ptr %written, ptr null)
+          %w = load i32, ptr %written
+          %w64 = zext i32 %w to i64
+          ret i64 %w64
+        ret_zero:
+          ret i64 0
+        }
+
+        define internal ptr @zuv_pty_read(i64 %h, i32 %maxLen) {
+        entry:
+          %cmpZ = icmp eq i64 %h, 0
+          br i1 %cmpZ, label %ret_empty, label %check_pipe
+        check_pipe:
+          %rawI64 = and i64 %h, -281474976710657
+          %desc = inttoptr i64 %rawI64 to ptr
+          %outRField = getelementptr inbounds i64, ptr %desc, i64 1
+          %outR64 = load i64, ptr %outRField
+          %outR = inttoptr i64 %outR64 to ptr
+          %avail = alloca i32, align 4
+          store i32 0, ptr %avail
+          call i32 @PeekNamedPipe(ptr %outR, ptr null, i32 0, ptr null, ptr %avail, ptr null)
+          %av = load i32, ptr %avail
+          %hasData = icmp sgt i32 %av, 0
+          br i1 %hasData, label %do_read, label %ret_empty
+        do_read:
+          %cmpMin = icmp slt i32 %av, %maxLen
+          %toRead = select i1 %cmpMin, i32 %av, i32 %maxLen
+          %toRead64 = zext i32 %toRead to i64
+          %allocSize = add i64 %toRead64, 1
+          %buf = call ptr @malloc(i64 %allocSize)
+          %readBytes = alloca i32, align 4
+          store i32 0, ptr %readBytes
+          call i32 @ReadFile(ptr %outR, ptr %buf, i32 %toRead, ptr %readBytes, ptr null)
+          %rb = load i32, ptr %readBytes
+          %rb64 = zext i32 %rb to i64
+          %nullByte = getelementptr inbounds i8, ptr %buf, i64 %rb64
+          store i8 0, ptr %nullByte
+          ret ptr %buf
+        ret_empty:
+          ret ptr @zuv_term_str_empty
+        }
+
+        define internal double @zuv_pty_resize(i64 %h, i32 %cols, i32 %rows) {
+        entry:
+          %cmpZ = icmp eq i64 %h, 0
+          br i1 %cmpZ, label %done, label %do_resize
+        do_resize:
+          %rawI64 = and i64 %h, -281474976710657
+          %desc = inttoptr i64 %rawI64 to ptr
+          %pcField = getelementptr inbounds i64, ptr %desc, i64 3
+          %pc64 = load i64, ptr %pcField
+          %hasPC = icmp ne i64 %pc64, 0
+          br i1 %hasPC, label %call_resize, label %done
+        call_resize:
+          %pcHandle = inttoptr i64 %pc64 to ptr
+          %r16 = shl i32 %rows, 16
+          %c16 = and i32 %cols, 65535
+          %coord = or i32 %r16, %c16
+          call i32 @ResizePseudoConsole(ptr %pcHandle, i32 %coord)
+          br label %done
+        done:
+          ret double 0.0
+        }
+
+        define internal double @zuv_pty_close(i64 %h) {
+        entry:
+          %cmpZ = icmp eq i64 %h, 0
+          br i1 %cmpZ, label %done, label %do_close
+        do_close:
+          %rawI64 = and i64 %h, -281474976710657
+          %desc = inttoptr i64 %rawI64 to ptr
+          %p0 = getelementptr inbounds i64, ptr %desc, i64 0
+          %p1 = getelementptr inbounds i64, ptr %desc, i64 1
+          %p2 = getelementptr inbounds i64, ptr %desc, i64 2
+          %p3 = getelementptr inbounds i64, ptr %desc, i64 3
+          %inW64 = load i64, ptr %p0
+          %outR64 = load i64, ptr %p1
+          %proc64 = load i64, ptr %p2
+          %pc64 = load i64, ptr %p3
+          %hasIn = icmp ne i64 %inW64, 0
+          br i1 %hasIn, label %close_in, label %check_out
+        close_in:
+          %inH = inttoptr i64 %inW64 to ptr
+          call i32 @CloseHandle(ptr %inH)
+          br label %check_out
+        check_out:
+          %hasOut = icmp ne i64 %outR64, 0
+          br i1 %hasOut, label %close_out, label %check_pc
+        close_out:
+          %outH = inttoptr i64 %outR64 to ptr
+          call i32 @CloseHandle(ptr %outH)
+          br label %check_pc
+        check_pc:
+          %hasPC = icmp ne i64 %pc64, 0
+          br i1 %hasPC, label %close_pc, label %check_proc
+        close_pc:
+          %pcH = inttoptr i64 %pc64 to ptr
+          call void @ClosePseudoConsole(ptr %pcH)
+          br label %check_proc
+        check_proc:
+          %hasProc = icmp ne i64 %proc64, 0
+          br i1 %hasProc, label %close_proc, label %free_desc
+        close_proc:
+          %procH = inttoptr i64 %proc64 to ptr
+          call i32 @TerminateProcess(ptr %procH, i32 0)
+          call i32 @CloseHandle(ptr %procH)
+          br label %free_desc
+        free_desc:
+          call void @free(ptr %desc)
+          br label %done
+        done:
+          ret double 0.0
+        }
+        `
     },
 
     /**

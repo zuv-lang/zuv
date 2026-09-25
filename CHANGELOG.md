@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### ⚙️ Self-Host Compiler Frontend & Codegen Improvements
+- **Global Object (`glb`)**: Added project-wide global `glb` singleton object supporting cross-function property mutation and retrieval (`tests/glb.test.zv`).
+- **Spread & Rest Parameters**: Added array spread, object literal spread, and variable rest parameter packing/unpacking (`tests/spread_rest.test.zv`).
+- **Terminal & Pseudo-Terminal (PTY)**: Added raw console modes, ANSI styling, screen dimensions, keyboard polling, and Win32 ConPTY process virtualization (`tests/term_pty.test.zv`).
+- **Inter-Process Communication (IPC)**: Added mutexes, semaphores, events, shared memory, memory mapping (`mmap`), and named pipe streams (`tests/ipc.test.zv`).
+- **Networking, Sockets, DNS & HTTP**: Implemented TCP/UDP sockets, DNS resolution, HTTP request/response parsing, and WebSocket intrinsics with dynamic struct offsets (`tests/net_socket.test.zv`).
+- **IEEE-754 Special Values**: Supported `nan`, `inf`, `Infinity` literals, `isNan` (`fcmp uno`), and `isFin` (`fcmp olt`) intrinsics (`tests/nan_inf.test.zv`).
+- **Hardware Math Intrinsics**: Implemented hardware math intrinsics, constants (`PI`, `E`, `SQRT2`), and namespaces (`mth`, `Math`) (`tests/math_intrinsics.test.zv`).
+- **Native Length & Capacity**: Added standalone prefix `ln` and `cap` functions for arrays and strings (`tests/native_i64_task4.test.zv`).
+- **Array Container Writeback**: Added container slot writeback for `PropExpr` and `IndexExpr` on `.psh` / `.push` reallocation (`tests/geometric_growth_task5.test.zv`).
+- **Optional Chaining (`?.`, `?.[ ]`)**: Added null/und guards for property and index access in type checker and codegen (`tests/optional_chain.test.zv`).
 - **User-Defined Decorators**: Added AST-driven, generalized decorator support for class/object decorators, method decorators, parameterized decorator factories, profiling/timing behavior-changing wrappers, and free-function decorators. Supported rest-parameter lambda wrapping, dynamic prototype mutation, and return type propagation (`tests/decorators.test.zv`).
 - **Compound Assignment**: Supported `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `|=`, `^=` with memory store lowering and string `+=` concatenation (`tests/compound_assign.test.zv`).
 - **Base Literals**: Added standalone parser/converter for binary (`0b`), octal (`0o`), and hex (`0x`) numbers before LLVM IR emission (`tests/bases.test.zv`).

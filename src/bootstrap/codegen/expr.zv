@@ -35,6 +35,7 @@ type FuncSignature = {
     name: str;
     retType: str;
     paramTypes: str[];
+    hasRest: bool;
 };
 
 /**
@@ -320,11 +321,12 @@ obj ExprCodegen {
      * @param {str[]} paramTypes - LLVM parameter type strings
      * @returns {void}
      */
-    registerFunc: name: str, retType: str, paramTypes: str[] :: void => {
+    registerFunc: name: str, retType: str, paramTypes: str[], hasRest: bool :: void => {
         self.funcSigs.psh {
             name,
             retType,
-            paramTypes
+            paramTypes,
+            hasRest
         }
     },
 
@@ -344,7 +346,8 @@ obj ExprCodegen {
         emptySig: FuncSignature = {
             name: "",
             retType: "",
-            paramTypes: emptyParams
+            paramTypes: emptyParams,
+            hasRest: false
         }
         -> emptySig
     },
@@ -547,8 +550,38 @@ obj ExprCodegen {
             res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
             -> res
         }
-        if node.name == "time" || node.name == "os" {
+        if node.name == "time" || node.name == "os" || node.name == "mth" || node.name == "Math" {
             res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
+            -> res
+        }
+        if node.name == "PI" {
+            rReg: str = self.codegen.newReg
+            self.codegen.emit `${rReg} = fadd double 0.0, 3.141592653589793`
+            res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+            -> res
+        }
+        if node.name == "E" {
+            rReg: str = self.codegen.newReg
+            self.codegen.emit `${rReg} = fadd double 0.0, 2.718281828459045`
+            res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+            -> res
+        }
+        if node.name == "SQRT2" {
+            rReg: str = self.codegen.newReg
+            self.codegen.emit `${rReg} = fadd double 0.0, 1.4142135623730951`
+            res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+            -> res
+        }
+        if node.name == "nan" {
+            rReg: str = self.codegen.newReg
+            self.codegen.emit `${rReg} = fadd double 0.0, 0x7FF8000000000000`
+            res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+            -> res
+        }
+        if node.name == "inf" || node.name == "Infinity" {
+            rReg: str = self.codegen.newReg
+            self.codegen.emit `${rReg} = fadd double 0.0, 0x7FF0000000000000`
+            res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
             -> res
         }
         if foundSym.reg.ln > 0 {
@@ -562,6 +595,13 @@ obj ExprCodegen {
             ptrReg: str = self.codegen.newReg
             self.codegen.emit `${ptrReg} = inttoptr i64 ${valReg} to ptr`
             res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Arr }
+            -> res
+        }
+        if node.name == "glb" {
+            self.codegen.emitExtern "@zuv_global_glb = global ptr null"
+            valReg: str = self.codegen.newReg
+            self.codegen.emit `${valReg} = load ptr, ptr @zuv_global_glb`
+            res: ExprResult = { reg: valReg, typeKind: TypeKind.Obj }
             -> res
         }
         // Check if bare enum variant name (e.g. Pending, Active, Archived)
@@ -807,6 +847,9 @@ obj ExprCodegen {
                             brk
                         }
                     }
+                }
+                if objTypeName.ln == 0 || !(self.objGen.registry.hasType objTypeName) {
+                    self.objGen.registry.setDynamicFieldType propName, rightRes.typeKind
                 }
                 off: num = self.objGen.registry.getFieldOffset objTypeName, propName
                 if off < 0 {
@@ -1584,6 +1627,1488 @@ obj ExprCodegen {
             -> res
         }
 
+        if calleeName == "net.tcpSock" || calleeName == "tcpSock" {
+            sReg: str = self.codegen.newReg
+            self.codegen.emit `${sReg} = call i64 @zuv_net_sock(i32 2, i32 1, i32 6)`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "net.udpSock" || calleeName == "udpSock" {
+            sReg: str = self.codegen.newReg
+            self.codegen.emit `${sReg} = call i64 @zuv_net_sock(i32 2, i32 2, i32 17)`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "net.setTimeout" || calleeName == "setTimeout") && argRegs.ln >= 2 {
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            mReg: str = argRegs[1]
+            m32: str = self.codegen.newReg
+            if argTypes[1] == TypeKind.Num {
+                self.codegen.emit `${m32} = fptosi double ${mReg} to i32`
+            } els {
+                self.codegen.emit `${m32} = trunc i64 ${mReg} to i32`
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_net_set_timeout(i64 ${sReg}, i32 ${m32})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "net.setNonBlocking" || calleeName == "setNonBlocking") && argRegs.ln >= 2 {
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            mReg: str = argRegs[1]
+            m32: str = self.codegen.newReg
+            if argTypes[1] == TypeKind.Num {
+                self.codegen.emit `${m32} = fptosi double ${mReg} to i32`
+            } els {
+                self.codegen.emit `${m32} = trunc i64 ${mReg} to i32`
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_net_set_nonblocking(i64 ${sReg}, i32 ${m32})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "net.close" || calleeName == "net.cls") && argRegs.ln >= 1 {
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_net_close(i64 ${sReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "dns.lookup" || calleeName == "dns.resolve") && argRegs.ln >= 1 {
+            hPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                hPtr = cReg
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call ptr @zuv_dns_lookup(ptr ${hPtr})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if (calleeName == "dns.reverseLookup" || calleeName == "dns.reverse_lookup") && argRegs.ln >= 1 {
+            ipPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                ipPtr = cReg
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call ptr @zuv_dns_reverse_lookup(ptr ${ipPtr})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if (calleeName == "http.fmtRes" || calleeName == "http.formatResponse") && argRegs.ln >= 3 {
+            stReg: str = argRegs[0]
+            st32: str = self.codegen.newReg
+            if argTypes[0] == TypeKind.Num {
+                self.codegen.emit `${st32} = fptosi double ${stReg} to i32`
+            } els {
+                self.codegen.emit `${st32} = trunc i64 ${stReg} to i32`
+            }
+            ctPtr: str = argRegs[1]
+            if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[1]} to ptr`
+                ctPtr = cReg
+            }
+            bPtr: str = argRegs[2]
+            if argTypes[2] != TypeKind.Str && argTypes[2] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[2]} to ptr`
+                bPtr = cReg
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call ptr @zuv_http_fmt_res(i32 ${st32}, ptr ${ctPtr}, ptr ${bPtr})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if (calleeName == "http.parseReq" || calleeName == "http.parseRequest") && argRegs.ln >= 1 {
+            rPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                rPtr = cReg
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call ptr @zuv_http_parse_req(ptr ${rPtr})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Obj }
+            -> res
+        }
+
+        if (calleeName == "net.tcpSrv" || calleeName == "tcpSrv") && argRegs.ln >= 1 {
+            pReg: str = argRegs[0]
+            p32: str = self.codegen.newReg
+            if argTypes[0] == TypeKind.Num {
+                self.codegen.emit `${p32} = fptosi double ${pReg} to i32`
+            } els {
+                self.codegen.emit `${p32} = trunc i64 ${pReg} to i32`
+            }
+            sReg: str = self.codegen.newReg
+            self.codegen.emit `${sReg} = call i64 @zuv_net_tcp_srv(i32 ${p32})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "net.tcpCli" || calleeName == "tcpCli") && argRegs.ln >= 2 {
+            hPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                hPtr = cReg
+            }
+            pReg: str = argRegs[1]
+            p32: str = self.codegen.newReg
+            if argTypes[1] == TypeKind.Num {
+                self.codegen.emit `${p32} = fptosi double ${pReg} to i32`
+            } els {
+                self.codegen.emit `${p32} = trunc i64 ${pReg} to i32`
+            }
+            sReg: str = self.codegen.newReg
+            self.codegen.emit `${sReg} = call i64 @zuv_net_tcp_cli(ptr ${hPtr}, i32 ${p32})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "net.send" || calleeName == "net.snd") && argRegs.ln >= 2 {
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            dPtr: str = argRegs[1]
+            if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[1]} to ptr`
+                dPtr = cReg
+            }
+            sentReg: str = self.codegen.newReg
+            self.codegen.emit `${sentReg} = call i64 @zuv_net_send(i64 ${sReg}, ptr ${dPtr})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sentReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "net.accept" && argRegs.ln >= 1 {
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            connReg: str = self.codegen.newReg
+            self.codegen.emit `${connReg} = call i64 @zuv_net_accept(i64 ${sReg})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${connReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "net.recv" || calleeName == "net.rcv") && argRegs.ln >= 2 {
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            mReg: str = argRegs[1]
+            m32: str = self.codegen.newReg
+            if argTypes[1] == TypeKind.Num {
+                self.codegen.emit `${m32} = fptosi double ${mReg} to i32`
+            } els {
+                self.codegen.emit `${m32} = trunc i64 ${mReg} to i32`
+            }
+            bufReg: str = self.codegen.newReg
+            self.codegen.emit `${bufReg} = call ptr @zuv_net_recv(i64 ${sReg}, i32 ${m32})`
+            res: ExprResult = { reg: bufReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if (calleeName == "ws.conn" || calleeName == "ws.connect") && argRegs.ln >= 1 {
+            uPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                uPtr = cReg
+            }
+            sReg: str = self.codegen.newReg
+            self.codegen.emit `${sReg} = call i64 @zuv_ws_conn(ptr ${uPtr})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "ws.send" && argRegs.ln >= 2 {
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            mPtr: str = argRegs[1]
+            if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[1]} to ptr`
+                mPtr = cReg
+            }
+            sentReg: str = self.codegen.newReg
+            self.codegen.emit `${sentReg} = call i64 @zuv_ws_send(i64 ${sReg}, ptr ${mPtr})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sentReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "cnt" || calleeName == "contains") && argRegs.ln >= 2 {
+            sPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                sPtr = cReg
+            }
+            subPtr: str = argRegs[1]
+            if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[1]} to ptr`
+                subPtr = cReg
+            }
+            resPtr: str = self.codegen.newReg
+            self.codegen.emitExtern "declare ptr @strstr(ptr, ptr)"
+            self.codegen.emit `${resPtr} = call ptr @strstr(ptr ${sPtr}, ptr ${subPtr})`
+            cmpReg: str = self.codegen.newReg
+            self.codegen.emit `${cmpReg} = icmp ne ptr ${resPtr}, null`
+            res: ExprResult = { reg: cmpReg, typeKind: TypeKind.Bool }
+            -> res
+        }
+
+        if (calleeName == "mmap" || calleeName == "ipc.mmap") && argRegs.ln >= 1 {
+            pPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                pPtr = cReg
+            }
+            lenReg: str = "0"
+            if argRegs.ln >= 2 {
+                lVal: str = argRegs[1]
+                if argTypes[1] == TypeKind.Num {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = fptosi double ${lVal} to i64`
+                    lenReg = conv
+                } els {
+                    lenReg = lVal
+                }
+            }
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = call ptr @zuv_ipc_mmap(ptr ${pPtr}, i64 ${lenReg})`
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${ptrReg} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if (calleeName == "munmap" || calleeName == "ipc.munmap" || calleeName == "ipc.unmap") && argRegs.ln >= 1 {
+            pReg: str = argRegs[0]
+            pPtr: str = pReg
+            if argTypes[0] != TypeKind.Ptr && argTypes[0] != TypeKind.Str {
+                cReg: str = self.codegen.newReg
+                if argTypes[0] == TypeKind.Num {
+                    iReg: str = self.codegen.newReg
+                    self.codegen.emit `${iReg} = fptosi double ${pReg} to i64`
+                    self.codegen.emit `${cReg} = inttoptr i64 ${iReg} to ptr`
+                } els {
+                    self.codegen.emit `${cReg} = inttoptr i64 ${pReg} to ptr`
+                }
+                pPtr = cReg
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_unmap(ptr ${pPtr})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.flush" || calleeName == "ipc.msync") && argRegs.ln >= 1 {
+            pReg: str = argRegs[0]
+            pPtr: str = pReg
+            if argTypes[0] != TypeKind.Ptr && argTypes[0] != TypeKind.Str {
+                cReg: str = self.codegen.newReg
+                if argTypes[0] == TypeKind.Num {
+                    iReg: str = self.codegen.newReg
+                    self.codegen.emit `${iReg} = fptosi double ${pReg} to i64`
+                    self.codegen.emit `${cReg} = inttoptr i64 ${iReg} to ptr`
+                } els {
+                    self.codegen.emit `${cReg} = inttoptr i64 ${pReg} to ptr`
+                }
+                pPtr = cReg
+            }
+            lenReg: str = "0"
+            if argRegs.ln >= 2 {
+                lVal: str = argRegs[1]
+                if argTypes[1] == TypeKind.Num {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = fptosi double ${lVal} to i64`
+                    lenReg = conv
+                } els {
+                    lenReg = lVal
+                }
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_flush(ptr ${pPtr}, i64 ${lenReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "ipc.shm" && argRegs.ln >= 1 {
+            namePtr: str = "null"
+            sizeReg: str = "4096"
+            if argRegs.ln == 1 {
+                sVal: str = argRegs[0]
+                if argTypes[0] == TypeKind.Num {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = fptosi double ${sVal} to i64`
+                    sizeReg = conv
+                } els {
+                    sizeReg = sVal
+                }
+            } els {
+                nPtr: str = argRegs[0]
+                if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                    nPtr = cReg
+                }
+                namePtr = nPtr
+                sVal: str = argRegs[1]
+                if argTypes[1] == TypeKind.Num {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = fptosi double ${sVal} to i64`
+                    sizeReg = conv
+                } els {
+                    sizeReg = sVal
+                }
+            }
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = call ptr @zuv_ipc_shm(ptr ${namePtr}, i64 ${sizeReg})`
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${ptrReg} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if calleeName == "ipc.openShm" && argRegs.ln >= 1 {
+            namePtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                namePtr = cReg
+            }
+            sizeReg: str = "65536"
+            if argRegs.ln >= 2 {
+                sVal: str = argRegs[1]
+                if argTypes[1] == TypeKind.Num {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = fptosi double ${sVal} to i64`
+                    sizeReg = conv
+                } els {
+                    sizeReg = sVal
+                }
+            }
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = call ptr @zuv_ipc_open_shm(ptr ${namePtr}, i64 ${sizeReg})`
+            intReg: str = self.codegen.newReg
+            self.codegen.emit `${intReg} = ptrtoint ptr ${ptrReg} to i64`
+            res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if (calleeName == "ipc.write" || calleeName == "ipc.shmWrite") && argRegs.ln >= 2 {
+            pReg: str = argRegs[0]
+            pPtr: str = pReg
+            if argTypes[0] != TypeKind.Ptr && argTypes[0] != TypeKind.Str {
+                cReg: str = self.codegen.newReg
+                if argTypes[0] == TypeKind.Num {
+                    iReg: str = self.codegen.newReg
+                    self.codegen.emit `${iReg} = fptosi double ${pReg} to i64`
+                    self.codegen.emit `${cReg} = inttoptr i64 ${iReg} to ptr`
+                } els {
+                    self.codegen.emit `${cReg} = inttoptr i64 ${pReg} to ptr`
+                }
+                pPtr = cReg
+            }
+            offReg: str = "0"
+            dataIdx: num = 1
+            if argRegs.ln >= 3 {
+                oVal: str = argRegs[1]
+                if argTypes[1] == TypeKind.Num {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = fptosi double ${oVal} to i64`
+                    offReg = conv
+                } els {
+                    offReg = oVal
+                }
+                dataIdx = 2
+            }
+            dPtr: str = argRegs[dataIdx]
+            if argTypes[dataIdx] != TypeKind.Str && argTypes[dataIdx] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[dataIdx]} to ptr`
+                dPtr = cReg
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call i64 @zuv_ipc_write(ptr ${pPtr}, i64 ${offReg}, ptr ${dPtr})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${resReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.readStr" || calleeName == "ipc.shmReadStr") && argRegs.ln >= 1 {
+            pReg: str = argRegs[0]
+            pPtr: str = pReg
+            if argTypes[0] != TypeKind.Ptr && argTypes[0] != TypeKind.Str {
+                cReg: str = self.codegen.newReg
+                if argTypes[0] == TypeKind.Num {
+                    iReg: str = self.codegen.newReg
+                    self.codegen.emit `${iReg} = fptosi double ${pReg} to i64`
+                    self.codegen.emit `${cReg} = inttoptr i64 ${iReg} to ptr`
+                } els {
+                    self.codegen.emit `${cReg} = inttoptr i64 ${pReg} to ptr`
+                }
+                pPtr = cReg
+            }
+            offReg: str = "0"
+            if argRegs.ln >= 2 {
+                oVal: str = argRegs[1]
+                if argTypes[1] == TypeKind.Num {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = fptosi double ${oVal} to i64`
+                    offReg = conv
+                } els {
+                    offReg = oVal
+                }
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call ptr @zuv_ipc_read_str(ptr ${pPtr}, i64 ${offReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if (calleeName == "ipc.read" || calleeName == "ipc.shmRead") && argRegs.ln >= 2 {
+            pReg: str = argRegs[0]
+            pPtr: str = pReg
+            if argTypes[0] != TypeKind.Ptr && argTypes[0] != TypeKind.Str {
+                cReg: str = self.codegen.newReg
+                if argTypes[0] == TypeKind.Num {
+                    iReg: str = self.codegen.newReg
+                    self.codegen.emit `${iReg} = fptosi double ${pReg} to i64`
+                    self.codegen.emit `${cReg} = inttoptr i64 ${iReg} to ptr`
+                } els {
+                    self.codegen.emit `${cReg} = inttoptr i64 ${pReg} to ptr`
+                }
+                pPtr = cReg
+            }
+            offReg: str = "0"
+            lenIdx: num = 1
+            if argRegs.ln >= 3 {
+                oVal: str = argRegs[1]
+                if argTypes[1] == TypeKind.Num {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = fptosi double ${oVal} to i64`
+                    offReg = conv
+                } els {
+                    offReg = oVal
+                }
+                lenIdx = 2
+            }
+            lVal: str = argRegs[lenIdx]
+            lReg: str = lVal
+            if argTypes[lenIdx] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${lVal} to i64`
+                lReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call ptr @zuv_ipc_read(ptr ${pPtr}, i64 ${offReg}, i64 ${lReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if calleeName == "ipc.mutex" {
+            namePtr: str = "null"
+            if argRegs.ln >= 1 {
+                nPtr: str = argRegs[0]
+                if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                    nPtr = cReg
+                }
+                namePtr = nPtr
+            }
+            hReg: str = self.codegen.newReg
+            self.codegen.emit `${hReg} = call i64 @zuv_ipc_mutex(ptr ${namePtr})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${hReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.lock" || calleeName == "ipc.mutexLock") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_mutex_lock(i64 ${hReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.tryLock" || calleeName == "ipc.mutexTryLock") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_mutex_trylock(i64 ${hReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.unlock" || calleeName == "ipc.mutexUnlock") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_mutex_unlock(i64 ${hReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.sem" || calleeName == "ipc.semaphore") && argRegs.ln >= 1 {
+            namePtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                namePtr = cReg
+            }
+            initReg: str = "0"
+            maxReg: str = "65536"
+            if argRegs.ln >= 2 {
+                iVal: str = argRegs[1]
+                i32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${i32} = fptosi double ${iVal} to i32`
+                } els {
+                    self.codegen.emit `${i32} = trunc i64 ${iVal} to i32`
+                }
+                initReg = i32
+            }
+            if argRegs.ln >= 3 {
+                mVal: str = argRegs[2]
+                m32: str = self.codegen.newReg
+                if argTypes[2] == TypeKind.Num {
+                    self.codegen.emit `${m32} = fptosi double ${mVal} to i32`
+                } els {
+                    self.codegen.emit `${m32} = trunc i64 ${mVal} to i32`
+                }
+                maxReg = m32
+            }
+            hReg: str = self.codegen.newReg
+            self.codegen.emit `${hReg} = call i64 @zuv_ipc_sem(ptr ${namePtr}, i32 ${initReg}, i32 ${maxReg})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${hReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "ipc.semWait" && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            toReg: str = "-1"
+            if argRegs.ln >= 2 {
+                tVal: str = argRegs[1]
+                t32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${t32} = fptosi double ${tVal} to i32`
+                } els {
+                    self.codegen.emit `${t32} = trunc i64 ${tVal} to i32`
+                }
+                toReg = t32
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_sem_wait(i64 ${hReg}, i32 ${toReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "ipc.semTryWait" && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_sem_wait(i64 ${hReg}, i32 0)`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.semPost" || calleeName == "ipc.semRelease") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            cReg: str = "1"
+            if argRegs.ln >= 2 {
+                cVal: str = argRegs[1]
+                c32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${c32} = fptosi double ${cVal} to i32`
+                } els {
+                    self.codegen.emit `${c32} = trunc i64 ${cVal} to i32`
+                }
+                cReg = c32
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_sem_post(i64 ${hReg}, i32 ${cReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "ipc.event" && argRegs.ln >= 1 {
+            namePtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                namePtr = cReg
+            }
+            mrReg: str = "0"
+            isReg: str = "0"
+            if argRegs.ln >= 2 {
+                mVal: str = argRegs[1]
+                m32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${m32} = fptosi double ${mVal} to i32`
+                } els {
+                    self.codegen.emit `${m32} = trunc i64 ${mVal} to i32`
+                }
+                mrReg = m32
+            }
+            if argRegs.ln >= 3 {
+                iVal: str = argRegs[2]
+                i32: str = self.codegen.newReg
+                if argTypes[2] == TypeKind.Num {
+                    self.codegen.emit `${i32} = fptosi double ${iVal} to i32`
+                } els {
+                    self.codegen.emit `${i32} = trunc i64 ${iVal} to i32`
+                }
+                isReg = i32
+            }
+            hReg: str = self.codegen.newReg
+            self.codegen.emit `${hReg} = call i64 @zuv_ipc_event(ptr ${namePtr}, i32 ${mrReg}, i32 ${isReg})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${hReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.eventSet" || calleeName == "ipc.setEvent") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_event_set(i64 ${hReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.eventReset" || calleeName == "ipc.resetEvent") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_event_reset(i64 ${hReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.eventWait" || calleeName == "ipc.wait") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            toReg: str = "-1"
+            if argRegs.ln >= 2 {
+                tVal: str = argRegs[1]
+                t32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${t32} = fptosi double ${tVal} to i32`
+                } els {
+                    self.codegen.emit `${t32} = trunc i64 ${tVal} to i32`
+                }
+                toReg = t32
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_event_wait(i64 ${hReg}, i32 ${toReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.close" || calleeName == "ipc.closeMutex" || calleeName == "ipc.closeSem" || calleeName == "ipc.closeEvent" || calleeName == "ipc.pipeClose") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_ipc_close(i64 ${hReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.pipe" || calleeName == "ipc.pipeServer" || calleeName == "ipc.listenPipe") && argRegs.ln >= 1 {
+            nPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                nPtr = cReg
+            }
+            sReg: str = self.codegen.newReg
+            self.codegen.emit `${sReg} = call i64 @zuv_ipc_pipe_server(ptr ${nPtr})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "ipc.pipeClient" || calleeName == "ipc.connectPipe") && argRegs.ln >= 1 {
+            nPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                nPtr = cReg
+            }
+            sReg: str = self.codegen.newReg
+            self.codegen.emit `${sReg} = call i64 @zuv_ipc_pipe_client(ptr ${nPtr})`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+            res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        // ── Terminal Primitives (`term`) ─────
+        if calleeName == "term.isRaw" || calleeName == "isRaw" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_is_raw()`
+            bReg: str = self.codegen.newReg
+            self.codegen.emit `${bReg} = fcmp one double ${resReg}, 0.0`
+            res: ExprResult = { reg: bReg, typeKind: TypeKind.Bool }
+            -> res
+        }
+
+        if calleeName == "term.hasKey" || calleeName == "hasKey" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_has_key()`
+            bReg: str = self.codegen.newReg
+            self.codegen.emit `${bReg} = fcmp one double ${resReg}, 0.0`
+            res: ExprResult = { reg: bReg, typeKind: TypeKind.Bool }
+            -> res
+        }
+
+        if calleeName == "term.makeRaw" || calleeName == "makeRaw" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_make_raw()`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "term.restore" || calleeName == "restore" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_restore()`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "term.width" || calleeName == "width" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_width()`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "term.height" || calleeName == "height" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_height()`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "term.size" || calleeName == "size" {
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = call ptr @zuv_term_size()`
+            res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if calleeName == "term.readKey" || calleeName == "readKey" {
+            toReg: str = "0"
+            if argRegs.ln >= 1 {
+                tVal: str = argRegs[0]
+                t32: str = self.codegen.newReg
+                if argTypes[0] == TypeKind.Num {
+                    self.codegen.emit `${t32} = fptosi double ${tVal} to i32`
+                } els {
+                    self.codegen.emit `${t32} = trunc i64 ${tVal} to i32`
+                }
+                toReg = t32
+            }
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = call ptr @zuv_term_read_key(i32 ${toReg})`
+            res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if (calleeName == "term.color" || calleeName == "color") && argRegs.ln >= 1 {
+            cPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = inttoptr i64 ${argRegs[0]} to ptr`
+                cPtr = conv
+            }
+            if argRegs.ln == 1 {
+                ptrReg: str = self.codegen.newReg
+                self.codegen.emit `${ptrReg} = call ptr @zuv_term_color_code(ptr ${cPtr})`
+                res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+                -> res
+            } els {
+                tPtr: str = argRegs[1]
+                if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = inttoptr i64 ${argRegs[1]} to ptr`
+                    tPtr = conv
+                }
+                ptrReg: str = self.codegen.newReg
+                self.codegen.emit `${ptrReg} = call ptr @zuv_term_color(ptr ${cPtr}, ptr ${tPtr})`
+                res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+                -> res
+            }
+        }
+
+        if calleeName == "term.reset" || calleeName == "reset" {
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = call ptr @zuv_term_reset()`
+            res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if calleeName == "term.bold" || calleeName == "bold" || calleeName == "term.dim" || calleeName == "dim" || calleeName == "term.italic" || calleeName == "italic" || calleeName == "term.underline" || calleeName == "underline" || calleeName == "term.red" || calleeName == "red" || calleeName == "term.green" || calleeName == "green" || calleeName == "term.yellow" || calleeName == "yellow" || calleeName == "term.blue" || calleeName == "blue" || calleeName == "term.magenta" || calleeName == "magenta" || calleeName == "term.cyan" || calleeName == "cyan" {
+            styleName: str = calleeName
+            if styleName.sub(0, 5) == "term." {
+                styleName = styleName.sub(5, styleName.ln - 5)
+            }
+            if argRegs.ln == 0 {
+                ptrReg: str = self.codegen.newReg
+                self.codegen.emit `${ptrReg} = call ptr @zuv_term_style_code(ptr @zuv_term_code_${styleName})`
+                res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+                -> res
+            } els {
+                tPtr: str = argRegs[0]
+                if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                    conv: str = self.codegen.newReg
+                    self.codegen.emit `${conv} = inttoptr i64 ${argRegs[0]} to ptr`
+                    tPtr = conv
+                }
+                ptrReg: str = self.codegen.newReg
+                self.codegen.emit `${ptrReg} = call ptr @zuv_term_style(ptr @zuv_term_pfx_${styleName}, ptr ${tPtr})`
+                res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+                -> res
+            }
+        }
+
+        if (calleeName == "term.write" || calleeName == "write") && argRegs.ln >= 1 {
+            sPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = inttoptr i64 ${argRegs[0]} to ptr`
+                sPtr = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_write(ptr ${sPtr})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "term.cursorTo" || calleeName == "cursorTo" {
+            xVal: str = "0"
+            yVal: str = "0"
+            if argRegs.ln >= 1 {
+                xVal = argRegs[0]
+            }
+            if argRegs.ln >= 2 {
+                yVal = argRegs[1]
+            }
+            x32: str = self.codegen.newReg
+            if argTypes[0] == TypeKind.Num {
+                self.codegen.emit `${x32} = fptosi double ${xVal} to i32`
+            } els {
+                self.codegen.emit `${x32} = trunc i64 ${xVal} to i32`
+            }
+            y32: str = self.codegen.newReg
+            if argTypes.ln >= 2 && argTypes[1] == TypeKind.Num {
+                self.codegen.emit `${y32} = fptosi double ${yVal} to i32`
+            } els {
+                self.codegen.emit `${y32} = trunc i64 ${yVal} to i32`
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_cursor_to(i32 ${x32}, i32 ${y32})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "term.clear" || calleeName == "clear" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_clear()`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "term.clearLine" || calleeName == "clearLine" {
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_term_clear_line()`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        // ── Pseudo-Terminal Primitives (`pty`) ─────
+        if calleeName == "pty.open" {
+            cReg: str = "80"
+            rReg: str = "24"
+            if argRegs.ln >= 1 {
+                cVal: str = argRegs[0]
+                c32: str = self.codegen.newReg
+                if argTypes[0] == TypeKind.Num {
+                    self.codegen.emit `${c32} = fptosi double ${cVal} to i32`
+                } els {
+                    self.codegen.emit `${c32} = trunc i64 ${cVal} to i32`
+                }
+                cReg = c32
+            }
+            if argRegs.ln >= 2 {
+                rVal: str = argRegs[1]
+                r32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${r32} = fptosi double ${rVal} to i32`
+                } els {
+                    self.codegen.emit `${r32} = trunc i64 ${rVal} to i32`
+                }
+                rReg = r32
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call i64 @zuv_pty_open(i32 ${cReg}, i32 ${rReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if calleeName == "pty.resize" && argRegs.ln >= 3 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            cVal: str = argRegs[1]
+            c32: str = self.codegen.newReg
+            if argTypes[1] == TypeKind.Num {
+                self.codegen.emit `${c32} = fptosi double ${cVal} to i32`
+            } els {
+                self.codegen.emit `${c32} = trunc i64 ${cVal} to i32`
+            }
+            rVal: str = argRegs[2]
+            r32: str = self.codegen.newReg
+            if argTypes[2] == TypeKind.Num {
+                self.codegen.emit `${r32} = fptosi double ${rVal} to i32`
+            } els {
+                self.codegen.emit `${r32} = trunc i64 ${rVal} to i32`
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_pty_resize(i64 ${hReg}, i32 ${c32}, i32 ${r32})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "pty.close" && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_pty_close(i64 ${hReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "pty.spawn" && argRegs.ln >= 1 {
+            cmdPtr: str = argRegs[0]
+            if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = inttoptr i64 ${argRegs[0]} to ptr`
+                cmdPtr = conv
+            }
+            cReg: str = "80"
+            rReg: str = "24"
+            if argRegs.ln >= 2 {
+                cVal: str = argRegs[1]
+                c32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${c32} = fptosi double ${cVal} to i32`
+                } els {
+                    self.codegen.emit `${c32} = trunc i64 ${cVal} to i32`
+                }
+                cReg = c32
+            }
+            if argRegs.ln >= 3 {
+                rVal: str = argRegs[2]
+                r32: str = self.codegen.newReg
+                if argTypes[2] == TypeKind.Num {
+                    self.codegen.emit `${r32} = fptosi double ${rVal} to i32`
+                } els {
+                    self.codegen.emit `${r32} = trunc i64 ${rVal} to i32`
+                }
+                rReg = r32
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call i64 @zuv_pty_spawn(ptr ${cmdPtr}, i32 ${cReg}, i32 ${rReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if (calleeName == "pty.read" || calleeName == "pty.readStr") && argRegs.ln >= 1 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            mlReg: str = "4096"
+            if argRegs.ln >= 2 {
+                mVal: str = argRegs[1]
+                m32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${m32} = fptosi double ${mVal} to i32`
+                } els {
+                    self.codegen.emit `${m32} = trunc i64 ${mVal} to i32`
+                }
+                mlReg = m32
+            }
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = call ptr @zuv_pty_read(i64 ${hReg}, i32 ${mlReg})`
+            res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+            -> res
+        }
+
+        if calleeName == "pty.write" && argRegs.ln >= 2 {
+            hReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${hReg} to i64`
+                hReg = conv
+            }
+            dPtr: str = argRegs[1]
+            if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = inttoptr i64 ${argRegs[1]} to ptr`
+                dPtr = conv
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call i64 @zuv_pty_write(i64 ${hReg}, ptr ${dPtr})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        // ── Time Sleep ─────
+        if (calleeName == "time.sleep" || calleeName == "time.sl" || calleeName == "sleep" || calleeName == "sl") && argRegs.ln >= 1 {
+            msVal: str = argRegs[0]
+            ms32: str = self.codegen.newReg
+            if argTypes[0] == TypeKind.Num {
+                self.codegen.emit `${ms32} = fptosi double ${msVal} to i32`
+            } els {
+                self.codegen.emit `${ms32} = trunc i64 ${msVal} to i32`
+            }
+            self.codegen.emit `call void @Sleep(i32 ${ms32})`
+            res: ExprResult = { reg: "0.0", typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "net.listen" || calleeName == "listen") && argRegs.ln >= 1 {
+            if argTypes[0] == TypeKind.Str && argRegs.ln >= 2 {
+                nPtr: str = argRegs[1]
+                if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[1]} to ptr`
+                    nPtr = cReg
+                }
+                sReg: str = self.codegen.newReg
+                self.codegen.emit `${sReg} = call i64 @zuv_ipc_pipe_server(ptr ${nPtr})`
+                dReg: str = self.codegen.newReg
+                self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+                res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+                -> res
+            }
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            bReg: str = "128"
+            if argRegs.ln >= 2 {
+                bVal: str = argRegs[1]
+                b32: str = self.codegen.newReg
+                if argTypes[1] == TypeKind.Num {
+                    self.codegen.emit `${b32} = fptosi double ${bVal} to i32`
+                } els {
+                    self.codegen.emit `${b32} = trunc i64 ${bVal} to i32`
+                }
+                bReg = b32
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_net_listen(i64 ${sReg}, i32 ${bReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "net.conn" || calleeName == "net.connect" || calleeName == "conn" || calleeName == "connect") && argRegs.ln >= 2 {
+            if argTypes[0] == TypeKind.Str && argTypes[1] == TypeKind.Str {
+                nPtr: str = argRegs[1]
+                sReg: str = self.codegen.newReg
+                self.codegen.emit `${sReg} = call i64 @zuv_ipc_pipe_client(ptr ${nPtr})`
+                dReg: str = self.codegen.newReg
+                self.codegen.emit `${dReg} = sitofp i64 ${sReg} to double`
+                res: ExprResult = { reg: dReg, typeKind: TypeKind.Num }
+                -> res
+            }
+            sReg: str = argRegs[0]
+            if argTypes[0] == TypeKind.Num {
+                conv: str = self.codegen.newReg
+                self.codegen.emit `${conv} = fptosi double ${sReg} to i64`
+                sReg = conv
+            }
+            hPtr: str = argRegs[1]
+            if argTypes[1] != TypeKind.Str && argTypes[1] != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${argRegs[1]} to ptr`
+                hPtr = cReg
+            }
+            pReg: str = "80"
+            if argRegs.ln >= 3 {
+                pVal: str = argRegs[2]
+                p32: str = self.codegen.newReg
+                if argTypes[2] == TypeKind.Num {
+                    self.codegen.emit `${p32} = fptosi double ${pVal} to i32`
+                } els {
+                    self.codegen.emit `${p32} = trunc i64 ${pVal} to i32`
+                }
+                pReg = p32
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @zuv_net_connect(i64 ${sReg}, ptr ${hPtr}, i32 ${pReg})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if calleeName == "ln" && argRegs.ln >= 1 {
+            if argTypes[0] == TypeKind.Str {
+                lenReg: str = self.codegen.newReg
+                self.codegen.emitExtern "declare i64 @strlen(ptr)"
+                self.codegen.emit `${lenReg} = call i64 @strlen(ptr ${argRegs[0]})`
+                res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
+                -> res
+            }
+            arrPtrReg: str = argRegs[0]
+            if !(isPointerType argTypes[0]) {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                arrPtrReg = convReg
+            }
+            lenReg: str = self.arrGen.emitLength arrPtrReg
+            res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if calleeName == "cap" && argRegs.ln >= 1 {
+            arrPtrReg: str = argRegs[0]
+            if !(isPointerType argTypes[0]) {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${argRegs[0]} to ptr`
+                arrPtrReg = convReg
+            }
+            capReg: str = self.arrGen.emitCapacity arrPtrReg
+            res: ExprResult = { reg: capReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if calleeName == "rand" || calleeName == "random" || calleeName == "mth.rand" || calleeName == "Math.rand" {
+            self.codegen.emitExtern "declare i32 @rand()"
+            rReg: str = self.codegen.newReg
+            self.codegen.emit `${rReg} = call i32 @rand()`
+            dReg: str = self.codegen.newReg
+            self.codegen.emit `${dReg} = sitofp i32 ${rReg} to double`
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = fdiv double ${dReg}, 32768.0`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "isNan" || calleeName == "mth.isNan" || calleeName == "Math.isNan") && argRegs.ln >= 1 {
+            dVal: str = argRegs[0]
+            if !(isFloatType argTypes[0]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${dVal} to double`
+                dVal = cReg
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = fcmp uno double ${dVal}, 0.0`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+            -> res
+        }
+
+        if (calleeName == "isFin" || calleeName == "mth.isFin" || calleeName == "Math.isFin") && argRegs.ln >= 1 {
+            dVal: str = argRegs[0]
+            if !(isFloatType argTypes[0]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${dVal} to double`
+                dVal = cReg
+            }
+            self.codegen.emitExtern "declare double @fabs(double)"
+            absReg: str = self.codegen.newReg
+            self.codegen.emit `${absReg} = call double @fabs(double ${dVal})`
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = fcmp olt double ${absReg}, 0x7FF0000000000000`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+            -> res
+        }
+
+        if (calleeName == "abs" || calleeName == "mth.abs" || calleeName == "Math.abs") && argRegs.ln >= 1 {
+            arg0: str = argRegs[0]
+            if isFloatType argTypes[0] {
+                self.codegen.emitExtern "declare double @fabs(double)"
+                resReg: str = self.codegen.newReg
+                self.codegen.emit `${resReg} = call double @fabs(double ${arg0})`
+                res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+                -> res
+            }
+            intArg: str = arg0
+            if argTypes[0] != TypeKind.I64 {
+                iType: str = llvmType argTypes[0]
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = sext ${iType} ${arg0} to i64`
+                intArg = convReg
+            }
+            isNeg: str = self.codegen.newReg
+            self.codegen.emit `${isNeg} = icmp slt i64 ${intArg}, 0`
+            negVal: str = self.codegen.newReg
+            self.codegen.emit `${negVal} = sub i64 0, ${intArg}`
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = select i1 ${isNeg}, i64 ${negVal}, i64 ${intArg}`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+
+        if (calleeName == "min" || calleeName == "mth.min" || calleeName == "Math.min") && argRegs.ln >= 2 {
+            if !(isFloatType argTypes[0]) && !(isFloatType argTypes[1]) {
+                a0: str = argRegs[0]
+                if argTypes[0] != TypeKind.I64 {
+                    it0: str = llvmType argTypes[0]
+                    cReg0: str = self.codegen.newReg
+                    self.codegen.emit `${cReg0} = sext ${it0} ${a0} to i64`
+                    a0 = cReg0
+                }
+                a1: str = argRegs[1]
+                if argTypes[1] != TypeKind.I64 {
+                    it1: str = llvmType argTypes[1]
+                    cReg1: str = self.codegen.newReg
+                    self.codegen.emit `${cReg1} = sext ${it1} ${a1} to i64`
+                    a1 = cReg1
+                }
+                isLess: str = self.codegen.newReg
+                self.codegen.emit `${isLess} = icmp slt i64 ${a0}, ${a1}`
+                resReg: str = self.codegen.newReg
+                self.codegen.emit `${resReg} = select i1 ${isLess}, i64 ${a0}, i64 ${a1}`
+                res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+                -> res
+            }
+            d0: str = argRegs[0]
+            if !(isFloatType argTypes[0]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${d0} to double`
+                d0 = cReg
+            }
+            d1: str = argRegs[1]
+            if !(isFloatType argTypes[1]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${d1} to double`
+                d1 = cReg
+            }
+            self.codegen.emitExtern "declare double @fmin(double, double)"
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @fmin(double ${d0}, double ${d1})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "max" || calleeName == "mth.max" || calleeName == "Math.max") && argRegs.ln >= 2 {
+            if !(isFloatType argTypes[0]) && !(isFloatType argTypes[1]) {
+                a0: str = argRegs[0]
+                if argTypes[0] != TypeKind.I64 {
+                    it0: str = llvmType argTypes[0]
+                    cReg0: str = self.codegen.newReg
+                    self.codegen.emit `${cReg0} = sext ${it0} ${a0} to i64`
+                    a0 = cReg0
+                }
+                a1: str = argRegs[1]
+                if argTypes[1] != TypeKind.I64 {
+                    it1: str = llvmType argTypes[1]
+                    cReg1: str = self.codegen.newReg
+                    self.codegen.emit `${cReg1} = sext ${it1} ${a1} to i64`
+                    a1 = cReg1
+                }
+                isGtr: str = self.codegen.newReg
+                self.codegen.emit `${isGtr} = icmp sgt i64 ${a0}, ${a1}`
+                resReg: str = self.codegen.newReg
+                self.codegen.emit `${resReg} = select i1 ${isGtr}, i64 ${a0}, i64 ${a1}`
+                res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+                -> res
+            }
+            d0: str = argRegs[0]
+            if !(isFloatType argTypes[0]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${d0} to double`
+                d0 = cReg
+            }
+            d1: str = argRegs[1]
+            if !(isFloatType argTypes[1]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${d1} to double`
+                d1 = cReg
+            }
+            self.codegen.emitExtern "declare double @fmax(double, double)"
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @fmax(double ${d0}, double ${d1})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        if (calleeName == "pow" || calleeName == "mth.pow" || calleeName == "Math.pow" ||
+            calleeName == "atan2" || calleeName == "mth.atan2" || calleeName == "Math.atan2") && argRegs.ln >= 2 {
+            fnC: str = (calleeName.cnt "pow") ? "pow" : "atan2"
+            d0: str = argRegs[0]
+            if !(isFloatType argTypes[0]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${d0} to double`
+                d0 = cReg
+            }
+            d1: str = argRegs[1]
+            if !(isFloatType argTypes[1]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${d1} to double`
+                d1 = cReg
+            }
+            self.codegen.emitExtern `declare double @${fnC}(double, double)`
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @${fnC}(double ${d0}, double ${d1})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
+        isUnaryMath: bool = false
+        cFn: str = ""
+        if calleeName == "ceil" || calleeName == "mth.ceil" || calleeName == "Math.ceil" { isUnaryMath = true; cFn = "ceil" }
+        els if calleeName == "floor" || calleeName == "mth.floor" || calleeName == "Math.floor" { isUnaryMath = true; cFn = "floor" }
+        els if calleeName == "round" || calleeName == "mth.round" || calleeName == "Math.round" { isUnaryMath = true; cFn = "round" }
+        els if calleeName == "trunc" || calleeName == "mth.trunc" || calleeName == "Math.trunc" { isUnaryMath = true; cFn = "trunc" }
+        els if calleeName == "sqrt" || calleeName == "mth.sqrt" || calleeName == "Math.sqrt" { isUnaryMath = true; cFn = "sqrt" }
+        els if calleeName == "sin" || calleeName == "mth.sin" || calleeName == "Math.sin" { isUnaryMath = true; cFn = "sin" }
+        els if calleeName == "cos" || calleeName == "mth.cos" || calleeName == "Math.cos" { isUnaryMath = true; cFn = "cos" }
+        els if calleeName == "tan" || calleeName == "mth.tan" || calleeName == "Math.tan" { isUnaryMath = true; cFn = "tan" }
+        els if calleeName == "asin" || calleeName == "mth.asin" || calleeName == "Math.asin" { isUnaryMath = true; cFn = "asin" }
+        els if calleeName == "acos" || calleeName == "mth.acos" || calleeName == "Math.acos" { isUnaryMath = true; cFn = "acos" }
+        els if calleeName == "atan" || calleeName == "mth.atan" || calleeName == "Math.atan" { isUnaryMath = true; cFn = "atan" }
+        els if calleeName == "log" || calleeName == "mth.log" || calleeName == "Math.log" { isUnaryMath = true; cFn = "log" }
+        els if calleeName == "exp" || calleeName == "mth.exp" || calleeName == "Math.exp" { isUnaryMath = true; cFn = "exp" }
+
+        if isUnaryMath && argRegs.ln >= 1 {
+            d0: str = argRegs[0]
+            if !(isFloatType argTypes[0]) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${d0} to double`
+                d0 = cReg
+            }
+            self.codegen.emitExtern `declare double @${cFn}(double)`
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = call double @${cFn}(double ${d0})`
+            res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> res
+        }
+
         if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "inf" || calleeName == "err" {
             fmtStr: str = "%s\n"
             numFmtStr: str = "%lld\n"
@@ -1739,54 +3264,120 @@ obj ExprCodegen {
             userArgsStr: str = ""
             userFirst: bool = true
             uIdx: num = 0
-            fr aReg of argRegs {
-                aType = argTypes[uIdx]
-                expectedLLVM: str = (uIdx < fnSig.paramTypes.ln ? fnSig.paramTypes[uIdx] : "i64")
-                actualLLVM: str = llvmType aType
-                passedReg: str = aReg
-                if expectedLLVM == "i64" && (actualLLVM == "ptr" || aType == TypeKind.Str || aType == TypeKind.Ptr) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = ptrtoint ptr ${aReg} to i64`
-                    passedReg = convReg
-                } els if expectedLLVM == "i64" && (actualLLVM == "i1" || aType == TypeKind.Bool) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = zext i1 ${aReg} to i64`
-                    passedReg = convReg
-                } els if expectedLLVM == "i64" && (actualLLVM == "i32" || aType == TypeKind.I32) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sext i32 ${aReg} to i64`
-                    passedReg = convReg
-                } els if expectedLLVM == "i64" && (actualLLVM == "double" || aType == TypeKind.Num) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = fptosi double ${aReg} to i64`
-                    passedReg = convReg
-                } els if expectedLLVM == "double" && (actualLLVM == "i64" || aType == TypeKind.I64) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i64 ${aReg} to double`
-                    passedReg = convReg
-                } els if expectedLLVM == "double" && (actualLLVM == "i32" || aType == TypeKind.I32) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i32 ${aReg} to double`
-                    passedReg = convReg
-                } els if expectedLLVM == "i32" && (actualLLVM == "i64" || aType == TypeKind.I64) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = trunc i64 ${aReg} to i32`
-                    passedReg = convReg
-                } els if expectedLLVM == "i1" && (actualLLVM == "i64" || aType == TypeKind.I64) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = trunc i64 ${aReg} to i1`
-                    passedReg = convReg
-                } els if expectedLLVM == "ptr" && (actualLLVM == "i64" || aType == TypeKind.I64) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = inttoptr i64 ${aReg} to ptr`
-                    passedReg = convReg
+            if fnSig.hasRest {
+                restIdx: num = fnSig.paramTypes.ln - 1
+                wh uIdx < restIdx {
+                    aReg: str = argRegs[uIdx]
+                    aType = argTypes[uIdx]
+                    expectedLLVM: str = fnSig.paramTypes[uIdx]
+                    actualLLVM: str = llvmType aType
+                    passedReg: str = aReg
+                    if expectedLLVM == "i64" && (actualLLVM == "ptr" || aType == TypeKind.Str || aType == TypeKind.Ptr) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = ptrtoint ptr ${aReg} to i64`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i64" && (actualLLVM == "i1" || aType == TypeKind.Bool) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = zext i1 ${aReg} to i64`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i64" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = sext i32 ${aReg} to i64`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i64" && (actualLLVM == "double" || aType == TypeKind.Num) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = fptosi double ${aReg} to i64`
+                        passedReg = convReg
+                    } els if expectedLLVM == "double" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = sitofp i64 ${aReg} to double`
+                        passedReg = convReg
+                    } els if expectedLLVM == "double" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = sitofp i32 ${aReg} to double`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i32" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = trunc i64 ${aReg} to i32`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i1" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = trunc i64 ${aReg} to i1`
+                        passedReg = convReg
+                    } els if expectedLLVM == "ptr" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = inttoptr i64 ${aReg} to ptr`
+                        passedReg = convReg
+                    }
+                    if !userFirst {
+                        userArgsStr = userArgsStr + ", "
+                    }
+                    userArgsStr = userArgsStr + expectedLLVM + " " + passedReg
+                    userFirst = false
+                    uIdx++
                 }
+                restRegs: str[] = []
+                restTypes: TypeKind[] = []
+                wh uIdx < argRegs.ln {
+                    restRegs.psh argRegs[uIdx]
+                    restTypes.psh argTypes[uIdx]
+                    uIdx++
+                }
+                restArrPtr: str = self.arrGen.emitArrayLit restRegs, restTypes
                 if !userFirst {
                     userArgsStr = userArgsStr + ", "
                 }
-                userArgsStr = userArgsStr + expectedLLVM + " " + passedReg
-                userFirst = false
-                uIdx++
+                userArgsStr = userArgsStr + "ptr " + restArrPtr
+            } els {
+                fr aReg of argRegs {
+                    aType = argTypes[uIdx]
+                    expectedLLVM: str = (uIdx < fnSig.paramTypes.ln ? fnSig.paramTypes[uIdx] : "i64")
+                    actualLLVM: str = llvmType aType
+                    passedReg: str = aReg
+                    if expectedLLVM == "i64" && (actualLLVM == "ptr" || aType == TypeKind.Str || aType == TypeKind.Ptr) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = ptrtoint ptr ${aReg} to i64`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i64" && (actualLLVM == "i1" || aType == TypeKind.Bool) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = zext i1 ${aReg} to i64`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i64" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = sext i32 ${aReg} to i64`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i64" && (actualLLVM == "double" || aType == TypeKind.Num) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = fptosi double ${aReg} to i64`
+                        passedReg = convReg
+                    } els if expectedLLVM == "double" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = sitofp i64 ${aReg} to double`
+                        passedReg = convReg
+                    } els if expectedLLVM == "double" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = sitofp i32 ${aReg} to double`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i32" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = trunc i64 ${aReg} to i32`
+                        passedReg = convReg
+                    } els if expectedLLVM == "i1" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = trunc i64 ${aReg} to i1`
+                        passedReg = convReg
+                    } els if expectedLLVM == "ptr" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = inttoptr i64 ${aReg} to ptr`
+                        passedReg = convReg
+                    }
+                    if !userFirst {
+                        userArgsStr = userArgsStr + ", "
+                    }
+                    userArgsStr = userArgsStr + expectedLLVM + " " + passedReg
+                    userFirst = false
+                    uIdx++
+                }
             }
             if fnSig.retType == "void" {
                 self.codegen.emit `call void @${calleeName}(${userArgsStr})`
@@ -1964,7 +3555,7 @@ obj ExprCodegen {
         targetNode: ASTNode = node.children[0]
         methodName: str = node.name
 
-        if targetNode.kind == NodeKind.IdentExpr && (targetNode.name == "fs" || targetNode.name == "net" || targetNode.name == "os" || targetNode.name == "sys" || targetNode.name == "io" || targetNode.name == "mem") {
+        if targetNode.kind == NodeKind.IdentExpr && (targetNode.name == "fs" || targetNode.name == "net" || targetNode.name == "os" || targetNode.name == "sys" || targetNode.name == "io" || targetNode.name == "mem" || targetNode.name == "dns" || targetNode.name == "http" || targetNode.name == "ws" || targetNode.name == "ipc" || targetNode.name == "time" || targetNode.name == "term" || targetNode.name == "pty") {
             cName: str = targetNode.name + "." + methodName
             cNode: ASTNode = ASTNode.createIdent cName, node.line, node.col
             callChildren: ASTNode[] = [cNode]
@@ -1979,11 +3570,18 @@ obj ExprCodegen {
         }
 
         if methodName == "psh" || methodName == "push" {
-            arrRes: ExprResult = self.emitExpr targetNode
-            valRes: ExprResult = self.emitExpr node.children[1]
             varSlot: str = ""
             varIsI64: bool = false
+            arrPtrReg: str = ""
+
             if targetNode.kind == NodeKind.IdentExpr {
+                arrRes: ExprResult = self.emitExpr targetNode
+                arrPtrReg = arrRes.reg
+                if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${arrRes.reg} to ptr`
+                    arrPtrReg = convReg
+                }
                 foundSym = self.findSymbol targetNode.name
                 if foundSym.isAlloca {
                     varSlot = foundSym.reg
@@ -1991,13 +3589,80 @@ obj ExprCodegen {
                         varIsI64 = true
                     }
                 }
+            } els if targetNode.kind == NodeKind.PropExpr {
+                parentObjNode: ASTNode = targetNode.children[0]
+                parentRes: ExprResult = self.emitExpr parentObjNode
+                parentPtrReg: str = parentRes.reg
+                if !(isPointerType parentRes.typeKind) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${parentRes.reg} to ptr`
+                    parentPtrReg = convReg
+                }
+                structTypeName: str = parentObjNode.typeAnnotation
+                if structTypeName.ln == 0 && parentObjNode.kind == NodeKind.IdentExpr {
+                    targetSym = self.findSymbol parentObjNode.name
+                    if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                        structTypeName = targetSym.typeName
+                    }
+                }
+                if structTypeName.ln == 0 || !(self.objGen.registry.hasType structTypeName) {
+                    fr l of self.objGen.registry.layouts {
+                        if l.hasField targetNode.name {
+                            structTypeName = l.typeName
+                            brk
+                        }
+                    }
+                }
+                off: num = self.objGen.registry.getFieldOffset structTypeName, targetNode.name
+                if off < 0 {
+                    off = 0
+                }
+                propSlot: str = self.codegen.newReg
+                self.codegen.emit `${propSlot} = getelementptr inbounds i64, ptr ${parentPtrReg}, i64 ${off}`
+                varSlot = propSlot
+                varIsI64 = true
+                rawVal: str = self.codegen.newReg
+                self.codegen.emit `${rawVal} = load i64, ptr ${propSlot}`
+                arrPtrReg = self.codegen.newReg
+                self.codegen.emit `${arrPtrReg} = inttoptr i64 ${rawVal} to ptr`
+            } els if targetNode.kind == NodeKind.IndexExpr {
+                outerArrNode: ASTNode = targetNode.children[0]
+                idxNode: ASTNode = targetNode.children[1]
+                outerRes: ExprResult = self.emitExpr outerArrNode
+                idxRes: ExprResult = self.emitExpr idxNode
+                outerPtrReg: str = outerRes.reg
+                if !(isPointerType outerRes.typeKind) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${outerRes.reg} to ptr`
+                    outerPtrReg = convReg
+                }
+                idxReg: str = idxRes.reg
+                if idxRes.typeKind == TypeKind.Num {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = fptosi double ${idxRes.reg} to i64`
+                    idxReg = convReg
+                }
+                elemIdx: str = self.codegen.newReg
+                self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+                elemSlot: str = self.codegen.newReg
+                self.codegen.emit `${elemSlot} = getelementptr inbounds i64, ptr ${outerPtrReg}, i64 ${elemIdx}`
+                varSlot = elemSlot
+                varIsI64 = true
+                rawVal: str = self.codegen.newReg
+                self.codegen.emit `${rawVal} = load i64, ptr ${elemSlot}`
+                arrPtrReg = self.codegen.newReg
+                self.codegen.emit `${arrPtrReg} = inttoptr i64 ${rawVal} to ptr`
+            } els {
+                arrRes: ExprResult = self.emitExpr targetNode
+                arrPtrReg = arrRes.reg
+                if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${arrRes.reg} to ptr`
+                    arrPtrReg = convReg
+                }
             }
-            arrPtrReg: str = arrRes.reg
-            if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
-                convReg: str = self.codegen.newReg
-                self.codegen.emit `${convReg} = inttoptr i64 ${arrRes.reg} to ptr`
-                arrPtrReg = convReg
-            }
+
+            valRes: ExprResult = self.emitExpr node.children[1]
             lenReg: str = self.arrGen.emitPush arrPtrReg, valRes.reg, valRes.typeKind, varSlot, varIsI64
             res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
             -> res
@@ -2439,6 +4104,51 @@ obj ExprCodegen {
             -> res
         }
 
+        // Check for mth / Math constants and properties
+        if targetNode.kind == NodeKind.IdentExpr && (targetNode.name == "mth" || targetNode.name == "Math") {
+            if propName == "PI" {
+                rReg: str = self.codegen.newReg
+                self.codegen.emit `${rReg} = fadd double 0.0, 3.141592653589793`
+                res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+                -> res
+            }
+            if propName == "E" {
+                rReg: str = self.codegen.newReg
+                self.codegen.emit `${rReg} = fadd double 0.0, 2.718281828459045`
+                res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+                -> res
+            }
+            if propName == "SQRT2" {
+                rReg: str = self.codegen.newReg
+                self.codegen.emit `${rReg} = fadd double 0.0, 1.4142135623730951`
+                res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+                -> res
+            }
+            if propName == "nan" {
+                rReg: str = self.codegen.newReg
+                self.codegen.emit `${rReg} = fadd double 0.0, 0x7FF8000000000000`
+                res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+                -> res
+            }
+            if propName == "inf" || propName == "Infinity" {
+                rReg: str = self.codegen.newReg
+                self.codegen.emit `${rReg} = fadd double 0.0, 0x7FF0000000000000`
+                res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+                -> res
+            }
+            if propName == "rand" || propName == "random" {
+                self.codegen.emitExtern "declare i32 @rand()"
+                rReg: str = self.codegen.newReg
+                self.codegen.emit `${rReg} = call i32 @rand()`
+                dReg: str = self.codegen.newReg
+                self.codegen.emit `${dReg} = sitofp i32 ${rReg} to double`
+                resReg: str = self.codegen.newReg
+                self.codegen.emit `${resReg} = fdiv double ${dReg}, 32768.0`
+                res: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+                -> res
+            }
+        }
+
         // Check for enum property access, e.g. Status.Active
         if targetNode.kind == NodeKind.IdentExpr {
             objName: str = targetNode.val
@@ -2536,7 +4246,8 @@ obj ExprCodegen {
             self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
             objPtrReg = convReg
         }
-        valReg: str = self.objGen.emitGetProperty objPtrReg, off, targetPropKind, false
+        isOpt: bool = (node.op == "?.")
+        valReg: str = self.objGen.emitGetProperty objPtrReg, off, targetPropKind, isOpt
         res: ExprResult = { reg: valReg, typeKind: targetPropKind }
         -> res
     },
@@ -2607,6 +4318,56 @@ obj ExprCodegen {
      * @returns {ExprResult} Result descriptor
      */
     emitObjLit: node: ASTNode :: ExprResult => {
+        hasSpread: bool = false
+        fr fEntry of node.fields {
+            if fEntry.isSpread {
+                hasSpread = true
+            }
+        }
+        if hasSpread {
+            objAllocBytes: num = 1024
+            objPtr: str = self.codegen.newReg
+            self.codegen.emit `${objPtr} = call ptr @malloc(i64 ${objAllocBytes})`
+            setReg: str = self.codegen.newReg
+            self.codegen.emit `${setReg} = call ptr @memset(ptr ${objPtr}, i32 0, i64 ${objAllocBytes})`
+
+            childIdx: num = 0
+            fr fEntry of node.fields {
+                if childIdx < node.children.ln {
+                    if fEntry.isSpread {
+                        srcRes: ExprResult = self.emitExpr node.children[childIdx]
+                        srcPtrReg: str = srcRes.reg
+                        if !(isPointerType srcRes.typeKind) {
+                            convReg: str = self.codegen.newReg
+                            self.codegen.emit `${convReg} = inttoptr i64 ${srcRes.reg} to ptr`
+                            srcPtrReg = convReg
+                        }
+                        isNull: str = self.codegen.newReg
+                        self.codegen.emit `${isNull} = icmp eq ptr ${srcPtrReg}, null`
+                        skipLbl: str = self.codegen.newLabel "obj_sp_skip"
+                        cpyLbl: str = self.codegen.newLabel "obj_sp_cpy"
+                        self.codegen.emit `br i1 ${isNull}, label %${skipLbl}, label %${cpyLbl}`
+                        self.codegen.emitLabel cpyLbl
+                        cpyReg: str = self.codegen.newReg
+                        self.codegen.emit `${cpyReg} = call ptr @memcpy(ptr ${objPtr}, ptr ${srcPtrReg}, i64 ${objAllocBytes})`
+                        self.codegen.emit `br label %${skipLbl}`
+                        self.codegen.emitLabel skipLbl
+                    } els {
+                        childRes: ExprResult = self.emitExpr node.children[childIdx]
+                        self.objGen.registry.setDynamicFieldType fEntry.name, childRes.typeKind
+                        offset: num = self.objGen.registry.getFieldOffset "", fEntry.name
+                        boxedVal: str = boxValueToI64 self.codegen, childRes.reg, childRes.typeKind
+                        gepReg: str = self.codegen.newReg
+                        self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${objPtr}, i64 ${offset}`
+                        self.codegen.emit `store i64 ${boxedVal}, ptr ${gepReg}`
+                    }
+                }
+                childIdx++
+            }
+            res: ExprResult = { reg: objPtr, typeKind: TypeKind.Obj }
+            -> res
+        }
+
         fieldNames: str[] = []
         valRegs: str[] = []
         valTypes: TypeKind[] = []

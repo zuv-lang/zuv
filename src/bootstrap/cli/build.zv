@@ -329,6 +329,7 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
         cg.sourceFile = file
         regLayouts = StructLayoutRegistry.create()
         rtGen = RuntimeCodegen.create(cg)
+        rtGen.registry = regLayouts
         extMgr = ExternManager.create()
 
         rtGen.emitAll()
@@ -495,9 +496,13 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
             if topNode.kind == NodeKind.FuncDecl {
                 retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (topNode.typeAnnotation == "str" ? "ptr" : "i64"))
                 pTypes: str[] = []
+                fnHasRest: bool = false
                 fr p of topNode.params {
                     pLLVM: str = "i64"
-                    if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                    if p.isRest {
+                        pLLVM = "ptr"
+                        fnHasRest = true
+                    } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
                         pLLVM = "ptr"
                     } els if p.typeAnnotation == "bool" {
                         pLLVM = "i1"
@@ -508,12 +513,12 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     }
                     pTypes.psh(pLLVM)
                 }
-                exprGen.registerFunc(topNode.name, retLLVM, pTypes)
+                exprGen.registerFunc(topNode.name, retLLVM, pTypes, fnHasRest)
             }
         }
 
         fr extFn of extMgr.functions {
-            exprGen.registerFunc(extFn.name, extFn.retType, extFn.paramTypes)
+            exprGen.registerFunc(extFn.name, extFn.retType, extFn.paramTypes, false)
         }
 
         // Pre-register top-level global variables
@@ -684,30 +689,27 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         }
                     }
 
-                    hasRest: bool = (topNode.params.ln == 1 && topNode.params[0].isRest)
                     retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (topNode.typeAnnotation == "str" ? "ptr" : "i64"))
                     paramsSig: str = ""
-                    if hasRest {
-                        paramsSig = "i64 %arg_a0, i64 %arg_a1, i64 %arg_a2, i64 %arg_a3"
-                    } els {
-                        isFirstP = true
-                        fr p of topNode.params {
-                            pLLVM: str = "i64"
-                            if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
-                                pLLVM = "ptr"
-                            } els if p.typeAnnotation == "bool" {
-                                pLLVM = "i1"
-                            } els if p.typeAnnotation == "i32" {
-                                pLLVM = "i32"
-                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
-                                pLLVM = "double"
-                            }
-                            if !isFirstP {
-                                paramsSig = paramsSig + ", "
-                            }
-                            paramsSig = paramsSig + pLLVM + " %arg_" + p.name
-                            isFirstP = false
+                    isFirstP = true
+                    fr p of topNode.params {
+                        pLLVM: str = "i64"
+                        if p.isRest {
+                            pLLVM = "ptr"
+                        } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                            pLLVM = "ptr"
+                        } els if p.typeAnnotation == "bool" {
+                            pLLVM = "i1"
+                        } els if p.typeAnnotation == "i32" {
+                            pLLVM = "i32"
+                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                            pLLVM = "double"
                         }
+                        if !isFirstP {
+                            paramsSig = paramsSig + ", "
+                        }
+                        paramsSig = paramsSig + pLLVM + " %arg_" + p.name
+                        isFirstP = false
                     }
                     cg.startFunction("define " + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
                     if retLLVM == "void" {
@@ -733,31 +735,13 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         stmtGen.setAsyncFunc(prmReg, prevModeReg)
                     }
 
-                    if hasRest {
-                        rawArr: str = cg.newReg
-                        cg.emit `${rawArr} = call ptr @malloc(i64 48)`
-                        cg.emit `store i64 4, ptr ${rawArr}`
-                        arrPtr: str = cg.newReg
-                        cg.emit `${arrPtr} = getelementptr inbounds i64, ptr ${rawArr}, i64 1`
-                        cg.emit `store i64 4, ptr ${arrPtr}`
-                        gep0: str = cg.newReg
-                        cg.emit `${gep0} = getelementptr inbounds i64, ptr ${arrPtr}, i64 1`
-                        cg.emit `store i64 %arg_a0, ptr ${gep0}`
-                        gep1: str = cg.newReg
-                        cg.emit `${gep1} = getelementptr inbounds i64, ptr ${arrPtr}, i64 2`
-                        cg.emit `store i64 %arg_a1, ptr ${gep1}`
-                        gep2: str = cg.newReg
-                        cg.emit `${gep2} = getelementptr inbounds i64, ptr ${arrPtr}, i64 3`
-                        cg.emit `store i64 %arg_a2, ptr ${gep2}`
-                        gep3: str = cg.newReg
-                        cg.emit `${gep3} = getelementptr inbounds i64, ptr ${arrPtr}, i64 4`
-                        cg.emit `store i64 %arg_a3, ptr ${gep3}`
-                        slotReg: str = cg.newReg
-                        cg.emit `${slotReg} = alloca ptr`
-                        cg.emit `store ptr ${arrPtr}, ptr ${slotReg}`
-                        exprGen.addSymbol(topNode.params[0].name, slotReg, TypeKind.Arr, true, true)
-                    } els {
-                        fr p of topNode.params {
+                    fr p of topNode.params {
+                        if p.isRest {
+                            slotReg: str = cg.newReg
+                            cg.emit `${slotReg} = alloca ptr`
+                            cg.emit `store ptr %arg_${p.name}, ptr ${slotReg}`
+                            exprGen.addSymbol(p.name, slotReg, TypeKind.Arr, true, true)
+                        } els {
                             pLLVM: str = "i64"
                             pKind = TypeKind.Unknown
                             if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
@@ -830,6 +814,11 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
             rtGen.emitInitArgsCall(file)
             rtGen.emitInitCrashHandlerCall()
+            cg.emitExtern("@zuv_global_glb = global ptr null")
+            glbMem: str = cg.newReg
+            cg.emit(`${glbMem} = call ptr @malloc(i64 8192)`)
+            cg.emit(`call ptr @memset(ptr ${glbMem}, i32 0, i64 8192)`)
+            cg.emit(`store ptr ${glbMem}, ptr @zuv_global_glb`)
 
             // 1. Initialize decorated free functions
             fr topNode of prog.children {
@@ -990,6 +979,11 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
             cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
             rtGen.emitInitArgsCall(file)
             rtGen.emitInitCrashHandlerCall()
+            cg.emitExtern("@zuv_global_glb = global ptr null")
+            glbMem: str = cg.newReg
+            cg.emit(`${glbMem} = call ptr @malloc(i64 8192)`)
+            cg.emit(`call ptr @memset(ptr ${glbMem}, i32 0, i64 8192)`)
+            cg.emit(`store ptr ${glbMem}, ptr @zuv_global_glb`)
 
             // 1. Initialize decorated free functions
             fr topNode of prog.children {

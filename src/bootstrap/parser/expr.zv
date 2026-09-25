@@ -475,20 +475,33 @@ ParsePrimary parser: Parser :: ASTNode {
        tok.kind == TokenType.TOK_LOG || tok.kind == TokenType.TOK_WARN ||
        tok.kind == TokenType.TOK_INFO || tok.kind == TokenType.TOK_PANIC ||
        tok.kind == TokenType.TOK_SIZEOF || tok.kind == TokenType.TOK_SZ ||
-       tok.kind == TokenType.TOK_ERR || tok.kind == TokenType.TOK_OK {
+       tok.kind == TokenType.TOK_ERR || tok.kind == TokenType.TOK_OK ||
+       tok.kind == TokenType.TOK_NAN || tok.kind == TokenType.TOK_INFINITY {
         idTok: Token = parser.advance
         identNode = ASTNode.createIdent idTok.val, idTok.line, idTok.col
 
         curTok: Token = parser.cur
+        isMathUnary: bool = (idTok.val == "abs" || idTok.val == "ceil" || idTok.val == "floor" ||
+                             idTok.val == "round" || idTok.val == "trunc" || idTok.val == "sqrt" ||
+                             idTok.val == "sin" || idTok.val == "cos" || idTok.val == "tan" ||
+                             idTok.val == "asin" || idTok.val == "acos" || idTok.val == "atan" ||
+                             idTok.val == "log" || idTok.val == "exp" ||
+                             idTok.val == "isNan" || idTok.val == "isFin")
+        allowMinusArg: bool = isMathUnary && curTok.kind == TokenType.TOK_MINUS
         if !parser.isAtEnd && curTok.line == idTok.line &&
            (curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_STRING ||
             curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
             curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
             curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT || curTok.kind == TokenType.TOK_FN ||
-            curTok.kind == TokenType.TOK_ELLIPSIS) {
+            curTok.kind == TokenType.TOK_NAN || curTok.kind == TokenType.TOK_INFINITY || curTok.kind == TokenType.TOK_INFO ||
+            curTok.kind == TokenType.TOK_ELLIPSIS || allowMinusArg) {
+            argPrec: num = 1
+            if idTok.val != "prnt" && idTok.val != "lg" && idTok.val != "wrn" && idTok.val != "panic" {
+                argPrec = 12
+            }
             args: ASTNode[] = []
             wh true {
-                argExpr: ASTNode = ParseExpression parser, 1
+                argExpr: ASTNode = ParseExpression parser, argPrec
                 args.psh argExpr
                 if parser.matchToken TokenType.TOK_COMMA {
                     // continue
@@ -828,7 +841,7 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
         parser.consume TokenType.TOK_RPAREN, "Expected ')' after call arguments"
         if left.kind == NodeKind.PropExpr {
             target = left.children[0]
-            if target.kind == NodeKind.IdentExpr && (target.name == "fs" || target.name == "net" || target.name == "os" || target.name == "sys" || target.name == "io" || target.name == "Prm" || target.name == "Promise") {
+            if target.kind == NodeKind.IdentExpr && (target.name == "fs" || target.name == "net" || target.name == "os" || target.name == "sys" || target.name == "io" || target.name == "Prm" || target.name == "Promise" || target.name == "mth" || target.name == "Math") {
                 cName: str = target.name + "." + left.name
                 calleeNode = ASTNode.createIdent cName, left.line, left.col
                 -> ASTNode.createCall calleeNode, args, left.line, left.col
@@ -859,10 +872,12 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
         propNode.name = propTok.val
         propNode.children = [left]
 
-        if left.kind == NodeKind.IdentExpr && (left.name == "fs" || left.name == "net" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise" || left.name == "mem" || left.name == "ffi") {
-            curTok: Token = parser.cur
-            allowBracket: bool = (left.name == "Prm" || left.name == "Promise")
-            if !parser.isAtEnd && curTok.line == propTok.line &&
+        curTok: Token = parser.cur
+        isConstProp: bool = (left.name == "mth" || left.name == "Math") && (propTok.val == "PI" || propTok.val == "E" || propTok.val == "SQRT2" || propTok.val == "rand")
+        isOpAfter: bool = curTok.kind != TokenType.TOK_MINUS && curTok.kind != TokenType.TOK_NOT && (IsOperator curTok.kind)
+        allowBracket: bool = (left.name == "Prm" || left.name == "Promise")
+        if left.kind == NodeKind.IdentExpr && !isConstProp && (left.name == "fs" || left.name == "net" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise" || left.name == "mem" || left.name == "ffi" || left.name == "mth" || left.name == "Math" || left.name == "dns" || left.name == "http" || left.name == "ws" || left.name == "ipc" || left.name == "time" || left.name == "term" || left.name == "pty") {
+            if !parser.isAtEnd && curTok.line == propTok.line && !isOpAfter &&
                curTok.kind != TokenType.TOK_SEMICOLON && curTok.kind != TokenType.TOK_EOF &&
                curTok.kind != TokenType.TOK_RPAREN && curTok.kind != TokenType.TOK_RBRACE &&
                curTok.kind != TokenType.TOK_COMMA && curTok.kind != TokenType.TOK_ASSIGN &&

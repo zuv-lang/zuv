@@ -256,6 +256,9 @@ obj StructLayoutRegistry {
             "isMut", "elseBranch", "thenBranch", "level", "symbols"
         ]
         emptyDynTypes: TypeKind[] = []
+        fr f of initialDynFields {
+            emptyDynTypes.psh TypeKind.Unknown
+        }
         emptyEnumNames: str[] = []
         emptyAliasNames: str[] = []
         emptyAliasTargets: str[] = []
@@ -407,14 +410,18 @@ obj StructLayoutRegistry {
         fIdx: num = 0
         fr df of self.dynamicFields {
             if df == fieldName {
-                if fIdx < self.dynamicFieldTypes.ln {
-                    self.dynamicFieldTypes[fIdx] = fieldType
+                wh self.dynamicFieldTypes.ln <= fIdx {
+                    self.dynamicFieldTypes.psh TypeKind.Unknown
                 }
+                self.dynamicFieldTypes[fIdx] = fieldType
                 ->
             }
             fIdx++
         }
         self.dynamicFields.psh fieldName
+        wh self.dynamicFieldTypes.ln < fIdx {
+            self.dynamicFieldTypes.psh TypeKind.Unknown
+        }
         self.dynamicFieldTypes.psh fieldType
     },
 
@@ -596,9 +603,14 @@ obj ObjectCodegen {
             }
         }
         totalBytes: num = (maxOffset == 0) ? 8 : maxOffset * 8
+        if totalBytes < 1024 {
+            totalBytes = 1024
+        }
 
         rawPtr: str = self.codegen.newReg
         self.codegen.emit `${rawPtr} = call ptr @malloc(i64 ${totalBytes})`
+        setReg: str = self.codegen.newReg
+        self.codegen.emit `${setReg} = call ptr @memset(ptr ${rawPtr}, i32 0, i64 ${totalBytes})`
 
         fieldIdx: num = 0
         fr fName of fieldNames {
