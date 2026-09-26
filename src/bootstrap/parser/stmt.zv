@@ -474,7 +474,17 @@ ParseMatchStmt parser: Parser :: ASTNode {
 
         patText: str = ""
         patKind: str = ""
-        if patExpr.kind == NodeKind.PropExpr && patExpr.children.ln > 0 {
+        patVarName: str = patExpr.name
+        if patExpr.name == "ok" || patExpr.name == "err" || patExpr.name == "result_ok" || patExpr.name == "result_err" {
+            patKind = (patExpr.name == "ok" || patExpr.name == "result_ok") ? "ok" : "err"
+            if patExpr.children.ln > 0 {
+                patVarName = patExpr.children[0].name
+                patText = patKind + "(" + patVarName + ")"
+            } els {
+                patVarName = ""
+                patText = patKind
+            }
+        } els if patExpr.kind == NodeKind.PropExpr && patExpr.children.ln > 0 {
             patText = patExpr.children[0].name + "." + patExpr.name
             patKind = patExpr.children[0].name
         } els if patExpr.name == "_" {
@@ -493,7 +503,7 @@ ParseMatchStmt parser: Parser :: ASTNode {
 
         arm: MatchArm = {
             patternKind: patKind,
-            varName: patExpr.name,
+            varName: patVarName,
             litText: patText,
             line: patExpr.line,
             col: patExpr.col

@@ -55,7 +55,8 @@ enum NodeKind {
     TernaryExpr,
     AwaitExpr,
     TypExpr,
-    NewExpr
+    NewExpr,
+    SymExpr
 }
 
 type Param = {
@@ -703,6 +704,136 @@ obj ASTNode {
     toString: :: str => {
         -> NodeKindToStr self.kind
     }
+}
+
+NodeUsesSelf node: ASTNode :: bool {
+    if node.kind == NodeKind.IdentExpr && (node.name == "self" || node.val == "self") {
+        -> true
+    }
+    fr child of node.children {
+        if NodeUsesSelf(child) {
+            -> true
+        }
+    }
+    -> false
+}
+
+NodeUsesAsArray node: ASTNode, varName: str :: bool {
+    if node.kind == NodeKind.MethodCallExpr && node.children.ln > 0 {
+        firstC: ASTNode = node.children[0]
+        if firstC.kind == NodeKind.IdentExpr && firstC.name == varName {
+            mName: str = node.name
+            if mName == "psh" || mName == "push" || mName == "pop" || mName == "pp" || mName == "cat" || mName == "concat" || mName == "cnt" || mName == "contains" || mName == "slc" || mName == "slice" {
+                -> true
+            }
+        }
+    }
+    if node.kind == NodeKind.PropExpr && node.children.ln > 0 {
+        firstC: ASTNode = node.children[0]
+        if firstC.kind == NodeKind.IdentExpr && firstC.name == varName {
+            pName: str = node.name
+            if pName == "ln" || pName == "length" || pName == "cap" || pName == "capacity" {
+                -> true
+            }
+        }
+    }
+    if node.kind == NodeKind.IndexExpr && node.children.ln > 0 {
+        firstC: ASTNode = node.children[0]
+        if firstC.kind == NodeKind.IdentExpr && firstC.name == varName {
+            -> true
+        }
+    }
+    fr child of node.children {
+        if NodeUsesAsArray(child, varName) {
+            -> true
+        }
+    }
+    -> false
+}
+
+FindVarInitType node: ASTNode, varName: str :: str {
+    if node.kind == NodeKind.VarDecl && node.name == varName {
+        if node.typeAnnotation.ln > 0 {
+            -> node.typeAnnotation
+        }
+        if node.children.ln > 0 {
+            initE: ASTNode = node.children[0]
+            if initE.kind == NodeKind.ArrExpr {
+                -> "arr"
+            }
+            if initE.kind == NodeKind.StrExpr || (initE.kind == NodeKind.BinaryExpr && initE.op == "+") {
+                -> "str"
+            }
+            if initE.kind == NodeKind.ObjLitExpr {
+                -> (initE.name.ln > 0 ? initE.name : "obj")
+            }
+            if initE.kind == NodeKind.NumExpr {
+                -> "num"
+            }
+            if initE.kind == NodeKind.BoolExpr {
+                -> "bool"
+            }
+        }
+    }
+    if node.kind == NodeKind.BinaryExpr && node.op == "=" && node.children.ln >= 2 {
+        lhs: ASTNode = node.children[0]
+        rhs: ASTNode = node.children[1]
+        if lhs.kind == NodeKind.IdentExpr && lhs.name == varName {
+            if rhs.kind == NodeKind.ArrExpr {
+                -> "arr"
+            }
+            if rhs.kind == NodeKind.StrExpr || (rhs.kind == NodeKind.BinaryExpr && rhs.op == "+") {
+                -> "str"
+            }
+            if rhs.kind == NodeKind.ObjLitExpr {
+                -> (rhs.name.ln > 0 ? rhs.name : "obj")
+            }
+            if rhs.kind == NodeKind.NumExpr {
+                -> "num"
+            }
+            if rhs.kind == NodeKind.BoolExpr {
+                -> "bool"
+            }
+        }
+    }
+    fr child of node.children {
+        res: str = FindVarInitType(child, varName)
+        if res.ln > 0 {
+            -> res
+        }
+    }
+    -> ""
+}
+
+FindFieldAssignedType node: ASTNode, paramName: str, objName: str, objFields: FieldEntry[] :: str {
+    if node.kind == NodeKind.ObjLitExpr {
+        fr fEntry of node.fields {
+            if fEntry.valStr == paramName {
+                fr f of objFields {
+                    if f.name == fEntry.name {
+                        -> f.valStr
+                    }
+                }
+            }
+        }
+        fr fChild, idx of node.children {
+            if fChild.kind == NodeKind.IdentExpr && fChild.name == paramName && idx < node.fields.ln {
+                fName: str = node.fields[idx].name
+                fr f of objFields {
+                    if f.name == fName {
+                        -> f.valStr
+                    }
+                }
+            }
+        }
+    }
+    fr child of node.children {
+        res: str = FindFieldAssignedType(child, paramName, objName, objFields)
+        if res.ln > 0 {
+            -> res
+        }
+    }
+    -> ""
 }
 
 /**

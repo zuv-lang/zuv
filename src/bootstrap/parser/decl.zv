@@ -161,7 +161,7 @@ ParseParamList parser: Parser :: Param[] {
         }
 
         pTok: Token = parser.cur
-        if pTok.kind == TokenType.TOK_IDENT || pTok.kind == TokenType.TOK_FN || pTok.kind == TokenType.TOK_TYPE_NUM || pTok.kind == TokenType.TOK_TYPE_STR || pTok.kind == TokenType.TOK_TYPE_BOOL {
+        if pTok.kind == TokenType.TOK_IDENT || pTok.kind == TokenType.TOK_FN || pTok.kind == TokenType.TOK_TYPE_NUM || pTok.kind == TokenType.TOK_TYPE_STR || pTok.kind == TokenType.TOK_TYPE_BOOL || pTok.kind == TokenType.TOK_FALSE || pTok.kind == TokenType.TOK_TRUE || pTok.isKeyword {
             parser.advance
         } els {
             pTok = parser.consume TokenType.TOK_IDENT, "Expected parameter identifier"
@@ -365,13 +365,13 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
             cont
         }
 
-        if !(parser.check TokenType.TOK_IDENT) {
+        if !(parser.check TokenType.TOK_IDENT) && !(parser.cur.isKeyword) && parser.cur.kind != TokenType.TOK_FALSE && parser.cur.kind != TokenType.TOK_TRUE {
             errTok: Token = parser.advance
             parser.addError "E0102", "Expected member name in object declaration, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
             cont
         }
 
-        mTok: Token = parser.consume TokenType.TOK_IDENT, "Expected member name in object declaration"
+        mTok: Token = parser.advance
         mName: str = mTok.val
 
         if parser.matchToken TokenType.TOK_COLON {
@@ -408,8 +408,50 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
                     mMatch: ASTNode = ParseMatchStmt parser
                     mNode.children.psh mMatch
                 } els {
-                    mExpr: ASTNode = ParseExpr parser
-                    mNode.children.psh mExpr
+                    hasExplicitReturn: bool = false
+                    off: num = 0
+                    bDepth: num = 0
+                    wh true {
+                        tAhead: Token = parser.peekAhead off
+                        if tAhead.kind == TokenType.TOK_EOF { brk }
+                        if tAhead.kind == TokenType.TOK_LBRACE { bDepth++ }
+                        els if tAhead.kind == TokenType.TOK_RBRACE {
+                            if bDepth == 0 { brk }
+                            bDepth--
+                            if bDepth == 0 { brk }
+                        } els if bDepth == 0 && (tAhead.kind == TokenType.TOK_COMMA || tAhead.kind == TokenType.TOK_SEMICOLON) {
+                            brk
+                        }
+                        if tAhead.kind == TokenType.TOK_ARROW || tAhead.kind == TokenType.TOK_RET {
+                            hasExplicitReturn = true
+                            brk
+                        }
+                        off++
+                    }
+                    if hasExplicitReturn {
+                        mStmts: ASTNode[] = []
+                        wh !(parser.isAtEnd) && !(parser.check TokenType.TOK_RBRACE) {
+                            if (parser.check TokenType.TOK_COMMA) || (parser.check TokenType.TOK_SEMICOLON) {
+                                parser.advance
+                                brk
+                            }
+                            stmt: ASTNode = ParseStatement parser
+                            mStmts.psh stmt
+                            if stmt.kind == NodeKind.RetStmt {
+                                if (parser.check TokenType.TOK_COMMA) || (parser.check TokenType.TOK_SEMICOLON) {
+                                    parser.advance
+                                }
+                                brk
+                            }
+                        }
+                        mBody: ASTNode = ASTNode.createBlock mStmts, mTok.line, mTok.col
+                        mNode.children.psh mBody
+                    } els {
+                        mExpr: ASTNode = ParseExpr parser
+                        retNode: ASTNode = ASTNode.createRet mExpr, mExpr.line, mExpr.col
+                        mBody: ASTNode = ASTNode.createBlock [retNode], mExpr.line, mExpr.col
+                        mNode.children.psh mBody
+                    }
                 }
 
                 parser.exitScope()
@@ -431,7 +473,7 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
             // Shorthand field or method alias
             entry: FieldEntry = {
                 name: mName,
-                valStr: "any",
+                valStr: mName,
                 isSpread: false,
                 line: mTok.line,
                 col: mTok.col
@@ -463,6 +505,14 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
 
     nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected function name identifier"
     name: str = nameTok.val
+    isExtension: bool = false
+    extTypeName: str = ""
+    if parser.matchToken TokenType.TOK_DOT {
+        subNameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected method identifier after '.'"
+        extTypeName = name
+        name = extTypeName + "_" + subNameTok.val
+        isExtension = true
+    }
     prevFnName: str = parser.curFuncName
     parser.curFuncName = name
 
@@ -477,14 +527,30 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
     }
 
     node = ASTNode.createFuncDecl name, returnType, isAsync, isPub, nameTok.line, nameTok.col
-    node.params = params
+    if isExtension {
+        selfParam: Param = {
+            name: "self",
+            typeAnnotation: extTypeName,
+            isRest: false,
+            isOptional: false,
+            line: nameTok.line,
+            col: nameTok.col
+        }
+        allParams: Param[] = [selfParam]
+        fr p of params {
+            allParams.psh p
+        }
+        node.params = allParams
+    } els {
+        node.params = params
+    }
 
-    if params.ln == 0 {
+    if node.params.ln == 0 {
         parser.addZeroArgFunc name
     }
 
     parser.enterScope()
-    fr p of params {
+    fr p of node.params {
         parser.addVar p.name
     }
 

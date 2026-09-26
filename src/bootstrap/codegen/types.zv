@@ -225,6 +225,18 @@ selectCastOp fromKind: TypeKind, toKind: TypeKind :: str {
     if fromKind == toKind {
         -> ""
     }
+    if fromKind == TypeKind.I64 && toKind == TypeKind.Num {
+        -> "sitofp"
+    }
+    if fromKind == TypeKind.I32 && toKind == TypeKind.Num {
+        -> "sitofp"
+    }
+    if fromKind == TypeKind.Num && toKind == TypeKind.I64 {
+        -> "fptosi"
+    }
+    if fromKind == TypeKind.Num && toKind == TypeKind.I32 {
+        -> "fptosi"
+    }
 
     sw fromKind {
         TypeKind.Bool => {

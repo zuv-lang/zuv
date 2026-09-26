@@ -37,7 +37,7 @@ IsFuncDecl parser: Parser :: bool {
         if tok.kind == TokenType.TOK_COLON_COLON || tok.kind == TokenType.TOK_ARROW || tok.kind == TokenType.TOK_FAT_ARROW || tok.kind == TokenType.TOK_LBRACE {
             -> true
         }
-        if tok.kind == TokenType.TOK_SEMICOLON || tok.kind == TokenType.TOK_ASSIGN {
+        if tok.kind == TokenType.TOK_SEMICOLON || tok.kind == TokenType.TOK_ASSIGN || tok.kind == TokenType.TOK_STRING || tok.kind == TokenType.TOK_NUMBER {
             brk
         }
         offset = offset + 1
@@ -75,6 +75,30 @@ ParseProgram parser: Parser :: ASTNode {
         } els if curTok.kind == TokenType.TOK_IDENT && (curTok.val == "type" || curTok.val == "obj" || (curTok.val == "ffi" && (parser.peek.kind == TokenType.TOK_STRING || parser.peek.kind == TokenType.TOK_LBRACE))) {
             declNode: ASTNode = ParseDeclaration parser
             progNode.children.psh declNode
+        } els if curTok.kind == TokenType.TOK_IDENT && parser.peek.kind == TokenType.TOK_DOT && parser.peekAhead(2).kind == TokenType.TOK_IDENT && parser.peekAhead(3).kind == TokenType.TOK_ASSIGN {
+            typeNameTok: Token = parser.advance
+            parser.advance // consume '.'
+            methodTok: Token = parser.advance
+            parser.advance // consume '='
+            targetTok: Token = parser.advance
+            if parser.matchToken TokenType.TOK_SEMICOLON { }
+            mangledName: str = typeNameTok.val + "_" + methodTok.val
+            selfP: Param = {
+                name: "self",
+                typeAnnotation: typeNameTok.val,
+                isRest: false,
+                isOptional: false,
+                line: typeNameTok.line,
+                col: typeNameTok.col
+            }
+            callCallee: ASTNode = ASTNode.createIdent targetTok.val, targetTok.line, targetTok.col
+            callNode: ASTNode = ASTNode.createCall callCallee, [], targetTok.line, targetTok.col
+            retNode: ASTNode = ASTNode.createRet callNode, targetTok.line, targetTok.col
+            bodyBlock: ASTNode = ASTNode.createBlock [retNode], targetTok.line, targetTok.col
+            aliasFn: ASTNode = ASTNode.createFuncDecl mangledName, "", false, false, typeNameTok.line, typeNameTok.col
+            aliasFn.params = [selfP]
+            aliasFn.children = [bodyBlock]
+            progNode.children.psh aliasFn
         } els if curTok.kind == TokenType.TOK_IDENT && IsFuncDecl(parser) {
             declNode: ASTNode = ParseDeclaration parser
             progNode.children.psh declNode

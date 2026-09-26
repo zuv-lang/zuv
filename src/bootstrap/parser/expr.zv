@@ -80,7 +80,7 @@ GetTokenPrecedence kind: TokenType :: num {
         -> 16
     }
     if kind == TokenType.TOK_LPAREN || kind == TokenType.TOK_LBRACKET || kind == TokenType.TOK_DOT || kind == TokenType.TOK_OPT_DOT ||
-       kind == TokenType.TOK_INC || kind == TokenType.TOK_DEC {
+       kind == TokenType.TOK_COLON_COLON || kind == TokenType.TOK_INC || kind == TokenType.TOK_DEC {
         -> 18
     }
     -> 1
@@ -446,10 +446,18 @@ ParsePrimary parser: Parser :: ASTNode {
 
     // Booleans & Nil / Und
     if tok.kind == TokenType.TOK_TRUE {
+        if parser.hasVar tok.val {
+            idTok: Token = parser.advance
+            -> ASTNode.createIdent idTok.val, idTok.line, idTok.col
+        }
         bTok: Token = parser.advance
         -> ASTNode.createBool true, bTok.line, bTok.col
     }
     if tok.kind == TokenType.TOK_FALSE {
+        if parser.hasVar tok.val {
+            idTok: Token = parser.advance
+            -> ASTNode.createIdent idTok.val, idTok.line, idTok.col
+        }
         bTok: Token = parser.advance
         -> ASTNode.createBool false, bTok.line, bTok.col
     }
@@ -478,7 +486,13 @@ ParsePrimary parser: Parser :: ASTNode {
        tok.kind == TokenType.TOK_ERR || tok.kind == TokenType.TOK_OK ||
        tok.kind == TokenType.TOK_NAN || tok.kind == TokenType.TOK_INFINITY {
         idTok: Token = parser.advance
-        identNode = ASTNode.createIdent idTok.val, idTok.line, idTok.col
+        idName: str = idTok.val
+        if idTok.kind == TokenType.TOK_OK {
+            idName = "result_ok"
+        } els if idTok.kind == TokenType.TOK_ERR && (parser.check TokenType.TOK_LPAREN) {
+            idName = "result_err"
+        }
+        identNode = ASTNode.createIdent idName, idTok.line, idTok.col
 
         curTok: Token = parser.cur
         isMathUnary: bool = (idTok.val == "abs" || idTok.val == "ceil" || idTok.val == "floor" ||
@@ -748,6 +762,15 @@ ParsePrefixExpr parser: Parser :: ASTNode {
         -> node
     }
 
+    if tok.kind == TokenType.TOK_SYM {
+        symTok: Token = parser.advance
+        target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        node = ASTNode.createBase NodeKind.SymExpr, symTok.line, symTok.col
+        node.children = [target]
+        node.typeAnnotation = "sym"
+        -> node
+    }
+
     if tok.kind == TokenType.TOK_ELLIPSIS {
         opTok: Token = parser.advance
         pNext: Token = parser.cur
@@ -859,9 +882,9 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
         -> ASTNode.createIndex left, idxExpr, left.line, left.col
     }
 
-    // Postfix Member Access: target.property
-    if opTok.kind == TokenType.TOK_DOT {
-        parser.advance // consume '.'
+    // Postfix Member Access: target.property or target::property
+    if opTok.kind == TokenType.TOK_DOT || opTok.kind == TokenType.TOK_COLON_COLON {
+        parser.advance // consume '.' or '::'
         propTok: Token = parser.cur
         if propTok.kind == TokenType.TOK_IDENT || propTok.isKeyword {
             parser.advance

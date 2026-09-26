@@ -17,7 +17,7 @@
 
 imp str, arr
 imp Token, TokenType frm ../tokens
-imp ASTNode, NodeKind, Param, FieldEntry frm ../ast
+imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../ast
 imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind, IsNumericType, IsIntegerType frm ../types
 imp Diagnostic frm ../diagnostics
 imp Checker, Symbol, Scope frm checker
@@ -348,6 +348,27 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                     expr.inferredType = resKind
                     -> resKind
                 }
+                mangledMethod = typeName + "_" + propName
+                methodSym = checker.resolveSymbol(mangledMethod)
+                if methodSym.name.ln > 0 {
+                    mTypeInfo = checker.resolveType(methodSym.typeName)
+                    retKind = methodSym.typeKind
+                    if mTypeInfo.kind == TypeKind.Func && mTypeInfo.retKind != TypeKind.Unknown {
+                        retKind = mTypeInfo.retKind
+                    }
+                    expr.inferredType = retKind
+                    -> retKind
+                }
+                bareMethodSym = checker.resolveSymbol(propName)
+                if bareMethodSym.name.ln > 0 {
+                    bTypeInfo = checker.resolveType(bareMethodSym.typeName)
+                    retKind = bareMethodSym.typeKind
+                    if bTypeInfo.kind == TypeKind.Func && bTypeInfo.retKind != TypeKind.Unknown {
+                        retKind = bTypeInfo.retKind
+                    }
+                    expr.inferredType = retKind
+                    -> retKind
+                }
                 checker.addError("E0302", "Property '" + propName + "' does not exist on type '" + typeName + "'", expr.line, expr.col, propName.ln, "check member spelling or add field to " + typeName)
                 expr.inferredType = TypeKind.Unknown
                 -> TypeKind.Unknown
@@ -421,9 +442,10 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 expr.inferredType = TypeKind.Void
                 -> TypeKind.Void
             }
-            if calleeName == "ok" {
-                expr.inferredType = TypeKind.Unknown
-                -> TypeKind.Unknown
+            if calleeName == "ok" || calleeName == "result_ok" || calleeName == "result_err" {
+                expr.inferredType = TypeKind.Obj
+                expr.typeAnnotation = "Result"
+                -> TypeKind.Obj
             }
             if calleeName == "sh" || calleeName == "sys" || calleeName == "exec" {
                 expr.inferredType = TypeKind.I64
@@ -600,6 +622,43 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 InferExpression(checker, child)
             }
         }
+        if expr.children.ln > 0 {
+            targetNode = expr.children[0]
+            methodName = expr.name
+            tName = targetNode.typeAnnotation
+            if tName.ln == 0 && targetNode.inferredType == TypeKind.Obj {
+                tName = targetNode.typeAnnotation
+            }
+            if tName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
+                targetSym = checker.resolveSymbol(targetNode.name)
+                if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                    tName = targetSym.typeName
+                } els {
+                    tName = targetNode.name
+                }
+            }
+            if tName.ln > 0 {
+                mangledMethod = tName + "_" + methodName
+                foundFn = checker.resolveSymbol(mangledMethod)
+                if foundFn.name.ln > 0 {
+                    fnT = checker.resolveType(foundFn.typeName)
+                    if fnT.elemType != TypeKind.Unknown {
+                        expr.inferredType = fnT.elemType
+                        expr.typeAnnotation = fnT.elemTypeName
+                        -> fnT.elemType
+                    }
+                }
+            }
+            standaloneFn = checker.resolveSymbol(methodName)
+            if standaloneFn.name.ln > 0 {
+                sfnT = checker.resolveType(standaloneFn.typeName)
+                if sfnT.elemType != TypeKind.Unknown {
+                    expr.inferredType = sfnT.elemType
+                    expr.typeAnnotation = sfnT.elemTypeName
+                    -> sfnT.elemType
+                }
+            }
+        }
         expr.inferredType = TypeKind.Unknown
         -> TypeKind.Unknown
     }
@@ -679,7 +738,16 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             -> TypeKind.I64
         }
         expr.inferredType = TypeKind.Obj
+        expr.typeAnnotation = expr.name
         -> TypeKind.Obj
+    }
+    if k == NodeKind.SymExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        expr.inferredType = TypeKind.I64
+        expr.typeAnnotation = "sym"
+        -> TypeKind.I64
     }
     expr.inferredType = TypeKind.Unknown
     -> TypeKind.Unknown
@@ -858,13 +926,22 @@ InferStatement checker: Checker, stmt: ASTNode :: void {
         if stmt.children.ln > 0 {
             InferExpression(checker, stmt.children[0])
         }
-        isFirstSwChild = true
-        fr child of stmt.children {
-            if isFirstSwChild {
-                isFirstSwChild = false
-            } els {
-                InferStatement(checker, child)
+        caseIdx: num = 0
+        fr arm of stmt.cases {
+            armChildIdx: num = caseIdx + 1
+            if armChildIdx < stmt.children.ln {
+                child = stmt.children[armChildIdx]
+                if (arm.patternKind == "ok" || arm.patternKind == "err") && arm.varName.ln > 0 && arm.varName != "_" {
+                    checker.enterScope()
+                    armSym = Symbol.create(arm.varName, TypeKind.I64, "i64", false, true, checker.currentLevel(), arm.line, arm.col)
+                    checker.defineSymbol(armSym)
+                    InferStatement(checker, child)
+                    checker.exitScope()
+                } els {
+                    InferStatement(checker, child)
+                }
             }
+            caseIdx++
         }
         ->
     }
@@ -905,17 +982,97 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         checker.defineSymbol(ctorSym)
         fr mNode of decl.children {
             retKind = TypeKind.Void
+            retTypeName = mNode.typeAnnotation
             if mNode.typeAnnotation.ln > 0 {
                 retKind = StrToTypeKind(mNode.typeAnnotation)
+            } els {
+                retExpr: ASTNode = ASTNode.createNil(0, 0)
+                fr bChild of mNode.children {
+                    if bChild.kind == NodeKind.BlockStmt {
+                        fr s of bChild.children {
+                            if s.kind == NodeKind.RetStmt && s.children.ln > 0 {
+                                retExpr = s.children[0]
+                            }
+                        }
+                    } els if bChild.kind == NodeKind.RetStmt && bChild.children.ln > 0 {
+                        retExpr = bChild.children[0]
+                    } els if bChild.kind != NodeKind.BlockStmt {
+                        retExpr = bChild
+                    }
+                }
+                if retExpr.kind == NodeKind.PropExpr && retExpr.children.ln > 0 && retExpr.children[0].name == "self" {
+                    fr fEntry of decl.fields {
+                        if fEntry.name == retExpr.name {
+                            retKind = StrToTypeKind(fEntry.valStr)
+                            retTypeName = fEntry.valStr
+                            brk
+                        }
+                    }
+                } els if retExpr.kind == NodeKind.IdentExpr {
+                    if retExpr.name == "self" {
+                        retKind = TypeKind.Obj
+                        retTypeName = decl.name
+                    } els {
+                        vType = FindVarInitType(mNode, retExpr.name)
+                        if vType.ln > 0 {
+                            retKind = StrToTypeKind(vType)
+                            retTypeName = vType
+                        } els if NodeUsesAsArray(mNode, retExpr.name) {
+                            retKind = TypeKind.Arr
+                            retTypeName = "arr"
+                        } els {
+                            fr fEntry of decl.fields {
+                                if fEntry.name == retExpr.name {
+                                    retKind = StrToTypeKind(fEntry.valStr)
+                                    retTypeName = fEntry.valStr
+                                    brk
+                                }
+                            }
+                        }
+                    }
+                } els if retExpr.kind == NodeKind.IndexExpr {
+                    retKind = TypeKind.Obj
+                    retTypeName = decl.name
+                } els if retExpr.kind == NodeKind.ObjLitExpr {
+                    retKind = TypeKind.Obj
+                    retTypeName = (retExpr.name.ln > 0 ? retExpr.name : decl.name)
+                } els if retExpr.kind == NodeKind.ArrExpr {
+                    retKind = TypeKind.Arr
+                    retTypeName = "arr"
+                } els if retExpr.kind == NodeKind.StrExpr || (retExpr.kind == NodeKind.BinaryExpr && retExpr.op == "+") {
+                    retKind = TypeKind.Str
+                    retTypeName = "str"
+                } els if retExpr.kind == NodeKind.NumExpr {
+                    retKind = TypeKind.Num
+                    retTypeName = "num"
+                } els if retExpr.kind == NodeKind.BoolExpr {
+                    retKind = TypeKind.Bool
+                    retTypeName = "bool"
+                }
             }
             paramTypeNames: str[] = []
             fr pItem of mNode.params {
+                if pItem.typeAnnotation.ln == 0 {
+                    fAssigned = FindFieldAssignedType(mNode, pItem.name, decl.name, decl.fields)
+                    if fAssigned.ln > 0 {
+                        pItem.typeAnnotation = fAssigned
+                    } els if NodeUsesAsArray(mNode, pItem.name) {
+                        pItem.typeAnnotation = "arr"
+                    }
+                }
                 paramTypeNames.psh(pItem.typeAnnotation)
             }
             fnTypeName = "fn_" + mNode.name
-            fnTypeInfo = TypeInfo.createFunc(retKind, mNode.typeAnnotation, paramTypeNames)
+            fnTypeInfo = TypeInfo.createFunc(retKind, retTypeName, paramTypeNames)
             fnTypeInfo.name = fnTypeName
             checker.registerType(fnTypeInfo)
+
+            mangledMethodName = decl.name + "_" + mNode.name
+            mMethodSym = Symbol.create(mangledMethodName, TypeKind.Func, fnTypeName, false, true, 0, mNode.line, mNode.col)
+            checker.defineSymbol(mMethodSym)
+            qualMethodName = decl.name + "." + mNode.name
+            qualSym = Symbol.create(qualMethodName, TypeKind.Func, fnTypeName, false, true, 0, mNode.line, mNode.col)
+            checker.defineSymbol(qualSym)
 
             checker.enterScope()
             selfSym = Symbol.create("self", TypeKind.Obj, decl.name, false, true, checker.currentLevel(), mNode.line, mNode.col)

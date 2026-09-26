@@ -9,8 +9,8 @@
 
 imp time
 imp Token frm ../tokens
-imp TypeKind frm ../types
-imp ASTNode, NodeKind frm ../ast
+imp TypeKind, StrToTypeKind frm ../types
+imp ASTNode, NodeKind, NodeUsesSelf, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../ast
 imp Lexer frm ../lexer
 imp Parser frm ../parser/parser
 imp ParseProgram frm ../parser/program
@@ -244,7 +244,6 @@ linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, extraLibs: s
     -> res
 }
 
-
 /**
  * Compiles a Zuv source file into an LLVM IR module or linked executable.
  */
@@ -348,24 +347,94 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                 fr mNode of topNode.children {
                     mangledName: str = topNode.name + "_" + mNode.name
                     mRetType: str = mNode.typeAnnotation
-                    if mRetType.ln == 0 && mNode.children.ln > 0 {
+                    if mRetType.ln == 0 {
                         retExpr: ASTNode = ASTNode.createNil(0, 0)
-                        if mNode.children[0].kind == NodeKind.BlockStmt && mNode.children[0].children.ln > 0 {
-                            lastStmt: ASTNode = mNode.children[0].children[mNode.children[0].children.ln - 1]
-                            if lastStmt.kind == NodeKind.RetStmt && lastStmt.children.ln > 0 {
-                                retExpr = lastStmt.children[0]
+                        if mNode.children.ln > 0 {
+                            if mNode.children[0].kind == NodeKind.BlockStmt && mNode.children[0].children.ln > 0 {
+                                fr blkStmt of mNode.children[0].children {
+                                    if blkStmt.kind == NodeKind.RetStmt && blkStmt.children.ln > 0 {
+                                        retExpr = blkStmt.children[0]
+                                    }
+                                }
+                            } els if mNode.children[0].kind != NodeKind.BlockStmt {
+                                retExpr = mNode.children[0]
                             }
-                        } els if mNode.children[0].kind != NodeKind.BlockStmt {
-                            retExpr = mNode.children[0]
-                        }
-                        if retExpr.kind == NodeKind.StrExpr || (retExpr.kind == NodeKind.BinaryExpr && retExpr.op == "+") {
-                            mRetType = "str"
-                        } els if retExpr.kind == NodeKind.ArrExpr {
-                            mRetType = "arr"
+                            if retExpr.kind == NodeKind.PropExpr && retExpr.children.ln > 0 && retExpr.children[0].name == "self" {
+                                fr fEntry of topNode.fields {
+                                    if fEntry.name == retExpr.name {
+                                        mRetType = fEntry.valStr
+                                        brk
+                                    }
+                                }
+                            } els if retExpr.kind == NodeKind.IdentExpr {
+                                if retExpr.name == "self" {
+                                    mRetType = topNode.name
+                                } els {
+                                    vType: str = FindVarInitType(mNode, retExpr.name)
+                                    if vType.ln > 0 {
+                                        mRetType = vType
+                                    } els if NodeUsesAsArray(mNode, retExpr.name) {
+                                        mRetType = "arr"
+                                    } els {
+                                        fr fEntry of topNode.fields {
+                                            if fEntry.name == retExpr.name {
+                                                mRetType = fEntry.valStr
+                                                brk
+                                            }
+                                        }
+                                    }
+                                }
+                            } els if retExpr.kind == NodeKind.IndexExpr {
+                                mRetType = topNode.name
+                            } els if retExpr.kind == NodeKind.StrExpr || (retExpr.kind == NodeKind.BinaryExpr && retExpr.op == "+") {
+                                mRetType = "str"
+                            } els if retExpr.kind == NodeKind.ArrExpr {
+                                mRetType = "arr"
+                            } els if retExpr.kind == NodeKind.ObjLitExpr {
+                                mRetType = (retExpr.name.ln > 0 ? retExpr.name : topNode.name)
+                            } els if retExpr.kind == NodeKind.NumExpr {
+                                mRetType = "num"
+                            } els if retExpr.kind == NodeKind.BoolExpr {
+                                mRetType = "bool"
+                            }
                         }
                     }
                     synthFn: ASTNode = ASTNode.createFuncDecl mangledName, mRetType, false, false, mNode.line, mNode.col
-                    synthFn.params = mNode.params
+                    usesSelf: bool = NodeUsesSelf(mNode)
+                    synthParams: Param[] = []
+                    if usesSelf {
+                        selfParam: Param = {
+                            name: "self",
+                            typeAnnotation: topNode.name,
+                            isRest: false,
+                            isOptional: false,
+                            line: mNode.line,
+                            col: mNode.col
+                        }
+                        synthParams.psh selfParam
+                    }
+                    fr p of mNode.params {
+                        synthParams.psh p
+                    }
+                    synthFn.params = synthParams
+                    fr p, pIdx of synthFn.params {
+                        if p.name != "self" && p.typeAnnotation.ln == 0 {
+                            fr f of topNode.fields {
+                                if f.name == p.name {
+                                    p.typeAnnotation = f.valStr
+                                    brk
+                                }
+                            }
+                            if p.typeAnnotation.ln == 0 {
+                                fAssigned: str = FindFieldAssignedType(mNode, p.name, topNode.name, topNode.fields)
+                                if fAssigned.ln > 0 {
+                                    p.typeAnnotation = fAssigned
+                                } els if NodeUsesAsArray(mNode, p.name) {
+                                    p.typeAnnotation = "arr"
+                                }
+                            }
+                        }
+                    }
                     if mRetType == "str" && synthFn.params.ln > 0 && synthFn.params[0].typeAnnotation.ln == 0 {
                         synthFn.params[0].typeAnnotation = "str"
                     }
@@ -482,6 +551,11 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     mName: str = topNode.name + "_" + mNode.name
                     exprGen.addMethodMapping mNode.name, mName
                 }
+                fr f of topNode.fields {
+                    if f.valStr.ln > 0 && f.valStr != "str" && f.valStr != "num" && f.valStr != "bool" && f.valStr != "i64" && f.valStr != "i32" && f.valStr != "ptr" && f.valStr != "any" {
+                        exprGen.addMethodMapping f.name, f.valStr
+                    }
+                }
             }
         }
         fr dm of decoratedMethodNames {
@@ -491,10 +565,114 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
             exprGen.decoratedMethods.psh df
         }
 
+        // Infer return types for untyped functions
+        inferPass: num = 0
+        wh inferPass < 3 {
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.FuncDecl && topNode.typeAnnotation.ln == 0 {
+                    hasRet: bool = false
+                    retExprKind: NodeKind = NodeKind.NilExpr
+                    retExprVal: str = ""
+                    retExprName: str = ""
+                    retExprOp: str = ""
+                    retExprTypeAnn: str = ""
+
+                    retNode: ASTNode = ASTNode.createNil(0, 0)
+
+                    if topNode.children.ln > 0 {
+                        body: ASTNode = topNode.children[0]
+                        if body.kind == NodeKind.BlockStmt {
+                            fr s of body.children {
+                                if s.kind == NodeKind.RetStmt {
+                                    hasRet = true
+                                    if s.children.ln > 0 {
+                                        rNode: ASTNode = s.children[0]
+                                        retNode = rNode
+                                        retExprKind = rNode.kind
+                                        retExprVal = rNode.val
+                                        retExprName = rNode.name
+                                        retExprOp = rNode.op
+                                        retExprTypeAnn = rNode.typeAnnotation
+                                        if rNode.kind == NodeKind.CallExpr && rNode.children.ln > 0 {
+                                            calleeNode: ASTNode = rNode.children[0]
+                                            retExprName = calleeNode.name
+                                            if retExprName.ln == 0 {
+                                                retExprName = calleeNode.val
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } els if body.kind == NodeKind.RetStmt {
+                            hasRet = true
+                            if body.children.ln > 0 {
+                                rNode: ASTNode = body.children[0]
+                                retNode = rNode
+                                retExprKind = rNode.kind
+                                retExprVal = rNode.val
+                                retExprName = rNode.name
+                                retExprOp = rNode.op
+                                retExprTypeAnn = rNode.typeAnnotation
+                            }
+                        } els {
+                            hasRet = true
+                            retNode = body
+                            retExprKind = body.kind
+                            retExprVal = body.val
+                            retExprName = body.name
+                            retExprOp = body.op
+                            retExprTypeAnn = body.typeAnnotation
+                        }
+                    }
+
+                    if hasRet {
+                        if retExprKind == NodeKind.StrExpr || (retExprKind == NodeKind.BinaryExpr && retExprOp == "+") {
+                            topNode.typeAnnotation = "str"
+                            if retExprKind == NodeKind.BinaryExpr && retNode.children.ln > 1 {
+                                lhs: ASTNode = retNode.children[0]
+                                rhs: ASTNode = retNode.children[1]
+                                fr p, pIdx of topNode.params {
+                                    if (lhs.kind == NodeKind.IdentExpr && lhs.name == p.name) || (rhs.kind == NodeKind.IdentExpr && rhs.name == p.name) {
+                                        topNode.params[pIdx].typeAnnotation = "str"
+                                    }
+                                }
+                            }
+                        } els if retExprKind == NodeKind.ArrExpr {
+                            topNode.typeAnnotation = "arr"
+                        } els if retExprKind == NodeKind.BoolExpr || retExprOp == "==" || retExprOp == "!=" || retExprOp == "<" || retExprOp == ">" || retExprOp == "<=" || retExprOp == ">=" {
+                            topNode.typeAnnotation = "bool"
+                        } els if retExprKind == NodeKind.ObjLitExpr {
+                            if retExprTypeAnn.ln > 0 {
+                                topNode.typeAnnotation = retExprTypeAnn
+                            }
+                        } els if retExprKind == NodeKind.IdentExpr && retExprName == "self" {
+                            fr p of topNode.params {
+                                if p.name == "self" && p.typeAnnotation.ln > 0 {
+                                    topNode.typeAnnotation = p.typeAnnotation
+                                }
+                            }
+                        } els if retExprKind == NodeKind.CallExpr && retExprName.ln > 0 {
+                            fr otherNode of prog.children {
+                                if otherNode.kind == NodeKind.FuncDecl && otherNode.name == retExprName && otherNode.typeAnnotation.ln > 0 {
+                                    topNode.typeAnnotation = otherNode.typeAnnotation
+                                }
+                            }
+                        }
+                    } els {
+                        if topNode.name != "main" {
+                            topNode.typeAnnotation = "void"
+                        }
+                    }
+                }
+            }
+            inferPass = inferPass + 1
+        }
+
         // Pre-register user function signatures
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
-                retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (topNode.typeAnnotation == "str" ? "ptr" : "i64"))
+                isPtrRet: bool = (topNode.typeAnnotation == "str" || topNode.typeAnnotation == "ptr" || topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") || regLayouts.hasType(topNode.typeAnnotation))
+                retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "double" ? "double" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" ? "i32" : "i64")))))
                 pTypes: str[] = []
                 fnHasRest: bool = false
                 fr p of topNode.params {
@@ -502,7 +680,7 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     if p.isRest {
                         pLLVM = "ptr"
                         fnHasRest = true
-                    } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                    } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") || regLayouts.hasType(p.typeAnnotation) {
                         pLLVM = "ptr"
                     } els if p.typeAnnotation == "bool" {
                         pLLVM = "i1"
@@ -513,12 +691,17 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     }
                     pTypes.psh(pLLVM)
                 }
-                exprGen.registerFunc(topNode.name, retLLVM, pTypes, fnHasRest)
+                fnRetKind: TypeKind = topNode.inferredType
+                if (fnRetKind == TypeKind.Unknown || fnRetKind == TypeKind.Void) && topNode.typeAnnotation.ln > 0 && topNode.typeAnnotation != "void" {
+                    fnRetKind = StrToTypeKind(topNode.typeAnnotation)
+                }
+                exprGen.registerFunc(topNode.name, retLLVM, pTypes, fnHasRest, fnRetKind, topNode.typeAnnotation)
             }
         }
 
         fr extFn of extMgr.functions {
-            exprGen.registerFunc(extFn.name, extFn.retType, extFn.paramTypes, false)
+            extRetKind: TypeKind = StrToTypeKind(extFn.retType)
+            exprGen.registerFunc(extFn.name, extFn.retType, extFn.paramTypes, false, extRetKind, extFn.retType)
         }
 
         // Pre-register top-level global variables
@@ -558,6 +741,9 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                             }
                         } els if cNode.kind == NodeKind.NumExpr {
                             gType = TypeKind.I64
+                        } els if cNode.kind == NodeKind.SymExpr {
+                            gType = TypeKind.I64
+                            gTypeName = "sym"
                         } els if cNode.kind == NodeKind.StrExpr {
                             gType = TypeKind.Str
                         } els if cNode.kind == NodeKind.BoolExpr {
@@ -689,14 +875,15 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         }
                     }
 
-                    retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (topNode.typeAnnotation == "str" ? "ptr" : "i64"))
+                    isPtrRet: bool = (topNode.typeAnnotation == "str" || topNode.typeAnnotation == "ptr" || topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") || regLayouts.hasType(topNode.typeAnnotation))
+                    retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "double" ? "double" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" ? "i32" : "i64")))))
                     paramsSig: str = ""
                     isFirstP = true
                     fr p of topNode.params {
                         pLLVM: str = "i64"
                         if p.isRest {
                             pLLVM = "ptr"
-                        } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                        } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") || regLayouts.hasType(p.typeAnnotation) {
                             pLLVM = "ptr"
                         } els if p.typeAnnotation == "bool" {
                             pLLVM = "i1"
@@ -714,8 +901,22 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     cg.startFunction("define " + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
                     if retLLVM == "void" {
                         stmtGen.setReturnType(TypeKind.Void)
-                    } els if retLLVM == "ptr" && topNode.typeAnnotation == "str" {
-                        stmtGen.setReturnType(TypeKind.Str)
+                    } els if retLLVM == "ptr" {
+                        if topNode.typeAnnotation == "str" {
+                            stmtGen.setReturnType(TypeKind.Str)
+                        } els if topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") {
+                            stmtGen.setReturnType(TypeKind.Arr)
+                        } els if regLayouts.hasType(topNode.typeAnnotation) {
+                            stmtGen.setReturnType(TypeKind.Obj)
+                        } els {
+                            stmtGen.setReturnType(TypeKind.Ptr)
+                        }
+                    } els if retLLVM == "double" {
+                        stmtGen.setReturnType(TypeKind.Num)
+                    } els if retLLVM == "i1" {
+                        stmtGen.setReturnType(TypeKind.Bool)
+                    } els if retLLVM == "i32" {
+                        stmtGen.setReturnType(TypeKind.I32)
                     } els {
                         stmtGen.setReturnType(TypeKind.I64)
                     }
@@ -743,13 +944,16 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                             exprGen.addSymbol(p.name, slotReg, TypeKind.Arr, true, true)
                         } els {
                             pLLVM: str = "i64"
-                            pKind = TypeKind.Unknown
+                            pKind = TypeKind.I64
                             if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
                                 pLLVM = "ptr"
                                 pKind = TypeKind.Str
                             } els if p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
                                 pLLVM = "ptr"
                                 pKind = TypeKind.Arr
+                            } els if regLayouts.hasType(p.typeAnnotation) {
+                                pLLVM = "ptr"
+                                pKind = TypeKind.Obj
                             } els if p.typeAnnotation == "bool" {
                                 pLLVM = "i1"
                                 pKind = TypeKind.Bool

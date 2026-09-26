@@ -635,6 +635,101 @@ obj StmtCodegen {
      * @returns {void}
      */
     emitSw: node: ASTNode :: void => {
+        hasResultArm: bool = false
+        fr arm of node.cases {
+            if arm.patternKind == "ok" || arm.patternKind == "err" {
+                hasResultArm = true
+                brk
+            }
+        }
+
+        if hasResultArm {
+            targetRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            ptrTargetReg: str = targetRes.reg
+            if !(isPointerType targetRes.typeKind) {
+                intTargetReg: str = targetRes.reg
+                if targetRes.typeKind == TypeKind.Num {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = fptosi double ${targetRes.reg} to i64`
+                    intTargetReg = convReg
+                }
+                cPtrReg: str = self.codegen.newReg
+                self.codegen.emit `${cPtrReg} = inttoptr i64 ${intTargetReg} to ptr`
+                ptrTargetReg = cPtrReg
+            }
+
+            tagGep: str = self.codegen.newReg
+            self.codegen.emit `${tagGep} = getelementptr inbounds { i64, i64 }, ptr ${ptrTargetReg}, i32 0, i32 0`
+            tagVal: str = self.codegen.newReg
+            self.codegen.emit `${tagVal} = load i64, ptr ${tagGep}`
+
+            valGep: str = self.codegen.newReg
+            self.codegen.emit `${valGep} = getelementptr inbounds { i64, i64 }, ptr ${ptrTargetReg}, i32 0, i32 1`
+            valVal: str = self.codegen.newReg
+            self.codegen.emit `${valVal} = load i64, ptr ${valGep}`
+
+            okLabel: str = self.codegen.newLabel "match_ok"
+            errLabel: str = self.codegen.newLabel "match_err"
+            endLabel: str = self.codegen.newLabel "match_end"
+
+            isOkReg: str = self.codegen.newReg
+            self.codegen.emit `${isOkReg} = icmp eq i64 ${tagVal}, 1`
+            self.codegen.emit `br i1 ${isOkReg}, label %${okLabel}, label %${errLabel}`
+
+            // OK Arm
+            self.codegen.emitLabel okLabel
+            cIdx: num = 0
+            fr arm of node.cases {
+                if arm.patternKind == "ok" {
+                    savedSyms: num = self.exprGen.symbols.ln
+                    childIdx: num = cIdx + 1
+                    if arm.varName.ln > 0 && arm.varName != "_" {
+                        varSlot: str = self.codegen.newReg
+                        self.codegen.emit `${varSlot} = alloca i64`
+                        self.codegen.emit `store i64 ${valVal}, ptr ${varSlot}`
+                        self.exprGen.addSymbol arm.varName, varSlot, TypeKind.I64, false, true
+                    }
+                    if childIdx < node.children.ln {
+                        self.emitStmt node.children[childIdx]
+                    }
+                    wh self.exprGen.symbols.ln > savedSyms {
+                        self.exprGen.symbols.pp
+                    }
+                    brk
+                }
+                cIdx++
+            }
+            self.codegen.emit `br label %${endLabel}`
+
+            // ERR Arm
+            self.codegen.emitLabel errLabel
+            cIdx = 0
+            fr arm of node.cases {
+                if arm.patternKind == "err" {
+                    savedSyms: num = self.exprGen.symbols.ln
+                    childIdx: num = cIdx + 1
+                    if arm.varName.ln > 0 && arm.varName != "_" {
+                        varSlot: str = self.codegen.newReg
+                        self.codegen.emit `${varSlot} = alloca i64`
+                        self.codegen.emit `store i64 ${valVal}, ptr ${varSlot}`
+                        self.exprGen.addSymbol arm.varName, varSlot, TypeKind.I64, false, true
+                    }
+                    if childIdx < node.children.ln {
+                        self.emitStmt node.children[childIdx]
+                    }
+                    wh self.exprGen.symbols.ln > savedSyms {
+                        self.exprGen.symbols.pp
+                    }
+                    brk
+                }
+                cIdx++
+            }
+            self.codegen.emit `br label %${endLabel}`
+
+            self.codegen.emitLabel endLabel
+            ->
+        }
+
         targetRes: ExprResult = self.exprGen.emitExpr node.children[0]
 
         defaultLbl: str = self.codegen.newLabel "sw_def"
