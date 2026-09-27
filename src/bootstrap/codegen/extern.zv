@@ -12,6 +12,10 @@ imp str, arr
 imp ASTNode, NodeKind, Param frm ../ast
 imp Codegen, StringConstant frm codegen
 
+imp EmitFunctionDecl frm extern/emitFunctionDecl
+imp EmitCRuntimeDecls frm extern/emitCRuntimeDecls
+imp EmitExternDeclNode frm extern/emitExternDeclNode
+
 /**
  * Maps a Zuv or C type annotation to its corresponding LLVM IR type representation.
  *
@@ -161,111 +165,9 @@ obj ExternManager {
      * @param {Codegen} codegen - LLVM module coordinator
      * @returns {str} Formatted declare statement or empty string if already declared
      */
-    emitFunctionDecl: name: str, libName: str, retType: str, paramTypes: str[], isVarArg: bool, codegen: Codegen :: str => {
-        if self.isDeclared name {
-            -> ""
-        }
-        symName: str = "@" + name + "("
-        if codegen.header.cnt symName {
-            self.declaredFuncs.psh name
-            -> ""
-        }
-        self.declaredFuncs.psh name
-        self.addLib libName
-
-        declStr = FormatExternDeclare retType, name, paramTypes, isVarArg
-        codegen.emitExtern declStr
-
-        info = ExternFuncInfo {
-            name: name,
-            libName: libName,
-            retType: retType,
-            paramTypes: paramTypes,
-            isVarArg: isVarArg,
-            rawDecl: declStr
-        }
-        self.functions.psh info
-        -> declStr
-    },
-
-    /**
-     * Emits standard C runtime library declarations required by the Zuv language runtime.
-     *
-     * @param {Codegen} codegen - LLVM module coordinator
-     * @returns {void}
-     */
-    emitCRuntimeDecls: codegen: Codegen :: void => {
-        // Memory management functions
-        self.emitFunctionDecl "malloc", "c", "ptr", ["i64"], false, codegen
-        self.emitFunctionDecl "realloc", "c", "ptr", ["ptr", "i64"], false, codegen
-        self.emitFunctionDecl "free", "c", "void", ["ptr"], false, codegen
-        self.emitFunctionDecl "memcpy", "c", "ptr", ["ptr", "ptr", "i64"], false, codegen
-        self.emitFunctionDecl "memset", "c", "ptr", ["ptr", "i32", "i64"], false, codegen
-        self.emitFunctionDecl "memmove", "c", "ptr", ["ptr", "ptr", "i64"], false, codegen
-
-        // Strings & formatted I/O functions
-        self.emitFunctionDecl "strlen", "c", "i64", ["ptr"], false, codegen
-        self.emitFunctionDecl "strcmp", "c", "i32", ["ptr", "ptr"], false, codegen
-        self.emitFunctionDecl "strncmp", "c", "i32", ["ptr", "ptr", "i64"], false, codegen
-        self.emitFunctionDecl "strstr", "c", "ptr", ["ptr", "ptr"], false, codegen
-        self.emitFunctionDecl "snprintf", "c", "i32", ["ptr", "i64", "ptr"], true, codegen
-        self.emitFunctionDecl "printf", "c", "i32", ["ptr"], true, codegen
-
-        // System & process execution functions
-        self.emitFunctionDecl "exit", "c", "void", ["i32"], false, codegen
-        self.emitFunctionDecl "system", "c", "i32", ["ptr"], false, codegen
-        self.emitFunctionDecl "getenv", "c", "ptr", ["ptr"], false, codegen
-
-        // High-resolution timing
-        self.emitFunctionDecl "QueryPerformanceCounter", "kernel32", "i32", ["ptr"], false, codegen
-        self.emitFunctionDecl "QueryPerformanceFrequency", "kernel32", "i32", ["ptr"], false, codegen
-    },
-
-    /**
-     * Emits foreign function declarations from an ExternDecl AST node (single or multiline block).
-     *
-     * @param {ASTNode} node - ASTNode with kind NodeKind.ExternDecl
-     * @param {Codegen} codegen - LLVM module coordinator
-     * @returns {num} Number of function declarations emitted
-     */
-    emitExternDeclNode: node: ASTNode, codegen: Codegen :: num => {
-        if node.kind != NodeKind.ExternDecl {
-            -> 0
-        }
-        libName = node.val
-        emittedCount = 0
-
-        fr fnChild of node.children {
-            fnName = fnChild.name
-            isWin32IntFn: bool = (fnName == "GetCurrentProcessId" || fnName == "GetSystemMetrics" || fnName == "Sleep" || fnName == "puts")
-            retType = isWin32IntFn ? ((fnChild.typeAnnotation == "void") ? "void" : "i32") : (ToLLVMExternType fnChild.typeAnnotation)
-            paramTypes: str[] = []
-            isVarArg = false
-
-            if isWin32IntFn {
-                fr p of fnChild.params {
-                    pType = (p.typeAnnotation == "str" || p.typeAnnotation == "ptr") ? "ptr" : "i32"
-                    paramTypes.psh pType
-                }
-            } els {
-                fr p of fnChild.params {
-                    if p.isRest {
-                        isVarArg = true
-                    } els {
-                        pType = ToLLVMExternType p.typeAnnotation
-                        paramTypes.psh pType
-                    }
-                }
-            }
-
-            decl = self.emitFunctionDecl fnName, libName, retType, paramTypes, isVarArg, codegen
-            if decl.ln > 0 {
-                emittedCount++
-            }
-        }
-
-        -> emittedCount
-    },
+    emitFunctionDecl: name: str, libName: str, retType: str, paramTypes: str[], isVarArg: bool, codegen: Codegen :: str => EmitFunctionDecl(self, name, libName, retType, paramTypes, isVarArg, codegen),
+    emitCRuntimeDecls: codegen: Codegen :: void => EmitCRuntimeDecls(self, codegen),
+    emitExternDeclNode: node: ASTNode, codegen: Codegen :: num => EmitExternDeclNode(self, node, codegen),
 
     /**
      * Returns the list of registered external library dependencies.

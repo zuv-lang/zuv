@@ -1,0 +1,48 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitFunctionDecl Extern Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/extern/emitFunctionDecl.zv
+ * =============================================================================
+ */
+
+imp Codegen frm ../codegen
+imp ExternManager, ExternFuncInfo, FormatExternDeclare frm ../extern
+
+/**
+ * Emits an external function declaration into the Codegen header and records metadata.
+ *
+ * @param {ExternManager} self - Extern manager instance
+ * @param {str} name - Function symbol name
+ * @param {str} libName - Library file name
+ * @param {str} retType - LLVM return type
+ * @param {str[]} paramTypes - Array of LLVM parameter types
+ * @param {bool} isVarArg - True if variadic
+ * @param {Codegen} codegen - LLVM module coordinator
+ * @returns {str} Formatted declare statement or empty string if already declared
+ */
+EmitFunctionDecl self: ExternManager, name: str, libName: str, retType: str, paramTypes: str[], isVarArg: bool, codegen: Codegen :: str {
+    if self.isDeclared name {
+        -> ""
+    }
+    symName: str = "@" + name + "("
+    if codegen.header.cnt symName {
+        self.declaredFuncs.psh name
+        -> ""
+    }
+    self.declaredFuncs.psh name
+    self.addLib libName
+
+    declStr = FormatExternDeclare retType, name, paramTypes, isVarArg
+    codegen.emitExtern declStr
+
+    info = ExternFuncInfo {
+        name: name,
+        libName: libName,
+        retType: retType,
+        paramTypes: paramTypes,
+        isVarArg: isVarArg,
+        rawDecl: declStr
+    }
+    self.functions.psh info
+    -> declStr
+}

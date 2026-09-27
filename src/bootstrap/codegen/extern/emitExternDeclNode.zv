@@ -1,0 +1,57 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitExternDeclNode Extern Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/extern/emitExternDeclNode.zv
+ * =============================================================================
+ */
+
+imp ASTNode, NodeKind frm ../../ast
+imp Codegen frm ../codegen
+imp ExternManager, ToLLVMExternType frm ../extern
+
+/**
+ * Emits foreign function declarations from an ExternDecl AST node (single or multiline block).
+ *
+ * @param {ExternManager} self - Extern manager instance
+ * @param {ASTNode} node - ASTNode with kind NodeKind.ExternDecl
+ * @param {Codegen} codegen - LLVM module coordinator
+ * @returns {num} Number of function declarations emitted
+ */
+EmitExternDeclNode self: ExternManager, node: ASTNode, codegen: Codegen :: num {
+    if node.kind != NodeKind.ExternDecl {
+        -> 0
+    }
+    libName = node.val
+    emittedCount = 0
+
+    fr fnChild of node.children {
+        fnName = fnChild.name
+        isWin32IntFn: bool = (fnName == "GetCurrentProcessId" || fnName == "GetSystemMetrics" || fnName == "Sleep" || fnName == "puts")
+        retType = isWin32IntFn ? ((fnChild.typeAnnotation == "void") ? "void" : "i32") : (ToLLVMExternType fnChild.typeAnnotation)
+        paramTypes: str[] = []
+        isVarArg = false
+
+        if isWin32IntFn {
+            fr p of fnChild.params {
+                pType = (p.typeAnnotation == "str" || p.typeAnnotation == "ptr") ? "ptr" : "i32"
+                paramTypes.psh pType
+            }
+        } els {
+            fr p of fnChild.params {
+                if p.isRest {
+                    isVarArg = true
+                } els {
+                    pType = ToLLVMExternType p.typeAnnotation
+                    paramTypes.psh pType
+                }
+            }
+        }
+
+        decl = self.emitFunctionDecl fnName, libName, retType, paramTypes, isVarArg, codegen
+        if decl.ln > 0 {
+            emittedCount++
+        }
+    }
+
+    -> emittedCount
+}
