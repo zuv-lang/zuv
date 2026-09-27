@@ -1,0 +1,106 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseNewExpr Expression Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/expr/parseNewExpr.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseObjectLiteral frm parseObjectLiteral
+imp ParseLambda frm parseLambda
+imp ParseExpression frm ../expr
+
+/**
+ * Parses a 'new' instantiation expression (`new TypeName(...)`, `new TypeName{...}`, `new Prm ...`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} NewExpr AST node
+ */
+ParseNewExpr parser: Parser :: ASTNode {
+    newTok: Token = parser.advance // consume 'new'
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type name after 'new'"
+    typeName: str = nameTok.val
+
+    if parser.check TokenType.TOK_LBRACE {
+        objExpr: ASTNode = ParseObjectLiteral parser
+        -> ASTNode.createNew typeName, [objExpr], newTok.line, newTok.col
+    }
+
+    if parser.matchToken TokenType.TOK_LPAREN {
+        args: ASTNode[] = []
+        wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+            arg: ASTNode = ParseExpression parser, 1
+            args.psh arg
+            if parser.matchToken TokenType.TOK_COMMA {
+                cont
+            } els {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_RPAREN, "Expected ')' after constructor arguments"
+        -> ASTNode.createNew typeName, args, newTok.line, newTok.col
+    }
+
+    // Check for lambda parameter list followed by =>: param1, param2 => body
+    isLambda: bool = false
+    off: num = 0
+    curLTok: Token = parser.cur
+    curL: num = curLTok.line
+    wh true {
+        tAhead: Token = parser.peekAhead off
+        if tAhead.kind == TokenType.TOK_EOF || tAhead.kind == TokenType.TOK_SEMICOLON || tAhead.line != curL {
+            brk
+        }
+        if tAhead.kind == TokenType.TOK_FAT_ARROW {
+            isLambda = true
+            brk
+        }
+        off = off + 1
+    }
+
+    if isLambda {
+        paramNames: str[] = []
+        wh true {
+            pTokParam: Token = parser.cur
+            if pTokParam.kind == TokenType.TOK_IDENT || pTokParam.kind == TokenType.TOK_FN {
+                paramNames.psh pTokParam.val
+                parser.advance
+                if parser.matchToken TokenType.TOK_COMMA {
+                    cont
+                } els {
+                    brk
+                }
+            } els {
+                brk
+            }
+        }
+        arrowTok: Token = parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after lambda parameters"
+        lambdaNode: ASTNode = ParseLambda parser, paramNames, nameTok.line, nameTok.col
+        -> ASTNode.createNew typeName, [lambdaNode], newTok.line, newTok.col
+    }
+
+    // Check for juxtaposed constructor arguments on the same line: new User "Charlie", 42
+    cTok: Token = parser.cur
+    if !parser.isAtEnd && cTok.line == nameTok.line &&
+       cTok.kind != TokenType.TOK_SEMICOLON && cTok.kind != TokenType.TOK_RBRACE &&
+       cTok.kind != TokenType.TOK_RPAREN && cTok.kind != TokenType.TOK_RBRACKET &&
+       cTok.kind != TokenType.TOK_COMMA && cTok.kind != TokenType.TOK_ASSIGN &&
+       cTok.kind != TokenType.TOK_DOT && cTok.kind != TokenType.TOK_COLON &&
+       cTok.kind != TokenType.TOK_FAT_ARROW {
+        args: ASTNode[] = []
+        wh true {
+            argExpr: ASTNode = ParseExpression parser, 1
+            args.psh argExpr
+            if parser.matchToken TokenType.TOK_COMMA {
+                cont
+            } els {
+                brk
+            }
+        }
+        -> ASTNode.createNew typeName, args, newTok.line, newTok.col
+    }
+
+    -> ASTNode.createNew typeName, [], newTok.line, newTok.col
+}

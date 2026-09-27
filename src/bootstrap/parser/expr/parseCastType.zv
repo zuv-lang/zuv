@@ -1,0 +1,55 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseCastType Expression Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/expr/parseCastType.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp Parser frm ../parser
+
+/**
+ * Parses a target type name in an 'as' cast expression.
+ *
+ * Handles primitive type keywords (num, str, bool, void), custom types/identifiers,
+ * pointer prefixes (*, &), and array suffixes ([]).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {str} The parsed type signature string
+ */
+ParseCastType parser: Parser :: str {
+    prefix: str = ""
+    wh parser.matchToken TokenType.TOK_ASTERISK {
+        prefix = prefix + "*"
+    }
+    if prefix.ln == 0 && parser.matchToken TokenType.TOK_AMP {
+        prefix = "&"
+    }
+
+    curTok: Token = parser.cur
+    baseType: str = ""
+    if curTok.kind == TokenType.TOK_IDENT || curTok.kind == TokenType.TOK_TYPE_NUM ||
+       curTok.kind == TokenType.TOK_TYPE_STR || curTok.kind == TokenType.TOK_TYPE_BOOL ||
+       curTok.kind == TokenType.TOK_TYPE_VOID {
+        baseType = curTok.val
+        parser.advance
+    } els {
+        parser.addError("E0102", "Expected type name after 'as'", curTok.line, curTok.col, curTok.len, "expected token")
+        -> ""
+    }
+
+    wh parser.check TokenType.TOK_LBRACKET {
+        if parser.checkPeek TokenType.TOK_RBRACKET {
+            parser.advance
+            parser.advance
+            baseType = baseType + "[]"
+        } els {
+            brk
+        }
+    }
+
+    if prefix.ln > 0 {
+        -> prefix + baseType
+    }
+    -> baseType
+}

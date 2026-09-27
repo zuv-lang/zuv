@@ -1,0 +1,97 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseTemplateStringExpr Expression Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/expr/parseTemplateStringExpr.zv
+ * =============================================================================
+ */
+
+imp str
+imp Token frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp Lexer frm ../../lexer
+imp ParseExpression frm ../expr
+
+/**
+ * Parses a template literal string with `${expr}` interpolations into concatenated expressions.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {str} raw - Raw unparsed template string
+ * @param {num} line - Source line number
+ * @param {num} col - Source column number
+ * @returns {ASTNode} String literal or binary addition tree
+ */
+ParseTemplateStringExpr parser: Parser, raw: str, line: num, col: num :: ASTNode {
+    hasInterp: bool = false
+    i: num = 0
+    rawLen: num = raw.ln
+    wh (i + 1 < rawLen) {
+        if raw[i] == "$" && raw[i + 1] == "{" {
+            hasInterp = true
+            brk
+        }
+        i++
+    }
+    if !hasInterp {
+        -> ASTNode.createStr raw, line, col
+    }
+
+    parts: ASTNode[] = []
+    i = 0
+    curText: str = ""
+    wh i < rawLen {
+        if raw[i] == "$" && (i + 1 < rawLen) && raw[i + 1] == "{" {
+            if curText.ln > 0 {
+                parts.psh (ASTNode.createStr curText, line, col)
+                curText = ""
+            }
+            i = i + 2
+            startExpr: num = i
+            braceDepth: num = 1
+            wh (i < rawLen) && (braceDepth > 0) {
+                ch: str = raw[i]
+                if ch == "{" {
+                    braceDepth++
+                } els if ch == "}" {
+                    braceDepth--
+                    if braceDepth == 0 {
+                        brk
+                    }
+                }
+                i++
+            }
+            exprStr: str = raw.slc startExpr, i
+            if (i < rawLen) && (raw[i] == "}") {
+                i++
+            }
+            if exprStr.ln > 0 {
+                subLex = Lexer.create exprStr
+                subTokens: Token[] = subLex.tokenizeAll
+                subParser: Parser = Parser.create subTokens, parser.file, parser.source
+                subNode: ASTNode = ParseExpression subParser, 0
+                parts.psh subNode
+            }
+        } els {
+            curText = curText + raw[i]
+            i++
+        }
+    }
+    if curText.ln > 0 {
+        parts.psh (ASTNode.createStr curText, line, col)
+    }
+
+    if parts.ln == 0 {
+        -> ASTNode.createStr "", line, col
+    }
+    if parts.ln == 1 {
+        -> parts[0]
+    }
+
+    resNode: ASTNode = parts[0]
+    pIdx: num = 1
+    wh pIdx < parts.ln {
+        resNode = ASTNode.createBinary "+", resNode, parts[pIdx], line, col
+        pIdx++
+    }
+    -> resNode
+}

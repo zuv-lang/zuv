@@ -1,0 +1,64 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseObjectLiteral Expression Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/expr/parseObjectLiteral.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind, FieldEntry frm ../../ast
+imp Parser frm ../parser
+imp ParseExpression frm ../expr
+
+/**
+ * Parses an object literal expression (`{ key: value, field, ... }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} ObjLitExpr AST node
+ */
+ParseObjectLiteral parser: Parser :: ASTNode {
+    lbTok: Token = parser.consume TokenType.TOK_LBRACE, "Expected '{'"
+    entries: FieldEntry[] = []
+    childExprs: ASTNode[] = []
+
+    wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        isSpread: bool = false
+        if parser.matchToken TokenType.TOK_ELLIPSIS {
+            isSpread = true
+        }
+
+        kTok: Token = parser.cur
+        parser.advance
+        kName: str = kTok.val
+
+        valNode = ASTNode.createNil kTok.line, kTok.col
+        if parser.matchToken TokenType.TOK_COLON {
+            valNode = ParseExpression parser, 1
+        } els {
+            // Shorthand field: { x } => { x: x }
+            valNode = ASTNode.createIdent kName, kTok.line, kTok.col
+        }
+
+        entry: FieldEntry = {
+            name: kName,
+            valStr: kName,
+            isSpread: isSpread,
+            line: kTok.line,
+            col: kTok.col
+        }
+        entries.psh entry
+        childExprs.psh valNode
+
+        if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+            // optional separator
+        } els {
+            brk
+        }
+    }
+
+    parser.consume TokenType.TOK_RBRACE, "Expected '}' after object literal"
+    node = ASTNode.createBase NodeKind.ObjLitExpr, lbTok.line, lbTok.col
+    node.fields = entries
+    node.children = childExprs
+    -> node
+}

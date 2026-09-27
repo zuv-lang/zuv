@@ -1,0 +1,88 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParsePrefixExpr Expression Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/expr/parsePrefixExpr.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseNewExpr frm parseNewExpr
+imp ParsePrimary frm parsePrimary
+imp ParseLambda frm parseLambda
+imp ParseExpression frm ../expr
+
+/**
+ * Parses prefix unary expressions (`!x`, `-x`, `~x`, `&x`, `await x`, `new T`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Unary or primary expression AST node
+ */
+ParsePrefixExpr parser: Parser :: ASTNode {
+    tok: Token = parser.cur
+
+    if tok.kind == TokenType.TOK_NEW {
+        -> ParseNewExpr parser
+    }
+
+    if tok.kind == TokenType.TOK_NOT || tok.kind == TokenType.TOK_MINUS || tok.kind == TokenType.TOK_TILDE {
+        opTok: Token = parser.advance
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
+    }
+
+    if tok.kind == TokenType.TOK_INC || tok.kind == TokenType.TOK_DEC {
+        opTok: Token = parser.advance
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
+    }
+
+    if tok.kind == TokenType.TOK_AMP || tok.kind == TokenType.TOK_AMP_LET {
+        opTok: Token = parser.advance
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        node = ASTNode.createBase NodeKind.BorrowExpr, opTok.line, opTok.col
+        node.isBorrow = true
+        node.children = [operand]
+        -> node
+    }
+
+    if tok.kind == TokenType.TOK_AWAIT {
+        awTok: Token = parser.advance
+        target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        -> ASTNode.createAwait target, awTok.line, awTok.col
+    }
+
+    if tok.kind == TokenType.TOK_TYP {
+        typTok: Token = parser.advance
+        target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        node = ASTNode.createBase NodeKind.TypExpr, typTok.line, typTok.col
+        node.children = [target]
+        -> node
+    }
+
+    if tok.kind == TokenType.TOK_SYM {
+        symTok: Token = parser.advance
+        target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        node = ASTNode.createBase NodeKind.SymExpr, symTok.line, symTok.col
+        node.children = [target]
+        node.typeAnnotation = "sym"
+        -> node
+    }
+
+    if tok.kind == TokenType.TOK_ELLIPSIS {
+        opTok: Token = parser.advance
+        pNext: Token = parser.cur
+        pAfter: Token = parser.peek
+        if (pNext.kind == TokenType.TOK_IDENT || pNext.kind == TokenType.TOK_FN) && pAfter.kind == TokenType.TOK_FAT_ARROW {
+            paramName: str = "..." + pNext.val
+            parser.advance
+            parser.advance
+            -> ParseLambda parser, [paramName], opTok.line, opTok.col
+        }
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        -> ASTNode.createUnary opTok.val, operand, true, opTok.line, opTok.col
+    }
+
+    -> ParsePrimary parser
+}
