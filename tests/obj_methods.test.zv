@@ -18,7 +18,7 @@ obj User {
 
     add: store, n, a => {
         u = User{ name: n, age: a }
-        store.psh u
+        store.push u
         -> store
     },
 
@@ -29,11 +29,11 @@ obj User {
     update: store, i, n, a => {
         out = []
         j = 0
-        wh j < store.ln {
+        wh j < store.len {
             if j == i {
-                out.psh User{ name: n, age: a }
+                out.push User{ name: n, age: a }
             } els {
-                out.psh store[j]
+                out.push store[j]
             }
             j = j + 1
         }
@@ -43,9 +43,9 @@ obj User {
     delete: store, i => {
         out = []
         j = 0
-        wh j < store.ln {
+        wh j < store.len {
             if j != i {
-                out.psh store[j]
+                out.push store[j]
             }
             j = j + 1
         }
@@ -69,7 +69,7 @@ User.sayBye = sayBye
 users = []
 users = User::add users, "Ada", 30
 users = User::add users, "Bob", 25
-prnt users.ln
+prnt users.len
 
 u = User::get users, 0
 lbl = u.fullLabel
@@ -81,7 +81,7 @@ lbl2 = u2.fullLabel
 prnt lbl2
 
 users = User::delete users, 1
-prnt users.ln
+prnt users.len
 
 u3 = User::create "Eve", 20
 prnt u3.age

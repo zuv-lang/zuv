@@ -5,12 +5,12 @@ lg true
 lg false
 
 lg "=== 1. Nested Array ==="
-type Address = {
+typ Address = {
   city: str
   zip: num
 }
 
-type Matrix = num | i8 | bool | str | Address
+typ Matrix = num | i8 | bool | str | Address
 
 address: Address = {
     city: "New York",
@@ -43,7 +43,7 @@ lg matrix[5]?.[1]?.zip
 lg`======= END =======`
 
 // 2D String Array
-type Grid = [
+typ Grid = [
   [str, str],
   [num, num],
   [bool, bool],
@@ -133,8 +133,8 @@ obj_matrix[0][1].title = "Updated Item 2"
 lg obj_matrix[0][1].title
 
 lg "=== 4. Array in Nested Object ==="
-type Skill = [str]
-type Company = {
+typ Skill = [str]
+typ Company = {
     name: str,
     departments: {
         engineering: {

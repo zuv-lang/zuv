@@ -96,7 +96,7 @@ prnt calcRes
 
 ctrl = new UserController()
 users = ctrl.getUsers()
-prnt users.ln
+prnt users.len
 
 oldRes = oldHelper 5
 prnt oldRes

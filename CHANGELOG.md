@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Strict Equality & Precedence**: Allowed cross-type `==`/`!=` with `strcmp` lowering, and unified Pratt expression parsing (`tests/strict_eq.test.zv`, `tests/ternary.test.zv`).
 - **Braceless Control Flow**: Supported single-statement braceless bodies for `if`, `els`, `wh`, and `fr` (`tests/control_flow.test.zv`).
 - **Collection Iteration (`fr in` / `fr of`)**: Added single and two-variable iteration over arrays and objects with `__keys`/`__vals` buffer generation (`tests/fr_in.test.zv`, `tests/fr_of.test.zv`).
-- **Keyword Cleanup**: Removed obsolete `mut` and `&mut` tokens (`TOK_MUT`, `TOK_AMP_MUT`) in favor of implicit mutability.
+- **Keyword Cleanup & Deduplication**: Removed obsolete `mut`, `&mut`, `yes`, and `no` keywords, retaining standard `true` and `false` booleans. Removed redundant keyword aliases: removed `mch` (retained `sw`), `from` (retained `frm`), `async`/`asyncST` (retained `asc`/`ascST`), `await` (retained `awt`), `worker` (retained `wrk`), `type` (retained `typ`), `sz`, and `nw` (retained `new`). Renamed `sizeof` to `size` and removed `ok` and `err` tokens from `tokens.zv`, standardizing on ordinary identifier representations.
 - **Type Casting (`as`)**: Supported primitive keywords (`num`, `str`, `bool`), pointer types (`*byte`), integer truncation/widening, and dynamic string/boolean conversions (`tests/as_cast.test.zv`).
 - **Dynamic Arrays & Untyped Parameters**: Supported pointer conversions and writeback for array method calls on untyped parameters, alongside expression-level juxtaposed calls (`tests/empty_arr_task1.test.zv`).
 - **Arrow Functions & Lambdas**: Added expression bodies, hoisted lambda closures, indirect function calls, and polymorphic print branching (`tests/arrow_functions.test.zv`).
@@ -168,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added heap reallocation: `realloc(ptr, size)` and `mem.realloc(ptr, size)`.
 - Added memory buffer copy: `memcpy(dst, src, len)`, `mem.cp(dst, src, len)`, `mem.copy(dst, src, len)`.
 - Added memory byte fill: `memset(dst, val, len)` and `mem.set(dst, val, len)`.
-- Added type layout size queries: `sz <type>`, `sizeof <type>`, `sizeof User`, `sz(ptr)`.
+- Added type layout size queries: `size <type>`, `size User`, `size(ptr)`.
 - Added `mem` module namespace (`mem.alloc`, `mem.free`, `mem.realloc`, `mem.cp`, `mem.set`).
 - Added comprehensive unit test in `tests/std_mem.test.zv`.
 

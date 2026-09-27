@@ -44,12 +44,12 @@ sw s {
     }
 }
 
-let b = yes
+let b = true
 sw b {
-    no => {
+    false => {
         prnt "bool no"
     }
-    yes => {
+    true => {
         prnt "bool yes ok"
     }
     _ => {

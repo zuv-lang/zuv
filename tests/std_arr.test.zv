@@ -1,9 +1,9 @@
 // Native Standard Library std/arr Unit Test Suite
-// Verifies imp arr with shortform methods and functions (.ln, .psh, .pp, ln, psh, pp)
+// Verifies imp arr with methods and functions (.len, .push, .pop, len, cap)
 
 imp arr
 
-lg "--- Testing std/arr Shortforms (.ln, .psh, .pp) ---"
+lg "--- Testing std/arr Methods (.len, .push, .pop) ---"
 
 numbers = [10, 20, 30]
 
@@ -17,34 +17,34 @@ lg i0
 lg i1
 lg i2
 
-// 1. Array Length (.ln / ln)
-l1 = numbers.ln
-lg "Initial length via 'numbers.ln':"
+// 1. Array Length (.len / len)
+l1 = numbers.len
+lg "Initial length via 'numbers.len':"
 lg l1
 
-// 2. Array Push (.psh / psh)
-numbers.psh 40
-numbers.psh 50
+// 2. Array Push (.push / push)
+numbers.push 40
+numbers.push 50
 
-l2 = numbers.ln
-lg "Length after 'numbers.psh 40' and 'numbers.psh 50':"
+l2 = numbers.len
+lg "Length after 'numbers.push 40' and 'numbers.push 50':"
 lg l2
 
-// 3. Array Pop (.pp / pp)
-p1 = numbers.pp
-lg "Popped element via 'numbers.pp':"
+// 3. Array Pop (.pop / pop)
+p1 = numbers.pop
+lg "Popped element via 'numbers.pop':"
 lg p1
 
-l3 = numbers.ln
-lg "Length after .pp:"
+l3 = numbers.len
+lg "Length after .pop:"
 lg l3
 
-p2 = numbers.pp
-lg "Second popped element via 'numbers.pp':"
+p2 = numbers.pop
+lg "Second popped element via 'numbers.pop':"
 lg p2
 
-l4 = numbers.ln
-lg "Final length via 'numbers.ln':"
+l4 = numbers.len
+lg "Final length via 'numbers.len':"
 lg l4
 
 // 4. Text Array Test
@@ -53,7 +53,7 @@ lg "Text array test:"
 lg text_items[0]
 lg text_items[1]
 lg text_items[2]
-lg text_items.ln
+lg text_items.len
 
 // 5. Object Array Test
 people = [{ name: "Alice", age: 30 }, { name: "Bob", age: 25 }]

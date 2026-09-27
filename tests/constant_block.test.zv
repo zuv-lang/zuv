@@ -7,7 +7,7 @@ let MUTABLE_BLOCK = 30
 MUTABLE_BLOCK = 40
 
 ARRAY = [1]
-ARRAY.psh 3
+ARRAY.push 3
 prnt ARRAY[0]
 prnt ARRAY[1]
 

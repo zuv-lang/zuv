@@ -26,18 +26,18 @@ prnt "Sockets closed successfully"
 
 // 3. DNS Lookup & Reverse Lookup
 let ip = dns.lookup "localhost"
-if ip.ln > 0 {
+if ip.len > 0 {
     prnt ("DNS lookup localhost: " + ip)
 }
 
 let host = dns.reverseLookup "127.0.0.1"
-if host.ln > 0 {
+if host.len > 0 {
     prnt ("DNS reverse lookup 127.0.0.1: " + host)
 }
 
 // 4. HTTP Formatting & Parsing
 let res = http.fmtRes 200, "application/json", "{\"status\":\"ok\"}"
-if res.ln > 0 {
+if res.len > 0 {
     prnt "HTTP response formatted successfully"
 }
 

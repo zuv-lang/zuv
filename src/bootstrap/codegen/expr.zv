@@ -1343,6 +1343,23 @@ obj ExprCodegen {
         calleeNode: ASTNode = node.children[0]
         calleeName: str = calleeNode.name.ln > 0 ? calleeNode.name : calleeNode.val
 
+        if calleeName == "size" && node.children.ln >= 2 {
+            targetChild: ASTNode = node.children[1]
+            typeName: str = targetChild.name.ln > 0 ? targetChild.name : targetChild.val
+            sizeVal: num = 8
+            if typeName == "byte" || typeName == "i8" || typeName == "u8" {
+                sizeVal = 1
+            } els if typeName == "i16" || typeName == "u16" {
+                sizeVal = 2
+            } els if typeName == "i32" || typeName == "u32" || typeName == "f32" {
+                sizeVal = 4
+            } els if typeName == "num" || typeName == "f64" || typeName == "i64" || typeName == "u64" || typeName == "str" || typeName == "bool" || typeName == "ptr" {
+                sizeVal = 8
+            }
+            sizeRes: ExprResult = { reg: `${sizeVal}.0`, typeKind: TypeKind.Num }
+            -> sizeRes
+        }
+
         argRegs: str[] = []
         argTypes: TypeKind[] = []
         isCallee: bool = true
@@ -1469,8 +1486,8 @@ obj ExprCodegen {
             -> res
         }
 
-        if calleeName == "result_ok" || calleeName == "ok" || calleeName == "result_err" {
-            isOk: bool = (calleeName == "result_ok" || calleeName == "ok")
+        if calleeName == "ok" {
+            isOk: bool = true
             tagValStr: str = isOk ? "1" : "0"
             resReg: str = self.codegen.newReg
             self.codegen.emit `${resReg} = call ptr @malloc(i64 16)`

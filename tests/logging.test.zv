@@ -21,8 +21,8 @@ err count
 
 // 1.3 Floating-point and boolean literals
 piVal = 3.14159
-isReady = yes
-isDegraded = no
+isReady = true
+isDegraded = false
 lg piVal
 inf isReady
 wrn isDegraded

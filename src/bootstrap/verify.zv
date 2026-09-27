@@ -112,7 +112,7 @@ main {
 
     // 7. Declaration Parser Verification (Phase 2 Task 2.3)
     prnt "7. Declaration Parser Verification:"
-    typeDeclCode: str = "type Point = { x: num, y: num }"
+    typeDeclCode: str = "typ Point = { x: num, y: num }"
     lexType = Lexer.create typeDeclCode
     pType = Parser.create lexType.tokenizeAll, "type.zv", typeDeclCode
     astType: ASTNode = ParseDeclaration pType

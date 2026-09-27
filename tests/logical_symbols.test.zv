@@ -1,7 +1,7 @@
 // Dedicated Test Suite for Conditional Operators (and, or, not, &&, ||, !)
 
-a = yes
-b = no
+a = true
+b = false
 
 lg "--- Testing word-based logical operators ---"
 if a and not b {

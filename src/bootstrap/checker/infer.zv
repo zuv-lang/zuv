@@ -111,6 +111,12 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 -> TypeKind.Unknown
             }
         }
+        if symName == "byte" || symName == "i8" || symName == "u8" || symName == "i16" || symName == "u16" ||
+           symName == "i32" || symName == "u32" || symName == "i64" || symName == "u64" || symName == "f32" ||
+           symName == "f64" || symName == "num" || symName == "str" || symName == "bool" || symName == "ptr" || symName == "void" {
+            expr.inferredType = TypeKind.Num
+            -> TypeKind.Num
+        }
         checker.addError("E0202", "Undefined identifier '" + symName + "'", expr.line, expr.col, symName.ln, "check variable spelling or define variable")
         expr.inferredType = TypeKind.Unknown
         -> TypeKind.Unknown
@@ -434,7 +440,11 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 expr.inferredType = TypeKind.Void
                 -> TypeKind.Void
             }
-            if calleeName == "ok" || calleeName == "result_ok" || calleeName == "result_err" {
+            if calleeName == "size" {
+                expr.inferredType = TypeKind.Num
+                -> TypeKind.Num
+            }
+            if calleeName == "ok" {
                 expr.inferredType = TypeKind.Obj
                 expr.typeAnnotation = "Result"
                 -> TypeKind.Obj

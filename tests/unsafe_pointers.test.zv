@@ -65,16 +65,16 @@ unsafe {
     mem.free p2
 }
 
-// Size Layout Queries (sz / sizeof)
-sz_byte = sz byte
-sz_i16 = sz i16
-sz_i32 = sz i32
-sz_i64 = sz i64
-sz_num = sz num
-sz_str = sizeof str
-sz_bool = sizeof bool
-sz_ptr = sizeof ptr
+// Size Layout Queries (size)
+size_byte = size byte
+size_i16 = size i16
+size_i32 = size i32
+size_i64 = size i64
+size_num = size num
+size_str = size str
+size_bool = size bool
+size_ptr = size ptr
 
-if sz_byte == 1 and sz_i16 == 2 and sz_i32 == 4 and sz_i64 == 8 and sz_num == 8 {
-    prnt "Size queries (sz / sizeof) passed"
+if size_byte == 1 and size_i16 == 2 and size_i32 == 4 and size_i64 == 8 and size_num == 8 {
+    prnt "Size queries (size) passed"
 }

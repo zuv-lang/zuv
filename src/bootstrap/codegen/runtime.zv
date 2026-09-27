@@ -828,8 +828,8 @@ obj RuntimeCodegen {
           call void @zuv_prm_resolve(ptr %pAll, i64 %emptyInt)
           ret ptr %pAll
         alloc_res:
-          %szElements = add i64 %len, 2
-          %bytes = mul i64 %szElements, 8
+          %sizeElements = add i64 %len, 2
+          %bytes = mul i64 %sizeElements, 8
           %rawRes = call ptr @malloc(i64 %bytes)
           store i64 %len, ptr %rawRes
           %resArr = getelementptr inbounds i64, ptr %rawRes, i64 1
@@ -921,8 +921,8 @@ obj RuntimeCodegen {
           call void @zuv_prm_resolve(ptr %pSettled, i64 %emptyInt)
           ret ptr %pSettled
         alloc_res_s:
-          %szElements = add i64 %len, 2
-          %bytes = mul i64 %szElements, 8
+          %sizeElements = add i64 %len, 2
+          %bytes = mul i64 %sizeElements, 8
           %rawRes = call ptr @malloc(i64 %bytes)
           store i64 %len, ptr %rawRes
           %resArr = getelementptr inbounds i64, ptr %rawRes, i64 1
@@ -977,8 +977,8 @@ obj RuntimeCodegen {
             %hasArgv = icmp sgt i64 %argc64, 0
             %argcPlus1 = add i64 %argc64, 1
             %totCount = select i1 %hasArgv, i64 %argcPlus1, i64 1
-            %szElements = add i64 %totCount, 2
-            %bytes = mul i64 %szElements, 8
+            %sizeElements = add i64 %totCount, 2
+            %bytes = mul i64 %sizeElements, 8
             %rawArr = call ptr @malloc(i64 %bytes)
             store i64 %totCount, ptr %rawArr
             %arr = getelementptr inbounds i64, ptr %rawArr, i64 1

@@ -136,8 +136,10 @@ obj Checker {
 
         symNan = Symbol.create "nan", TypeKind.Num, "num", false, true, 0, 0, 0
         symInfinity = Symbol.create "Infinity", TypeKind.Num, "num", false, true, 0, 0, 0
+        symSize = Symbol.create "size", TypeKind.Func, "fn(...any)->num", false, true, 0, 0, 0
         rootSyms.psh symNan
         rootSyms.psh symInfinity
+        rootSyms.psh symSize
 
         rootScope = Scope.create 0, rootSyms
         rootScopes: Scope[] = [rootScope]

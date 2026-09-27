@@ -8,7 +8,7 @@ if (3 as num) == 3 {
     prnt "as num ok"
 }
 
-if (0 as bool) == no {
+if (0 as bool) == false {
     prnt "0 as bool ok"
 }
 

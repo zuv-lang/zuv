@@ -19,7 +19,7 @@ createUser name, age, role => {
     name: name,
     age: age,
     role: role,
-    isActive: yes
+    isActive: true
 }
 
 // 5. Direct Pattern Matching (sw) expression return

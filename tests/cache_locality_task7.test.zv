@@ -44,10 +44,10 @@ unsafe {
 // 3. Sequential Streaming (fr .. of with native i64 loop counter) across 50,000 elements
 let big = []
 fr let i = 0; i < 50000; i++ {
-    big.psh i
+    big.push i
 }
 
-prnt big.ln
+prnt big.len
 
 let sum = 0
 fr item of big {

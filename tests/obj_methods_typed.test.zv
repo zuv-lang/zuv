@@ -18,12 +18,12 @@ obj User {
     },
     create: n: str, a: num, status: bool, no: i64 :: User => {
         u = { name: n, age: a, status: status, no: no }
-        users.psh(u)
+        users.push(u)
         -> u
     },
     add: n: str, a: num, status: bool, no: i64 :: User => {
         u = User{ name: n, age: a, status: status, no: no }
-        users.psh(u)
+        users.push(u)
         -> u
     },
     get: i: num :: User => {
@@ -42,9 +42,9 @@ obj User {
     delete: i: num :: User[] => {
         out = []
         j = 0
-        wh j < users.ln {
+        wh j < users.len {
             if j != i {
-                out.psh users[j]
+                out.push users[j]
             }
             j = j + 1
         }
@@ -68,7 +68,7 @@ User.sayBye = sayBye
 
 User.add "Ada", 30, true, 1001
 User.add "Bob", 25, false, 1002
-prnt users.ln
+prnt users.len
 
 u = User.get 0
 lbl = u.fullLabel
@@ -84,7 +84,7 @@ lbl2 = u2.fullLabel
 prnt lbl2
 
 User.delete 1
-prnt users.ln
+prnt users.len
 
 u3 = User.create "Eve", 20
 prnt u3.age
@@ -146,7 +146,7 @@ let inventory = [
     { name: "apple", stock: 10 },
     { name: "pear", stock: 5 }
 ]
-prnt inventory.ln
+prnt inventory.len
 prnt inventory[0].name
 prnt inventory[1].stock
 

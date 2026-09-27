@@ -792,9 +792,9 @@ obj StmtCodegen {
             fr arm of node.cases {
                 if caseIdx != defArmIdx {
                     tagVal: str = arm.litText
-                    if tagVal == "yes" || tagVal == "true" {
+                    if tagVal == "true" {
                         tagVal = "1"
-                    } els if tagVal == "no" || tagVal == "false" {
+                    } els if tagVal == "false" {
                         tagVal = "0"
                     }
                     if arm.patternKind != "ident" && arm.patternKind != "_" && arm.patternKind != "num" && arm.patternKind != "str" && arm.patternKind.ln > 0 {

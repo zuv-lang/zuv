@@ -469,6 +469,11 @@ ParsePrimary parser: Parser :: ASTNode {
         uTok: Token = parser.advance
         -> ASTNode.createUnd uTok.line, uTok.col
     }
+    if tok.kind == TokenType.TOK_TYPE_NUM || tok.kind == TokenType.TOK_TYPE_BOOL ||
+       tok.kind == TokenType.TOK_TYPE_STR || tok.kind == TokenType.TOK_TYPE_VOID {
+        tTok: Token = parser.advance
+        -> ASTNode.createIdent tTok.val, tTok.line, tTok.col
+    }
 
     // Arrow Lambdas: x => expr or fn => expr
     peekTok: Token = parser.peek
@@ -482,16 +487,10 @@ ParsePrimary parser: Parser :: ASTNode {
     if tok.kind == TokenType.TOK_IDENT || tok.kind == TokenType.TOK_FN || tok.kind == TokenType.TOK_PRNT ||
        tok.kind == TokenType.TOK_LOG || tok.kind == TokenType.TOK_WARN ||
        tok.kind == TokenType.TOK_INFO || tok.kind == TokenType.TOK_PANIC ||
-       tok.kind == TokenType.TOK_SIZEOF || tok.kind == TokenType.TOK_SZ ||
-       tok.kind == TokenType.TOK_ERR || tok.kind == TokenType.TOK_OK ||
+       tok.kind == TokenType.TOK_SIZE ||
        tok.kind == TokenType.TOK_NAN || tok.kind == TokenType.TOK_INFINITY {
         idTok: Token = parser.advance
         idName: str = idTok.val
-        if idTok.kind == TokenType.TOK_OK {
-            idName = "result_ok"
-        } els if idTok.kind == TokenType.TOK_ERR && (parser.check TokenType.TOK_LPAREN) {
-            idName = "result_err"
-        }
         identNode = ASTNode.createIdent idName, idTok.line, idTok.col
 
         allowMinusArg: bool = false
@@ -501,6 +500,8 @@ ParsePrimary parser: Parser :: ASTNode {
             curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
             curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT || curTok.kind == TokenType.TOK_FN ||
             curTok.kind == TokenType.TOK_NAN || curTok.kind == TokenType.TOK_INFINITY || curTok.kind == TokenType.TOK_INFO ||
+            curTok.kind == TokenType.TOK_TYPE_NUM || curTok.kind == TokenType.TOK_TYPE_BOOL ||
+            curTok.kind == TokenType.TOK_TYPE_STR || curTok.kind == TokenType.TOK_TYPE_VOID ||
             curTok.kind == TokenType.TOK_ELLIPSIS || allowMinusArg) {
             argPrec: num = 1
             if idTok.val != "prnt" && idTok.val != "lg" && idTok.val != "wrn" && idTok.val != "panic" {

@@ -145,7 +145,7 @@ lg sym_target
 // 17. Directory Handle Iteration (opnDir)
 entries = opnDir "."
 lg "17. Directory handle scanned entries count:"
-lg entries.ln
+lg entries.len
 
 // 18. File Event Watcher (wtch)
 wtch_res = wtch test_dir

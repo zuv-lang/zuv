@@ -10,12 +10,12 @@ if b == 20 {
     prnt "false ternary ok"
 }
 
-let ay = yes ? 10 : 20
+let ay = true ? 10 : 20
 if ay == 10 {
     prnt "yes ternary ok"
 }
 
-let bn = no ? 10 : 20
+let bn = false ? 10 : 20
 if bn == 20 {
     prnt "no ternary ok"
 }
@@ -31,28 +31,28 @@ if d == 4 {
 }
 
 // Right-associative nesting: a ? b : c ? d : e
-let e = no ? 1 : yes ? 2 : 3
+let e = false ? 1 : true ? 2 : 3
 if e == 2 {
     prnt "nested else ternary ok"
 }
 
-let f = yes ? no ? 1 : 2 : 3
+let f = true ? false ? 1 : 2 : 3
 if f == 2 {
     prnt "nested then ternary ok"
 }
 
 // Precedence: || binds tighter than ?:
-let g = no || yes ? 5 : 6
+let g = false || true ? 5 : 6
 if g == 5 {
     prnt "or then ternary ok"
 }
 
-let h = yes ? 7 : 8 + 1
+let h = true ? 7 : 8 + 1
 if h == 7 {
     prnt "then short-circuit ok"
 }
 
-let i = no ? 7 : 8 + 1
+let i = false ? 7 : 8 + 1
 if i == 9 {
     prnt "else arith ok"
 }

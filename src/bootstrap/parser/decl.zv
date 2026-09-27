@@ -852,7 +852,7 @@ ParseDeclaration parser: Parser :: ASTNode {
 
     curTok: Token = parser.cur
     declNode: ASTNode = ASTNode.createBase NodeKind.ProgramDecl, curTok.line, curTok.col
-    if curTok.kind == TokenType.TOK_TYP || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "type") {
+    if curTok.kind == TokenType.TOK_TYP {
         declNode = ParseTypeDecl parser, isPub
     } els if curTok.kind == TokenType.TOK_STRUCT || (curTok.kind == TokenType.TOK_IDENT && curTok.val == "obj") {
         declNode = ParseObjDecl parser, isPub

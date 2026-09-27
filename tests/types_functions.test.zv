@@ -6,27 +6,27 @@ obj Person {
     age: num
 }
 
-type Named = {
+typ Named = {
     name: str;
 };
 
-type Aged = {
+typ Aged = {
     age: num;
 };
 
-type Agedi32 = {
+typ Agedi32 = {
     age: i32;
 };
 
-type Agedi64 = {
+typ Agedi64 = {
     age: i64;
 };
 
-type User = Named & Aged;
-type Userwithagei32 = Named & Agedi32;
-type Userwithagei64 = Named & Agedi64;
+typ User = Named & Aged;
+typ Userwithagei32 = Named & Agedi32;
+typ Userwithagei64 = Named & Agedi64;
 
-type UserWithId = Named & Aged & {
+typ UserWithId = Named & Aged & {
     id: num;
 };
 

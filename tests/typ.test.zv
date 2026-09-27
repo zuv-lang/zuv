@@ -10,7 +10,7 @@ if typeNum == "num" {
     prnt "typ num ok"
 }
 
-typeBool = typ yes
+typeBool = typ true
 if typeBool == "bool" {
     prnt "typ bool ok"
 }
