@@ -1,0 +1,70 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseTypeDecl Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl/parseTypeDecl.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, FieldEntry frm ../../ast
+imp Parser frm ../parser
+imp ParseTypeStringFull frm parseTypeString
+
+/**
+ * Parses a TypeScript-style type alias declaration (`type Name = { ... };` or `type Alias = Type;`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {bool} isPub - True if exported public declaration
+ * @returns {ASTNode} Type declaration AST node
+ */
+ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
+    typeTok: Token = parser.advance // consume 'type' / 'typ'
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type name identifier"
+    name: str = nameTok.val
+
+    parser.consume TokenType.TOK_ASSIGN, "Expected '=' after type name"
+
+    node: ASTNode = ASTNode.createTypeDecl name, isPub, nameTok.line, nameTok.col
+
+    if parser.check TokenType.TOK_LBRACE {
+        parser.advance // consume '{'
+        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+            if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+                cont
+            }
+            if !(parser.check TokenType.TOK_IDENT) {
+                errTok: Token = parser.advance
+                parser.addError "E0102", "Expected field identifier in type record, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
+                cont
+            }
+            fTok: Token = parser.consume TokenType.TOK_IDENT, "Expected field identifier in type record"
+            subName: str = name + "_" + fTok.val
+            fType: str = "any"
+            if parser.matchToken TokenType.TOK_COLON {
+                fType = ParseTypeStringFull parser, subName, node
+            }
+            entry: FieldEntry = {
+                name: fTok.val,
+                valStr: fType,
+                isSpread: false,
+                line: fTok.line,
+                col: fTok.col
+            }
+            node.fields.psh entry
+            if (parser.matchToken TokenType.TOK_SEMICOLON) || (parser.matchToken TokenType.TOK_COMMA) {
+                // delimiter
+            }
+        }
+        parser.consume TokenType.TOK_RBRACE, "Expected '}' after type record body"
+        node.typeAnnotation = name
+    } els {
+        aliasType: str = ParseTypeStringFull parser, name, node
+        node.typeAnnotation = aliasType
+    }
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    -> node
+}

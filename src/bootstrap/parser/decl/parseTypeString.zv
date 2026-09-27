@@ -1,0 +1,42 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseTypeString Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl/parseTypeString.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseSingleType frm parseSingleType
+
+/**
+ * Parses full type string including union (|) and intersection (&) combinations
+ * with explicit parent type context for nested anonymous records.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {str} parentName - Enclosing type identifier
+ * @param {ASTNode} targetParentNode - Target AST node for nested record types
+ * @returns {str} The parsed full type signature string
+ */
+ParseTypeStringFull parser: Parser, parentName: str, targetParentNode: ASTNode :: str {
+    res: str = ParseSingleType parser, parentName, targetParentNode
+    wh (parser.check TokenType.TOK_PIPE) || (parser.check TokenType.TOK_AMP) {
+        opTok: Token = parser.advance
+        opStr: str = (opTok.kind == TokenType.TOK_PIPE) ? " | " : " & "
+        nextT: str = ParseSingleType parser, parentName, targetParentNode
+        res = res + opStr + nextT
+    }
+    -> res
+}
+
+/**
+ * Parses a type annotation string from the token stream using a default context.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {str} The parsed type signature string
+ */
+ParseTypeString parser: Parser :: str {
+    dummyNode: ASTNode = ASTNode.createNil 0, 0
+    -> ParseTypeStringFull parser, "", dummyNode
+}

@@ -1,0 +1,79 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseParamList Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl/parseParamList.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp Param frm ../../ast
+imp Parser frm ../parser
+imp ParseTypeString frm parseTypeString
+
+/**
+ * Parses a parameter list for functions or methods.
+ *
+ * Supports parenthesized lists `(p1: T1, ...rest)` and paren-free lists `p1: T1, p2: T2`.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {Param[]} Array of parsed parameter records
+ */
+ParseParamList parser: Parser :: Param[] {
+    params: Param[] = []
+    hasParen: bool = false
+
+    if parser.matchToken TokenType.TOK_LPAREN {
+        hasParen = true
+        if parser.check TokenType.TOK_RPAREN {
+            parser.advance
+            -> params
+        }
+    }
+
+    wh !(parser.isAtEnd) {
+        isRest: bool = false
+        if parser.matchToken TokenType.TOK_ELLIPSIS {
+            isRest = true
+        }
+
+        pTok: Token = parser.cur
+        if pTok.kind == TokenType.TOK_IDENT || pTok.kind == TokenType.TOK_FN || pTok.kind == TokenType.TOK_TYPE_NUM || pTok.kind == TokenType.TOK_TYPE_STR || pTok.kind == TokenType.TOK_TYPE_BOOL || pTok.kind == TokenType.TOK_FALSE || pTok.kind == TokenType.TOK_TRUE || pTok.isKeyword {
+            parser.advance
+        } els {
+            pTok = parser.consume TokenType.TOK_IDENT, "Expected parameter identifier"
+        }
+        pName: str = pTok.val
+        pType: str = ""
+        isOpt: bool = false
+
+        if parser.matchToken TokenType.TOK_QUESTION {
+            isOpt = true
+        }
+
+        if parser.matchToken TokenType.TOK_COLON {
+            pType = ParseTypeString parser
+        }
+
+        paramItem: Param = {
+            name: pName,
+            typeAnnotation: pType,
+            isRest: isRest,
+            isOptional: isOpt,
+            line: pTok.line,
+            col: pTok.col
+        }
+        params.psh paramItem
+
+        if parser.matchToken TokenType.TOK_COMMA {
+            // continue parsing next parameter
+        } els {
+            brk
+        }
+    }
+
+    if hasParen {
+        parser.consume TokenType.TOK_RPAREN, "Expected ')' after parameter list"
+    }
+
+    -> params
+}

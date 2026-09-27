@@ -1,0 +1,64 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseEnumDecl Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl/parseEnumDecl.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, FieldEntry frm ../../ast
+imp Parser frm ../parser
+
+/**
+ * Parses an enum declaration (`enum Name { Variant1, Variant2 = 10 }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {bool} isPub - True if exported public enum
+ * @returns {ASTNode} Enum declaration AST node
+ */
+ParseEnumDecl parser: Parser, isPub: bool :: ASTNode {
+    enumTok: Token = parser.advance // consume 'enum'
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected enum name identifier"
+    name: str = nameTok.val
+
+    node = ASTNode.createEnumDecl name, isPub, nameTok.line, nameTok.col
+
+    parser.consume TokenType.TOK_LBRACE, "Expected '{' before enum body"
+
+    wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+            cont
+        }
+
+        if !(parser.check TokenType.TOK_IDENT) {
+            errTok: Token = parser.advance
+            parser.addError "E0102", "Expected enum variant identifier, got " + errTok.val, errTok.line, errTok.col, errTok.len, "expected identifier"
+            cont
+        }
+
+        vTok: Token = parser.consume TokenType.TOK_IDENT, "Expected enum variant identifier"
+        vName: str = vTok.val
+        vVal: str = ""
+
+        if parser.matchToken TokenType.TOK_ASSIGN {
+            valTok: Token = parser.advance
+            vVal = valTok.val
+        }
+
+        entry: FieldEntry = {
+            name: vName,
+            valStr: vVal,
+            isSpread: false,
+            line: vTok.line,
+            col: vTok.col
+        }
+        node.fields.psh entry
+
+        if parser.matchToken TokenType.TOK_COMMA {
+            // optional trailing comma
+        }
+    }
+
+    parser.consume TokenType.TOK_RBRACE, "Expected '}' after enum body"
+    -> node
+}

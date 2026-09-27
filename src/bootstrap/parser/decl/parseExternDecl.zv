@@ -1,0 +1,49 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseExternDecl Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl/parseExternDecl.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseFuncDecl frm parseFuncDecl
+
+/**
+ * Parses foreign function interface external declarations (`extern "lib" { fn ... }` or `ffi ...`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Extern declaration AST node
+ */
+ParseExternDecl parser: Parser :: ASTNode {
+    extTok: Token = parser.advance // consume 'extern' / 'ffi'
+    libName: str = "c"
+
+    if parser.check TokenType.TOK_STRING {
+        sTok: Token = parser.advance
+        libName = sTok.val
+    }
+
+    node = ASTNode.createBase NodeKind.ExternDecl, extTok.line, extTok.col
+    node.val = libName
+
+    if parser.matchToken TokenType.TOK_LBRACE {
+        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+            if parser.matchToken TokenType.TOK_SEMICOLON {
+                cont
+            }
+            fnNode: ASTNode = ParseFuncDecl parser, true, false
+            node.children.psh fnNode
+            if parser.matchToken TokenType.TOK_SEMICOLON {
+                // optional delimiter
+            }
+        }
+        parser.consume TokenType.TOK_RBRACE, "Expected '}' after extern block"
+    } els {
+        fnNode: ASTNode = ParseFuncDecl parser, true, false
+        node.children.psh fnNode
+    }
+
+    -> node
+}

@@ -1,0 +1,67 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseImportDecl Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl/parseImportDecl.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, FieldEntry frm ../../ast
+imp Parser frm ../parser
+
+/**
+ * Parses module import declarations (`imp a, b frm path` or `imp os, fs, str`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Import declaration AST node
+ */
+ParseImportDecl parser: Parser :: ASTNode {
+    impTok: Token = parser.advance // consume 'imp'
+    symbols: str[] = []
+    modulePath: str = ""
+
+    // Parse imported symbol names
+    wh (parser.check TokenType.TOK_IDENT) || (parser.check TokenType.TOK_TYPE_STR) || (parser.check TokenType.TOK_TYPE_NUM) || (parser.check TokenType.TOK_TYPE_BOOL) {
+        symTok: Token = parser.advance
+        symbols.psh symTok.val
+
+        if parser.matchToken TokenType.TOK_COMMA {
+            // continue parsing next symbol
+        } els {
+            brk
+        }
+    }
+
+    if parser.matchToken TokenType.TOK_FRM {
+        // imp sym1, sym2 frm path
+        pathStr: str = ""
+        wh (parser.check TokenType.TOK_IDENT) || (parser.check TokenType.TOK_DOT) || (parser.check TokenType.TOK_SLASH) || (parser.check TokenType.TOK_STRING) {
+            partTok: Token = parser.advance
+            pathStr = pathStr + partTok.val
+        }
+        modulePath = pathStr
+    } els {
+        // imp os, fs, str (module names directly)
+        if symbols.ln > 0 {
+            modulePath = symbols[0]
+        }
+    }
+
+    node = ASTNode.createImportDecl modulePath, impTok.line, impTok.col
+    fr symName of symbols {
+        entry: FieldEntry = {
+            name: symName,
+            valStr: symName,
+            isSpread: false,
+            line: impTok.line,
+            col: impTok.col
+        }
+        node.fields.psh entry
+    }
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    -> node
+}
