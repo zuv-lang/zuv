@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitMethodCall Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitMethodCall.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitMethodCall.zv
  * =============================================================================
  */
 

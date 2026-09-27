@@ -21,30 +21,30 @@ imp Codegen frm codegen/codegen
 imp ArrayCodegen frm codegen/array
 imp ObjectCodegen frm codegen/decl
 
-imp EmitExpr frm emit/emitExpr
-imp EmitNum frm emit/emitNum
-imp EmitStr frm emit/emitStr
-imp EmitBool frm emit/emitBool
-imp EmitNil frm emit/emitNil
-imp EmitUnd frm emit/emitUnd
-imp EmitBigInt frm emit/emitBigInt
-imp EmitIdent frm emit/emitIdent
-imp EmitUnary frm emit/emitUnary
-imp EmitBinary frm emit/emitBinary
-imp EmitCall frm emit/emitCall
-imp EmitMethodCall frm emit/emitMethodCall
-imp EmitIndex frm emit/emitIndex
-imp EmitProp frm emit/emitProp
-imp EmitArr frm emit/emitArr
-imp EmitObjLit frm emit/emitObjLit
-imp EmitCast frm emit/emitCast
-imp EmitTernary frm emit/emitTernary
-imp EmitTyp frm emit/emitTyp
-imp EmitAwait frm emit/emitAwait
-imp EmitNew frm emit/emitNew
-imp EmitBorrow frm emit/emitBorrow
-imp EmitSym frm emit/emitSym
-imp EmitDefault frm emit/emitDefault
+imp EmitExpr frm expr/emitExpr
+imp EmitNum frm expr/emitNum
+imp EmitStr frm expr/emitStr
+imp EmitBool frm expr/emitBool
+imp EmitNil frm expr/emitNil
+imp EmitUnd frm expr/emitUnd
+imp EmitBigInt frm expr/emitBigInt
+imp EmitIdent frm expr/emitIdent
+imp EmitUnary frm expr/emitUnary
+imp EmitBinary frm expr/emitBinary
+imp EmitCall frm expr/emitCall
+imp EmitMethodCall frm expr/emitMethodCall
+imp EmitIndex frm expr/emitIndex
+imp EmitProp frm expr/emitProp
+imp EmitArr frm expr/emitArr
+imp EmitObjLit frm expr/emitObjLit
+imp EmitCast frm expr/emitCast
+imp EmitTernary frm expr/emitTernary
+imp EmitTyp frm expr/emitTyp
+imp EmitAwait frm expr/emitAwait
+imp EmitNew frm expr/emitNew
+imp EmitBorrow frm expr/emitBorrow
+imp EmitSym frm expr/emitSym
+imp EmitDefault frm expr/emitDefault
 /**
  * Result descriptor produced by evaluating an expression AST node.
  */

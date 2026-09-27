@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitBinary Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitBinary.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitBinary.zv
  * =============================================================================
  */
 

@@ -1,7 +1,7 @@
 /*
  * =============================================================================
- * Zuv Bootstrap Compiler — EmitNil Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitNil.zv
+ * Zuv Bootstrap Compiler — EmitUnd Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitUnd.zv
  * =============================================================================
  */
 
@@ -9,9 +9,9 @@ imp TypeKind frm ../../types
 imp ASTNode frm ../../ast
 imp ExprCodegen, ExprResult frm ../expr
 
-EmitNil self: ExprCodegen, node: ASTNode :: ExprResult {
+EmitUnd self: ExprCodegen, node: ASTNode :: ExprResult {
     resReg: str = self.codegen.newReg
     self.codegen.emit `${resReg} = add i64 0, 0`
-    res: ExprResult = { reg: resReg, typeKind: TypeKind.Nil }
+    res: ExprResult = { reg: resReg, typeKind: TypeKind.Und }
     -> res
 }

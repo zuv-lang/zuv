@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitBigInt Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitBigInt.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitBigInt.zv
  * =============================================================================
  */
 

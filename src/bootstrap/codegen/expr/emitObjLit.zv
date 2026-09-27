@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitObjLit Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitObjLit.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitObjLit.zv
  * =============================================================================
  */
 

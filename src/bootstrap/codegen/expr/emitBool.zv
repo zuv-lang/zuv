@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitBool Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitBool.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitBool.zv
  * =============================================================================
  */
 

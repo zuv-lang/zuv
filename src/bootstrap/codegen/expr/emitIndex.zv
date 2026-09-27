@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitIndex Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitIndex.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitIndex.zv
  * =============================================================================
  */
 

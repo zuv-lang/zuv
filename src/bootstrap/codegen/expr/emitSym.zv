@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitSym Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitSym.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitSym.zv
  * =============================================================================
  */
 

@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitNew Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitNew.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitNew.zv
  * =============================================================================
  */
 

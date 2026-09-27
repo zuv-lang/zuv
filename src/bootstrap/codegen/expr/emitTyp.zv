@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitTyp Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitTyp.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitTyp.zv
  * =============================================================================
  */
 

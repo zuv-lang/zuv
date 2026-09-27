@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitBorrow Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitBorrow.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitBorrow.zv
  * =============================================================================
  */
 

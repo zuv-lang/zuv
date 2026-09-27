@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitIdent Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitIdent.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitIdent.zv
  * =============================================================================
  */
 

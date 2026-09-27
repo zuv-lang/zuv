@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * Zuv Bootstrap Compiler — EmitAwait Expression Emitter
- * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitAwait.zv
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitAwait.zv
  * =============================================================================
  */
 
