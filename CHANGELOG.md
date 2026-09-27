@@ -14,11 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Result Pattern Matching**: Added `ok(val)` / `err(val)` constructors and `sw` pattern matching with bound variables (`tests/result_match.test.zv`).
 - **Global Object (`glb`)**: Added project-wide global `glb` singleton object supporting cross-function property mutation and retrieval (`tests/glb.test.zv`).
 - **Spread & Rest Parameters**: Added array spread, object literal spread, and variable rest parameter packing/unpacking (`tests/spread_rest.test.zv`).
-- **Terminal & Pseudo-Terminal (PTY)**: Added raw console modes, ANSI styling, screen dimensions, keyboard polling, and Win32 ConPTY process virtualization (`tests/term_pty.test.zv`).
-- **Inter-Process Communication (IPC)**: Added mutexes, semaphores, events, shared memory, memory mapping (`mmap`), and named pipe streams (`tests/ipc.test.zv`).
-- **Networking, Sockets, DNS & HTTP**: Implemented TCP/UDP sockets, DNS resolution, HTTP request/response parsing, and WebSocket intrinsics with dynamic struct offsets (`tests/net_socket.test.zv`).
-- **IEEE-754 Special Values**: Supported `nan`, `inf`, `Infinity` literals, `isNan` (`fcmp uno`), and `isFin` (`fcmp olt`) intrinsics (`tests/nan_inf.test.zv`).
-- **Hardware Math Intrinsics**: Implemented hardware math intrinsics, constants (`PI`, `E`, `SQRT2`), and namespaces (`mth`, `Math`) (`tests/math_intrinsics.test.zv`).
+- **IEEE-754 Special Values**: Supported `nan`, `inf`, and `Infinity` floating-point literal constants with IEEE-754 64-bit precision (`tests/nan_inf.test.zv`).
 - **Native Length & Capacity**: Added standalone prefix `ln` and `cap` functions for arrays and strings (`tests/native_i64_task4.test.zv`).
 - **Array Container Writeback**: Added container slot writeback for `PropExpr` and `IndexExpr` on `.psh` / `.push` reallocation (`tests/geometric_growth_task5.test.zv`).
 - **Optional Chaining (`?.`, `?.[ ]`)**: Added null/und guards for property and index access in type checker and codegen (`tests/optional_chain.test.zv`).
@@ -38,7 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Arrow Functions & Lambdas**: Added expression bodies, hoisted lambda closures, indirect function calls, and polymorphic print branching (`tests/arrow_functions.test.zv`).
 - **Async / Await Primitives**: Supported `asc` declarations, `awt` expression parsing, return type inference, and zero-argument async dispatch (`tests/async_await.test.zv`).
 - **Promise Combinators**: Supported `new Prm` arrow callback instantiation, `Prm.all`, `Prm.race`, and `Prm.allSettled` runtime lowering (`tests/async_combinators.test.zv`).
-- **Async File I/O**: Lowered `fs.wFAsync`, `fs.rFAsync`, and `fs.rm` via non-blocking runtime file primitives (`tests/async_io.test.zv`).
 - **Async Promise Contexts**: Lowered `@st`/`ascST` single-thread contexts, `Prm` unwrapping, rejection propagation, and `try`/`cth` blocks (`tests/async_prm.test.zv`).
 - **Attributes & Struct Instantiation**: Supported attribute annotations (`@inline`, `@derive`), typed struct literal instantiation, field type coercions, and member offset resolution (`tests/attributes.test.zv`).
 - **BigInt Primitives**: Implemented BigInt literals (`123n`), `BigInt` constructor, `typ` introspection, and equality comparisons (`tests/bigint.test.zv`).

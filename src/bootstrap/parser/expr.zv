@@ -494,14 +494,7 @@ ParsePrimary parser: Parser :: ASTNode {
         }
         identNode = ASTNode.createIdent idName, idTok.line, idTok.col
 
-        curTok: Token = parser.cur
-        isMathUnary: bool = (idTok.val == "abs" || idTok.val == "ceil" || idTok.val == "floor" ||
-                             idTok.val == "round" || idTok.val == "trunc" || idTok.val == "sqrt" ||
-                             idTok.val == "sin" || idTok.val == "cos" || idTok.val == "tan" ||
-                             idTok.val == "asin" || idTok.val == "acos" || idTok.val == "atan" ||
-                             idTok.val == "log" || idTok.val == "exp" ||
-                             idTok.val == "isNan" || idTok.val == "isFin")
-        allowMinusArg: bool = isMathUnary && curTok.kind == TokenType.TOK_MINUS
+        allowMinusArg: bool = false
         if !parser.isAtEnd && curTok.line == idTok.line &&
            (curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_STRING ||
             curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
@@ -896,10 +889,9 @@ ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
         propNode.children = [left]
 
         curTok: Token = parser.cur
-        isConstProp: bool = (left.name == "mth" || left.name == "Math") && (propTok.val == "PI" || propTok.val == "E" || propTok.val == "SQRT2" || propTok.val == "rand")
         isOpAfter: bool = curTok.kind != TokenType.TOK_MINUS && curTok.kind != TokenType.TOK_NOT && (IsOperator curTok.kind)
         allowBracket: bool = (left.name == "Prm" || left.name == "Promise")
-        if left.kind == NodeKind.IdentExpr && !isConstProp && (left.name == "fs" || left.name == "net" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise" || left.name == "mem" || left.name == "ffi" || left.name == "mth" || left.name == "Math" || left.name == "dns" || left.name == "http" || left.name == "ws" || left.name == "ipc" || left.name == "time" || left.name == "term" || left.name == "pty") {
+        if left.kind == NodeKind.IdentExpr && (left.name == "fs" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise" || left.name == "mem" || left.name == "ffi" || left.name == "time") {
             if !parser.isAtEnd && curTok.line == propTok.line && !isOpAfter &&
                curTok.kind != TokenType.TOK_SEMICOLON && curTok.kind != TokenType.TOK_EOF &&
                curTok.kind != TokenType.TOK_RPAREN && curTok.kind != TokenType.TOK_RBRACE &&

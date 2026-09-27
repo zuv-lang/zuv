@@ -312,14 +312,6 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             expr.inferredType = TypeKind.I64
             -> TypeKind.I64
         }
-        if targetNode.kind == NodeKind.IdentExpr && (targetNode.name == "mth" || targetNode.name == "Math") {
-            if propName == "isNan" || propName == "isFin" {
-                expr.inferredType = TypeKind.Func
-                -> TypeKind.Func
-            }
-            expr.inferredType = TypeKind.Num
-            -> TypeKind.Num
-        }
         typeName = targetNode.typeAnnotation
         if typeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
             targetIdent = targetNode.name.ln > 0 ? targetNode.name : targetNode.val
@@ -469,101 +461,33 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 expr.inferredType = TypeKind.Bool
                 -> TypeKind.Bool
             }
-            if calleeName == "mmap" || calleeName == "ipc.mmap" {
-                expr.inferredType = TypeKind.I64
-                -> TypeKind.I64
-            }
-            if calleeName == "munmap" || calleeName == "ipc.munmap" || calleeName == "ipc.unmap" {
-                expr.inferredType = TypeKind.Num
-                -> TypeKind.Num
-            }
-            if calleeName == "isNan" || calleeName == "isFin" ||
-               calleeName == "mth.isNan" || calleeName == "mth.isFin" ||
-               calleeName == "Math.isNan" || calleeName == "Math.isFin" {
-                expr.inferredType = TypeKind.Bool
-                -> TypeKind.Bool
-            }
-            if calleeName == "abs" || calleeName == "mth.abs" || calleeName == "Math.abs" {
-                expr.inferredType = TypeKind.Num
-                if argCount > 0 {
-                    k0: TypeKind = expr.children[1].inferredType
-                    if k0 == TypeKind.I64 || k0 == TypeKind.I32 {
-                        expr.inferredType = k0
-                        -> k0
-                    }
-                }
-                -> TypeKind.Num
-            }
-            if calleeName == "min" || calleeName == "max" ||
-               calleeName == "mth.min" || calleeName == "mth.max" ||
-               calleeName == "Math.min" || calleeName == "Math.max" {
-                expr.inferredType = TypeKind.Num
-                if argCount >= 2 {
-                    k0: TypeKind = expr.children[1].inferredType
-                    k1: TypeKind = expr.children[2].inferredType
-                    if (k0 == TypeKind.I64 || k0 == TypeKind.I32) && (k1 == TypeKind.I64 || k1 == TypeKind.I32) {
-                        expr.inferredType = TypeKind.I64
-                        -> TypeKind.I64
-                    }
-                }
-                -> TypeKind.Num
-            }
-            if calleeName == "ceil" || calleeName == "floor" || calleeName == "round" ||
-               calleeName == "trunc" || calleeName == "sqrt" || calleeName == "pow" ||
-               calleeName == "sin" || calleeName == "cos" || calleeName == "tan" ||
-               calleeName == "asin" || calleeName == "acos" || calleeName == "atan" ||
-               calleeName == "atan2" || calleeName == "log" || calleeName == "exp" ||
-               calleeName == "rand" ||
-               calleeName == "mth.ceil" || calleeName == "mth.floor" || calleeName == "mth.round" ||
-               calleeName == "mth.trunc" || calleeName == "mth.sqrt" || calleeName == "mth.pow" ||
-               calleeName == "mth.sin" || calleeName == "mth.cos" || calleeName == "mth.tan" ||
-               calleeName == "mth.asin" || calleeName == "mth.acos" || calleeName == "mth.atan" ||
-               calleeName == "mth.atan2" || calleeName == "mth.log" || calleeName == "mth.exp" ||
-               calleeName == "mth.rand" ||
-               calleeName == "Math.ceil" || calleeName == "Math.floor" || calleeName == "Math.round" ||
-               calleeName == "Math.trunc" || calleeName == "Math.sqrt" || calleeName == "Math.pow" ||
-               calleeName == "Math.sin" || calleeName == "Math.cos" || calleeName == "Math.tan" ||
-               calleeName == "Math.asin" || calleeName == "Math.acos" || calleeName == "Math.atan" ||
-               calleeName == "Math.atan2" || calleeName == "Math.log" || calleeName == "Math.exp" ||
-               calleeName == "Math.rand" {
-                expr.inferredType = TypeKind.Num
-                -> TypeKind.Num
-            }
             isStdLibCall: bool = false
             if calleeName.ln >= 3 {
                 p3: str = calleeName.sub(0, 3)
-                if p3 == "fs." || p3 == "os." || p3 == "io." || p3 == "ws." {
+                if p3 == "fs." || p3 == "os." || p3 == "io." {
                     isStdLibCall = true
                 }
             }
             if !isStdLibCall && calleeName.ln >= 4 {
                 p4: str = calleeName.sub(0, 4)
-                if p4 == "net." || p4 == "sys." || p4 == "mem." || p4 == "ffi." || p4 == "dns." || p4 == "ipc." || p4 == "pty." {
+                if p4 == "sys." || p4 == "mem." || p4 == "ffi." {
                     isStdLibCall = true
                 }
             }
             if !isStdLibCall && calleeName.ln >= 5 {
                 p5: str = calleeName.sub(0, 5)
-                if p5 == "http." || p5 == "time." || p5 == "term." {
+                if p5 == "time." {
                     isStdLibCall = true
                 }
             }
             if isStdLibCall {
-                if calleeName == "fs.rF" || calleeName == "fs.read" || calleeName == "dns.lookup" || calleeName == "dns.resolve" || calleeName == "dns.reverseLookup" || calleeName == "dns.reverse_lookup" || calleeName == "net.recv" || calleeName == "net.rcv" || calleeName == "http.fmtRes" || calleeName == "http.formatResponse" || calleeName == "ipc.readStr" || calleeName == "pty.read" || calleeName == "pty.readStr" || calleeName == "term.readKey" || calleeName == "term.size" || calleeName == "term.color" || calleeName == "term.bold" || calleeName == "term.dim" || calleeName == "term.italic" || calleeName == "term.underline" || calleeName == "term.red" || calleeName == "term.green" || calleeName == "term.yellow" || calleeName == "term.blue" || calleeName == "term.magenta" || calleeName == "term.cyan" || calleeName == "term.reset" {
+                if calleeName == "fs.rF" || calleeName == "fs.read" {
                     expr.inferredType = TypeKind.Str
                     -> TypeKind.Str
                 }
-                if calleeName == "term.isRaw" || calleeName == "term.hasKey" {
-                    expr.inferredType = TypeKind.Bool
-                    -> TypeKind.Bool
-                }
-                if calleeName == "term.width" || calleeName == "term.height" || calleeName == "term.makeRaw" || calleeName == "term.restore" || calleeName == "pty.resize" || calleeName == "pty.close" || calleeName == "time.sleep" || calleeName == "time.sl" {
+                if calleeName == "time.sleep" || calleeName == "time.sl" {
                     expr.inferredType = TypeKind.Num
                     -> TypeKind.Num
-                }
-                if calleeName == "http.parseReq" || calleeName == "http.parseRequest" {
-                    expr.inferredType = TypeKind.Obj
-                    -> TypeKind.Obj
                 }
                 expr.inferredType = TypeKind.I64
                 -> TypeKind.I64

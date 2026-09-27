@@ -121,9 +121,6 @@ obj Checker {
         symExit = Symbol.create "exit", TypeKind.Func, "fn(i32)->void", false, true, 0, 0, 0
         symLn = Symbol.create "ln", TypeKind.Func, "fn(...any)->i64", false, true, 0, 0, 0
         symCap = Symbol.create "cap", TypeKind.Func, "fn(...any)->i64", false, true, 0, 0, 0
-        symPI = Symbol.create "PI", TypeKind.Num, "num", false, true, 0, 0, 0
-        symE = Symbol.create "E", TypeKind.Num, "num", false, true, 0, 0, 0
-        symSQRT2 = Symbol.create "SQRT2", TypeKind.Num, "num", false, true, 0, 0, 0
         rootSyms.psh symPrnt
         rootSyms.psh symLg
         rootSyms.psh symWrn
@@ -136,30 +133,13 @@ obj Checker {
         rootSyms.psh symExit
         rootSyms.psh symLn
         rootSyms.psh symCap
-        rootSyms.psh symPI
-        rootSyms.psh symE
-        rootSyms.psh symSQRT2
 
         symNan = Symbol.create "nan", TypeKind.Num, "num", false, true, 0, 0, 0
         symInf = Symbol.create "inf", TypeKind.Num, "num", false, true, 0, 0, 0
         symInfinity = Symbol.create "Infinity", TypeKind.Num, "num", false, true, 0, 0, 0
-        symIsNan = Symbol.create "isNan", TypeKind.Func, "fn(num)->bool", false, true, 0, 0, 0
-        symIsFin = Symbol.create "isFin", TypeKind.Func, "fn(num)->bool", false, true, 0, 0, 0
         rootSyms.psh symNan
         rootSyms.psh symInf
         rootSyms.psh symInfinity
-        rootSyms.psh symIsNan
-        rootSyms.psh symIsFin
-
-        mathFuncNames: str[] = [
-            "abs", "ceil", "floor", "round", "trunc", "sqrt", "pow",
-            "max", "min", "sin", "cos", "tan", "asin", "acos", "atan",
-            "atan2", "log", "exp", "rand"
-        ]
-        fr mfn of mathFuncNames {
-            mfSym = Symbol.create mfn, TypeKind.Func, "fn(...any)->num", false, true, 0, 0, 0
-            rootSyms.psh mfSym
-        }
 
         rootScope = Scope.create 0, rootSyms
         rootScopes: Scope[] = [rootScope]
