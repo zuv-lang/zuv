@@ -119,7 +119,7 @@ obj Checker {
         symArgs = Symbol.create "args", TypeKind.Arr, "str[]", false, true, 0, 0, 0
         symOk = Symbol.create "ok", TypeKind.Func, "fn(...any)->any", false, true, 0, 0, 0
         symExit = Symbol.create "exit", TypeKind.Func, "fn(i32)->void", false, true, 0, 0, 0
-        symLn = Symbol.create "ln", TypeKind.Func, "fn(...any)->i64", false, true, 0, 0, 0
+        symLen = Symbol.create "len", TypeKind.Func, "fn(...any)->i64", false, true, 0, 0, 0
         symCap = Symbol.create "cap", TypeKind.Func, "fn(...any)->i64", false, true, 0, 0, 0
         rootSyms.psh symPrnt
         rootSyms.psh symLg
@@ -131,14 +131,12 @@ obj Checker {
         rootSyms.psh symArgs
         rootSyms.psh symOk
         rootSyms.psh symExit
-        rootSyms.psh symLn
+        rootSyms.psh symLen
         rootSyms.psh symCap
 
         symNan = Symbol.create "nan", TypeKind.Num, "num", false, true, 0, 0, 0
-        symInf = Symbol.create "inf", TypeKind.Num, "num", false, true, 0, 0, 0
         symInfinity = Symbol.create "Infinity", TypeKind.Num, "num", false, true, 0, 0, 0
         rootSyms.psh symNan
-        rootSyms.psh symInf
         rootSyms.psh symInfinity
 
         rootScope = Scope.create 0, rootSyms

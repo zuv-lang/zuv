@@ -723,7 +723,7 @@ NodeUsesAsArray node: ASTNode, varName: str :: bool {
         firstC: ASTNode = node.children[0]
         if firstC.kind == NodeKind.IdentExpr && firstC.name == varName {
             mName: str = node.name
-            if mName == "psh" || mName == "push" || mName == "pop" || mName == "pp" || mName == "cat" || mName == "concat" || mName == "cnt" || mName == "contains" || mName == "slc" || mName == "slice" {
+            if mName == "push" || mName == "pop" || mName == "concat" || mName == "contains" || mName == "slice" {
                 -> true
             }
         }
@@ -732,7 +732,7 @@ NodeUsesAsArray node: ASTNode, varName: str :: bool {
         firstC: ASTNode = node.children[0]
         if firstC.kind == NodeKind.IdentExpr && firstC.name == varName {
             pName: str = node.name
-            if pName == "ln" || pName == "length" || pName == "cap" || pName == "capacity" {
+            if pName == "len" || pName == "cap" {
                 -> true
             }
         }

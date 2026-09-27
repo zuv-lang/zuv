@@ -750,11 +750,11 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                             gType = TypeKind.Bool
                         } els if cNode.kind == NodeKind.MethodCallExpr {
                             mName: str = cNode.name
-                            if mName == "sub" || mName == "substr" || mName == "slc" || mName == "slice" || mName == "chr" || mName == "charAt" || mName == "cat" || mName == "concat" {
+                            if mName == "sub" || mName == "slice" || mName == "chr" || mName == "charAt" || mName == "concat" {
                                 gType = TypeKind.Str
-                            } els if mName == "cnt" || mName == "contains" || mName == "eq" {
+                            } els if mName == "contains" || mName == "eq" {
                                 gType = TypeKind.Bool
-                            } els if mName == "ln" || mName == "length" || mName == "psh" || mName == "push" {
+                            } els if mName == "len" || mName == "cap" || mName == "push" {
                                 gType = TypeKind.I64
                             } els {
                                 mTarget: str = ""

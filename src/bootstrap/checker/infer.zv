@@ -93,7 +93,7 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 }
                 -> foundSym.typeKind
             }
-            if symName == "inf" || symName == "Infinity" || symName == "nan" {
+            if symName == "Infinity" || symName == "nan" {
                 expr.inferredType = TypeKind.Num
                 expr.typeAnnotation = "num"
                 -> TypeKind.Num
@@ -304,11 +304,11 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         targetNode = expr.children[0]
         targetKind = InferExpression(checker, targetNode)
         propName = expr.name
-        if (propName == "ln" || propName == "length") && (targetKind == TypeKind.Arr || targetKind == TypeKind.Str || targetKind == TypeKind.Unknown) {
+        if propName == "len" && (targetKind == TypeKind.Arr || targetKind == TypeKind.Str || targetKind == TypeKind.Unknown) {
             expr.inferredType = TypeKind.I64
             -> TypeKind.I64
         }
-        if (propName == "cap" || propName == "capacity") && (targetKind == TypeKind.Arr || targetKind == TypeKind.Unknown) {
+        if propName == "cap" && (targetKind == TypeKind.Arr || targetKind == TypeKind.Unknown) {
             expr.inferredType = TypeKind.I64
             -> TypeKind.I64
         }
@@ -453,11 +453,11 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 expr.inferredType = TypeKind.I64
                 -> TypeKind.I64
             }
-            if calleeName == "ln" || calleeName == "cap" {
+            if calleeName == "len" || calleeName == "cap" {
                 expr.inferredType = TypeKind.I64
                 -> TypeKind.I64
             }
-            if calleeName == "cnt" || calleeName == "contains" {
+            if calleeName == "contains" {
                 expr.inferredType = TypeKind.Bool
                 -> TypeKind.Bool
             }

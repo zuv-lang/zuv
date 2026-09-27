@@ -14,9 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Result Pattern Matching**: Added `ok(val)` / `err(val)` constructors and `sw` pattern matching with bound variables (`tests/result_match.test.zv`).
 - **Global Object (`glb`)**: Added project-wide global `glb` singleton object supporting cross-function property mutation and retrieval (`tests/glb.test.zv`).
 - **Spread & Rest Parameters**: Added array spread, object literal spread, and variable rest parameter packing/unpacking (`tests/spread_rest.test.zv`).
-- **IEEE-754 Special Values**: Supported `nan`, `inf`, and `Infinity` floating-point literal constants with IEEE-754 64-bit precision (`tests/nan_inf.test.zv`).
-- **Native Length & Capacity**: Added standalone prefix `ln` and `cap` functions for arrays and strings (`tests/native_i64_task4.test.zv`).
-- **Array Container Writeback**: Added container slot writeback for `PropExpr` and `IndexExpr` on `.psh` / `.push` reallocation (`tests/geometric_growth_task5.test.zv`).
+- **IEEE-754 Special Values**: Supported `nan` and `Infinity` floating-point literal constants with IEEE-754 64-bit precision (`tests/nan_inf.test.zv`).
+- **Native Length & Capacity**: Standardized standalone and property `.len` and `.cap` for collections, removing redundant aliases (`ln`, `length`, and `capacity`).
+- **Array Container Writeback & Method Normalization**: Added container slot writeback for `PropExpr` and `IndexExpr` on reallocation, standardizing array and string methods to `push`, `pop`, `concat`, `contains`, `slice`, and `sub` while removing abbreviated short codes (`psh`, `pp`, `cat`, `cnt`, `slc`, `substr`).
 - **Optional Chaining (`?.`, `?.[ ]`)**: Added null/und guards for property and index access in type checker and codegen (`tests/optional_chain.test.zv`).
 - **User-Defined Decorators**: Added AST-driven, generalized decorator support for class/object decorators, method decorators, parameterized decorator factories, profiling/timing behavior-changing wrappers, and free-function decorators. Supported rest-parameter lambda wrapping, dynamic prototype mutation, and return type propagation (`tests/decorators.test.zv`).
 - **Compound Assignment**: Supported `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `|=`, `^=` with memory store lowering and string `+=` concatenation (`tests/compound_assign.test.zv`).

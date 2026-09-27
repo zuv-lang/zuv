@@ -579,7 +579,7 @@ obj ExprCodegen {
             res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
             -> res
         }
-        if node.name == "inf" || node.name == "Infinity" {
+        if node.name == "Infinity" {
             rReg: str = self.codegen.newReg
             self.codegen.emit `${rReg} = fadd double 0.0, 0x7FF0000000000000`
             res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
@@ -1628,7 +1628,7 @@ obj ExprCodegen {
             res: ExprResult = { reg: argRegs[0], typeKind: TypeKind.I64 }
             -> res
         }
-        if (calleeName == "cnt" || calleeName == "contains") && argRegs.ln >= 2 {
+        if calleeName == "contains" && argRegs.ln >= 2 {
             sPtr: str = argRegs[0]
             if argTypes[0] != TypeKind.Str && argTypes[0] != TypeKind.Ptr {
                 cReg: str = self.codegen.newReg
@@ -1662,7 +1662,7 @@ obj ExprCodegen {
             res: ExprResult = { reg: "0.0", typeKind: TypeKind.Num }
             -> res
         }
-        if calleeName == "ln" && argRegs.ln >= 1 {
+        if calleeName == "len" && argRegs.ln >= 1 {
             if argTypes[0] == TypeKind.Str {
                 lenReg: str = self.codegen.newReg
                 self.codegen.emitExtern "declare i64 @strlen(ptr)"
@@ -2158,7 +2158,7 @@ obj ExprCodegen {
             -> self.emitCall cCallNode
         }
 
-        if methodName == "psh" || methodName == "push" {
+        if methodName == "push" {
             varSlot: str = ""
             varIsI64: bool = false
             arrPtrReg: str = ""
@@ -2257,7 +2257,7 @@ obj ExprCodegen {
             -> res
         }
 
-        if methodName == "pp" || methodName == "pop" {
+        if methodName == "pop" {
             arrRes: ExprResult = self.emitExpr targetNode
             arrPtrReg: str = arrRes.reg
             if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
@@ -2274,7 +2274,7 @@ obj ExprCodegen {
             -> res
         }
 
-        if methodName == "cat" || methodName == "concat" {
+        if methodName == "concat" {
             targetRes: ExprResult = self.emitExpr targetNode
             argRes: ExprResult = self.emitExpr node.children[1]
             l1Reg: str = self.codegen.newReg
@@ -2300,7 +2300,7 @@ obj ExprCodegen {
             -> res
         }
 
-        if methodName == "cnt" || methodName == "contains" {
+        if methodName == "contains" {
             targetRes: ExprResult = self.emitExpr targetNode
             argRes: ExprResult = self.emitExpr node.children[1]
             foundReg: str = self.codegen.newReg
@@ -2322,7 +2322,7 @@ obj ExprCodegen {
             -> res
         }
 
-        if methodName == "sub" || methodName == "substr" || methodName == "slc" || methodName == "slice" {
+        if methodName == "sub" || methodName == "slice" {
             targetRes: ExprResult = self.emitExpr targetNode
             startRes: ExprResult = self.emitExpr node.children[1]
             startReg: str = startRes.reg
@@ -2348,7 +2348,7 @@ obj ExprCodegen {
                     self.codegen.emit `${cReg} = sext i32 ${secondRes.reg} to i64`
                     secondReg = cReg
                 }
-                if methodName == "slc" || methodName == "slice" {
+                if methodName == "slice" {
                     subLenReg: str = self.codegen.newReg
                     self.codegen.emit `${subLenReg} = sub i64 ${secondReg}, ${startReg}`
                     lenReg = subLenReg
@@ -2754,7 +2754,7 @@ obj ExprCodegen {
 
         targetRes: ExprResult = self.emitExpr targetNode
 
-        if propName == "ln" || propName == "length" {
+        if propName == "len" {
             if targetRes.typeKind == TypeKind.Str {
                 lenReg: str = self.codegen.newReg
                 self.codegen.emit `${lenReg} = call i64 @strlen(ptr ${targetRes.reg})`
@@ -2772,7 +2772,7 @@ obj ExprCodegen {
             -> res
         }
 
-        if propName == "pp" || propName == "pop" {
+        if propName == "pop" {
             arrPtrReg: str = targetRes.reg
             if !(isPointerType targetRes.typeKind) {
                 convReg: str = self.codegen.newReg
@@ -2788,7 +2788,7 @@ obj ExprCodegen {
             -> res
         }
 
-        if propName == "cap" || propName == "capacity" {
+        if propName == "cap" {
             arrPtrReg: str = targetRes.reg
             if !(isPointerType targetRes.typeKind) {
                 convReg: str = self.codegen.newReg
