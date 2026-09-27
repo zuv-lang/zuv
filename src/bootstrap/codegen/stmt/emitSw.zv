@@ -1,0 +1,221 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitSw Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitSw.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp isPointerType frm ../types
+imp boxValueToI64 frm ../array
+imp ExprResult frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitSw self: StmtCodegen, node: ASTNode :: void {
+        hasResultArm: bool = false
+        fr arm of node.cases {
+            if arm.patternKind == "ok" || arm.patternKind == "err" {
+                hasResultArm = true
+                brk
+            }
+        }
+
+        if hasResultArm {
+            targetRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            ptrTargetReg: str = targetRes.reg
+            if !(isPointerType targetRes.typeKind) {
+                intTargetReg: str = targetRes.reg
+                if targetRes.typeKind == TypeKind.Num {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = fptosi double ${targetRes.reg} to i64`
+                    intTargetReg = convReg
+                }
+                cPtrReg: str = self.codegen.newReg
+                self.codegen.emit `${cPtrReg} = inttoptr i64 ${intTargetReg} to ptr`
+                ptrTargetReg = cPtrReg
+            }
+
+            tagGep: str = self.codegen.newReg
+            self.codegen.emit `${tagGep} = getelementptr inbounds { i64, i64 }, ptr ${ptrTargetReg}, i32 0, i32 0`
+            tagVal: str = self.codegen.newReg
+            self.codegen.emit `${tagVal} = load i64, ptr ${tagGep}`
+
+            valGep: str = self.codegen.newReg
+            self.codegen.emit `${valGep} = getelementptr inbounds { i64, i64 }, ptr ${ptrTargetReg}, i32 0, i32 1`
+            valVal: str = self.codegen.newReg
+            self.codegen.emit `${valVal} = load i64, ptr ${valGep}`
+
+            okLabel: str = self.codegen.newLabel "match_ok"
+            errLabel: str = self.codegen.newLabel "match_err"
+            endLabel: str = self.codegen.newLabel "match_end"
+
+            isOkReg: str = self.codegen.newReg
+            self.codegen.emit `${isOkReg} = icmp eq i64 ${tagVal}, 1`
+            self.codegen.emit `br i1 ${isOkReg}, label %${okLabel}, label %${errLabel}`
+
+            // OK Arm
+            self.codegen.emitLabel okLabel
+            cIdx: num = 0
+            fr arm of node.cases {
+                if arm.patternKind == "ok" {
+                    savedSyms: num = self.exprGen.symbols.ln
+                    childIdx: num = cIdx + 1
+                    if arm.varName.ln > 0 && arm.varName != "_" {
+                        varSlot: str = self.codegen.newReg
+                        self.codegen.emit `${varSlot} = alloca i64`
+                        self.codegen.emit `store i64 ${valVal}, ptr ${varSlot}`
+                        self.exprGen.addSymbol arm.varName, varSlot, TypeKind.I64, false, true
+                    }
+                    if childIdx < node.children.ln {
+                        self.emitStmt node.children[childIdx]
+                    }
+                    wh self.exprGen.symbols.ln > savedSyms {
+                        self.exprGen.symbols.pp
+                    }
+                    brk
+                }
+                cIdx++
+            }
+            self.codegen.emit `br label %${endLabel}`
+
+            // ERR Arm
+            self.codegen.emitLabel errLabel
+            cIdx = 0
+            fr arm of node.cases {
+                if arm.patternKind == "err" {
+                    savedSyms: num = self.exprGen.symbols.ln
+                    childIdx: num = cIdx + 1
+                    if arm.varName.ln > 0 && arm.varName != "_" {
+                        varSlot: str = self.codegen.newReg
+                        self.codegen.emit `${varSlot} = alloca i64`
+                        self.codegen.emit `store i64 ${valVal}, ptr ${varSlot}`
+                        self.exprGen.addSymbol arm.varName, varSlot, TypeKind.I64, false, true
+                    }
+                    if childIdx < node.children.ln {
+                        self.emitStmt node.children[childIdx]
+                    }
+                    wh self.exprGen.symbols.ln > savedSyms {
+                        self.exprGen.symbols.pp
+                    }
+                    brk
+                }
+                cIdx++
+            }
+            self.codegen.emit `br label %${endLabel}`
+
+            self.codegen.emitLabel endLabel
+            ->
+        }
+
+        targetRes: ExprResult = self.exprGen.emitExpr node.children[0]
+
+        defaultLbl: str = self.codegen.newLabel "sw_def"
+        mergeLbl: str = self.codegen.newLabel "sw_merge"
+
+        isStrSw: bool = (targetRes.typeKind == TypeKind.Str || targetRes.typeKind == TypeKind.Ptr)
+        if !isStrSw {
+            fr arm of node.cases {
+                if arm.patternKind == "str" {
+                    isStrSw = true
+                    brk
+                }
+            }
+        }
+
+        caseLabels: str[] = []
+        armIdx: num = 0
+        defArmIdx: num = -1
+        fr arm of node.cases {
+            if arm.litText == "_" || arm.patternKind == "_" || arm.varName == "_" {
+                caseLabels.psh defaultLbl
+                defArmIdx = armIdx
+            } els {
+                cLbl: str = self.codegen.newLabel `sw_case_${armIdx}`
+                caseLabels.psh cLbl
+            }
+            armIdx++
+        }
+
+        if isStrSw {
+            sPtr: str = targetRes.reg
+            if targetRes.typeKind != TypeKind.Str && targetRes.typeKind != TypeKind.Ptr {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${targetRes.reg} to ptr`
+                sPtr = cReg
+            }
+
+            caseIdx: num = 0
+            fr arm of node.cases {
+                if caseIdx != defArmIdx {
+                    cLbl: str = caseLabels[caseIdx]
+                    nextCheckLbl: str = self.codegen.newLabel `sw_chk_${caseIdx}`
+                    litConst: str = self.codegen.addStringConstant arm.litText
+                    litPtr: str = self.codegen.newReg
+                    self.codegen.emit `${litPtr} = getelementptr inbounds i8, ptr ${litConst}, i64 0`
+                    scmp: str = self.codegen.newReg
+                    self.codegen.emit `${scmp} = call i32 @strcmp(ptr ${sPtr}, ptr ${litPtr})`
+                    condReg: str = self.codegen.newReg
+                    self.codegen.emit `${condReg} = icmp eq i32 ${scmp}, 0`
+                    self.codegen.emit `br i1 ${condReg}, label %${cLbl}, label %${nextCheckLbl}`
+                    self.codegen.emitLabel nextCheckLbl
+                }
+                caseIdx++
+            }
+            self.codegen.emit `br label %${defaultLbl}`
+        } els {
+            boxedTarget: str = boxValueToI64 self.codegen, targetRes.reg, targetRes.typeKind
+            swTable: str = `switch i64 ${boxedTarget}, label %${defaultLbl} [\n`
+            caseIdx: num = 0
+            fr arm of node.cases {
+                if caseIdx != defArmIdx {
+                    tagVal: str = arm.litText
+                    if tagVal == "true" {
+                        tagVal = "1"
+                    } els if tagVal == "false" {
+                        tagVal = "0"
+                    }
+                    if arm.patternKind != "ident" && arm.patternKind != "_" && arm.patternKind != "num" && arm.patternKind != "str" && arm.patternKind.ln > 0 {
+                        disc: num = self.exprGen.objGen.registry.getEnumVariantVal arm.patternKind, arm.varName
+                        if disc >= 0 {
+                            tagVal = `${disc}`
+                        }
+                    }
+                    if tagVal == arm.litText {
+                        disc: num = self.exprGen.objGen.registry.findVariantVal arm.varName
+                        if disc >= 0 {
+                            tagVal = `${disc}`
+                        }
+                    }
+                    if tagVal.ln == 0 {
+                        tagVal = `${caseIdx}`
+                    }
+                    cLbl: str = caseLabels[caseIdx]
+                    swTable = swTable + `    i64 ${tagVal}, label %${cLbl}\n`
+                }
+                caseIdx++
+            }
+            swTable = swTable + "  ]"
+            self.codegen.emitRaw swTable
+        }
+
+        childArmIdx: num = 1
+        labelArmIdx: num = 0
+        fr arm of node.cases {
+            cLbl: str = caseLabels[labelArmIdx]
+            self.codegen.emitLabel cLbl
+            if childArmIdx < node.children.ln {
+                self.emitStmt node.children[childArmIdx]
+            }
+            self.codegen.emit `br label %${mergeLbl}`
+            childArmIdx++
+            labelArmIdx++
+        }
+
+        if defArmIdx < 0 {
+            self.codegen.emitLabel defaultLbl
+            self.codegen.emit `br label %${mergeLbl}`
+        }
+
+        self.codegen.emitLabel mergeLbl
+}

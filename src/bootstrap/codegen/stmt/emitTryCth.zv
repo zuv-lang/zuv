@@ -1,0 +1,48 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitTryCth Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitTryCth.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp StmtCodegen frm ../stmt
+
+EmitTryCth self: StmtCodegen, node: ASTNode :: void {
+        tryLbl: str = self.codegen.newLabel "try_body"
+        catchLbl: str = self.codegen.newLabel "try_catch"
+        endLbl: str = self.codegen.newLabel "try_end"
+
+        oldCatch: str = self.exprGen.activeCatchLabel
+        self.exprGen.activeCatchLabel = catchLbl
+
+        self.codegen.emit `br label %${tryLbl}`
+        self.codegen.emitLabel tryLbl
+
+        if node.children.ln > 0 {
+            self.emitStmt node.children[0]
+        }
+
+        self.codegen.emit `br label %${endLbl}`
+
+        self.exprGen.activeCatchLabel = oldCatch
+
+        self.codegen.emitLabel catchLbl
+        errVarName: str = node.name
+        if errVarName.ln > 0 {
+            errSlot: str = self.codegen.newReg
+            self.codegen.emit `${errSlot} = alloca i64`
+            eLoaded: str = self.codegen.newReg
+            self.codegen.emit `${eLoaded} = load i64, ptr @zuv_exc_value`
+            self.codegen.emit `store i64 ${eLoaded}, ptr ${errSlot}`
+            self.exprGen.addSymbol errVarName, errSlot, TypeKind.I64, false, true
+        }
+
+        if node.children.ln > 1 && node.children[1].kind != NodeKind.NilExpr {
+            self.emitStmt node.children[1]
+        }
+
+        self.codegen.emit `br label %${endLbl}`
+        self.codegen.emitLabel endLbl
+}

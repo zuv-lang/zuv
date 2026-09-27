@@ -1,0 +1,16 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitCont Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitCont.zv
+ * =============================================================================
+ */
+
+imp ASTNode frm ../../ast
+imp StmtCodegen frm ../stmt
+
+EmitCont self: StmtCodegen, node: ASTNode :: void {
+        if self.continueLabels.ln > 0 {
+            cLbl: str = self.continueLabels[self.continueLabels.ln - 1]
+            self.codegen.emit `br label %${cLbl}`
+        }
+}

@@ -1,0 +1,15 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitBlock Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitBlock.zv
+ * =============================================================================
+ */
+
+imp ASTNode frm ../../ast
+imp StmtCodegen frm ../stmt
+
+EmitBlock self: StmtCodegen, node: ASTNode :: void {
+        fr child of node.children {
+            self.emitStmt child
+        }
+}

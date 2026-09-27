@@ -1,0 +1,94 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitFrOf Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitFrOf.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp llvmStackType, isPointerType frm ../types
+imp unboxValueFromI64 frm ../array
+imp ExprResult frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitFrOf self: StmtCodegen, node: ASTNode :: void {
+        arrRes: ExprResult = self.exprGen.emitExpr node.children[0]
+        arrPtrReg: str = arrRes.reg
+        if !(isPointerType arrRes.typeKind) {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${arrRes.reg} to ptr`
+            arrPtrReg = convReg
+        }
+        lenReg: str = self.exprGen.arrGen.emitLength arrPtrReg
+
+        idxSlot: str = self.codegen.newReg
+        self.codegen.emit `${idxSlot} = alloca i64`
+        self.codegen.emit `store i64 0, ptr ${idxSlot}`
+
+        itemType = node.inferredType
+        if itemType == TypeKind.Unknown {
+            itemType = TypeKind.I64
+        }
+        itemSlot: str = self.codegen.newReg
+        stType: str = llvmStackType itemType
+        self.codegen.emit `${itemSlot} = alloca ${stType}`
+        self.exprGen.addSymbol node.name, itemSlot, itemType, false, true
+
+        userIdxSlot: str = ""
+        if node.val.ln > 0 {
+            userIdxSlot = self.codegen.newReg
+            self.codegen.emit `${userIdxSlot} = alloca double`
+            self.exprGen.addSymbol node.val, userIdxSlot, TypeKind.Num, false, true
+        }
+
+        condLbl: str = self.codegen.newLabel "frof_cond"
+        bodyLbl: str = self.codegen.newLabel "frof_body"
+        stepLbl: str = self.codegen.newLabel "frof_step"
+        endLbl: str = self.codegen.newLabel "frof_end"
+
+        self.breakLabels.psh endLbl
+        self.continueLabels.psh stepLbl
+
+        self.codegen.emit `br label %${condLbl}`
+        self.codegen.emitLabel condLbl
+
+        curIdxReg: str = self.codegen.newReg
+        self.codegen.emit `${curIdxReg} = load i64, ptr ${idxSlot}`
+        hasMore: str = self.codegen.newReg
+        self.codegen.emit `${hasMore} = icmp ult i64 ${curIdxReg}, ${lenReg}`
+        self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
+
+        self.codegen.emitLabel bodyLbl
+        elemRaw: str = self.exprGen.arrGen.emitGetElement arrPtrReg, curIdxReg, false, node.line
+        elemVal: str = elemRaw
+        if itemType == TypeKind.Num {
+            elemDbl: str = self.codegen.newReg
+            self.codegen.emit `${elemDbl} = sitofp i64 ${elemRaw} to double`
+            elemVal = elemDbl
+        } els {
+            elemVal = unboxValueFromI64 self.codegen, elemRaw, itemType
+        }
+        self.codegen.emit `store ${stType} ${elemVal}, ptr ${itemSlot}`
+
+        if userIdxSlot.ln > 0 {
+            idxDbl: str = self.codegen.newReg
+            self.codegen.emit `${idxDbl} = sitofp i64 ${curIdxReg} to double`
+            self.codegen.emit `store double ${idxDbl}, ptr ${userIdxSlot}`
+        }
+
+        self.emitStmt node.children[1]
+        self.codegen.emit `br label %${stepLbl}`
+
+        self.codegen.emitLabel stepLbl
+        sIdx: str = self.codegen.newReg
+        self.codegen.emit `${sIdx} = load i64, ptr ${idxSlot}`
+        nextIdx: str = self.codegen.newReg
+        self.codegen.emit `${nextIdx} = add i64 ${sIdx}, 1`
+        self.codegen.emit `store i64 ${nextIdx}, ptr ${idxSlot}`
+        self.codegen.emit `br label %${condLbl}`
+
+        self.codegen.emitLabel endLbl
+        self.breakLabels.pp
+        self.continueLabels.pp
+}

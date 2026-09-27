@@ -1,0 +1,28 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitPanic Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitPanic.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp ExprResult frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitPanic self: StmtCodegen, node: ASTNode :: void {
+        msgPtr: str = ""
+        if node.children.ln > 0 {
+            cRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            if cRes.typeKind == TypeKind.Str || cRes.typeKind == TypeKind.Ptr {
+                msgPtr = cRes.reg
+            } els {
+                msgPtr = self.codegen.addStringConstant "panic"
+            }
+        } els {
+            msgPtr = self.codegen.addStringConstant "panic"
+        }
+        fileSym: str = self.codegen.addStringConstant "main.zv"
+        self.codegen.emit `call void @zuv_panic(ptr ${msgPtr}, ptr ${fileSym}, i32 ${node.line})`
+        self.codegen.emit `unreachable`
+}
