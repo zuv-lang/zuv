@@ -1,0 +1,59 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitResolvePc Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitResolvePc.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitResolvePc self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define internal ptr @zuv_resolve_pc(ptr %pc) {
+        entry:
+            ; Ensure descriptor table is sorted by function entry address
+            call void @zuv_ensure_fn_sorted()
+            %count = load i64, ptr @zuv_fn_count
+            %has_elems = icmp sgt i64 %count, 0
+            br i1 %has_elems, label %init, label %not_found
+
+        init:
+            ; Start search from highest function entry downwards
+            %p_k = alloca i64, align 8
+            %init_idx = sub i64 %count, 1
+            store i64 %init_idx, ptr %p_k
+            %target = ptrtoint ptr %pc to i64
+            br label %loop
+
+        loop:
+            %k = load i64, ptr %p_k
+            %k_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %k
+            %entry_fn = load ptr, ptr %k_ptr
+            %entry_fn_int = ptrtoint ptr %entry_fn to i64
+            %is_le = icmp ule i64 %entry_fn_int, %target
+            br i1 %is_le, label %check_dist, label %step_back
+
+        check_dist:
+            ; Verify target instruction pointer is within 2MB threshold of entry
+            %dist = sub i64 %target, %entry_fn_int
+            %in_range = icmp ult i64 %dist, 2097152
+            br i1 %in_range, label %found, label %not_found
+
+        found:
+            ret ptr %k_ptr
+
+        step_back:
+            ; Decrement index to check preceding function descriptor
+            %k_is_zero = icmp eq i64 %k, 0
+            br i1 %k_is_zero, label %not_found, label %do_step
+
+        do_step:
+            %k_prev = sub i64 %k, 1
+            store i64 %k_prev, ptr %p_k
+            br label %loop
+
+        not_found:
+            ret ptr null
+        }
+        `
+}

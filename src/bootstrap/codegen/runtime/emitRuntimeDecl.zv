@@ -1,0 +1,14 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitRuntimeDecl Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitRuntimeDecl.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitRuntimeDecl self: RuntimeCodegen, decl: str, symbol: str :: void {
+        if !(self.codegen.header.cnt symbol) {
+            self.codegen.header += decl + "\n"
+        }
+}

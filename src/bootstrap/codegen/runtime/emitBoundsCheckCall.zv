@@ -1,0 +1,13 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitBoundsCheckCall Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitBoundsCheckCall.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitBoundsCheckCall self: RuntimeCodegen, arrReg: str, idxReg: str, file: str, line: num :: void {
+        fileSym: str = self.codegen.addStringConstant file
+        self.codegen.emit `call void @zuv_check_bounds(ptr ${arrReg}, i64 ${idxReg}, ptr ${fileSym}, i32 ${line})`
+}

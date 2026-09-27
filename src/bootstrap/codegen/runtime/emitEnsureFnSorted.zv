@@ -1,0 +1,106 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitEnsureFnSorted Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitEnsureFnSorted.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitEnsureFnSorted self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define internal void @zuv_ensure_fn_sorted() {
+        entry:
+            ; Check if symbol table was already sorted
+            %flag = load i32, ptr @zuv_fn_sorted
+            %already = icmp ne i32 %flag, 0
+            br i1 %already, label %ret, label %do_sort
+
+        do_sort:
+            ; Mark table as sorted
+            store i32 1, ptr @zuv_fn_sorted
+            %count = load i64, ptr @zuv_fn_count
+            %has_elems = icmp sgt i64 %count, 1
+            br i1 %has_elems, label %init_i, label %ret
+
+        init_i:
+            ; Insertion sort outer loop initialization: i = 1
+            %p_i = alloca i64, align 8
+            %p_j = alloca i64, align 8
+            store i64 1, ptr %p_i
+            br label %cond_i
+
+        cond_i:
+            ; Loop condition: i < count
+            %i_val = load i64, ptr %p_i
+            %i_cmp = icmp slt i64 %i_val, %count
+            br i1 %i_cmp, label %body_i, label %ret
+
+        body_i:
+            ; Extract key descriptor at index i
+            %i_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %i_val
+            %key_fn = load ptr, ptr %i_ptr
+            %key_fn_int = ptrtoint ptr %key_fn to i64
+            %key_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 1
+            %key_name = load ptr, ptr %key_name_ptr
+            %key_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 2
+            %key_file = load ptr, ptr %key_file_ptr
+            %key_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %i_ptr, i32 0, i32 3
+            %key_line = load i32, ptr %key_line_ptr
+            store i64 %i_val, ptr %p_j
+            br label %cond_j
+
+        cond_j:
+            ; Inner loop condition: j > 0
+            %j_val = load i64, ptr %p_j
+            %j_gt_zero = icmp sgt i64 %j_val, 0
+            br i1 %j_gt_zero, label %check_prev, label %insert
+
+        check_prev:
+            ; Compare preceding element: descs[j - 1].fn > key_fn
+            %j_prev = sub i64 %j_val, 1
+            %prev_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %j_prev
+            %prev_fn = load ptr, ptr %prev_ptr
+            %prev_fn_int = ptrtoint ptr %prev_fn to i64
+            %prev_gt = icmp ugt i64 %prev_fn_int, %key_fn_int
+            br i1 %prev_gt, label %shift_j, label %insert
+
+        shift_j:
+            ; Shift preceding element forward to index j
+            %cur_j_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %j_val
+            %prev_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 1
+            %prev_name = load ptr, ptr %prev_name_ptr
+            %prev_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 2
+            %prev_file = load ptr, ptr %prev_file_ptr
+            %prev_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %prev_ptr, i32 0, i32 3
+            %prev_line = load i32, ptr %prev_line_ptr
+            store ptr %prev_fn, ptr %cur_j_ptr
+            %cur_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 1
+            store ptr %prev_name, ptr %cur_name_ptr
+            %cur_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 2
+            store ptr %prev_file, ptr %cur_file_ptr
+            %cur_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %cur_j_ptr, i32 0, i32 3
+            store i32 %prev_line, ptr %cur_line_ptr
+            store i64 %j_prev, ptr %p_j
+            br label %cond_j
+
+        insert:
+            ; Insert key record at sorted position j
+            %ins_j = load i64, ptr %p_j
+            %pos_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr @zuv_fn_descs, i64 %ins_j
+            store ptr %key_fn, ptr %pos_ptr
+            %ins_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 1
+            store ptr %key_name, ptr %ins_name_ptr
+            %ins_file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 2
+            store ptr %key_file, ptr %ins_file_ptr
+            %ins_line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %pos_ptr, i32 0, i32 3
+            store i32 %key_line, ptr %ins_line_ptr
+            %i_next = add i64 %i_val, 1
+            store i64 %i_next, ptr %p_i
+            br label %cond_i
+
+        ret:
+            ret void
+        }
+        `
+}

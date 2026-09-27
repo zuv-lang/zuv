@@ -1,0 +1,73 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitBacktraceHandler Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitBacktraceHandler.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitBacktraceHandler self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define ptr @zuv_backtrace() {
+        entry:
+            ; Capture stack frame return addresses and allocate 4KB output string buffer
+            %buf = alloca [32 x ptr], align 8
+            %frames = call i32 @RtlCaptureStackBackTrace(i32 1, i32 32, ptr %buf, ptr null)
+            %out = call ptr @malloc(i64 4096)
+            store i8 0, ptr %out
+            %has_frames = icmp sgt i32 %frames, 0
+            br i1 %has_frames, label %init, label %done
+
+        init:
+            ; Buffer formatting loop initialization: bidx = 0
+            %p_bidx = alloca i32, align 4
+            store i32 0, ptr %p_bidx
+            br label %loop
+
+        loop:
+            ; Format frame at index into buffer using snprintf
+            %idx = load i32, ptr %p_bidx
+            %cur_len = call i64 @strlen(ptr %out)
+            %slot = getelementptr inbounds [32 x ptr], ptr %buf, i32 0, i32 %idx
+            %pc = load ptr, ptr %slot
+            %desc = call ptr @zuv_resolve_pc(ptr %pc)
+            %is_null = icmp eq ptr %desc, null
+            %dest_ptr = getelementptr inbounds i8, ptr %out, i64 %cur_len
+            %avail = sub i64 4000, %cur_len
+            br i1 %is_null, label %fmt_unk, label %fmt_sym
+
+        fmt_sym:
+            ; Known symbol frame
+            %fn_name_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 1
+            %fn_name = load ptr, ptr %fn_name_ptr
+            %file_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 2
+            %file = load ptr, ptr %file_ptr
+            %line_ptr = getelementptr inbounds %struct.ZuvFuncDesc, ptr %desc, i32 0, i32 3
+            %line = load i32, ptr %line_ptr
+            %fn_entry_ptr = load ptr, ptr %desc
+            %pc_int = ptrtoint ptr %pc to i64
+            %entry_int = ptrtoint ptr %fn_entry_ptr to i64
+            %offset = sub i64 %pc_int, %entry_int
+            call i32 (ptr, i64, ptr, ...) @snprintf(ptr %dest_ptr, i64 %avail, ptr @zuv_fmt_bt_frame_sym, i32 %idx, ptr %fn_name, ptr %file, i32 %line, i64 %offset)
+            br label %cont
+
+        fmt_unk:
+            ; Unknown symbol: append "  %2d: [unknown] (0x%016llx)"
+            %pc_as_i64 = ptrtoint ptr %pc to i64
+            call i32 (ptr, i64, ptr, ...) @snprintf(ptr %dest_ptr, i64 %avail, ptr @zuv_fmt_bt_frame_unk, i32 %idx, i64 %pc_as_i64)
+            br label %cont
+
+        cont:
+            ; Loop iteration step
+            %next_idx = add i32 %idx, 1
+            store i32 %next_idx, ptr %p_bidx
+            %more = icmp slt i32 %next_idx, %frames
+            br i1 %more, label %loop, label %done
+
+        done:
+            ; Return heap-allocated formatted backtrace string pointer
+            ret ptr %out
+        }
+        `
+}

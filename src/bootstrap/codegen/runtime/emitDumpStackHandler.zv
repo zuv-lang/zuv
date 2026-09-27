@@ -1,0 +1,20 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitDumpStackHandler Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitDumpStackHandler.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitDumpStackHandler self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define void @zuv_dump_stack() {
+        entry:
+            ; Print stack backtrace header and dump active call frames
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)
+            call void @zuv_walk_stack(i32 1, i32 32)
+            ret void
+        }
+        `
+}

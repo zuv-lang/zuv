@@ -1,0 +1,152 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitInitArgs Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitInitArgs.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitInitArgs self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define void @zuv_init_args(i32 %argc, ptr %argv, ptr %srcFile) {
+        entry:
+            %isArgcNeg = icmp slt i32 %argc, 0
+            %isArgvNull = icmp eq ptr %argv, null
+            %isBad = or i1 %isArgcNeg, %isArgvNull
+            br i1 %isBad, label %init_empty, label %do_init
+
+        init_empty:
+            %empArr = getelementptr inbounds [2 x i64], ptr @_zuv_empty_arr, i64 0, i64 1
+            %empInt = ptrtoint ptr %empArr to i64
+            store i64 %empInt, ptr @zuv_global_args
+            ret void
+
+        do_init:
+            %argc64 = sext i32 %argc to i64
+            %hasArgv = icmp sgt i64 %argc64, 0
+            %argcPlus1 = add i64 %argc64, 1
+            %totCount = select i1 %hasArgv, i64 %argcPlus1, i64 1
+            %sizeElements = add i64 %totCount, 2
+            %bytes = mul i64 %sizeElements, 8
+            %rawArr = call ptr @malloc(i64 %bytes)
+            store i64 %totCount, ptr %rawArr
+            %arr = getelementptr inbounds i64, ptr %rawArr, i64 1
+            store i64 %totCount, ptr %arr
+            br i1 %hasArgv, label %store_argv0, label %store_only_src
+
+        store_argv0:
+            %pArgv0 = load ptr, ptr %argv, align 8
+            %isArgv0Null = icmp eq ptr %pArgv0, null
+            br i1 %isArgv0Null, label %store_empty_argv0, label %copy_argv0
+
+        store_empty_argv0:
+            %emp0 = call ptr @malloc(i64 1)
+            store i8 0, ptr %emp0
+            %emp0Int = ptrtoint ptr %emp0 to i64
+            %gepSlotArgv0 = getelementptr inbounds i64, ptr %arr, i64 1
+            store i64 %emp0Int, ptr %gepSlotArgv0
+            br label %store_src_file
+
+        copy_argv0:
+            %len0 = call i64 @strlen(ptr %pArgv0)
+            %len0p1 = add i64 %len0, 1
+            %copy0 = call ptr @malloc(i64 %len0p1)
+            call ptr @memcpy(ptr %copy0, ptr %pArgv0, i64 %len0p1)
+            %copy0Int = ptrtoint ptr %copy0 to i64
+            %gepSlotArgv0b = getelementptr inbounds i64, ptr %arr, i64 1
+            store i64 %copy0Int, ptr %gepSlotArgv0b
+            br label %store_src_file
+
+        store_src_file:
+            %isSrcNull = icmp eq ptr %srcFile, null
+            br i1 %isSrcNull, label %store_empty_src, label %copy_src
+
+        store_empty_src:
+            %empSrc = call ptr @malloc(i64 1)
+            store i8 0, ptr %empSrc
+            %empSrcInt = ptrtoint ptr %empSrc to i64
+            %gepSlot1 = getelementptr inbounds i64, ptr %arr, i64 2
+            store i64 %empSrcInt, ptr %gepSlot1
+            br label %check_rest_args
+
+        copy_src:
+            %lenSrc = call i64 @strlen(ptr %srcFile)
+            %lenSrcp1 = add i64 %lenSrc, 1
+            %copySrc = call ptr @malloc(i64 %lenSrcp1)
+            call ptr @memcpy(ptr %copySrc, ptr %srcFile, i64 %lenSrcp1)
+            %copySrcInt = ptrtoint ptr %copySrc to i64
+            %gepSlot1b = getelementptr inbounds i64, ptr %arr, i64 2
+            store i64 %copySrcInt, ptr %gepSlot1b
+            br label %check_rest_args
+
+        store_only_src:
+            %isSrcNull2 = icmp eq ptr %srcFile, null
+            br i1 %isSrcNull2, label %store_empty_src2, label %copy_src2
+
+        store_empty_src2:
+            %empSrc2 = call ptr @malloc(i64 1)
+            store i8 0, ptr %empSrc2
+            %empSrc2Int = ptrtoint ptr %empSrc2 to i64
+            %gepSlotSingle = getelementptr inbounds i64, ptr %arr, i64 1
+            store i64 %empSrc2Int, ptr %gepSlotSingle
+            br label %init_done
+
+        copy_src2:
+            %lenSrc2 = call i64 @strlen(ptr %srcFile)
+            %lenSrc2p1 = add i64 %lenSrc2, 1
+            %copySrc2 = call ptr @malloc(i64 %lenSrc2p1)
+            call ptr @memcpy(ptr %copySrc2, ptr %srcFile, i64 %lenSrc2p1)
+            %copySrc2Int = ptrtoint ptr %copySrc2 to i64
+            %gepSlotSingleB = getelementptr inbounds i64, ptr %arr, i64 1
+            store i64 %copySrc2Int, ptr %gepSlotSingleB
+            br label %init_done
+
+        check_rest_args:
+            %iAlloc = alloca i64
+            store i64 1, ptr %iAlloc
+            br label %loop_cond
+
+        loop_cond:
+            %curI = load i64, ptr %iAlloc
+            %cmp = icmp slt i64 %curI, %argc64
+            br i1 %cmp, label %loop_body, label %init_done
+
+        loop_body:
+            %gepArgv = getelementptr inbounds ptr, ptr %argv, i64 %curI
+            %argStr = load ptr, ptr %gepArgv, align 8
+            %isArgNull = icmp eq ptr %argStr, null
+            br i1 %isArgNull, label %store_empty_arg, label %copy_arg
+
+        store_empty_arg:
+            %nullStr = call ptr @malloc(i64 1)
+            store i8 0, ptr %nullStr
+            %nullInt = ptrtoint ptr %nullStr to i64
+            %slotIdx0 = add i64 %curI, 2
+            %gepSlot0 = getelementptr inbounds i64, ptr %arr, i64 %slotIdx0
+            store i64 %nullInt, ptr %gepSlot0
+            br label %next_iter
+
+        copy_arg:
+            %strLen = call i64 @strlen(ptr %argStr)
+            %strLenPlus1 = add i64 %strLen, 1
+            %newStr = call ptr @malloc(i64 %strLenPlus1)
+            call ptr @memcpy(ptr %newStr, ptr %argStr, i64 %strLenPlus1)
+            %strInt = ptrtoint ptr %newStr to i64
+            %slotIdx = add i64 %curI, 2
+            %gepSlot = getelementptr inbounds i64, ptr %arr, i64 %slotIdx
+            store i64 %strInt, ptr %gepSlot
+            br label %next_iter
+
+        next_iter:
+            %nextI = add i64 %curI, 1
+            store i64 %nextI, ptr %iAlloc
+            br label %loop_cond
+
+        init_done:
+            %arrInt = ptrtoint ptr %arr to i64
+            store i64 %arrInt, ptr @zuv_global_args
+            ret void
+        }
+        `
+}

@@ -1,0 +1,57 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitPanicHandler Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitPanicHandler.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitPanicHandler self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define void @zuv_panic(ptr %msg, ptr %file, i32 %line) {
+        entry:
+            ; Check if source file and line information was provided
+            %has_file = icmp ne ptr %file, null
+            br i1 %has_file, label %p_file, label %p_simple
+
+        p_file:
+            ; Print fatal error message with location metadata: "fatal runtime error: %s at %s:%d"
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_panic_msg, ptr %msg, ptr %file, i32 %line)
+            br label %check_env
+
+        p_simple:
+            ; Print fatal error message without location: "fatal runtime error: %s"
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_panic_simple, ptr %msg)
+            br label %check_env
+
+        check_env:
+            ; Query ZUV_BACKTRACE environment variable
+            %env = call ptr @getenv(ptr @zuv_env_backtrace)
+            %has_env = icmp ne ptr %env, null
+            br i1 %has_env, label %check_val, label %print_hint
+
+        check_val:
+            ; Check if backtrace is disabled (ZUV_BACKTRACE="0")
+            %ch = load i8, ptr %env
+            %is_zero = icmp eq i8 %ch, 48
+            br i1 %is_zero, label %print_hint, label %print_bt
+
+        print_bt:
+            ; Print backtrace header and unwind stack frames (skip panic handler frame)
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)
+            call void @zuv_walk_stack(i32 1, i32 32)
+            br label %do_exit
+
+        print_hint:
+            ; Print diagnostic hint on how to enable stack unwinding
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_hint)
+            br label %do_exit
+
+        do_exit:
+            ; Standard Rust/Zuv runtime panic exit code (101)
+            call void @exit(i32 101)
+            unreachable
+        }
+        `
+}

@@ -1,0 +1,19 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitInitCrashHandler Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitInitCrashHandler.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitInitCrashHandler self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define void @zuv_init_crash_handler() {
+        entry:
+            ; Register vectored exception handler at head of handler chain
+            call ptr @AddVectoredExceptionHandler(i32 1, ptr @zuv_crash_handler)
+            ret void
+        }
+        `
+}

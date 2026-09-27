@@ -1,0 +1,14 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitBacktraceCall Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitBacktraceCall.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitBacktraceCall self: RuntimeCodegen :: str {
+        resReg: str = self.codegen.newReg
+        self.codegen.emit `${resReg} = call ptr @zuv_backtrace()`
+        -> resReg
+}

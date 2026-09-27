@@ -1,0 +1,12 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitDumpStackCall Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitDumpStackCall.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitDumpStackCall self: RuntimeCodegen :: void {
+        self.codegen.emit "call void @zuv_dump_stack()"
+}

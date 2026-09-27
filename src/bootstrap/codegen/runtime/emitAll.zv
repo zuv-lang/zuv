@@ -1,0 +1,28 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitAll Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitAll.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitAll self: RuntimeCodegen :: void {
+        if self.runtimeEmitted {
+            -> und
+        }
+        self.emitRuntimeGlobals
+        self.emitEnsureFnSorted
+        self.emitResolvePc
+        self.emitWalkStack
+        self.emitPanicHandler
+        self.emitBoundsCheckHandler
+        self.emitDumpStackHandler
+        self.emitBacktraceHandler
+        self.emitCrashHandler
+        self.emitInitCrashHandler
+        self.emitInitArgs
+        self.emitPromiseRuntime
+        self.emitTimeMono
+        self.runtimeEmitted = true
+}

@@ -1,0 +1,12 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitInitCrashHandlerCall Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitInitCrashHandlerCall.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitInitCrashHandlerCall self: RuntimeCodegen :: void {
+        self.codegen.emit "call void @zuv_init_crash_handler()"
+}
