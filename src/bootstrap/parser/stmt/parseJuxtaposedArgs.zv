@@ -1,0 +1,67 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseJuxtaposedArgs Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseJuxtaposedArgs.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+
+/**
+ * Parses juxtaposed (parenthesis-free) arguments on the same line for an identifier or property call.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {ASTNode} callee - Callee identifier or member access node
+ * @returns {ASTNode} CallExpr or MethodCallExpr if arguments present, or original callee
+ */
+ParseJuxtaposedArgs parser: Parser, callee: ASTNode :: ASTNode {
+    if callee.kind != NodeKind.IdentExpr && callee.kind != NodeKind.PropExpr {
+        -> callee
+    }
+    curTok: Token = parser.cur
+    if parser.isAtEnd || curTok.line != callee.line {
+        -> callee
+    }
+    if curTok.kind == TokenType.TOK_SEMICOLON || curTok.kind == TokenType.TOK_RBRACE ||
+       curTok.kind == TokenType.TOK_RPAREN || curTok.kind == TokenType.TOK_RBRACKET ||
+       curTok.kind == TokenType.TOK_COMMA || curTok.kind == TokenType.TOK_ASSIGN ||
+       curTok.kind == TokenType.TOK_PLUS_EQ || curTok.kind == TokenType.TOK_MINUS_EQ ||
+       curTok.kind == TokenType.TOK_COLON || curTok.kind == TokenType.TOK_COLON_COLON ||
+       curTok.kind == TokenType.TOK_FAT_ARROW || curTok.kind == TokenType.TOK_ARROW ||
+       curTok.kind == TokenType.TOK_LBRACE || curTok.kind == TokenType.TOK_ELS {
+        -> callee
+    }
+
+    args: ASTNode[] = []
+    loopTok: Token = parser.cur
+    wh !(parser.isAtEnd) && loopTok.line == callee.line &&
+       loopTok.kind != TokenType.TOK_SEMICOLON &&
+       loopTok.kind != TokenType.TOK_RBRACE &&
+       loopTok.kind != TokenType.TOK_RPAREN &&
+       loopTok.kind != TokenType.TOK_RBRACKET &&
+       loopTok.kind != TokenType.TOK_LBRACE &&
+       loopTok.kind != TokenType.TOK_ELS {
+        argExpr: ASTNode = ParseExpr parser
+        args.psh argExpr
+        if parser.matchToken TokenType.TOK_COMMA {
+            // continue
+        } els {
+            brk
+        }
+        loopTok = parser.cur
+    }
+
+    if callee.kind == NodeKind.PropExpr {
+        target = callee.children[0]
+        if target.kind == NodeKind.IdentExpr && (target.name == "ffi" || target.name == "fs" || target.name == "os" || target.name == "net" || target.name == "sys" || target.name == "io" || target.name == "mem") {
+            cName: str = target.name + "." + callee.name
+            calleeNode = ASTNode.createIdent cName, callee.line, callee.col
+            -> ASTNode.createCall calleeNode, args, callee.line, callee.col
+        }
+        -> ASTNode.createMethodCall target, callee.name, args, callee.line, callee.col
+    }
+    -> ASTNode.createCall callee, args, callee.line, callee.col
+}

@@ -1,0 +1,95 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseMatchStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseMatchStmt.zv
+ * =============================================================================
+ */
+
+imp str
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind, MatchArm frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+imp ParseMatchPattern frm parseMatchPattern
+imp ParseBlockStmt frm parseBlockStmt
+imp ParseJuxtaposedArgs frm parseJuxtaposedArgs
+
+/**
+ * Parses a pattern matching block (`sw target { val1 => body1, _ => body2 }` or `mch`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} SwStmt AST node
+ */
+ParseMatchStmt parser: Parser :: ASTNode {
+    swTok: Token = parser.advance // consume 'sw' / 'mch'
+    targetExpr: ASTNode = ParseExpr parser
+    node = ASTNode.createBase NodeKind.SwStmt, swTok.line, swTok.col
+    node.children = [targetExpr]
+
+    parser.consume TokenType.TOK_LBRACE, "Expected '{' before match arms"
+
+    wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            cont
+        }
+
+        patExpr: ASTNode = ParseMatchPattern parser
+        parser.consume TokenType.TOK_FAT_ARROW, "Expected '=>' after match pattern"
+
+        armBody = ASTNode.createNil patExpr.line, patExpr.col
+        if parser.check TokenType.TOK_LBRACE {
+            armBody = ParseBlockStmt parser
+        } els {
+            exprArm: ASTNode = ParseExpr parser
+            exprArm = ParseJuxtaposedArgs parser, exprArm
+            exprStmt: ASTNode = ASTNode.createExprStmt exprArm, exprArm.line, exprArm.col
+            armBody = ASTNode.createBlock [exprStmt], patExpr.line, patExpr.col
+        }
+
+        patText: str = ""
+        patKind: str = ""
+        patVarName: str = patExpr.name
+        if patExpr.name == "ok" || patExpr.name == "err" {
+            patKind = (patExpr.name == "ok") ? "ok" : "err"
+            if patExpr.children.ln > 0 {
+                patVarName = patExpr.children[0].name
+                patText = patKind + "(" + patVarName + ")"
+            } els {
+                patVarName = ""
+                patText = patKind
+            }
+        } els if patExpr.kind == NodeKind.PropExpr && patExpr.children.ln > 0 {
+            patText = patExpr.children[0].name + "." + patExpr.name
+            patKind = patExpr.children[0].name
+        } els if patExpr.name == "_" {
+            patText = "_"
+            patKind = "_"
+        } els if patExpr.kind == NodeKind.IdentExpr {
+            patText = patExpr.name
+            patKind = "ident"
+        } els if patExpr.val.ln > 0 {
+            patText = patExpr.val
+            patKind = patExpr.val
+        } els {
+            patText = patExpr.name
+            patKind = patExpr.name
+        }
+
+        arm: MatchArm = {
+            patternKind: patKind,
+            varName: patVarName,
+            litText: patText,
+            line: patExpr.line,
+            col: patExpr.col
+        }
+        node.cases.psh arm
+        node.children.psh armBody
+
+        if (parser.matchToken TokenType.TOK_COMMA) || (parser.matchToken TokenType.TOK_SEMICOLON) {
+            // optional arm separator
+        }
+    }
+
+    parser.consume TokenType.TOK_RBRACE, "Expected '}' after match arms"
+    -> node
+}

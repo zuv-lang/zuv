@@ -1,0 +1,49 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseReturnStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseReturnStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+imp ParseJuxtaposedArgs frm parseJuxtaposedArgs
+imp ParseMatchStmt frm parseMatchStmt
+
+/**
+ * Parses a return statement (`-> expr` or `ret expr`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} RetStmt AST node
+ */
+ParseReturnStmt parser: Parser :: ASTNode {
+    retTok: Token = parser.advance // consume '->' or 'ret'
+    retExpr = ASTNode.createNil retTok.line, retTok.col
+
+    if !(parser.check TokenType.TOK_SEMICOLON) && !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if parser.check TokenType.TOK_MATCH {
+            matchNode: ASTNode = ParseMatchStmt parser
+            fr armBody of matchNode.children {
+                if armBody.kind == NodeKind.BlockStmt && armBody.children.ln > 0 {
+                    lastIdx: num = armBody.children.ln - 1
+                    lastStmt: ASTNode = armBody.children[lastIdx]
+                    if lastStmt.kind != NodeKind.RetStmt {
+                        retArm: ASTNode = ASTNode.createRet lastStmt, lastStmt.line, lastStmt.col
+                        armBody.children[lastIdx] = retArm
+                    }
+                }
+            }
+            -> matchNode
+        }
+        rawExpr: ASTNode = ParseExpr parser
+        retExpr = ParseJuxtaposedArgs parser, rawExpr
+    }
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    -> ASTNode.createRet retExpr, retTok.line, retTok.col
+}

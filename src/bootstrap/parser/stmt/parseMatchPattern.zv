@@ -1,0 +1,59 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseMatchPattern Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseMatchPattern.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+
+/**
+ * Parses a match arm pattern (wildcard '_', number/string/bool literal, enum member, or identifier).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} Pattern AST node
+ */
+ParseMatchPattern parser: Parser :: ASTNode {
+    pTok: Token = parser.cur
+    if pTok.kind == TokenType.TOK_NUMBER {
+        numTok: Token = parser.advance
+        numNode: ASTNode = ASTNode.createNum 0, numTok.line, numTok.col
+        numNode.val = numTok.val
+        -> numNode
+    }
+    if pTok.kind == TokenType.TOK_STRING {
+        strTok: Token = parser.advance
+        -> ASTNode.createStr strTok.val, strTok.line, strTok.col
+    }
+    if pTok.kind == TokenType.TOK_TRUE {
+        bTok: Token = parser.advance
+        -> ASTNode.createBool true, bTok.line, bTok.col
+    }
+    if pTok.kind == TokenType.TOK_FALSE {
+        bTok: Token = parser.advance
+        -> ASTNode.createBool false, bTok.line, bTok.col
+    }
+    if pTok.kind == TokenType.TOK_IDENT {
+        idTok: Token = parser.advance
+        identNode: ASTNode = ASTNode.createIdent idTok.val, idTok.line, idTok.col
+        if parser.matchToken TokenType.TOK_DOT {
+            memberTok: Token = parser.consume TokenType.TOK_IDENT, "Expected member name after '.'"
+            propNode: ASTNode = ASTNode.createBase NodeKind.PropExpr, memberTok.line, memberTok.col
+            propNode.name = memberTok.val
+            propNode.children = [identNode]
+            -> propNode
+        }
+        if parser.matchToken TokenType.TOK_LPAREN {
+            argTok: Token = parser.consume TokenType.TOK_IDENT, "Expected variable name in pattern"
+            parser.consume TokenType.TOK_RPAREN, "Expected ')' after pattern argument"
+            argNode: ASTNode = ASTNode.createIdent argTok.val, argTok.line, argTok.col
+            identNode.children.psh argNode
+            -> identNode
+        }
+        -> identNode
+    }
+    -> ParseExpr parser
+}

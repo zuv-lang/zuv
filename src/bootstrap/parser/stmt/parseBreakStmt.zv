@@ -1,0 +1,24 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseBreakStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseBreakStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+
+/**
+ * Parses a break statement (`brk`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} BrkStmt AST node
+ */
+ParseBreakStmt parser: Parser :: ASTNode {
+    tok: Token = parser.consume TokenType.TOK_BRK, "Expected 'brk'"
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+    -> ASTNode.createBrk tok.line, tok.col
+}

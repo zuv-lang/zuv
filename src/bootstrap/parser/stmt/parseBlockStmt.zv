@@ -1,0 +1,35 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseBlockStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseBlockStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseStatement frm ../stmt
+
+/**
+ * Parses a braced block of statements (`{ stmt1; stmt2 }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} BlockStmt AST node
+ */
+ParseBlockStmt parser: Parser :: ASTNode {
+    lbrace: Token = parser.consume TokenType.TOK_LBRACE, "Expected '{' to begin block"
+    parser.enterScope()
+    stmts: ASTNode[] = []
+
+    wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            cont
+        }
+        stmtNode: ASTNode = ParseStatement parser
+        stmts.psh stmtNode
+    }
+
+    parser.consume TokenType.TOK_RBRACE, "Expected '}' to end block"
+    parser.exitScope()
+    -> ASTNode.createBlock stmts, lbrace.line, lbrace.col
+}

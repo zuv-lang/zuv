@@ -1,0 +1,26 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParsePanicStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parsePanicStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+
+/**
+ * Parses a panic error termination statement (`panic expr`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} PanicStmt AST node
+ */
+ParsePanicStmt parser: Parser :: ASTNode {
+    tok: Token = parser.consume TokenType.TOK_PANIC, "Expected 'panic'"
+    msgExpr: ASTNode = ParseExpr parser
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+    -> ASTNode.createPanic msgExpr, tok.line, tok.col
+}

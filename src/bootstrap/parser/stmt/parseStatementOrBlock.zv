@@ -1,0 +1,26 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseStatementOrBlock Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseStatementOrBlock.zv
+ * =============================================================================
+ */
+
+imp TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseStatement frm ../stmt
+imp ParseBlockStmt frm parseBlockStmt
+
+/**
+ * Parses a braced block of statements or a single statement wrapped in a block.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} BlockStmt AST node
+ */
+ParseStatementOrBlock parser: Parser :: ASTNode {
+    if parser.check TokenType.TOK_LBRACE {
+        -> ParseBlockStmt parser
+    }
+    stmt: ASTNode = ParseStatement parser
+    -> ASTNode.createBlock [stmt], stmt.line, stmt.col
+}
