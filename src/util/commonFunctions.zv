@@ -1,0 +1,30 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Common Utility Functions
+ * Path: sub_projects/zuv/src/util/commonFunctions.zv
+ * =============================================================================
+ *
+ * Implements shared utility functions for compiler analysis and type inference:
+ * - IsIntegerLiteral: Validates whether a numeric literal string is an integer
+ */
+
+imp str
+
+/**
+ * Checks if a numeric literal string represents an integer without decimal point or exponent.
+ *
+ * @param {str} text - Number literal string
+ * @returns {bool} True if integer literal format, false if float
+ */
+IsIntegerLiteral text: str :: bool {
+    count = text.ln
+    i = 0
+    wh i < count {
+        ch = text[i]
+        if ch == "." || ch == "e" || ch == "E" {
+            -> false
+        }
+        i++
+    }
+    -> true
+}
