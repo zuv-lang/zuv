@@ -6,6 +6,7 @@
  */
 
 imp StrEndsWith frm ../../../util/commonFunctions
+imp LOCAL_LLD_BIN_PATH frm ../../../util/constants
 
 /**
  * Links a compiled object file (.obj) into an executable or shared library using lld-link.
@@ -17,8 +18,8 @@ imp StrEndsWith frm ../../../util/commonFunctions
  */
 linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, extraLibs: str[] :: num {
     lldBin: str = "lld-link"
-    if fE "D:/LLVM/bin/lld-link.exe" {
-        lldBin = "D:/LLVM/bin/lld-link.exe"
+    if fE LOCAL_LLD_BIN_PATH {
+        lldBin = LOCAL_LLD_BIN_PATH
     } els if fE "lld-link.exe" {
         lldBin = "lld-link.exe"
     } els if fE "bin/lld-link.exe" {
