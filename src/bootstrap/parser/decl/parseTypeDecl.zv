@@ -21,6 +21,7 @@ ParseTypeDecl parser: Parser, isPub: bool :: ASTNode {
     typeTok: Token = parser.advance // consume 'type' / 'typ'
     nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected type name identifier"
     name: str = nameTok.val
+    parser.addStructType name
 
     parser.consume TokenType.TOK_ASSIGN, "Expected '=' after type name"
 

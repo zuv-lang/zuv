@@ -52,6 +52,7 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
     objTok: Token = parser.advance // consume 'obj'
     nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected object name identifier"
     name: str = nameTok.val
+    parser.addStructType name
 
     node = ASTNode.createObjDecl name, isPub, nameTok.line, nameTok.col
 

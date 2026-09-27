@@ -75,7 +75,7 @@ ParseProgram parser: Parser :: ASTNode {
         } els if curTok.kind == TokenType.TOK_IDENT && (curTok.val == "obj" || (curTok.val == "ffi" && (parser.peek.kind == TokenType.TOK_STRING || parser.peek.kind == TokenType.TOK_LBRACE))) {
             declNode: ASTNode = ParseDeclaration parser
             progNode.children.psh declNode
-        } els if curTok.kind == TokenType.TOK_IDENT && parser.peek.kind == TokenType.TOK_DOT && parser.peekAhead(2).kind == TokenType.TOK_IDENT && parser.peekAhead(3).kind == TokenType.TOK_ASSIGN {
+        } els if curTok.kind == TokenType.TOK_IDENT && parser.isStructType(curTok.val) && !(parser.hasVar curTok.val) && parser.peek.kind == TokenType.TOK_DOT && parser.peekAhead(2).kind == TokenType.TOK_IDENT && parser.peekAhead(3).kind == TokenType.TOK_ASSIGN && parser.peekAhead(4).kind == TokenType.TOK_IDENT && (parser.peekAhead(5).kind == TokenType.TOK_SEMICOLON || parser.peekAhead(5).line != parser.peekAhead(4).line || parser.peekAhead(5).kind == TokenType.TOK_EOF) {
             typeNameTok: Token = parser.advance
             parser.advance // consume '.'
             methodTok: Token = parser.advance
