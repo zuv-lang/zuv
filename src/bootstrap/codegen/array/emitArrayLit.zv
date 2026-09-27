@@ -1,0 +1,41 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitArrayLit Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitArrayLit.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ArrayCodegen, boxValueToI64 frm ../array
+
+EmitArrayLit self: ArrayCodegen, elemRegs: str[], elemTypes: TypeKind[] :: str {
+    count: num = elemRegs.ln
+    if count == 0 {
+        -> self.emitEmptyArray
+    }
+
+    self.emitRuntimeGlobals
+    words: num = count + 2
+    totalBytes: num = words * 8
+
+    rawPtr: str = self.codegen.newReg
+    self.codegen.emit `${rawPtr} = call ptr @malloc(i64 ${totalBytes})`
+    self.codegen.emit `store i64 ${count}, ptr ${rawPtr}`
+
+    arrPtr: str = self.codegen.newReg
+    self.codegen.emit `${arrPtr} = getelementptr inbounds i64, ptr ${rawPtr}, i64 1`
+    self.codegen.emit `store i64 ${count}, ptr ${arrPtr}`
+
+    elemIdx: num = 0
+    fr valReg of elemRegs {
+        valType: TypeKind = elemTypes[elemIdx]
+        boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+        offset: num = elemIdx + 1
+        gepReg: str = self.codegen.newReg
+        self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${offset}`
+        self.codegen.emit `store i64 ${boxedVal}, ptr ${gepReg}`
+        elemIdx++
+    }
+
+    -> arrPtr
+}

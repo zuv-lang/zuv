@@ -1,0 +1,14 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitLength Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitLength.zv
+ * =============================================================================
+ */
+
+imp ArrayCodegen frm ../array
+
+EmitLength self: ArrayCodegen, arrPtrReg: str :: str {
+    lenReg: str = self.codegen.newReg
+    self.codegen.emit `${lenReg} = load i64, ptr ${arrPtrReg}`
+    -> lenReg
+}

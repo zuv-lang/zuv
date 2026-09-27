@@ -1,0 +1,138 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitArraySpread Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitArraySpread.zv
+ * =============================================================================
+ */
+
+imp ArraySpreadPart, ArrayCodegen, boxValueToI64 frm ../array
+
+EmitArraySpread self: ArrayCodegen, parts: ArraySpreadPart[] :: str {
+    literalCount: num = 0
+    fr p of parts {
+        if !p.isSpread {
+            literalCount++
+        }
+    }
+
+    totLenSlot: str = self.codegen.newReg
+    self.codegen.emit `${totLenSlot} = alloca i64`
+    self.codegen.emit `store i64 ${literalCount}, ptr ${totLenSlot}`
+
+    fr p of parts {
+        if p.isSpread {
+            isNull: str = self.codegen.newReg
+            self.codegen.emit `${isNull} = icmp eq ptr ${p.valReg}, null`
+            lenSlot: str = self.codegen.newReg
+            self.codegen.emit `${lenSlot} = alloca i64`
+            self.codegen.emit `store i64 0, ptr ${lenSlot}`
+
+            loadLbl: str = self.codegen.newLabel "sp_len_load"
+            contLbl: str = self.codegen.newLabel "sp_len_cont"
+
+            self.codegen.emit `br i1 ${isNull}, label %${contLbl}, label %${loadLbl}`
+            self.codegen.emitLabel loadLbl
+            loadedLen: str = self.emitLength p.valReg
+            self.codegen.emit `store i64 ${loadedLen}, ptr ${lenSlot}`
+            self.codegen.emit `br label %${contLbl}`
+
+            self.codegen.emitLabel contLbl
+            sLen: str = self.codegen.newReg
+            self.codegen.emit `${sLen} = load i64, ptr ${lenSlot}`
+
+            prevTot: str = self.codegen.newReg
+            self.codegen.emit `${prevTot} = load i64, ptr ${totLenSlot}`
+            newTot: str = self.codegen.newReg
+            self.codegen.emit `${newTot} = add i64 ${prevTot}, ${sLen}`
+            self.codegen.emit `store i64 ${newTot}, ptr ${totLenSlot}`
+        }
+    }
+
+    finalTot: str = self.codegen.newReg
+    self.codegen.emit `${finalTot} = load i64, ptr ${totLenSlot}`
+
+    isZero: str = self.codegen.newReg
+    self.codegen.emit `${isZero} = icmp eq i64 ${finalTot}, 0`
+
+    emptyLbl: str = self.codegen.newLabel "sp_empty"
+    allocLbl: str = self.codegen.newLabel "sp_alloc"
+    doneLbl: str = self.codegen.newLabel "sp_done"
+
+    retSlot: str = self.codegen.newReg
+    self.codegen.emit `${retSlot} = alloca ptr`
+    self.codegen.emit `br i1 ${isZero}, label %${emptyLbl}, label %${allocLbl}`
+
+    self.codegen.emitLabel emptyLbl
+    empPtr: str = self.emitEmptyArray
+    self.codegen.emit `store ptr ${empPtr}, ptr ${retSlot}`
+    self.codegen.emit `br label %${doneLbl}`
+
+    self.codegen.emitLabel allocLbl
+    allocSlots: str = self.codegen.newReg
+    self.codegen.emit `${allocSlots} = add i64 ${finalTot}, 2`
+    allocBytes: str = self.codegen.newReg
+    self.codegen.emit `${allocBytes} = mul i64 ${allocSlots}, 8`
+    rawPtr: str = self.codegen.newReg
+    self.codegen.emit `${rawPtr} = call ptr @malloc(i64 ${allocBytes})`
+    self.codegen.emit `store i64 ${finalTot}, ptr ${rawPtr}`
+    arrPtr: str = self.codegen.newReg
+    self.codegen.emit `${arrPtr} = getelementptr inbounds i64, ptr ${rawPtr}, i64 1`
+    self.codegen.emit `store i64 ${finalTot}, ptr ${arrPtr}`
+
+    curWriteIdx: str = self.codegen.newReg
+    self.codegen.emit `${curWriteIdx} = alloca i64`
+    self.codegen.emit `store i64 1, ptr ${curWriteIdx}`
+
+    fr p of parts {
+        if p.isSpread {
+            isNull: str = self.codegen.newReg
+            self.codegen.emit `${isNull} = icmp eq ptr ${p.valReg}, null`
+            copyChkLbl: str = self.codegen.newLabel "sp_cpy_chk"
+            copyDoLbl: str = self.codegen.newLabel "sp_cpy_do"
+            copySkipLbl: str = self.codegen.newLabel "sp_cpy_skip"
+
+            self.codegen.emit `br i1 ${isNull}, label %${copySkipLbl}, label %${copyChkLbl}`
+
+            self.codegen.emitLabel copyChkLbl
+            sLen: str = self.emitLength p.valReg
+            hasElems: str = self.codegen.newReg
+            self.codegen.emit `${hasElems} = icmp ugt i64 ${sLen}, 0`
+            self.codegen.emit `br i1 ${hasElems}, label %${copyDoLbl}, label %${copySkipLbl}`
+
+            self.codegen.emitLabel copyDoLbl
+            curIdx: str = self.codegen.newReg
+            self.codegen.emit `${curIdx} = load i64, ptr ${curWriteIdx}`
+            dstGep: str = self.codegen.newReg
+            self.codegen.emit `${dstGep} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${curIdx}`
+            srcElemGep: str = self.codegen.newReg
+            self.codegen.emit `${srcElemGep} = getelementptr inbounds i64, ptr ${p.valReg}, i64 1`
+            copyBytes: str = self.codegen.newReg
+            self.codegen.emit `${copyBytes} = mul i64 ${sLen}, 8`
+            self.codegen.emit `call ptr @memcpy(ptr ${dstGep}, ptr ${srcElemGep}, i64 ${copyBytes})`
+            nextIdx: str = self.codegen.newReg
+            self.codegen.emit `${nextIdx} = add i64 ${curIdx}, ${sLen}`
+            self.codegen.emit `store i64 ${nextIdx}, ptr ${curWriteIdx}`
+            self.codegen.emit `br label %${copySkipLbl}`
+
+            self.codegen.emitLabel copySkipLbl
+        } els {
+            curIdx: str = self.codegen.newReg
+            self.codegen.emit `${curIdx} = load i64, ptr ${curWriteIdx}`
+            dstGep: str = self.codegen.newReg
+            self.codegen.emit `${dstGep} = getelementptr inbounds i64, ptr ${arrPtr}, i64 ${curIdx}`
+            boxedVal: str = boxValueToI64 self.codegen, p.valReg, p.valType
+            self.codegen.emit `store i64 ${boxedVal}, ptr ${dstGep}`
+            nextIdx: str = self.codegen.newReg
+            self.codegen.emit `${nextIdx} = add i64 ${curIdx}, 1`
+            self.codegen.emit `store i64 ${nextIdx}, ptr ${curWriteIdx}`
+        }
+    }
+
+    self.codegen.emit `store ptr ${arrPtr}, ptr ${retSlot}`
+    self.codegen.emit `br label %${doneLbl}`
+
+    self.codegen.emitLabel doneLbl
+    resPtr: str = self.codegen.newReg
+    self.codegen.emit `${resPtr} = load ptr, ptr ${retSlot}`
+    -> resPtr
+}

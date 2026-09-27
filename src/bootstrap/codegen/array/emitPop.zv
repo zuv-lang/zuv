@@ -1,0 +1,50 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitPop Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitPop.zv
+ * =============================================================================
+ */
+
+imp ArrayCodegen frm ../array
+
+EmitPop self: ArrayCodegen, arrPtrReg: str :: str {
+    emptyPtr: str = self.emitEmptyArray
+    isEmp: str = self.codegen.newReg
+    self.codegen.emit `${isEmp} = icmp eq ptr ${arrPtrReg}, ${emptyPtr}`
+    isNull: str = self.codegen.newReg
+    self.codegen.emit `${isNull} = icmp eq ptr ${arrPtrReg}, null`
+    isInvalid: str = self.codegen.newReg
+    self.codegen.emit `${isInvalid} = or i1 ${isEmp}, ${isNull}`
+
+    popSlot: str = self.codegen.newReg
+    self.codegen.emit `${popSlot} = alloca i64`
+    self.codegen.emit `store i64 0, ptr ${popSlot}`
+
+    popChkLbl: str = self.codegen.newLabel "pop_chk"
+    popDoLbl: str = self.codegen.newLabel "pop_do"
+    popEndLbl: str = self.codegen.newLabel "pop_end"
+
+    self.codegen.emit `br i1 ${isInvalid}, label %${popEndLbl}, label %${popChkLbl}`
+
+    self.codegen.emitLabel popChkLbl
+    curLen: str = self.emitLength arrPtrReg
+    canPop: str = self.codegen.newReg
+    self.codegen.emit `${canPop} = icmp sgt i64 ${curLen}, 0`
+    self.codegen.emit `br i1 ${canPop}, label %${popDoLbl}, label %${popEndLbl}`
+
+    self.codegen.emitLabel popDoLbl
+    gep: str = self.codegen.newReg
+    self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${curLen}`
+    valReg: str = self.codegen.newReg
+    self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+    self.codegen.emit `store i64 ${valReg}, ptr ${popSlot}`
+    newLen: str = self.codegen.newReg
+    self.codegen.emit `${newLen} = sub i64 ${curLen}, 1`
+    self.codegen.emit `store i64 ${newLen}, ptr ${arrPtrReg}`
+    self.codegen.emit `br label %${popEndLbl}`
+
+    self.codegen.emitLabel popEndLbl
+    resVal: str = self.codegen.newReg
+    self.codegen.emit `${resVal} = load i64, ptr ${popSlot}`
+    -> resVal
+}

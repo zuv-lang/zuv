@@ -1,0 +1,19 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitSetElement Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitSetElement.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ArrayCodegen, boxValueToI64, emitArrayBoundsCheck frm ../array
+
+EmitSetElement self: ArrayCodegen, arrPtrReg: str, idxReg: str, valReg: str, valType: TypeKind, lineNum: num :: void {
+    emitArrayBoundsCheck self.codegen, arrPtrReg, idxReg, lineNum
+    boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+    elemIdx: str = self.codegen.newReg
+    self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+    gep: str = self.codegen.newReg
+    self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdx}`
+    self.codegen.emit `store i64 ${boxedVal}, ptr ${gep}`
+}
