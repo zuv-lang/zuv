@@ -1,0 +1,47 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitSym Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitSym.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitSym self: ExprCodegen, node: ASTNode :: ExprResult {
+    child: ASTNode = node.children[0]
+    symStr: str = "1"
+    if child.kind == NodeKind.StrExpr {
+        s: str = child.val
+        foundIdx: num = 0
+        fr existing, sIdx of self.symNames {
+            if existing == s {
+                foundIdx = sIdx + 1
+                brk
+            }
+        }
+        if foundIdx == 0 {
+            self.symNames.psh s
+            foundIdx = self.symNames.ln
+        }
+        symStr = ""
+        v: num = foundIdx
+        wh v > 0 {
+            d: num = v % 10
+            symStr = ("0123456789".chr d) + symStr
+            v = (v - d) / 10
+        }
+        if symStr.ln == 0 { symStr = "1" }
+    } els {
+        cRes: ExprResult = self.emitExpr child
+        symReg: str = self.codegen.newReg
+        self.codegen.emit `${symReg} = ptrtoint ptr ${cRes.reg} to i64`
+        res: ExprResult = { reg: symReg, typeKind: TypeKind.I64 }
+        -> res
+    }
+    resReg: str = self.codegen.newReg
+    self.codegen.emit `${resReg} = add i64 0, ${symStr}`
+    res: ExprResult = { reg: resReg, typeKind: TypeKind.I64 }
+    -> res
+}

@@ -1,0 +1,37 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitExpr Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitExpr.zv
+ * =============================================================================
+ */
+
+imp ASTNode, NodeKind frm ../../ast
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitExpr self: ExprCodegen, node: ASTNode :: ExprResult {
+    -> sw node.kind {
+    NodeKind.NumExpr        => self.emitNum node
+    NodeKind.StrExpr        => self.emitStr node
+    NodeKind.BoolExpr       => self.emitBool node
+    NodeKind.NilExpr        => self.emitNil node
+    NodeKind.UndExpr        => self.emitUnd node
+    NodeKind.BigIntExpr     => self.emitBigInt node
+    NodeKind.IdentExpr      => self.emitIdent node
+    NodeKind.UnaryExpr      => self.emitUnary node
+    NodeKind.BinaryExpr     => self.emitBinary node
+    NodeKind.CallExpr       => self.emitCall node
+    NodeKind.MethodCallExpr => self.emitMethodCall node
+    NodeKind.IndexExpr      => self.emitIndex node
+    NodeKind.PropExpr       => self.emitProp node
+    NodeKind.ArrExpr        => self.emitArr node
+    NodeKind.ObjLitExpr     => self.emitObjLit node
+    NodeKind.CastExpr       => self.emitCast node
+    NodeKind.TernaryExpr    => self.emitTernary node
+    NodeKind.TypExpr        => self.emitTyp node
+    NodeKind.AwaitExpr      => self.emitAwait node
+    NodeKind.NewExpr        => self.emitNew node
+    NodeKind.BorrowExpr     => self.emitBorrow node
+    NodeKind.SymExpr        => self.emitSym node
+    _                       => self.emitDefault node
+    }
+}

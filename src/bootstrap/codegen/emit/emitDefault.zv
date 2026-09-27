@@ -1,0 +1,29 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitDefault Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitDefault.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp llvmType, isPointerType frm ../types
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitDefault self: ExprCodegen, node: ASTNode :: ExprResult {
+    resReg: str = self.codegen.newReg
+    if node.inferredType == TypeKind.Num {
+        self.codegen.emit `${resReg} = fadd double 0.0, 0.0`
+        fRes: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+        -> fRes
+    }
+    if isPointerType node.inferredType {
+        pRes: ExprResult = { reg: "null", typeKind: node.inferredType }
+        -> pRes
+    }
+    itype: str = llvmType node.inferredType
+    self.codegen.emit `${resReg} = add ${itype} 0, 0`
+    iRes: ExprResult = { reg: resReg, typeKind: node.inferredType }
+    -> iRes
+}
+

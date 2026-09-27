@@ -1,0 +1,65 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitBorrow Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitBorrow.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp llvmType, isFloatType frm ../types
+imp emitArrayBoundsCheck frm ../array
+imp ExprCodegen, ExprResult, ScopeSymbol frm ../expr
+
+EmitBorrow self: ExprCodegen, node: ASTNode :: ExprResult {
+    if node.children.ln == 0 {
+        res: ExprResult = { reg: "null", typeKind: TypeKind.Ptr }
+        -> res
+    }
+    target: ASTNode = node.children[0]
+    if target.kind == NodeKind.IdentExpr {
+        foundSym: ScopeSymbol = self.findSymbol target.name
+        if foundSym.name.ln > 0 && foundSym.reg.ln > 0 {
+            res: ExprResult = { reg: foundSym.reg, typeKind: TypeKind.Ptr }
+            -> res
+        }
+    }
+    if target.kind == NodeKind.IndexExpr {
+        arrNode: ASTNode = target.children[0]
+        idxNode: ASTNode = target.children[1]
+        arrRes: ExprResult = self.emitExpr arrNode
+        arrPtrReg: str = arrRes.reg
+        if isFloatType arrRes.typeKind {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = fptosi double ${arrRes.reg} to i64`
+            arrPtrReg = convReg
+        }
+        if arrRes.typeKind != TypeKind.Arr && arrRes.typeKind != TypeKind.Ptr {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${arrPtrReg} to ptr`
+            arrPtrReg = convReg
+        }
+        idxRes: ExprResult = self.emitExpr idxNode
+        idxReg: str = idxRes.reg
+        if idxRes.typeKind != TypeKind.I64 {
+            convReg: str = self.codegen.newReg
+            if idxRes.typeKind == TypeKind.Num {
+                self.codegen.emit `${convReg} = fptosi double ${idxRes.reg} to i64`
+            } els {
+                iType: str = llvmType idxRes.typeKind
+                self.codegen.emit `${convReg} = sext ${iType} ${idxRes.reg} to i64`
+            }
+            idxReg = convReg
+        }
+        emitArrayBoundsCheck self.codegen, arrPtrReg, idxReg, target.line
+        elemIdx: str = self.codegen.newReg
+        self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+        gep: str = self.codegen.newReg
+        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdx}`
+        res: ExprResult = { reg: gep, typeKind: TypeKind.Ptr }
+        -> res
+    }
+    targetRes: ExprResult = self.emitExpr target
+    res: ExprResult = { reg: targetRes.reg, typeKind: TypeKind.Ptr }
+    -> res
+}

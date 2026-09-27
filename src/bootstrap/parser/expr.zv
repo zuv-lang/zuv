@@ -493,6 +493,7 @@ ParsePrimary parser: Parser :: ASTNode {
         idName: str = idTok.val
         identNode = ASTNode.createIdent idName, idTok.line, idTok.col
 
+        curTok: Token = parser.cur
         allowMinusArg: bool = false
         if !parser.isAtEnd && curTok.line == idTok.line &&
            (curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_STRING ||

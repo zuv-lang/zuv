@@ -1,0 +1,17 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitUnd Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitUnd.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitUnd self: ExprCodegen, node: ASTNode :: ExprResult {
+    resReg: str = self.codegen.newReg
+    self.codegen.emit `${resReg} = add i64 0, 0`
+    res: ExprResult = { reg: resReg, typeKind: TypeKind.Und }
+    -> res
+}

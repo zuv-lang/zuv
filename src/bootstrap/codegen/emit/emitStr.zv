@@ -1,0 +1,18 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitStr Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitStr.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitStr self: ExprCodegen, node: ASTNode :: ExprResult {
+    strConst: str = self.codegen.addStringConstant node.val
+    gepReg: str = self.codegen.newReg
+    self.codegen.emit `${gepReg} = getelementptr inbounds i8, ptr ${strConst}, i64 0`
+    res: ExprResult = { reg: gepReg, typeKind: TypeKind.Str }
+    -> res
+}

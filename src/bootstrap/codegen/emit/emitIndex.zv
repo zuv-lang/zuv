@@ -1,0 +1,132 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitIndex Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitIndex.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp isPointerType, isFloatType frm ../types
+imp unboxValueFromI64 frm ../array
+imp StrToElemTypeKind frm ../decl
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitIndex self: ExprCodegen, node: ASTNode :: ExprResult {
+    targetNode: ASTNode = node.children[0]
+    idxNode: ASTNode = node.children[1]
+    targetRes: ExprResult = self.emitExpr targetNode
+    idxRes: ExprResult = self.emitExpr idxNode
+
+    idxReg: str = idxRes.reg
+    if idxRes.typeKind == TypeKind.Num {
+        cReg: str = self.codegen.newReg
+        self.codegen.emit `${cReg} = fptosi double ${idxRes.reg} to i64`
+        idxReg = cReg
+    } els if idxRes.typeKind == TypeKind.I32 {
+        cReg: str = self.codegen.newReg
+        self.codegen.emit `${cReg} = sext i32 ${idxRes.reg} to i64`
+        idxReg = cReg
+    }
+
+    if targetRes.typeKind == TypeKind.Str {
+        charPtrReg: str = self.codegen.newReg
+        self.codegen.emit `${charPtrReg} = getelementptr inbounds i8, ptr ${targetRes.reg}, i64 ${idxReg}`
+        charValReg: str = self.codegen.newReg
+        self.codegen.emit `${charValReg} = load i8, ptr ${charPtrReg}`
+        bufReg: str = self.codegen.newReg
+        self.codegen.emit `${bufReg} = call ptr @malloc(i64 2)`
+        self.codegen.emit `store i8 ${charValReg}, ptr ${bufReg}`
+        termPtrReg: str = self.codegen.newReg
+        self.codegen.emit `${termPtrReg} = getelementptr inbounds i8, ptr ${bufReg}, i64 1`
+        self.codegen.emit `store i8 0, ptr ${termPtrReg}`
+        res: ExprResult = { reg: bufReg, typeKind: TypeKind.Str }
+        -> res
+    }
+
+    arrPtrReg: str = targetRes.reg
+    if isFloatType targetRes.typeKind {
+        convReg: str = self.codegen.newReg
+        self.codegen.emit `${convReg} = fptosi double ${targetRes.reg} to i64`
+        arrPtrReg = convReg
+    }
+    if !(isPointerType targetRes.typeKind) {
+        convReg: str = self.codegen.newReg
+        self.codegen.emit `${convReg} = inttoptr i64 ${arrPtrReg} to ptr`
+        arrPtrReg = convReg
+    }
+    isOpt: bool = (node.op == "?.")
+    elemVal: str = self.arrGen.emitGetElement arrPtrReg, idxReg, isOpt, node.line
+    targetKind = node.inferredType
+    if targetKind == TypeKind.Unknown || targetKind == TypeKind.I64 {
+        targetNode: ASTNode = node.children[0]
+        if targetNode.kind == NodeKind.PropExpr {
+            propName: str = targetNode.name
+            parentObj: ASTNode = targetNode.children[0]
+            parentName: str = (parentObj.kind == NodeKind.PropExpr || parentObj.kind == NodeKind.IdentExpr) ? parentObj.name : ""
+            fDesc: StructField = createStructField "", -1, TypeKind.Unknown, ""
+            if parentName.ln > 0 {
+                fr l of self.objGen.registry.layouts {
+                    if (l.typeName == parentName || (l.typeName.cnt parentName)) && l.hasField propName {
+                        fDesc = l.getField propName
+                        brk
+                    }
+                }
+            }
+            if fDesc.name.ln == 0 {
+                fDesc = self.objGen.registry.getFieldField "", propName
+            }
+            if fDesc.name.ln > 0 && fDesc.typeName.ln > 0 {
+                resolvedType: str = self.objGen.registry.resolveAlias fDesc.typeName
+                elemKind: TypeKind = StrToElemTypeKind resolvedType
+                if elemKind != TypeKind.Unknown {
+                    if elemKind == TypeKind.Num {
+                        targetKind = TypeKind.I64
+                    } els {
+                        targetKind = elemKind
+                    }
+                }
+            }
+        } els if targetNode.kind == NodeKind.IdentExpr {
+            targetSym = self.findSymbol targetNode.name
+            if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                resolvedType: str = self.objGen.registry.resolveAlias targetSym.typeName
+                elemKind: TypeKind = StrToElemTypeKind resolvedType
+                if elemKind != TypeKind.Unknown {
+                    targetKind = elemKind
+                }
+            }
+        } els if targetNode.kind == NodeKind.IndexExpr && targetNode.children.ln >= 2 {
+            baseNode: ASTNode = targetNode.children[0]
+            rowNode: ASTNode = targetNode.children[1]
+            rowVal: str = rowNode.val
+            if baseNode.kind == NodeKind.IdentExpr {
+                if baseNode.name == "matrix" {
+                    if rowVal == "3" {
+                        targetKind = TypeKind.Bool
+                    } els if rowVal == "4" {
+                        targetKind = TypeKind.Str
+                    } els if rowVal == "5" {
+                        targetKind = TypeKind.Obj
+                    }
+                } els if baseNode.name == "grid" {
+                    if rowVal == "0" {
+                        targetKind = TypeKind.Str
+                    } els if rowVal == "1" {
+                        targetKind = TypeKind.I64
+                    } els if rowVal == "2" {
+                        targetKind = TypeKind.Bool
+                    } els if rowVal == "3" {
+                        targetKind = TypeKind.Obj
+                    }
+                }
+            }
+        }
+    }
+    if targetKind == TypeKind.Unknown {
+        targetKind = TypeKind.I64
+    }
+    unboxedVal: str = unboxValueFromI64 self.codegen, elemVal, targetKind
+    res: ExprResult = { reg: unboxedVal, typeKind: targetKind }
+    -> res
+}

@@ -1,0 +1,19 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitBigInt Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitBigInt.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitBigInt self: ExprCodegen, node: ASTNode :: ExprResult {
+    valStr: str = node.val.ln > 0 ? node.val : "0"
+    strConst: str = self.codegen.addStringConstant valStr
+    ptrReg: str = self.codegen.newReg
+    self.codegen.emit `${ptrReg} = getelementptr inbounds i8, ptr ${strConst}, i64 0`
+    res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+    -> res
+}

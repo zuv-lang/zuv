@@ -1,0 +1,94 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitNew Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitNew.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp llvmType frm ../types
+imp ExprCodegen, ExprResult, FuncSignature frm ../expr
+
+EmitNew self: ExprCodegen, node: ASTNode :: ExprResult {
+    typeName: str = node.name
+    if typeName == "Prm" || typeName == "Promise" {
+        modeReg: str = self.codegen.newReg
+        self.codegen.emit `${modeReg} = load i32, ptr @zuv_async_context_mode`
+        prmReg: str = self.codegen.newReg
+        self.codegen.emit `${prmReg} = call ptr @zuv_prm_new(i32 ${modeReg})`
+        if node.children.ln > 0 {
+            self.codegen.emit `store ptr ${prmReg}, ptr @zuv_active_prm`
+            execRes: ExprResult = self.emitExpr node.children[0]
+            fnPtrReg: str = self.codegen.newReg
+            if execRes.typeKind == TypeKind.Ptr {
+                fnPtrReg = execRes.reg
+            } els {
+                self.codegen.emit `${fnPtrReg} = inttoptr i64 ${execRes.reg} to ptr`
+            }
+            resCbReg: str = self.codegen.newReg
+            self.codegen.emit `${resCbReg} = ptrtoint ptr @zuv_prm_cb_resolve to i64`
+            rejCbReg: str = self.codegen.newReg
+            self.codegen.emit `${rejCbReg} = ptrtoint ptr @zuv_prm_cb_reject to i64`
+            callRes: str = self.codegen.newReg
+            self.codegen.emit `${callRes} = call i64 ${fnPtrReg}(i64 ${resCbReg}, i64 ${rejCbReg})`
+        }
+        intReg: str = self.codegen.newReg
+        self.codegen.emit `${intReg} = ptrtoint ptr ${prmReg} to i64`
+        res: ExprResult = { reg: intReg, typeKind: TypeKind.I64 }
+        -> res
+    }
+    createMethod: str = typeName + "_create"
+    if self.hasFunc(createMethod) && node.children.ln > 0 {
+        cSig: FuncSignature = self.findFunc(createMethod)
+        if cSig.paramTypes.ln == node.children.ln {
+            cArgsStr: str = ""
+            firstCArg: bool = true
+            fr child, cIdx of node.children {
+                cRes: ExprResult = self.emitExpr child
+                tStr: str = (cIdx < cSig.paramTypes.ln) ? cSig.paramTypes[cIdx] : llvmType(cRes.typeKind)
+                argReg: str = cRes.reg
+                if tStr == "ptr" && cRes.typeKind != TypeKind.Ptr && cRes.typeKind != TypeKind.Str && cRes.typeKind != TypeKind.Arr && cRes.typeKind != TypeKind.Obj {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${cRes.reg} to ptr`
+                    argReg = convReg
+                } els if tStr == "i64" && (cRes.typeKind == TypeKind.Ptr || cRes.typeKind == TypeKind.Str || cRes.typeKind == TypeKind.Arr || cRes.typeKind == TypeKind.Obj) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = ptrtoint ptr ${cRes.reg} to i64`
+                    argReg = convReg
+                } els if tStr == "double" && cRes.typeKind != TypeKind.Num {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = sitofp i64 ${cRes.reg} to double`
+                    argReg = convReg
+                }
+                if !firstCArg { cArgsStr = cArgsStr + ", " }
+                cArgsStr = cArgsStr + tStr + " " + argReg
+                firstCArg = false
+            }
+            newReg: str = self.codegen.newReg
+            self.codegen.emit `${newReg} = call ${cSig.retType} @${createMethod}(${cArgsStr})`
+            res: ExprResult = { reg: newReg, typeKind: TypeKind.Obj }
+            -> res
+        }
+    }
+    if node.children.ln == 1 && node.children[0].kind == NodeKind.ObjLitExpr {
+        node.children[0].typeAnnotation = typeName
+        litRes: ExprResult = self.emitExpr node.children[0]
+        res: ExprResult = { reg: litRes.reg, typeKind: TypeKind.Obj }
+        -> res
+    }
+    bufReg: str = self.codegen.newReg
+    self.codegen.emit `${bufReg} = call ptr @malloc(i64 8192)`
+    setReg: str = self.codegen.newReg
+    self.codegen.emit `${setReg} = call ptr @memset(ptr ${bufReg}, i32 0, i64 8192)`
+    if self.codegen.header.cnt("@" + typeName + "_prototype") {
+        protoLoad: str = self.codegen.newReg
+        self.codegen.emit `${protoLoad} = load i64, ptr @${typeName}_prototype`
+        protoPtr: str = self.codegen.newReg
+        self.codegen.emit `${protoPtr} = inttoptr i64 ${protoLoad} to ptr`
+        cpyReg: str = self.codegen.newReg
+        self.codegen.emit `${cpyReg} = call ptr @memcpy(ptr ${bufReg}, ptr ${protoPtr}, i64 8192)`
+    }
+    res: ExprResult = { reg: bufReg, typeKind: TypeKind.Obj }
+    -> res
+}

@@ -1,0 +1,92 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitTernary Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitTernary.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp llvmType, llvmStackType frm ../types
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitTernary self: ExprCodegen, node: ASTNode :: ExprResult {
+    condNode: ASTNode = node.children[0]
+    thenNode: ASTNode = node.children[1]
+    elseNode: ASTNode = node.children[2]
+
+    condRes: ExprResult = self.emitExpr condNode
+    thenLbl: str = self.codegen.newLabel "tern_then"
+    elseLbl: str = self.codegen.newLabel "tern_else"
+    mergeLbl: str = self.codegen.newLabel "tern_merge"
+
+    condReg: str = condRes.reg
+    if condRes.typeKind != TypeKind.Bool {
+        cType: str = llvmType condRes.typeKind
+        cmpReg: str = self.codegen.newReg
+        if condRes.typeKind == TypeKind.Num {
+            self.codegen.emit `${cmpReg} = fcmp one double ${condReg}, 0.0`
+        } els {
+            self.codegen.emit `${cmpReg} = icmp ne ${cType} ${condReg}, 0`
+        }
+        condReg = cmpReg
+    }
+
+    retType = thenNode.inferredType
+    if retType == TypeKind.Unknown {
+        retType = elseNode.inferredType
+    }
+    if retType == TypeKind.Unknown {
+        retType = TypeKind.I64
+    }
+    stType: str = llvmStackType retType
+    slotReg: str = self.codegen.newReg
+    self.codegen.emit `${slotReg} = alloca ${stType}`
+    self.codegen.emit `br i1 ${condReg}, label %${thenLbl}, label %${elseLbl}`
+
+    self.codegen.emitLabel thenLbl
+    thenRes: ExprResult = self.emitExpr thenNode
+    thenVal: str = thenRes.reg
+    if stType == "i64" && (thenRes.typeKind == TypeKind.I8 || thenRes.typeKind == TypeKind.Bool) {
+        extReg: str = self.codegen.newReg
+        srcLLVM: str = (thenRes.typeKind == TypeKind.Bool) ? "i1" : "i8"
+        self.codegen.emit `${extReg} = zext ${srcLLVM} ${thenRes.reg} to i64`
+        thenVal = extReg
+    } els if stType == "i64" && thenRes.typeKind == TypeKind.I16 {
+        extReg: str = self.codegen.newReg
+        self.codegen.emit `${extReg} = zext i16 ${thenRes.reg} to i64`
+        thenVal = extReg
+    } els if stType == "i64" && thenRes.typeKind == TypeKind.I32 {
+        extReg: str = self.codegen.newReg
+        self.codegen.emit `${extReg} = zext i32 ${thenRes.reg} to i64`
+        thenVal = extReg
+    }
+    self.codegen.emit `store ${stType} ${thenVal}, ptr ${slotReg}`
+    self.codegen.emit `br label %${mergeLbl}`
+
+    self.codegen.emitLabel elseLbl
+    elseRes: ExprResult = self.emitExpr elseNode
+    elseVal: str = elseRes.reg
+    if stType == "i64" && (elseRes.typeKind == TypeKind.I8 || elseRes.typeKind == TypeKind.Bool) {
+        extReg: str = self.codegen.newReg
+        srcLLVM: str = (elseRes.typeKind == TypeKind.Bool) ? "i1" : "i8"
+        self.codegen.emit `${extReg} = zext ${srcLLVM} ${elseRes.reg} to i64`
+        elseVal = extReg
+    } els if stType == "i64" && elseRes.typeKind == TypeKind.I16 {
+        extReg: str = self.codegen.newReg
+        self.codegen.emit `${extReg} = zext i16 ${elseRes.reg} to i64`
+        elseVal = extReg
+    } els if stType == "i64" && elseRes.typeKind == TypeKind.I32 {
+        extReg: str = self.codegen.newReg
+        self.codegen.emit `${extReg} = zext i32 ${elseRes.reg} to i64`
+        elseVal = extReg
+    }
+    self.codegen.emit `store ${stType} ${elseVal}, ptr ${slotReg}`
+    self.codegen.emit `br label %${mergeLbl}`
+
+    self.codegen.emitLabel mergeLbl
+    outReg: str = self.codegen.newReg
+    self.codegen.emit `${outReg} = load ${stType}, ptr ${slotReg}`
+    res: ExprResult = { reg: outReg, typeKind: retType }
+    -> res
+}

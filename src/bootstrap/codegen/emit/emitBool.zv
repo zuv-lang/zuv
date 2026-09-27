@@ -1,0 +1,18 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitBool Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/emit/emitBool.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitBool self: ExprCodegen, node: ASTNode :: ExprResult {
+    bVal: str = node.boolVal ? "true" : "false"
+    resReg: str = self.codegen.newReg
+    self.codegen.emit `${resReg} = and i1 ${bVal}, true`
+    res: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+    -> res
+}
