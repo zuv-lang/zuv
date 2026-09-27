@@ -6,6 +6,7 @@
  *
  * Implements shared utility functions for compiler analysis and type inference:
  * - IsIntegerLiteral: Validates whether a numeric literal string is an integer
+ * - StrEndsWith: Checks whether a string ends with a given suffix string
  */
 
 imp str
@@ -27,4 +28,21 @@ IsIntegerLiteral text: str :: bool {
         i++
     }
     -> true
+}
+
+/**
+ * Checks whether a string ends with a given suffix string.
+ *
+ * @param {str} text - Input text string
+ * @param {str} suffix - Target suffix to inspect
+ * @returns {bool} True if text ends with suffix, false otherwise
+ */
+StrEndsWith text: str, suffix: str :: bool {
+    tLen: num = text.ln
+    sLen: num = suffix.ln
+    if sLen > tLen || sLen == 0 {
+        -> false
+    }
+    subStr: str = text.slc(tLen - sLen, tLen)
+    -> subStr == suffix
 }

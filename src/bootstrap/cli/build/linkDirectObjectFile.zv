@@ -1,0 +1,65 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — linkDirectObjectFile Build Pipeline
+ * Path: sub_projects/zuv/src/bootstrap/cli/build/linkDirectObjectFile.zv
+ * =============================================================================
+ */
+
+imp StrEndsWith frm ../../../util/commonFunctions
+
+/**
+ * Links a compiled object file (.obj) into an executable or shared library using lld-link.
+ *
+ * @param {str} objPath - Path to input .obj file
+ * @param {str} outExePath - Destination binary path (.exe or .dll)
+ * @param {bool} isCdylib - True to build a shared library (.dll), false for standalone executable
+ * @returns {num} 0 on successful linkage, non-zero on failure
+ */
+linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, extraLibs: str[] :: num {
+    lldBin: str = "lld-link"
+    if fE "D:/LLVM/bin/lld-link.exe" {
+        lldBin = "D:/LLVM/bin/lld-link.exe"
+    } els if fE "lld-link.exe" {
+        lldBin = "lld-link.exe"
+    } els if fE "bin/lld-link.exe" {
+        lldBin = "bin/lld-link.exe"
+    }
+
+    isDll: bool = isCdylib
+    if StrEndsWith(outExePath, ".dll") || StrEndsWith(outExePath, ".DLL") {
+        isDll = true
+    }
+
+    dllFlags: str = "-subsystem:console -stack:33554432"
+    if isDll {
+        outLibPath: str = outExePath
+        exeLen: num = outExePath.ln
+        if StrEndsWith(outLibPath, ".dll") || StrEndsWith(outLibPath, ".DLL") {
+            outLibPath = outLibPath.slc(0, exeLen - 4) + ".lib"
+        } els {
+            outLibPath = outLibPath + ".lib"
+        }
+        dllFlags = "-dll -implib:\"" + outLibPath + "\" -noentry -defaultlib:ucrt -defaultlib:vcruntime"
+    }
+
+    extraLibFlags: str = ""
+    fr extraLib of extraLibs {
+        libToLink: str = extraLib
+        if StrEndsWith(libToLink, ".dll") || StrEndsWith(libToLink, ".DLL") {
+            libToLink = libToLink.slc(0, libToLink.ln - 4) + ".lib"
+        }
+        resolvedLib: str = libToLink
+        if fE libToLink {
+            resolvedLib = libToLink
+        } els if fE ("tests/" + libToLink) {
+            resolvedLib = "tests/" + libToLink
+        } els if fE ("sub_projects/zuv/" + libToLink) {
+            resolvedLib = "sub_projects/zuv/" + libToLink
+        }
+        extraLibFlags = extraLibFlags + " \"" + resolvedLib + "\" "
+    }
+
+    cmd: str = lldBin + " \"" + objPath + "\" -out:\"" + outExePath + "\" " + dllFlags + extraLibFlags + " -defaultlib:libcmt -defaultlib:legacy_stdio_definitions -defaultlib:oldnames -defaultlib:user32 -defaultlib:kernel32 -defaultlib:ws2_32 -nologo"
+    res: num = sh cmd
+    -> res
+}

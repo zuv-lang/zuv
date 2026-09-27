@@ -16,8 +16,9 @@ imp HandleCheck frm check
 imp HandleCheckAll frm checkall
 imp HandleVerify frm verify
 imp HandleTest frm test
-imp HandleBuild, StrEndsWith, ResolveTargetTriple frm build
+imp HandleBuild, ResolveTargetTriple frm build
 imp HandleRun frm run
+imp StrEndsWith frm ../../util/commonFunctions
 
 /**
  * Command-Line Interface controller coordinating argument parsing, diagnostics, and compilation stages.
