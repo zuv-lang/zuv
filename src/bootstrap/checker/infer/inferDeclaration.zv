@@ -12,12 +12,9 @@
  * - Foreign function interfaces (ExternDecl) and module imports (ImportDecl)
  */
 
-imp str, arr
-imp Token, TokenType frm ../tokens
-imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../ast
-imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm ../types
-imp Diagnostic frm ../diagnostics
-imp Checker, Symbol, Scope frm checker
+imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../../ast
+imp TypeInfo, TypeKind, StrToTypeKind frm ../../types
+imp Checker, Symbol, Scope frm ../checker
 imp InferStatement frm inferStatement
 
 /**

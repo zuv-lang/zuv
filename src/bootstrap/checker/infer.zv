@@ -5,22 +5,13 @@
  * =============================================================================
  *
  * Coordinates and re-exports semantic type inference components:
- * - IsIntegerLiteral: Numeric literal integer validation (util/commonFunctions)
- * - InferExpression: Expression evaluation and type annotation (checker/inferExpression)
- * - InferStatement: Statement type checking and scope validation (checker/inferStatement)
- * - InferDeclaration: Scoped declaration and function inference (checker/inferDeclaration)
- * - InferProgram: Top-level program AST traversal coordinator (checker/inferProgram)
+ * - InferExpression: Expression evaluation and type annotation (checker/infer/inferExpression)
+ * - InferStatement: Statement type checking and scope validation (checker/infer/inferStatement)
+ * - InferDeclaration: Scoped declaration and function inference (checker/infer/inferDeclaration)
+ * - InferProgram: Top-level program AST traversal coordinator (checker/infer/inferProgram)
  */
 
-imp str, arr
-imp Token, TokenType frm ../tokens
-imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../ast
-imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind, IsNumericType, IsIntegerType frm ../types
-imp Diagnostic frm ../diagnostics
-imp Checker, Symbol, Scope frm checker
-
-imp IsIntegerLiteral frm ../../util/commonFunctions
-imp InferExpression frm inferExpression
-imp InferStatement frm inferStatement
-imp InferDeclaration frm inferDeclaration
-imp InferProgram frm inferProgram
+imp InferExpression frm infer/inferExpression
+imp InferStatement frm infer/inferStatement
+imp InferDeclaration frm infer/inferDeclaration
+imp InferProgram frm infer/inferProgram

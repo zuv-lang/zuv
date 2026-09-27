@@ -9,12 +9,9 @@
  * - Pass 2: Scoped statement and method body inference traversal
  */
 
-imp str, arr
-imp Token, TokenType frm ../tokens
-imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../ast
-imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm ../types
-imp Diagnostic frm ../diagnostics
-imp Checker, Symbol, Scope frm checker
+imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../../ast
+imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm ../../types
+imp Checker, Symbol, Scope frm ../checker
 imp InferDeclaration frm inferDeclaration
 imp InferStatement frm inferStatement
 

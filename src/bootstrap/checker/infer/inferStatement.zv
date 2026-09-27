@@ -12,12 +12,9 @@
  * - Exception handling: TryCatchStmt scoped error variable binding
  */
 
-imp str, arr
-imp Token, TokenType frm ../tokens
-imp ASTNode, NodeKind, Param, FieldEntry frm ../ast
-imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm ../types
-imp Diagnostic frm ../diagnostics
-imp Checker, Symbol, Scope frm checker
+imp ASTNode, NodeKind, Param, FieldEntry frm ../../ast
+imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm ../../types
+imp Checker, Symbol, Scope frm ../checker
 imp InferExpression frm inferExpression
 imp InferDeclaration frm inferDeclaration
 
