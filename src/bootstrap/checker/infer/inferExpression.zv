@@ -103,15 +103,40 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
     if k == NodeKind.ArrExpr {
         elemKind = TypeKind.Unknown
         isFirst = true
+        isHetero = false
+        allTypesStr = "["
+        cIdx = 0
         fr child of expr.children {
             curElemKind = InferExpression(checker, child)
             if isFirst {
                 elemKind = curElemKind
                 isFirst = false
+            } els if curElemKind != elemKind || child.typeAnnotation != expr.children[0].typeAnnotation {
+                isHetero = true
             }
+            if cIdx > 0 {
+                allTypesStr = allTypesStr + ", "
+            }
+            childTypeName = child.typeAnnotation
+            if childTypeName.ln == 0 {
+                childTypeName = TypeKindToStr(curElemKind)
+            }
+            allTypesStr = allTypesStr + childTypeName
+            cIdx = cIdx + 1
         }
-        if elemKind != TypeKind.Unknown {
-            expr.typeAnnotation = (TypeKindToStr elemKind) + "[]"
+        allTypesStr = allTypesStr + "]"
+        if isHetero {
+            expr.typeAnnotation = allTypesStr
+        } els if elemKind != TypeKind.Unknown {
+            firstTypeStr = ""
+            if expr.children.ln > 0 && expr.children[0].typeAnnotation.ln > 0 {
+                firstTypeStr = expr.children[0].typeAnnotation
+            }
+            if firstTypeStr.ln > 0 {
+                expr.typeAnnotation = firstTypeStr + "[]"
+            } els {
+                expr.typeAnnotation = (TypeKindToStr elemKind) + "[]"
+            }
         }
         expr.inferredType = TypeKind.Arr
         -> TypeKind.Arr
@@ -401,6 +426,43 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 if subSuffix == "[]" {
                     baseName = targetTypeName.sub 0, targetTypeName.ln - 2
                     elemType = StrToTypeKind(baseName)
+                    expr.typeAnnotation = baseName
+                } els if (targetTypeName.sub 0, 1) == "[" && (targetTypeName.sub targetTypeName.ln - 1, 1) == "]" && expr.children[1].val.ln > 0 {
+                    idxValStr = expr.children[1].val
+                    rowIdx: num = 0
+                    fr i = 0; i < idxValStr.ln; i++ {
+                        c: str = idxValStr.sub i, 1
+                        d: num = c == "0" ? 0 : (c == "1" ? 1 : (c == "2" ? 2 : (c == "3" ? 3 : (c == "4" ? 4 : (c == "5" ? 5 : (c == "6" ? 6 : (c == "7" ? 7 : (c == "8" ? 8 : (c == "9" ? 9 : -1)))))))))
+                        if d >= 0 {
+                            rowIdx = rowIdx * 10 + d
+                        }
+                    }
+                    innerContent: str = targetTypeName.sub 1, targetTypeName.ln - 2
+                    curPart: str = ""
+                    pIdx: num = 0
+                    bracketDepth: num = 0
+                    fr i = 0; i < innerContent.ln; i++ {
+                        ch: str = innerContent.sub i, 1
+                        if ch == "[" {
+                            bracketDepth = bracketDepth + 1
+                            curPart = curPart + ch
+                        } els if ch == "]" {
+                            bracketDepth = bracketDepth - 1
+                            curPart = curPart + ch
+                        } els if ch == "," && bracketDepth == 0 {
+                            if pIdx == rowIdx {
+                                brk
+                            }
+                            curPart = ""
+                            pIdx = pIdx + 1
+                        } els if ch != " " || curPart.ln > 0 {
+                            curPart = curPart + ch
+                        }
+                    }
+                    if curPart.ln > 0 {
+                        elemType = StrToTypeKind(curPart)
+                        expr.typeAnnotation = curPart
+                    }
                 }
             }
             if elemType == TypeKind.Unknown {
