@@ -7,7 +7,7 @@
 
 imp TypeKind, IsNumericType frm ../../types
 imp ASTNode, NodeKind frm ../../ast
-imp llvmType, llvmStackType, isPointerType, isFloatType, selectBinaryOp, selectCmpOp, selectCastOp frm ../types
+imp llvmType, llvmStackType, isPointerType, isFloatType, isIntegerType, selectBinaryOp, selectCmpOp, selectCastOp frm ../types
 imp ExprCodegen, ExprResult frm ../expr
 
 EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
@@ -423,23 +423,29 @@ EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
                 bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
                 -> bRes
             }
-            isI64L: bool = (leftRes.typeKind == TypeKind.I64 || leftRes.typeKind == TypeKind.I32)
-            isI64R: bool = (rightRes.typeKind == TypeKind.I64 || rightRes.typeKind == TypeKind.I32)
-            if (isI64L && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und)) ||
-               (isI64R && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und)) {
-                valReg: str = isI64L ? leftRes.reg : rightRes.reg
+            isNumIntL: bool = isIntegerType leftRes.typeKind
+            isNumIntR: bool = isIntegerType rightRes.typeKind
+            if (isNumIntL && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und)) ||
+               (isNumIntR && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und)) {
+                valReg: str = isNumIntL ? leftRes.reg : rightRes.reg
+                valType = isNumIntL ? leftRes.typeKind : rightRes.typeKind
+                llType: str = llvmType valType
                 cmpRes: str = self.codegen.newReg
                 icmpOp: str = (op == "==") ? "eq" : "ne"
-                self.codegen.emit `${cmpRes} = icmp ${icmpOp} i64 ${valReg}, 0`
+                self.codegen.emit `${cmpRes} = icmp ${icmpOp} ${llType} ${valReg}, 0`
                 bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
                 -> bRes
             }
-            if (leftRes.typeKind == TypeKind.Num && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und)) ||
-               (rightRes.typeKind == TypeKind.Num && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und)) {
-                valReg: str = (leftRes.typeKind == TypeKind.Num) ? leftRes.reg : rightRes.reg
+            isNumFltL: bool = isFloatType leftRes.typeKind
+            isNumFltR: bool = isFloatType rightRes.typeKind
+            if (isNumFltL && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und)) ||
+               (isNumFltR && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und)) {
+                valReg: str = isNumFltL ? leftRes.reg : rightRes.reg
+                valType = isNumFltL ? leftRes.typeKind : rightRes.typeKind
+                llType: str = llvmType valType
                 cmpRes: str = self.codegen.newReg
                 fcmpOp: str = (op == "==") ? "fcmp oeq" : "fcmp one"
-                self.codegen.emit `${cmpRes} = ${fcmpOp} double ${valReg}, 0.0`
+                self.codegen.emit `${cmpRes} = ${fcmpOp} ${llType} ${valReg}, 0.0`
                 bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
                 -> bRes
             }

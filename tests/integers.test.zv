@@ -1,16 +1,16 @@
 // Integer and float types test: i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f32
 
-let a: i8 = 42
-let b: i16 = 1000
-let c: i32 = 100000
-let d: i64 = 5000000000
-let e: i128 = 9000000000
-let u1: u8 = 200
-let u2: u16 = 40000
-let u3: u32 = 3000000000
-let u4: u64 = 10000000000
-let u5: u128 = 20000000000
-let f: f32 = 1.5
+a: i8 = 42
+b: i16 = 1000
+c: i32 = 100000
+d: i64 = 5000000000
+e: i128 = 9000000000
+u1: u8 = 200
+u2: u16 = 40000
+u3: u32 = 3000000000
+u4: u64 = 10000000000
+u5: u128 = 20000000000
+f: f32 = 1.5
 
 if a == 42 {
     prnt "i8 value ok"
@@ -101,17 +101,17 @@ if typ f == "f32" {
 }
 
 // Cast tests
-let ca = 10 as i8
-let cb = 200 as i16
-let cc = 30000 as i32
-let cd = 400000 as i64
-let ce = 500000 as i128
-let cu1 = 150 as u8
-let cu2 = 35000 as u16
-let cu3 = 2500000000 as u32
-let cu4 = 8000000000 as u64
-let cu5 = 15000000000 as u128
-let cf = 1.5 as f32
+ca = 10 as i8
+cb = 200 as i16
+cc = 30000 as i32
+cd = 400000 as i64
+ce = 500000 as i128
+cu1 = 150 as u8
+cu2 = 35000 as u16
+cu3 = 2500000000 as u32
+cu4 = 8000000000 as u64
+cu5 = 15000000000 as u128
+cf = 1.5 as f32
 
 if typ ca == "i8" {
     prnt "cast to i8 typ ok"
@@ -158,3 +158,32 @@ if typ cf == "f32" {
 }
 
 prnt "all integer tests completed successfully"
+
+newvari64: i64
+prnt newvari64
+if newvari64 == nil {
+    prnt "newvari64 initially nil ok"
+}
+newvari64 = 0
+if newvari64 == 0 {
+    prnt "newvari64 set to 0 ok"
+}
+
+uninitF32: f32
+prnt uninitF32
+if uninitF32 == nil {
+    prnt "uninitF32 initially nil ok"
+}
+if uninitF32 == 0.0 {
+    prnt "uninit f32 default is 0.0"
+}
+
+varwithouttype
+prnt varwithouttype
+if varwithouttype == nil {
+    prnt "varwithouttype initially nil ok"
+}
+varwithouttype = 100
+if varwithouttype == 100 {
+    prnt "varwithouttype set to 100 ok"
+}

@@ -1,7 +1,7 @@
 imp arr
 
 // 1. Literal array exact sizing test
-let nums = [10, 20, 30]
+nums = [10, 20, 30]
 prnt "Initial length:"
 prnt nums.len
 prnt "Elements:"
@@ -35,15 +35,15 @@ prnt nums[5]
 prnt nums[6]
 
 // 5. Pop and re-push
-let last = nums.pop
+last = nums.pop
 prnt "Popped:"
 prnt last
 prnt "Length after pop:"
 prnt nums.len
 
 // 6. Large stress test: push 2,000 elements (exceeds the old 1,024 buffer limit)
-let big = [1, 2, 3]
-let i = 0
+big = [1, 2, 3]
+i = 0
 wh i < 2000 {
     big.push i
     i = i + 1

@@ -26,9 +26,9 @@ if typ 0xFF == "num" {
     prnt "typ hex ok"
 }
 
-let hex = 0xFF
-let bin = 0b1010
-let oct = 0o755
+hex = 0xFF
+bin = 0b1010
+oct = 0o755
 if hex == 255 {
     prnt "hex var ok"
 }

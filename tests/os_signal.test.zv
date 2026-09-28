@@ -2,7 +2,7 @@
 imp signal frm "os/signal"
 
 // 1. Test event handler with function reference
-let caughtInt = 0
+caughtInt = 0
 handleInt sig {
     caughtInt = 1
 }
@@ -13,7 +13,7 @@ if caughtInt == 1 {
 }
 
 // 2. Test event handler with lambda () => { ... }
-let caughtHup = 0
+caughtHup = 0
 signal.on "HUP", () => {
     caughtHup = 1
 }
@@ -23,24 +23,24 @@ if caughtHup == 1 {
 }
 
 // 3. Test channel-based notification queue (auto channel creation)
-let sigChan = signal.notify "TERM"
+sigChan = signal.notify "TERM"
 signal.raise "TERM"
-let receivedSig = chan.rcv sigChan
+receivedSig = chan.rcv sigChan
 if receivedSig == 15 {
     prnt "signal.notify channel received SIGTERM successfully"
 }
 
 // 4. Test explicit channel notification
-let myChan = chan.create 10
+myChan = chan.create 10
 signal.notify myChan, "USR1"
 signal.raise "USR1"
-let usrSig = chan.rcv myChan
+usrSig = chan.rcv myChan
 if usrSig == 10 {
     prnt "signal.notify explicit channel received SIGUSR1 successfully"
 }
 
 // 5. Test numeric signal code
-let caughtBreak = 0
+caughtBreak = 0
 signal.on 21, () => {
     caughtBreak = 1
 }
@@ -50,7 +50,7 @@ if caughtBreak == 1 {
 }
 
 // 6. Test signal.ignore suppresses dispatch
-let ignoredFired = 0
+ignoredFired = 0
 signal.on "QUIT", () => {
     ignoredFired = 1
 }
@@ -61,7 +61,7 @@ if ignoredFired == 0 {
 }
 
 // 7. Test signal.reset resets handler
-let resetFired = 0
+resetFired = 0
 signal.on "USR2", () => {
     resetFired = 1
 }

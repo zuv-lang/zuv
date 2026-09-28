@@ -5,7 +5,7 @@ macro logVal name {
 }
 
 macro swap a, b {
-    let temp = a
+    temp = a
     a = b
     b = temp
 }
@@ -21,7 +21,7 @@ macro checkEq actual, expected {
 }
 
 // 1. Basic stringification and logging macro
-let totalCount = 100
+totalCount = 100
 logVal totalCount
 
 // 2. In-place multi-statement swap macro
@@ -32,10 +32,10 @@ checkEq x, 20
 checkEq y, 10
 
 // 3. Expression macro expansion
-let m = minVal(50, 30)
+m = minVal(50, 30)
 checkEq m, 30
 
-let m2 = minVal 15, 25
+m2 = minVal 15, 25
 checkEq m2, 15
 
 prnt "All macro tests passed!"

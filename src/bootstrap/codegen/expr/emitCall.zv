@@ -410,6 +410,11 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
             } els if firstArgType == TypeKind.Num {
                 dFmt: str = self.codegen.addStringConstant dblFmtStr
                 self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${dFmt}, double ${firstArgReg})`
+            } els if firstArgType == TypeKind.F32 {
+                extReg: str = self.codegen.newReg
+                self.codegen.emit `${extReg} = fpext float ${firstArgReg} to double`
+                dFmt: str = self.codegen.addStringConstant dblFmtStr
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${dFmt}, double ${extReg})`
             } els if firstArgType == TypeKind.Bool {
                 strTrue: str = self.codegen.addStringConstant "true"
                 strFalse: str = self.codegen.addStringConstant "false"
@@ -418,10 +423,20 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
                 self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${boolPtr})`
             } els if firstArgType == TypeKind.I8 {
                 zextReg: str = self.codegen.newReg
+                self.codegen.emit `${zextReg} = sext i8 ${firstArgReg} to i64`
+                numFmt: str = self.codegen.addStringConstant numFmtStr
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${zextReg})`
+            } els if firstArgType == TypeKind.U8 {
+                zextReg: str = self.codegen.newReg
                 self.codegen.emit `${zextReg} = zext i8 ${firstArgReg} to i64`
                 numFmt: str = self.codegen.addStringConstant numFmtStr
                 self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${zextReg})`
             } els if firstArgType == TypeKind.I16 {
+                zextReg: str = self.codegen.newReg
+                self.codegen.emit `${zextReg} = sext i16 ${firstArgReg} to i64`
+                numFmt: str = self.codegen.addStringConstant numFmtStr
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${zextReg})`
+            } els if firstArgType == TypeKind.U16 {
                 zextReg: str = self.codegen.newReg
                 self.codegen.emit `${zextReg} = zext i16 ${firstArgReg} to i64`
                 numFmt: str = self.codegen.addStringConstant numFmtStr
@@ -431,9 +446,19 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
                 self.codegen.emit `${sextReg} = sext i32 ${firstArgReg} to i64`
                 numFmt: str = self.codegen.addStringConstant numFmtStr
                 self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${sextReg})`
-            } els if firstArgType == TypeKind.I64 {
+            } els if firstArgType == TypeKind.U32 {
+                zextReg: str = self.codegen.newReg
+                self.codegen.emit `${zextReg} = zext i32 ${firstArgReg} to i64`
+                numFmt: str = self.codegen.addStringConstant numFmtStr
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${zextReg})`
+            } els if firstArgType == TypeKind.I64 || firstArgType == TypeKind.U64 {
                 numFmt: str = self.codegen.addStringConstant numFmtStr
                 self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${firstArgReg})`
+            } els if firstArgType == TypeKind.I128 || firstArgType == TypeKind.U128 {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = trunc i128 ${firstArgReg} to i64`
+                numFmt: str = self.codegen.addStringConstant numFmtStr
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${tReg})`
             } els {
                 awaitArg: str = firstArgReg
                 if firstArgType == TypeKind.Func || firstArgType == TypeKind.Ptr || firstArgType == TypeKind.Str || firstArgType == TypeKind.Arr || firstArgType == TypeKind.Obj {
