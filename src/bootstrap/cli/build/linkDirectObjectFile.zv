@@ -45,6 +45,9 @@ linkDirectObjectFile objPath: str, outExePath: str, isCdylib: bool, extraLibs: s
 
     extraLibFlags: str = ""
     fr extraLib of extraLibs {
+        if extraLib == "c" || extraLib == "C" || extraLib == "libc" || extraLib == "LIBC" || extraLib == "cdylib" {
+            cont
+        }
         libToLink: str = extraLib
         if StrEndsWith(libToLink, ".dll") || StrEndsWith(libToLink, ".DLL") {
             libToLink = libToLink.slc(0, libToLink.ln - 4) + ".lib"

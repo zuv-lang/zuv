@@ -146,7 +146,7 @@ obj ExternManager {
      * @returns {void}
      */
     addLib: libName: str :: void => {
-        if libName.ln == 0 || libName == "c" || libName == "libc" {
+        if libName.ln == 0 || libName == "c" || libName == "libc" || libName == "C" || libName == "LIBC" || libName == "cdylib" {
             -> und
         }
         if !(self.hasLib libName) {

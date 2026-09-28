@@ -145,11 +145,18 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
             targetExe = (isCdylib ? "output.dll" : "output.exe")
         }
 
-        // Expand ObjDecl methods into synthetic FuncDecls so codegen emits their definitions
+        // Expand ObjDecl methods and defined ExternDecl functions into synthetic FuncDecls
         expandedChildren: ASTNode[] = []
         fr topNode of prog.children {
             expandedChildren.psh topNode
-            if topNode.kind == NodeKind.ObjDecl {
+            if topNode.kind == NodeKind.ExternDecl {
+                fr extChild of topNode.children {
+                    if extChild.children.ln > 0 {
+                        extChild.isPub = true
+                        expandedChildren.psh extChild
+                    }
+                }
+            } els if topNode.kind == NodeKind.ObjDecl {
                 fr mNode of topNode.children {
                     mangledName: str = topNode.name + "_" + mNode.name
                     mRetType: str = mNode.typeAnnotation
@@ -870,7 +877,8 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         paramsSig = paramsSig + pLLVM + " %arg_" + p.name
                         isFirstP = false
                     }
-                    cg.startFunction("define " + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
+                    exportAttr: str = (topNode.isPub || isCdylib ? "dllexport " : "")
+                    cg.startFunction("define " + exportAttr + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
                     if retLLVM == "void" {
                         stmtGen.setReturnType(TypeKind.Void)
                     } els if retLLVM == "ptr" {

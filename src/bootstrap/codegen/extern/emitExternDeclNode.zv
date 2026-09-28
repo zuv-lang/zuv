@@ -25,6 +25,9 @@ EmitExternDeclNode self: ExternManager, node: ASTNode, codegen: Codegen :: num {
     emittedCount = 0
 
     fr fnChild of node.children {
+        if fnChild.children.ln > 0 {
+            cont
+        }
         fnName = fnChild.name
         isWin32IntFn: bool = (fnName == "GetCurrentProcessId" || fnName == "GetSystemMetrics" || fnName == "Sleep" || fnName == "puts")
         retType = isWin32IntFn ? ((fnChild.typeAnnotation == "void") ? "void" : "i32") : (ToLLVMExternType fnChild.typeAnnotation)
