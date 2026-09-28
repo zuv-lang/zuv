@@ -32,51 +32,18 @@ EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
             if foundSym.isAlloca {
                 stType: str = llvmStackType foundSym.typeKind
                 storeVal: str = rightRes.reg
-                if stType == "i64" && (rightRes.typeKind == TypeKind.I8 || rightRes.typeKind == TypeKind.Bool) {
-                    extReg: str = self.codegen.newReg
-                    srcLLVM: str = (rightRes.typeKind == TypeKind.Bool) ? "i1" : "i8"
-                    self.codegen.emit `${extReg} = zext ${srcLLVM} ${rightRes.reg} to i64`
-                    storeVal = extReg
-                } els if stType == "i64" && rightRes.typeKind == TypeKind.I16 {
-                    extReg: str = self.codegen.newReg
-                    self.codegen.emit `${extReg} = zext i16 ${rightRes.reg} to i64`
-                    storeVal = extReg
-                } els if stType == "i64" && rightRes.typeKind == TypeKind.I32 {
-                    extReg: str = self.codegen.newReg
-                    self.codegen.emit `${extReg} = zext i32 ${rightRes.reg} to i64`
-                    storeVal = extReg
-                } els if stType == "i64" && (rightRes.typeKind == TypeKind.Str || rightRes.typeKind == TypeKind.Ptr || rightRes.typeKind == TypeKind.Arr || rightRes.typeKind == TypeKind.Obj) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = ptrtoint ptr ${rightRes.reg} to i64`
-                    storeVal = convReg
-                } els if stType == "ptr" && rightRes.typeKind == TypeKind.I64 {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = inttoptr i64 ${rightRes.reg} to ptr`
-                    storeVal = convReg
-                } els if (stType == "i8" || stType == "i16" || stType == "i32") && rightRes.typeKind == TypeKind.I64 {
-                    truncReg: str = self.codegen.newReg
-                    self.codegen.emit `${truncReg} = trunc i64 ${rightRes.reg} to ${stType}`
-                    storeVal = truncReg
-                } els if stType == "double" && rightRes.typeKind == TypeKind.I64 {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i64 ${rightRes.reg} to double`
-                    storeVal = convReg
-                } els if stType == "double" && rightRes.typeKind == TypeKind.I32 {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i32 ${rightRes.reg} to double`
-                    storeVal = convReg
-                } els if stType == "double" && (rightRes.typeKind == TypeKind.I16 || rightRes.typeKind == TypeKind.I8) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i32 ${rightRes.reg} to double`
-                    storeVal = convReg
-                } els if stType == "i64" && rightRes.typeKind == TypeKind.Num {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = fptosi double ${rightRes.reg} to i64`
-                    storeVal = convReg
-                } els if (stType == "i8" || stType == "i16" || stType == "i32") && rightRes.typeKind == TypeKind.Num {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = fptosi double ${rightRes.reg} to ${stType}`
-                    storeVal = convReg
+                fromLLVM: str = llvmType rightRes.typeKind
+                if fromLLVM != stType && rightRes.typeKind != TypeKind.Unknown {
+                    castOp: str = selectCastOp rightRes.typeKind, foundSym.typeKind
+                    if castOp.ln > 0 {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = ${castOp} ${fromLLVM} ${rightRes.reg} to ${stType}`
+                        storeVal = convReg
+                    } els if (isPointerType rightRes.typeKind) && (isPointerType foundSym.typeKind) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = bitcast ${fromLLVM} ${rightRes.reg} to ${stType}`
+                        storeVal = convReg
+                    }
                 }
                 self.codegen.emit `store ${stType} ${storeVal}, ptr ${foundSym.reg}`
             }
@@ -519,12 +486,26 @@ EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
     if leftRes.typeKind != rightRes.typeKind {
         if leftRes.typeKind == TypeKind.Num || rightRes.typeKind == TypeKind.Num {
             targetType = TypeKind.Num
+        } els if leftRes.typeKind == TypeKind.F32 || rightRes.typeKind == TypeKind.F32 {
+            targetType = TypeKind.F32
+        } els if leftRes.typeKind == TypeKind.U128 || rightRes.typeKind == TypeKind.U128 {
+            targetType = TypeKind.U128
+        } els if leftRes.typeKind == TypeKind.I128 || rightRes.typeKind == TypeKind.I128 {
+            targetType = TypeKind.I128
+        } els if leftRes.typeKind == TypeKind.U64 || rightRes.typeKind == TypeKind.U64 {
+            targetType = TypeKind.U64
         } els if leftRes.typeKind == TypeKind.I64 || rightRes.typeKind == TypeKind.I64 {
             targetType = TypeKind.I64
+        } els if leftRes.typeKind == TypeKind.U32 || rightRes.typeKind == TypeKind.U32 {
+            targetType = TypeKind.U32
         } els if leftRes.typeKind == TypeKind.I32 || rightRes.typeKind == TypeKind.I32 {
             targetType = TypeKind.I32
+        } els if leftRes.typeKind == TypeKind.U16 || rightRes.typeKind == TypeKind.U16 {
+            targetType = TypeKind.U16
         } els if leftRes.typeKind == TypeKind.I16 || rightRes.typeKind == TypeKind.I16 {
             targetType = TypeKind.I16
+        } els if leftRes.typeKind == TypeKind.U8 || rightRes.typeKind == TypeKind.U8 {
+            targetType = TypeKind.U8
         } els if leftRes.typeKind == TypeKind.I8 || rightRes.typeKind == TypeKind.I8 {
             targetType = TypeKind.I8
         }

@@ -115,5 +115,6 @@ EmitCast self: ExprCodegen, node: ASTNode :: ExprResult {
         res: ExprResult = { reg: castReg, typeKind: toType }
         -> res
     }
-    -> targetRes
+    res: ExprResult = { reg: targetRes.reg, typeKind: toType }
+    -> res
 }

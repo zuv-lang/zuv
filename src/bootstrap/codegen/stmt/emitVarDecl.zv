@@ -7,7 +7,7 @@
 
 imp TypeKind frm ../../types
 imp ASTNode, NodeKind frm ../../ast
-imp llvmStackType, selectDefaultValue frm ../types
+imp llvmType, llvmStackType, selectDefaultValue, selectCastOp, isPointerType frm ../types
 imp resolveFieldTypeKind frm ../decl
 imp ExprResult, ScopeSymbol frm ../expr
 imp StmtCodegen frm ../stmt
@@ -69,54 +69,18 @@ EmitVarDecl self: StmtCodegen, node: ASTNode :: void {
         }
         if initReg.ln > 0 {
             storeVal: str = initReg
-            if stType == "i64" && initResKind == TypeKind.Bool {
-                extReg: str = self.codegen.newReg
-                self.codegen.emit `${extReg} = zext i1 ${initReg} to i64`
-                storeVal = extReg
-            } els if stType == "i64" && initResKind == TypeKind.I8 {
-                extReg: str = self.codegen.newReg
-                self.codegen.emit `${extReg} = zext i8 ${initReg} to i64`
-                storeVal = extReg
-            } els if stType == "i64" && initResKind == TypeKind.I16 {
-                extReg: str = self.codegen.newReg
-                self.codegen.emit `${extReg} = zext i16 ${initReg} to i64`
-                storeVal = extReg
-            } els if stType == "i64" && initResKind == TypeKind.I32 {
-                extReg: str = self.codegen.newReg
-                self.codegen.emit `${extReg} = zext i32 ${initReg} to i64`
-                storeVal = extReg
-            } els if stType == "i64" && (initResKind == TypeKind.Str || initResKind == TypeKind.Ptr || initResKind == TypeKind.Arr || initResKind == TypeKind.Obj) {
-                convReg: str = self.codegen.newReg
-                self.codegen.emit `${convReg} = ptrtoint ptr ${initReg} to i64`
-                storeVal = convReg
-            } els if stType == "ptr" && initResKind == TypeKind.I64 {
-                convReg: str = self.codegen.newReg
-                self.codegen.emit `${convReg} = inttoptr i64 ${initReg} to ptr`
-                storeVal = convReg
-            } els if (stType == "i8" || stType == "i16" || stType == "i32") && initResKind == TypeKind.I64 {
-                truncReg: str = self.codegen.newReg
-                self.codegen.emit `${truncReg} = trunc i64 ${initReg} to ${stType}`
-                storeVal = truncReg
-            } els if stType == "double" && initResKind == TypeKind.I64 {
-                convReg: str = self.codegen.newReg
-                self.codegen.emit `${convReg} = sitofp i64 ${initReg} to double`
-                storeVal = convReg
-            } els if stType == "double" && initResKind == TypeKind.I32 {
-                convReg: str = self.codegen.newReg
-                self.codegen.emit `${convReg} = sitofp i32 ${initReg} to double`
-                storeVal = convReg
-            } els if stType == "double" && (initResKind == TypeKind.I16 || initResKind == TypeKind.I8) {
-                convReg: str = self.codegen.newReg
-                self.codegen.emit `${convReg} = sitofp i32 ${initReg} to double`
-                storeVal = convReg
-            } els if stType == "i64" && initResKind == TypeKind.Num {
-                convReg: str = self.codegen.newReg
-                self.codegen.emit `${convReg} = fptosi double ${initReg} to i64`
-                storeVal = convReg
-            } els if (stType == "i8" || stType == "i16" || stType == "i32") && initResKind == TypeKind.Num {
-                convReg: str = self.codegen.newReg
-                self.codegen.emit `${convReg} = fptosi double ${initReg} to ${stType}`
-                storeVal = convReg
+            fromLLVM: str = llvmType initResKind
+            if fromLLVM != stType && initResKind != TypeKind.Unknown {
+                castOp: str = selectCastOp initResKind, varType
+                if castOp.ln > 0 {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = ${castOp} ${fromLLVM} ${initReg} to ${stType}`
+                    storeVal = convReg
+                } els if (isPointerType initResKind) && (isPointerType varType) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = bitcast ${fromLLVM} ${initReg} to ${stType}`
+                    storeVal = convReg
+                }
             }
             self.codegen.emit `store ${stType} ${storeVal}, ptr ${slotReg}`
         }

@@ -16,6 +16,13 @@ enum TypeKind {
     I16,
     I32,
     I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    F32,
     Num,
     Str,
     Ptr,
@@ -220,6 +227,13 @@ TypeKindToStr kind: TypeKind :: str => sw kind {
     TypeKind.I16     => "i16"
     TypeKind.I32     => "i32"
     TypeKind.I64     => "i64"
+    TypeKind.I128    => "i128"
+    TypeKind.U8      => "u8"
+    TypeKind.U16     => "u16"
+    TypeKind.U32     => "u32"
+    TypeKind.U64     => "u64"
+    TypeKind.U128    => "u128"
+    TypeKind.F32     => "f32"
     TypeKind.Num     => "num"
     TypeKind.Str     => "str"
     TypeKind.Ptr     => "ptr"
@@ -238,11 +252,17 @@ TypeKindToStr kind: TypeKind :: str => sw kind {
  * @returns {bool} True if the type is an integer type, false otherwise
  */
 IsIntegerType kind: TypeKind :: bool => sw kind {
-    TypeKind.I8  => true
-    TypeKind.I16 => true
-    TypeKind.I32 => true
-    TypeKind.I64 => true
-    _            => false
+    TypeKind.I8   => true
+    TypeKind.I16  => true
+    TypeKind.I32  => true
+    TypeKind.I64  => true
+    TypeKind.I128 => true
+    TypeKind.U8   => true
+    TypeKind.U16  => true
+    TypeKind.U32  => true
+    TypeKind.U64  => true
+    TypeKind.U128 => true
+    _             => false
 }
 
 /**
@@ -252,12 +272,19 @@ IsIntegerType kind: TypeKind :: bool => sw kind {
  * @returns {bool} True if the type is numeric, false otherwise
  */
 IsNumericType kind: TypeKind :: bool => sw kind {
-    TypeKind.I8  => true
-    TypeKind.I16 => true
-    TypeKind.I32 => true
-    TypeKind.I64 => true
-    TypeKind.Num => true
-    _            => false
+    TypeKind.I8   => true
+    TypeKind.I16  => true
+    TypeKind.I32  => true
+    TypeKind.I64  => true
+    TypeKind.I128 => true
+    TypeKind.U8   => true
+    TypeKind.U16  => true
+    TypeKind.U32  => true
+    TypeKind.U64  => true
+    TypeKind.U128 => true
+    TypeKind.F32  => true
+    TypeKind.Num  => true
+    _             => false
 }
 
 /**
@@ -287,6 +314,13 @@ IsPrimitiveType kind: TypeKind :: bool => sw kind {
     TypeKind.I16  => true
     TypeKind.I32  => true
     TypeKind.I64  => true
+    TypeKind.I128 => true
+    TypeKind.U8   => true
+    TypeKind.U16  => true
+    TypeKind.U32  => true
+    TypeKind.U64  => true
+    TypeKind.U128 => true
+    TypeKind.F32  => true
     TypeKind.Num  => true
     TypeKind.Str  => true
     TypeKind.Und  => true
@@ -308,16 +342,15 @@ AreTypesCompatible target: TypeKind, source: TypeKind :: bool {
     if target == TypeKind.Unknown || source == TypeKind.Unknown {
         -> true
     }
-    if target == TypeKind.Num && (source == TypeKind.I64 || source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
+    isTargetInt: bool = IsIntegerType target
+    isSourceInt: bool = IsIntegerType source
+    if isTargetInt && isSourceInt {
         -> true
     }
-    if target == TypeKind.I64 && (source == TypeKind.I32 || source == TypeKind.I16 || source == TypeKind.I8) {
+    if (target == TypeKind.Num || target == TypeKind.F32) && (isSourceInt || source == TypeKind.Num || source == TypeKind.F32) {
         -> true
     }
-    if target == TypeKind.I32 && (source == TypeKind.I16 || source == TypeKind.I8) {
-        -> true
-    }
-    if target == TypeKind.I16 && source == TypeKind.I8 {
+    if isTargetInt && (source == TypeKind.Num || source == TypeKind.F32) {
         -> true
     }
     if (target == TypeKind.Ptr || target == TypeKind.Obj || target == TypeKind.Arr) && (source == TypeKind.Nil || source == TypeKind.Und) {
@@ -367,23 +400,18 @@ StrToTypeKind typeName: str :: TypeKind {
         "any"    => TypeKind.Unknown
         "unknown"=> TypeKind.Unknown
         "num"    => TypeKind.Num
-        "double" => TypeKind.Num
-        "f64"    => TypeKind.Num
-        "int"    => TypeKind.I32
-        "uint"   => TypeKind.I32
-        "i64"    => TypeKind.I64
-        "u64"    => TypeKind.I64
-        "int64"  => TypeKind.I64
-        "i32"    => TypeKind.I32
-        "u32"    => TypeKind.I32
-        "int32"  => TypeKind.I32
-        "i16"    => TypeKind.I16
-        "u16"    => TypeKind.I16
-        "int16"  => TypeKind.I16
+        "f32"    => TypeKind.F32
         "i8"     => TypeKind.I8
-        "u8"     => TypeKind.I8
-        "int8"   => TypeKind.I8
-        "byte"   => TypeKind.I8
+        "i16"    => TypeKind.I16
+        "i32"    => TypeKind.I32
+        "i64"    => TypeKind.I64
+        "i128"   => TypeKind.I128
+        "u8"     => TypeKind.U8
+        "u16"    => TypeKind.U16
+        "u32"    => TypeKind.U32
+        "u64"    => TypeKind.U64
+        "u128"   => TypeKind.U128
+        "byte"   => TypeKind.U8
         "bool"   => TypeKind.Bool
         "str"    => TypeKind.Str
         "void"   => TypeKind.Void

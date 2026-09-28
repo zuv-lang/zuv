@@ -809,6 +809,9 @@ FindVarInitType node: ASTNode, varName: str :: str {
             if initE.kind == NodeKind.BoolExpr {
                 -> "bool"
             }
+            if initE.kind == NodeKind.CastExpr {
+                -> initE.typeAnnotation
+            }
         }
     }
     if node.kind == NodeKind.BinaryExpr && node.op == "=" && node.children.ln >= 2 {
@@ -832,6 +835,9 @@ FindVarInitType node: ASTNode, varName: str :: str {
             }
             if rhs.kind == NodeKind.BoolExpr {
                 -> "bool"
+            }
+            if rhs.kind == NodeKind.CastExpr {
+                -> rhs.typeAnnotation
             }
         }
     }

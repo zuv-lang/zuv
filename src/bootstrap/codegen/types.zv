@@ -22,9 +22,16 @@ llvmType typeKind: TypeKind :: str => sw typeKind {
     TypeKind.Void => "void"
     TypeKind.Bool => "i1"
     TypeKind.I8   => "i8"
+    TypeKind.U8   => "i8"
     TypeKind.I16  => "i16"
+    TypeKind.U16  => "i16"
     TypeKind.I32  => "i32"
+    TypeKind.U32  => "i32"
     TypeKind.I64  => "i64"
+    TypeKind.U64  => "i64"
+    TypeKind.I128 => "i128"
+    TypeKind.U128 => "i128"
+    TypeKind.F32  => "float"
     TypeKind.Num  => "double"
     TypeKind.Str  => "ptr"
     TypeKind.Ptr  => "ptr"
@@ -57,11 +64,18 @@ llvmBoxedType typeKind: TypeKind :: str {
  */
 llvmStackType typeKind: TypeKind :: str => sw typeKind {
     TypeKind.Num  => "double"
+    TypeKind.F32  => "float"
     TypeKind.Bool => "i1"
     TypeKind.I8   => "i8"
+    TypeKind.U8   => "i8"
     TypeKind.I16  => "i16"
+    TypeKind.U16  => "i16"
     TypeKind.I32  => "i32"
+    TypeKind.U32  => "i32"
     TypeKind.I64  => "i64"
+    TypeKind.U64  => "i64"
+    TypeKind.I128 => "i128"
+    TypeKind.U128 => "i128"
     TypeKind.Void => "void"
     TypeKind.Str  => "ptr"
     TypeKind.Ptr  => "ptr"
@@ -79,9 +93,15 @@ llvmStackType typeKind: TypeKind :: str => sw typeKind {
  */
 isIntegerType typeKind: TypeKind :: bool => sw typeKind {
     TypeKind.I8   => true
+    TypeKind.U8   => true
     TypeKind.I16  => true
+    TypeKind.U16  => true
     TypeKind.I32  => true
+    TypeKind.U32  => true
     TypeKind.I64  => true
+    TypeKind.U64  => true
+    TypeKind.I128 => true
+    TypeKind.U128 => true
     TypeKind.Bool => true
     _             => false
 }
@@ -93,10 +113,49 @@ isIntegerType typeKind: TypeKind :: bool => sw typeKind {
  * @returns {bool} True if floating point
  */
 isFloatType typeKind: TypeKind :: bool {
-    if typeKind == TypeKind.Num {
+    if typeKind == TypeKind.Num || typeKind == TypeKind.F32 {
         -> true
     }
     -> false
+}
+
+/**
+ * Determines whether a TypeKind represents an unsigned integer type.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {bool} True if unsigned integer or boolean
+ */
+isUnsignedType typeKind: TypeKind :: bool => sw typeKind {
+    TypeKind.Bool => true
+    TypeKind.U8   => true
+    TypeKind.U16  => true
+    TypeKind.U32  => true
+    TypeKind.U64  => true
+    TypeKind.U128 => true
+    _             => false
+}
+
+/**
+ * Returns the bit width of a scalar integer or floating point type.
+ *
+ * @param {TypeKind} typeKind - Semantic type kind
+ * @returns {num} Bit width in bits (1, 8, 16, 32, 64, 128)
+ */
+typeBitWidth typeKind: TypeKind :: num => sw typeKind {
+    TypeKind.Bool => 1
+    TypeKind.I8   => 8
+    TypeKind.U8   => 8
+    TypeKind.I16  => 16
+    TypeKind.U16  => 16
+    TypeKind.I32  => 32
+    TypeKind.U32  => 32
+    TypeKind.I64  => 64
+    TypeKind.U64  => 64
+    TypeKind.I128 => 128
+    TypeKind.U128 => 128
+    TypeKind.F32  => 32
+    TypeKind.Num  => 64
+    _             => 64
 }
 
 /**
@@ -122,11 +181,18 @@ isPointerType typeKind: TypeKind :: bool => sw typeKind {
  */
 selectDefaultValue typeKind: TypeKind :: str => sw typeKind {
     TypeKind.Num  => "0.0"
+    TypeKind.F32  => "0.0"
     TypeKind.Bool => "false"
     TypeKind.I8   => "0"
+    TypeKind.U8   => "0"
     TypeKind.I16  => "0"
+    TypeKind.U16  => "0"
     TypeKind.I32  => "0"
+    TypeKind.U32  => "0"
     TypeKind.I64  => "0"
+    TypeKind.U64  => "0"
+    TypeKind.I128 => "0"
+    TypeKind.U128 => "0"
     TypeKind.Und  => "0"
     TypeKind.Nil  => "0"
     TypeKind.Str  => "null"
@@ -147,7 +213,7 @@ selectDefaultValue typeKind: TypeKind :: str => sw typeKind {
  * @returns {str} LLVM IR instruction mnemonic ("fadd", "add", "fsub", "sub", "sdiv", "and", etc.)
  */
 selectBinaryOp op: str, typeKind: TypeKind :: str {
-    if typeKind == TypeKind.Num {
+    if isFloatType typeKind {
         -> sw op {
             "+"  => "fadd"
             "-"  => "fsub"
@@ -160,6 +226,23 @@ selectBinaryOp op: str, typeKind: TypeKind :: str {
     }
     if typeKind == TypeKind.Str && op == "+" {
         -> "concat"
+    }
+    isUnsigned: bool = isUnsignedType typeKind
+    if isUnsigned {
+        -> sw op {
+            "+"   => "add"
+            "-"   => "sub"
+            "*"   => "mul"
+            "/"   => "udiv"
+            "%"   => "urem"
+            "&"   => "and"
+            "|"   => "or"
+            "^"   => "xor"
+            "<<"  => "shl"
+            ">>"  => "lshr"
+            ">>>" => "lshr"
+            _     => "add"
+        }
     }
     -> sw op {
         "+"   => "add"
@@ -185,7 +268,7 @@ selectBinaryOp op: str, typeKind: TypeKind :: str {
  * @returns {str} LLVM comparison instruction with predicate ("fcmp olt", "icmp slt", etc.)
  */
 selectCmpOp op: str, typeKind: TypeKind :: str {
-    if typeKind == TypeKind.Num {
+    if isFloatType typeKind {
         -> sw op {
             "==" => "fcmp oeq"
             "!=" => "fcmp one"
@@ -200,6 +283,17 @@ selectCmpOp op: str, typeKind: TypeKind :: str {
         -> sw op {
             "==" => "icmp eq"
             "!=" => "icmp ne"
+            _    => "icmp eq"
+        }
+    }
+    if isUnsignedType typeKind {
+        -> sw op {
+            "==" => "icmp eq"
+            "!=" => "icmp ne"
+            "<"  => "icmp ult"
+            "<=" => "icmp ule"
+            ">"  => "icmp ugt"
+            ">=" => "icmp uge"
             _    => "icmp eq"
         }
     }
@@ -225,138 +319,60 @@ selectCastOp fromKind: TypeKind, toKind: TypeKind :: str {
     if fromKind == toKind {
         -> ""
     }
-    if fromKind == TypeKind.I64 && toKind == TypeKind.Num {
-        -> "sitofp"
+    fromFloat: bool = isFloatType fromKind
+    toFloat: bool = isFloatType toKind
+    fromInt: bool = isIntegerType fromKind
+    toInt: bool = isIntegerType toKind
+
+    if fromFloat && toFloat {
+        fromW: num = typeBitWidth fromKind
+        toW: num = typeBitWidth toKind
+        if toW > fromW {
+            -> "fpext"
+        }
+        if toW < fromW {
+            -> "fptrunc"
+        }
+        -> ""
     }
-    if fromKind == TypeKind.I32 && toKind == TypeKind.Num {
-        -> "sitofp"
-    }
-    if fromKind == TypeKind.Num && toKind == TypeKind.I64 {
-        -> "fptosi"
-    }
-    if fromKind == TypeKind.Num && toKind == TypeKind.I32 {
+
+    if fromFloat && toInt {
+        if isUnsignedType toKind {
+            -> "fptoui"
+        }
         -> "fptosi"
     }
 
-    sw fromKind {
-        TypeKind.Bool => {
-            -> sw toKind {
-                TypeKind.I8   => "zext"
-                TypeKind.I16  => "zext"
-                TypeKind.I32  => "zext"
-                TypeKind.I64  => "zext"
-                TypeKind.Num  => "uitofp"
-                _             => ""
+    if fromInt && toFloat {
+        if isUnsignedType fromKind {
+            -> "uitofp"
+        }
+        -> "sitofp"
+    }
+
+    if fromInt && toInt {
+        fromW: num = typeBitWidth fromKind
+        toW: num = typeBitWidth toKind
+        if toW > fromW {
+            if isUnsignedType fromKind {
+                -> "zext"
             }
+            -> "sext"
         }
-        TypeKind.Num => {
-            -> sw toKind {
-                TypeKind.Bool => "fcmp one"
-                TypeKind.I8   => "fptosi"
-                TypeKind.I16  => "fptosi"
-                TypeKind.I32  => "fptosi"
-                TypeKind.I64  => "fptosi"
-                _             => ""
-            }
+        if toW < fromW {
+            -> "trunc"
         }
-        TypeKind.I8 => {
-            -> sw toKind {
-                TypeKind.Bool => "trunc"
-                TypeKind.Num  => "sitofp"
-                TypeKind.I16  => "zext"
-                TypeKind.I32  => "zext"
-                TypeKind.I64  => "zext"
-                _             => ""
-            }
-        }
-        TypeKind.I16 => {
-            -> sw toKind {
-                TypeKind.Bool => "trunc"
-                TypeKind.Num  => "sitofp"
-                TypeKind.I32  => "sext"
-                TypeKind.I64  => "sext"
-                TypeKind.I8   => "trunc"
-                _             => ""
-            }
-        }
-        TypeKind.I32 => {
-            -> sw toKind {
-                TypeKind.Bool => "trunc"
-                TypeKind.Num  => "sitofp"
-                TypeKind.I64  => "sext"
-                TypeKind.I16  => "trunc"
-                TypeKind.I8   => "trunc"
-                _             => ""
-            }
-        }
-        TypeKind.I64 => {
-            -> sw toKind {
-                TypeKind.Bool => "trunc"
-                TypeKind.Num  => "sitofp"
-                TypeKind.I32  => "trunc"
-                TypeKind.I16  => "trunc"
-                TypeKind.I8   => "trunc"
-                TypeKind.Ptr  => "inttoptr"
-                TypeKind.Str  => "inttoptr"
-                TypeKind.Arr  => "inttoptr"
-                TypeKind.Obj  => "inttoptr"
-                TypeKind.Func => "inttoptr"
-                _             => ""
-            }
-        }
-        TypeKind.Str => {
-            -> sw toKind {
-                TypeKind.I64  => "ptrtoint"
-                TypeKind.Ptr  => "bitcast"
-                TypeKind.Arr  => "bitcast"
-                TypeKind.Obj  => "bitcast"
-                TypeKind.Func => "bitcast"
-                _             => ""
-            }
-        }
-        TypeKind.Ptr => {
-            -> sw toKind {
-                TypeKind.I64  => "ptrtoint"
-                TypeKind.Str  => "bitcast"
-                TypeKind.Arr  => "bitcast"
-                TypeKind.Obj  => "bitcast"
-                TypeKind.Func => "bitcast"
-                _             => ""
-            }
-        }
-        TypeKind.Arr => {
-            -> sw toKind {
-                TypeKind.I64  => "ptrtoint"
-                TypeKind.Str  => "bitcast"
-                TypeKind.Ptr  => "bitcast"
-                TypeKind.Obj  => "bitcast"
-                TypeKind.Func => "bitcast"
-                _             => ""
-            }
-        }
-        TypeKind.Obj => {
-            -> sw toKind {
-                TypeKind.I64  => "ptrtoint"
-                TypeKind.Str  => "bitcast"
-                TypeKind.Ptr  => "bitcast"
-                TypeKind.Arr  => "bitcast"
-                TypeKind.Func => "bitcast"
-                _             => ""
-            }
-        }
-        TypeKind.Func => {
-            -> sw toKind {
-                TypeKind.I64  => "ptrtoint"
-                TypeKind.Str  => "bitcast"
-                TypeKind.Ptr  => "bitcast"
-                TypeKind.Arr  => "bitcast"
-                TypeKind.Obj  => "bitcast"
-                _             => ""
-            }
-        }
-        _ => {
-            -> ""
-        }
+        -> ""
+    }
+
+    if (isPointerType fromKind) && toInt {
+        -> "ptrtoint"
+    }
+    if fromInt && (isPointerType toKind) {
+        -> "inttoptr"
+    }
+    if (isPointerType fromKind) && (isPointerType toKind) {
+        -> "bitcast"
     }
 
     -> ""

@@ -41,8 +41,9 @@ EmitNum self: ExprCodegen, node: ASTNode :: ExprResult {
                 fStr = fStr + ".0"
             }
         }
-        self.codegen.emit `${resReg} = fadd double 0.0, ${fStr}`
-        fRes: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+        fltLLVM: str = llvmType targetKind
+        self.codegen.emit `${resReg} = fadd ${fltLLVM} 0.0, ${fStr}`
+        fRes: ExprResult = { reg: resReg, typeKind: targetKind }
         -> fRes
     }
     itype: str = llvmType targetKind
