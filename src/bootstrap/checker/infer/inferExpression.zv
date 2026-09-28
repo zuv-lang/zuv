@@ -426,7 +426,18 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 if subSuffix == "[]" {
                     baseName = targetTypeName.sub 0, targetTypeName.ln - 2
                     elemType = StrToTypeKind(baseName)
-                    expr.typeAnnotation = baseName
+                    if baseName.ln >= 2 && (baseName.sub baseName.ln - 2, 2) == "[]" {
+                        expr.typeAnnotation = baseName
+                    } els if elemType == TypeKind.Obj {
+                        bInfo = checker.resolveType baseName
+                        if bInfo.fields.ln > 0 {
+                            expr.typeAnnotation = baseName
+                        } els {
+                            elemType = TypeKind.Unknown
+                        }
+                    } els {
+                        expr.typeAnnotation = baseName
+                    }
                 } els if (targetTypeName.sub 0, 1) == "[" && (targetTypeName.sub targetTypeName.ln - 1, 1) == "]" && expr.children[1].val.ln > 0 {
                     idxValStr = expr.children[1].val
                     rowIdx: num = 0

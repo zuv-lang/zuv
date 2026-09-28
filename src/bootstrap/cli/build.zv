@@ -626,11 +626,16 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         gType = TypeKind.I64
                     }
                     gTypeName: str = topNode.typeAnnotation
-                    if gTypeName.ln == 0 && topNode.children.ln > 0 {
-                        gTypeName = topNode.children[0].typeAnnotation
-                        if gTypeName.ln == 0 && topNode.children[0].name.ln > 0 {
-                            gTypeName = topNode.children[0].name
+                    if topNode.children.ln > 0 && topNode.children[0].typeAnnotation.ln > 0 {
+                        cTypeAnn: str = topNode.children[0].typeAnnotation
+                        if gTypeName.ln == 0 {
+                            gTypeName = cTypeAnn
+                        } els if (cTypeAnn.sub 0, 1) == "[" && (cTypeAnn.sub cTypeAnn.ln - 1, 1) == "]" {
+                            gTypeName = cTypeAnn
                         }
+                    }
+                    if gTypeName.ln == 0 && topNode.children.ln > 0 && topNode.children[0].name.ln > 0 {
+                        gTypeName = topNode.children[0].name
                     }
                     if gType == TypeKind.Unknown && gTypeName.ln > 0 {
                         gType = resolveFieldTypeKind(gTypeName)

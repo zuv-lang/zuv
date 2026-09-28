@@ -44,17 +44,24 @@ ParseReturnStmt parser: Parser :: ASTNode {
         }
         rawExpr: ASTNode = ParseExpr parser
         retExpr = ParseJuxtaposedArgs parser, rawExpr
-        if parser.matchToken TokenType.TOK_COMMA {
-            elements: ASTNode[] = [retExpr]
-            wh true {
-                nextRaw: ASTNode = ParseExpr parser
-                nextExpr: ASTNode = ParseJuxtaposedArgs parser, nextRaw
-                elements.psh nextExpr
-                if !(parser.matchToken TokenType.TOK_COMMA) {
-                    brk
+        if parser.check TokenType.TOK_COMMA {
+            commaTok: Token = parser.cur
+            afterComma: Token = parser.peek
+            if afterComma.line == commaTok.line && afterComma.kind != TokenType.TOK_EOF && afterComma.kind != TokenType.TOK_RBRACE && afterComma.kind != TokenType.TOK_SEMICOLON && parser.peekAhead(2).kind != TokenType.TOK_COLON {
+                elements: ASTNode[] = [retExpr]
+                wh parser.check TokenType.TOK_COMMA {
+                    cTok: Token = parser.cur
+                    nxtTok: Token = parser.peek
+                    if nxtTok.line != cTok.line || nxtTok.kind == TokenType.TOK_EOF || nxtTok.kind == TokenType.TOK_RBRACE || nxtTok.kind == TokenType.TOK_SEMICOLON || parser.peekAhead(2).kind == TokenType.TOK_COLON {
+                        brk
+                    }
+                    parser.advance
+                    nextRaw: ASTNode = ParseExpr parser
+                    nextExpr: ASTNode = ParseJuxtaposedArgs parser, nextRaw
+                    elements.psh nextExpr
                 }
+                retExpr = ASTNode.createArr elements, retTok.line, retTok.col
             }
-            retExpr = ASTNode.createArr elements, retTok.line, retTok.col
         }
     }
 

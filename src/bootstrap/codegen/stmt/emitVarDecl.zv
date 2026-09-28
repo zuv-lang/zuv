@@ -41,11 +41,16 @@ EmitVarDecl self: StmtCodegen, node: ASTNode :: void {
         isGlobal: bool = false
 
         effTypeName: str = node.typeAnnotation
-        if effTypeName.ln == 0 && node.children.ln > 0 {
-            effTypeName = node.children[0].typeAnnotation
-            if effTypeName.ln == 0 && node.children[0].name.ln > 0 {
-                effTypeName = node.children[0].name
+        if node.children.ln > 0 && node.children[0].typeAnnotation.ln > 0 {
+            cTypeAnn: str = node.children[0].typeAnnotation
+            if effTypeName.ln == 0 {
+                effTypeName = cTypeAnn
+            } els if (cTypeAnn.sub 0, 1) == "[" && (cTypeAnn.sub cTypeAnn.ln - 1, 1) == "]" {
+                effTypeName = cTypeAnn
             }
+        }
+        if effTypeName.ln == 0 && node.children.ln > 0 && node.children[0].name.ln > 0 {
+            effTypeName = node.children[0].name
         }
 
         if self.isTopLevel {

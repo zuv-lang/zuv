@@ -100,11 +100,23 @@ EmitIndex self: ExprCodegen, node: ASTNode :: ExprResult {
             baseNode: ASTNode = targetNode.children[0]
             rowNode: ASTNode = targetNode.children[1]
             rowVal: str = rowNode.val
-            baseTypeName: str = targetNode.typeAnnotation
-            if baseTypeName.ln == 0 && baseNode.kind == NodeKind.IdentExpr {
+            baseTypeName: str = ""
+            if baseNode.kind == NodeKind.IdentExpr {
                 baseSym: ScopeSymbol = self.findSymbol baseNode.name
                 if baseSym.name.ln > 0 && baseSym.typeName.ln > 0 {
-                    baseTypeName = self.objGen.registry.resolveAlias baseSym.typeName
+                    resolvedSymType: str = self.objGen.registry.resolveAlias baseSym.typeName
+                    if (resolvedSymType.sub 0, 1) == "[" && (resolvedSymType.sub resolvedSymType.ln - 1, 1) == "]" {
+                        baseTypeName = resolvedSymType
+                    }
+                }
+            }
+            if baseTypeName.ln == 0 {
+                baseTypeName = targetNode.typeAnnotation
+            }
+            if baseTypeName.ln == 0 && baseNode.kind == NodeKind.IdentExpr {
+                baseSym2: ScopeSymbol = self.findSymbol baseNode.name
+                if baseSym2.name.ln > 0 && baseSym2.typeName.ln > 0 {
+                    baseTypeName = self.objGen.registry.resolveAlias baseSym2.typeName
                 }
             }
             if baseTypeName.ln >= 2 {
