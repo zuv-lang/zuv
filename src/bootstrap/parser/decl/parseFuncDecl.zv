@@ -99,11 +99,16 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
             }
         } els if parser.check TokenType.TOK_MATCH {
             matchNode: ASTNode = ParseMatchStmt parser
-            fr armBody of matchNode.children {
+            fr armIdx = 1; armIdx < matchNode.children.ln; armIdx++ {
+                armBody: ASTNode = matchNode.children[armIdx]
                 if armBody.kind == NodeKind.BlockStmt && armBody.children.ln > 0 {
                     firstStmt: ASTNode = armBody.children[0]
+                    retExpr: ASTNode = firstStmt
+                    if firstStmt.kind == NodeKind.ExprStmt && firstStmt.children.ln > 0 {
+                        retExpr = firstStmt.children[0]
+                    }
                     if firstStmt.kind != NodeKind.RetStmt {
-                        retArm: ASTNode = ASTNode.createRet firstStmt, firstStmt.line, firstStmt.col
+                        retArm: ASTNode = ASTNode.createRet retExpr, retExpr.line, retExpr.col
                         armBody.children = [retArm]
                     }
                 }

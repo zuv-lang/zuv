@@ -192,7 +192,7 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                 }
                             } els if retExpr.kind == NodeKind.IndexExpr {
                                 mRetType = topNode.name
-                            } els if retExpr.kind == NodeKind.StrExpr || (retExpr.kind == NodeKind.BinaryExpr && retExpr.op == "+") {
+                            } els if retExpr.kind == NodeKind.StrExpr || (retExpr.kind == NodeKind.BinaryExpr && retExpr.op == "+" && retExpr.children.ln > 1 && (retExpr.children[0].kind == NodeKind.StrExpr || retExpr.children[1].kind == NodeKind.StrExpr || retExpr.children[0].typeAnnotation == "str" || retExpr.children[1].typeAnnotation == "str")) {
                                 mRetType = "str"
                             } els if retExpr.kind == NodeKind.ArrExpr {
                                 mRetType = "arr"
@@ -407,6 +407,24 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                             }
                                         }
                                     }
+                                } els if s.kind == NodeKind.SwStmt {
+                                    fr armIdx = 1; armIdx < s.children.ln; armIdx++ {
+                                        armBody: ASTNode = s.children[armIdx]
+                                        if armBody.kind == NodeKind.BlockStmt {
+                                            fr armStmt of armBody.children {
+                                                if armStmt.kind == NodeKind.RetStmt && armStmt.children.ln > 0 {
+                                                    hasRet = true
+                                                    rNode: ASTNode = armStmt.children[0]
+                                                    retNode = rNode
+                                                    retExprKind = rNode.kind
+                                                    retExprVal = rNode.val
+                                                    retExprName = rNode.name
+                                                    retExprOp = rNode.op
+                                                    retExprTypeAnn = rNode.typeAnnotation
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         } els if body.kind == NodeKind.RetStmt {
@@ -420,6 +438,24 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                 retExprOp = rNode.op
                                 retExprTypeAnn = rNode.typeAnnotation
                             }
+                        } els if body.kind == NodeKind.SwStmt {
+                            fr armIdx = 1; armIdx < body.children.ln; armIdx++ {
+                                armBody: ASTNode = body.children[armIdx]
+                                if armBody.kind == NodeKind.BlockStmt {
+                                    fr armStmt of armBody.children {
+                                        if armStmt.kind == NodeKind.RetStmt && armStmt.children.ln > 0 {
+                                            hasRet = true
+                                            rNode: ASTNode = armStmt.children[0]
+                                            retNode = rNode
+                                            retExprKind = rNode.kind
+                                            retExprVal = rNode.val
+                                            retExprName = rNode.name
+                                            retExprOp = rNode.op
+                                            retExprTypeAnn = rNode.typeAnnotation
+                                        }
+                                    }
+                                }
+                            }
                         } els {
                             hasRet = true
                             retNode = body
@@ -432,9 +468,17 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     }
 
                     if hasRet {
-                        if retExprKind == NodeKind.StrExpr || (retExprKind == NodeKind.BinaryExpr && retExprOp == "+") {
+                        isConcat: bool = false
+                        if retExprKind == NodeKind.BinaryExpr && retExprOp == "+" && retNode.children.ln > 1 {
+                            lhs: ASTNode = retNode.children[0]
+                            rhs: ASTNode = retNode.children[1]
+                            if lhs.kind == NodeKind.StrExpr || rhs.kind == NodeKind.StrExpr || lhs.typeAnnotation == "str" || rhs.typeAnnotation == "str" {
+                                isConcat = true
+                            }
+                        }
+                        if retExprKind == NodeKind.StrExpr || isConcat {
                             topNode.typeAnnotation = "str"
-                            if retExprKind == NodeKind.BinaryExpr && retNode.children.ln > 1 {
+                            if isConcat && retNode.children.ln > 1 {
                                 lhs: ASTNode = retNode.children[0]
                                 rhs: ASTNode = retNode.children[1]
                                 fr p, pIdx of topNode.params {

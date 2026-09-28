@@ -409,6 +409,9 @@ obj StructLayoutRegistry {
     },
 
     setDynamicFieldType: fieldName: str, fieldType: TypeKind :: void => {
+        if fieldType == TypeKind.I64 || fieldType == TypeKind.Unknown {
+            ret
+        }
         fIdx: num = 0
         fr df of self.dynamicFields {
             if df == fieldName {

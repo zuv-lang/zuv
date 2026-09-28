@@ -109,7 +109,22 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
                     mNode.children.psh mBody
                 } els if parser.check TokenType.TOK_MATCH {
                     mMatch: ASTNode = ParseMatchStmt parser
-                    mNode.children.psh mMatch
+                    fr armIdx = 1; armIdx < mMatch.children.ln; armIdx++ {
+                        armBody: ASTNode = mMatch.children[armIdx]
+                        if armBody.kind == NodeKind.BlockStmt && armBody.children.ln > 0 {
+                            firstStmt: ASTNode = armBody.children[0]
+                            retExpr: ASTNode = firstStmt
+                            if firstStmt.kind == NodeKind.ExprStmt && firstStmt.children.ln > 0 {
+                                retExpr = firstStmt.children[0]
+                            }
+                            if firstStmt.kind != NodeKind.RetStmt {
+                                retArm: ASTNode = ASTNode.createRet retExpr, retExpr.line, retExpr.col
+                                armBody.children = [retArm]
+                            }
+                        }
+                    }
+                    mBlock: ASTNode = ASTNode.createBlock [mMatch], mMatch.line, mMatch.col
+                    mNode.children.psh mBlock
                 } els {
                     hasExplicitReturn: bool = false
                     off: num = 0

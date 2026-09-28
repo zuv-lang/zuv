@@ -25,12 +25,17 @@ ParseReturnStmt parser: Parser :: ASTNode {
     if !(parser.check TokenType.TOK_SEMICOLON) && !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
         if parser.check TokenType.TOK_MATCH {
             matchNode: ASTNode = ParseMatchStmt parser
-            fr armBody of matchNode.children {
+            fr armIdx = 1; armIdx < matchNode.children.ln; armIdx++ {
+                armBody: ASTNode = matchNode.children[armIdx]
                 if armBody.kind == NodeKind.BlockStmt && armBody.children.ln > 0 {
                     lastIdx: num = armBody.children.ln - 1
                     lastStmt: ASTNode = armBody.children[lastIdx]
+                    retExpr: ASTNode = lastStmt
+                    if lastStmt.kind == NodeKind.ExprStmt && lastStmt.children.ln > 0 {
+                        retExpr = lastStmt.children[0]
+                    }
                     if lastStmt.kind != NodeKind.RetStmt {
-                        retArm: ASTNode = ASTNode.createRet lastStmt, lastStmt.line, lastStmt.col
+                        retArm: ASTNode = ASTNode.createRet retExpr, retExpr.line, retExpr.col
                         armBody.children[lastIdx] = retArm
                     }
                 }

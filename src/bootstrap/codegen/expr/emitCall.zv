@@ -441,6 +441,9 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
                     self.codegen.emit `${convReg} = ptrtoint ptr ${firstArgReg} to i64`
                     awaitArg = convReg
                 }
+                if awaitArg.ln == 0 {
+                    awaitArg = "0"
+                }
                 unwrappedReg: str = self.codegen.newReg
                 self.codegen.emit `${unwrappedReg} = call i64 @zuv_prm_await(i64 ${awaitArg})`
                 isSmallReg: str = self.codegen.newReg
