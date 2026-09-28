@@ -10,6 +10,7 @@ imp ASTNode frm ../../ast
 imp Parser frm ../parser
 imp ParseExpr frm ../stmt
 imp ParseJuxtaposedArgs frm parseJuxtaposedArgs
+imp IsMultiVarDestructure, ParseDestructureStmt frm parseDestructureStmt
 
 /**
  * Parses a variable binding declaration (`let name [: Type] = init` or `&let name = init`).
@@ -25,6 +26,22 @@ ParseVarDecl parser: Parser :: ASTNode {
         isBorrow = true
     } els {
         parser.consume TokenType.TOK_LET, "Expected 'let' or '&let'"
+    }
+
+    isMut: bool = false
+    if (parser.check TokenType.TOK_IDENT) && parser.cur.val == "mut" {
+        parser.advance
+        isMut = true
+    }
+
+    if parser.check TokenType.TOK_LBRACE {
+        -> ParseDestructureStmt parser, "object", isMut
+    }
+    if parser.check TokenType.TOK_LBRACKET {
+        -> ParseDestructureStmt parser, "array", isMut
+    }
+    if IsMultiVarDestructure parser {
+        -> ParseDestructureStmt parser, "multivar", isMut
     }
 
     nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected variable name identifier"

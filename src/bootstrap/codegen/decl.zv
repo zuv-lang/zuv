@@ -229,6 +229,15 @@ obj StructLayout {
     resolveFieldType: name: str :: TypeKind => {
         fld: StructField = self.getField name
         -> fld.typeKind
+    },
+
+    setFieldType: name: str, typeKind: TypeKind :: void => {
+        fr fld, i of self.fields {
+            if fld.name == name {
+                self.fields[i].typeKind = typeKind
+                ->
+            }
+        }
     }
 }
 
@@ -339,7 +348,10 @@ obj StructLayoutRegistry {
         curIdx: num = 0
         fr fEntry of node.fields {
             resolvedValStr: str = self.resolveAlias fEntry.valStr
-            fType = resolveFieldTypeKind resolvedValStr
+            fType: TypeKind = TypeKind.Unknown
+            if fEntry.valStr.ln > 0 && fEntry.valStr != fEntry.name && fEntry.valStr != "any" {
+                fType = resolveFieldTypeKind resolvedValStr
+            }
             fDesc: StructField = createStructField fEntry.name, curIdx, fType, resolvedValStr
             builtFields.psh fDesc
             curIdx++
@@ -406,6 +418,20 @@ obj StructLayoutRegistry {
         self.dynamicFields.psh fieldName
         self.dynamicFieldTypes.psh TypeKind.Unknown
         -> fIdx
+    },
+
+    setFieldType: typeName: str, fieldName: str, typeKind: TypeKind :: void => {
+        if typeName.ln > 0 {
+            fr l, i of self.layouts {
+                if l.typeName == typeName {
+                    targetLayout: StructLayout = self.layouts[i]
+                    targetLayout.setFieldType fieldName, typeKind
+                    self.layouts[i] = targetLayout
+                    ->
+                }
+            }
+        }
+        self.setDynamicFieldType fieldName, typeKind
     },
 
     setDynamicFieldType: fieldName: str, fieldType: TypeKind :: void => {

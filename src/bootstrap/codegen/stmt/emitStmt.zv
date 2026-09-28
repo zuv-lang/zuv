@@ -22,6 +22,7 @@ EmitStmt self: StmtCodegen, node: ASTNode :: void => sw node.kind {
     NodeKind.ContStmt  => self.emitCont node
     NodeKind.PanicStmt => self.emitPanic node
     NodeKind.TryCthStmt => self.emitTryCth node
+    NodeKind.DestructureStmt => self.emitDestructure node
     _                  => {
         self.exprGen.emitExpr node
     }

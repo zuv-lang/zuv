@@ -33,6 +33,7 @@ enum NodeKind {
     ContStmt,
     TryCthStmt,
     PanicStmt,
+    DestructureStmt,
 
     // Expressions
     NumExpr,
@@ -568,6 +569,37 @@ obj ASTNode {
     },
 
     /**
+     * Creates a destructuring assignment statement AST node.
+     *
+     * @param {str} kind - Destructuring variant ("object", "array", or "multivar")
+     * @param {str[]} names - Destination variable names
+     * @param {ASTNode} src - Source expression providing the values
+     * @param {bool} isMut - Whether variable bindings are mutable
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Destructure statement AST node
+     */
+    createDestructure: kind: str, names: str[], src: ASTNode, isMut: bool, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.DestructureStmt, line, col
+        node.val = kind
+        node.boolVal = isMut
+        node.children = [src]
+        node.params = []
+        fr n of names {
+            p: Param = {
+                name: n,
+                typeAnnotation: "",
+                isRest: false,
+                isOptional: false,
+                line: line,
+                col: col
+            }
+            node.params.psh p
+        }
+        -> node
+    },
+
+    /**
      * Creates a variable declaration AST node (`let name: Type = init`).
      *
      * @param {str} name - Variable identifier
@@ -863,6 +895,7 @@ NodeKindToStr kind: NodeKind :: str => sw kind {
     NodeKind.ContStmt       => "ContStmt"
     NodeKind.TryCthStmt     => "TryCthStmt"
     NodeKind.PanicStmt      => "PanicStmt"
+    NodeKind.DestructureStmt => "DestructureStmt"
     NodeKind.NumExpr        => "NumExpr"
     NodeKind.StrExpr        => "StrExpr"
     NodeKind.BoolExpr       => "BoolExpr"
@@ -924,6 +957,7 @@ IsStmtNode kind: NodeKind :: bool => sw kind {
     NodeKind.ContStmt   => true
     NodeKind.TryCthStmt => true
     NodeKind.PanicStmt  => true
+    NodeKind.DestructureStmt => true
     _                   => false
 }
 

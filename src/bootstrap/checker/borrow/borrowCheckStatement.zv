@@ -41,6 +41,18 @@ BorrowCheckStatement checker: BorrowChecker, stmt: ASTNode :: void {
         }
         ->
     }
+    if k == NodeKind.DestructureStmt {
+        fr p of stmt.params {
+            existingVar = checker.getVar(p.name)
+            if existingVar.name.ln == 0 {
+                checker.defineVar p.name, false, "", true, p.line, p.col
+            }
+        }
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        ->
+    }
     if k == NodeKind.ExprStmt {
         if stmt.children.ln > 0 {
             BorrowCheckExpression checker, stmt.children[0]

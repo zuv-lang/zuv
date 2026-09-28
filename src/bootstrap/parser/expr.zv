@@ -106,6 +106,10 @@ ParseExpression parser: Parser, minPrec: num :: ASTNode {
 
     wh !(parser.isAtEnd) {
         cTokPrec: Token = parser.cur
+        prevTok: Token = parser.prev
+        if cTokPrec.line != prevTok.line && (cTokPrec.kind == TokenType.TOK_LBRACKET || cTokPrec.kind == TokenType.TOK_LBRACE || cTokPrec.kind == TokenType.TOK_INC || cTokPrec.kind == TokenType.TOK_DEC || cTokPrec.kind == TokenType.TOK_ASTERISK) {
+            brk
+        }
         curPrec: num = GetTokenPrecedence cTokPrec.kind
         if curPrec <= minPrec {
             brk

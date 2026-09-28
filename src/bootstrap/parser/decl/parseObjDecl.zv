@@ -191,7 +191,7 @@ ParseObjDecl parser: Parser, isPub: bool :: ASTNode {
             // Shorthand field or method alias
             entry: FieldEntry = {
                 name: mName,
-                valStr: mName,
+                valStr: "",
                 isSpread: false,
                 line: mTok.line,
                 col: mTok.col

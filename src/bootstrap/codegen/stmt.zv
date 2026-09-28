@@ -33,6 +33,7 @@ imp EmitBrk frm stmt/emitBrk
 imp EmitCont frm stmt/emitCont
 imp EmitPanic frm stmt/emitPanic
 imp EmitTryCth frm stmt/emitTryCth
+imp EmitDestructure frm stmt/emitDestructure
 
 /**
  * Coordinates statement lowering and control flow graph construction.
@@ -116,5 +117,6 @@ obj StmtCodegen {
     emitBrk: node: ASTNode :: void => EmitBrk(self, node),
     emitCont: node: ASTNode :: void => EmitCont(self, node),
     emitPanic: node: ASTNode :: void => EmitPanic(self, node),
-    emitTryCth: node: ASTNode :: void => EmitTryCth(self, node)
+    emitTryCth: node: ASTNode :: void => EmitTryCth(self, node),
+    emitDestructure: node: ASTNode :: void => EmitDestructure(self, node)
 }

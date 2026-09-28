@@ -144,6 +144,24 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         }
         if matchedStruct.ln > 0 {
             expr.typeAnnotation = matchedStruct
+            fr tItem, tIdx of checker.types {
+                if tItem.name == matchedStruct {
+                    fr fld, fIdx of expr.fields {
+                        if fIdx < expr.children.ln {
+                            fKind = expr.children[fIdx].inferredType
+                            if fKind != TypeKind.Unknown {
+                                fr sfName, sfIdx of tItem.fields {
+                                    if sfName == fld.name && sfIdx < tItem.fieldTypes.ln && tItem.fieldTypes[sfIdx] == TypeKind.Unknown {
+                                        tItem.fieldTypes[sfIdx] = fKind
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    checker.types[tIdx] = tItem
+                    brk
+                }
+            }
         }
         expr.inferredType = TypeKind.Obj
         -> TypeKind.Obj

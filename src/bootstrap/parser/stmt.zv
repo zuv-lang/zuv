@@ -35,6 +35,7 @@ imp ParseMatchPattern frm stmt/parseMatchPattern
 imp ParseMatchStmt frm stmt/parseMatchStmt
 imp ParseBlockStmt frm stmt/parseBlockStmt
 imp ParseExpressionStmt frm stmt/parseExpressionStmt
+imp IsObjectDestructure, IsArrayDestructure, IsMultiVarDestructure, ParseDestructureStmt frm stmt/parseDestructureStmt
 
 /**
  * Parses a simple or binary expression for statements, conditions, and initializers.
@@ -141,7 +142,18 @@ ParseStatement parser: Parser :: ASTNode {
         -> ParseMatchStmt parser
     }
     if curTok.kind == TokenType.TOK_LBRACE {
+        if IsObjectDestructure parser {
+            -> ParseDestructureStmt parser, "object", false
+        }
         -> ParseBlockStmt parser
+    }
+    if curTok.kind == TokenType.TOK_LBRACKET {
+        if IsArrayDestructure parser {
+            -> ParseDestructureStmt parser, "array", false
+        }
+    }
+    if IsMultiVarDestructure parser {
+        -> ParseDestructureStmt parser, "multivar", false
     }
 
     // Implicit variable declaration without 'let': ident = expr (when not previously declared)

@@ -82,7 +82,11 @@ EmitObjectLit self: ObjectCodegen, typeName: str, fieldNames: str[], valRegs: st
             valType = TypeKind.I64
         }
 
-        self.registry.setDynamicFieldType fName, valType
+        if effTypeName.ln > 0 {
+            self.registry.setFieldType effTypeName, fName, valType
+        } els {
+            self.registry.setDynamicFieldType fName, valType
+        }
         boxedVal: str = boxValueToI64 self.codegen, valReg, valType
 
         offset: num = fieldIdx

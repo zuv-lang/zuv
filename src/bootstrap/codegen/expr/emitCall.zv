@@ -672,7 +672,11 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
         } els if fnSig.retType == "i1" {
             retKind = TypeKind.Bool
         } els if fnSig.retType == "ptr" {
-            retKind = TypeKind.Str
+            if fnSig.retTypeKind != TypeKind.Unknown {
+                retKind = fnSig.retTypeKind
+            } els {
+                retKind = TypeKind.Str
+            }
         } els if fnSig.retType == "i32" {
             retKind = TypeKind.I32
         }

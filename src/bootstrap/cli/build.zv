@@ -488,7 +488,31 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                 }
                             }
                         } els if retExprKind == NodeKind.ArrExpr {
-                            topNode.typeAnnotation = "arr"
+                            elemType: str = "i64"
+                            if retNode.children.ln > 0 {
+                                firstElem: ASTNode = retNode.children[0]
+                                if firstElem.kind == NodeKind.StrExpr || firstElem.typeAnnotation == "str" {
+                                    elemType = "str"
+                                } els if firstElem.kind == NodeKind.BoolExpr || firstElem.typeAnnotation == "bool" {
+                                    elemType = "bool"
+                                } els if firstElem.kind == NodeKind.IdentExpr {
+                                    fr bStmt of topNode.children {
+                                        if bStmt.kind == NodeKind.BlockStmt {
+                                            fr s of bStmt.children {
+                                                if s.kind == NodeKind.VarDecl && s.name == firstElem.name {
+                                                    if s.children.ln > 0 {
+                                                        initK: NodeKind = s.children[0].kind
+                                                        if initK == NodeKind.StrExpr { elemType = "str" }
+                                                        els if initK == NodeKind.BoolExpr { elemType = "bool" }
+                                                        els if initK == NodeKind.NumExpr { elemType = "i64" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            topNode.typeAnnotation = elemType + "[]"
                         } els if retExprKind == NodeKind.BoolExpr || retExprOp == "==" || retExprOp == "!=" || retExprOp == "<" || retExprOp == ">" || retExprOp == "<=" || retExprOp == ">=" {
                             topNode.typeAnnotation = "bool"
                         } els if retExprKind == NodeKind.ObjLitExpr {
@@ -552,6 +576,37 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
         fr extFn of extMgr.functions {
             extRetKind: TypeKind = StrToTypeKind(extFn.retType)
             exprGen.registerFunc(extFn.name, extFn.retType, extFn.paramTypes, false, extRetKind, extFn.retType)
+        }
+
+        fr tItem of checker.types {
+            if tItem.kind == TypeKind.Obj {
+                fr fldName, fIdx of tItem.fields {
+                    if fIdx < tItem.fieldTypes.ln && tItem.fieldTypes[fIdx] != TypeKind.Unknown {
+                        regLayouts.setFieldType tItem.name, fldName, tItem.fieldTypes[fIdx]
+                    }
+                }
+            }
+        }
+        fr s of topLevelStmts {
+            if s.kind == NodeKind.VarDecl && s.children.ln > 0 {
+                cNode: ASTNode = s.children[0]
+                if cNode.kind == NodeKind.ObjLitExpr && cNode.name.ln > 0 {
+                    fr fld, fIdx of cNode.fields {
+                        if fIdx < cNode.children.ln {
+                            fKind: TypeKind = cNode.children[fIdx].inferredType
+                            if fKind == TypeKind.Unknown {
+                                fChild: ASTNode = cNode.children[fIdx]
+                                if fChild.kind == NodeKind.StrExpr { fKind = TypeKind.Str }
+                                els if fChild.kind == NodeKind.BoolExpr { fKind = TypeKind.Bool }
+                                els if fChild.kind == NodeKind.NumExpr { fKind = TypeKind.Num }
+                            }
+                            if fKind != TypeKind.Unknown {
+                                regLayouts.setFieldType cNode.name, fld.name, fKind
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Pre-register top-level global variables
@@ -678,6 +733,68 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     globReg: str = "@global_" + topNode.name
                     cg.emitExtern(globReg + " = global " + stType + " " + zeroVal)
                     exprGen.addGlobalSymbolWithType(topNode.name, globReg, gType, gTypeName)
+                }
+            } els if topNode.kind == NodeKind.DestructureStmt {
+                srcNode: ASTNode = topNode.children.ln > 0 ? topNode.children[0] : topNode
+                structName: str = ""
+                if topNode.val == "object" {
+                    structName = srcNode.typeAnnotation
+                    if structName.ln == 0 && srcNode.kind == NodeKind.IdentExpr {
+                        targetSym: ScopeSymbol = exprGen.findGlobalSymbol(srcNode.name)
+                        if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                            structName = targetSym.typeName
+                        }
+                    }
+                }
+                fr p, pIdx of topNode.params {
+                    isAlreadyDecl: bool = false
+                    fr gName of declaredGlobals {
+                        if gName == p.name {
+                            isAlreadyDecl = true
+                        }
+                    }
+                    if !isAlreadyDecl {
+                        declaredGlobals.psh(p.name)
+                        gType: TypeKind = TypeKind.Unknown
+                        if topNode.val == "object" {
+                            gType = regLayouts.getFieldType(structName, p.name)
+                        } els {
+                            if srcNode.kind == NodeKind.IdentExpr {
+                                srcSym: ScopeSymbol = exprGen.findGlobalSymbol(srcNode.name)
+                                if StrEndsWith(srcSym.typeName, "[]") {
+                                    baseT: str = srcSym.typeName.slc(0, srcSym.typeName.ln - 2)
+                                    gType = StrToTypeKind(baseT)
+                                }
+                            } els if srcNode.kind == NodeKind.ArrExpr {
+                                if pIdx < srcNode.children.ln {
+                                    gType = srcNode.children[pIdx].inferredType
+                                }
+                            } els if srcNode.kind == NodeKind.CallExpr {
+                                cName: str = srcNode.name.ln > 0 ? srcNode.name : (srcNode.children.ln > 0 ? srcNode.children[0].name : "")
+                                if exprGen.hasFunc(cName) {
+                                    fnSig: FuncSignature = exprGen.findFunc(cName)
+                                    if StrEndsWith(fnSig.retTypeName, "[]") {
+                                        baseT: str = fnSig.retTypeName.slc(0, fnSig.retTypeName.ln - 2)
+                                        gType = StrToTypeKind(baseT)
+                                    } els if fnSig.retTypeKind != TypeKind.Unknown && fnSig.retTypeKind != TypeKind.Arr {
+                                        gType = fnSig.retTypeKind
+                                    }
+                                }
+                            }
+                        }
+                        if gType == TypeKind.Unknown || gType == TypeKind.Void {
+                            gType = (topNode.val == "object") ? TypeKind.Num : TypeKind.I64
+                        }
+                        gTypeName: str = TypeKindToStr(gType)
+                        stType: str = llvmStackType(gType)
+                        zeroVal: str = selectDefaultValue(gType)
+                        if zeroVal.ln == 0 {
+                            zeroVal = "0"
+                        }
+                        globReg: str = "@global_" + p.name
+                        cg.emitExtern(globReg + " = global " + stType + " " + zeroVal)
+                        exprGen.addGlobalSymbolWithType(p.name, globReg, gType, gTypeName)
+                    }
                 }
             }
         }

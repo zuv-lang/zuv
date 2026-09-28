@@ -44,6 +44,18 @@ ParseReturnStmt parser: Parser :: ASTNode {
         }
         rawExpr: ASTNode = ParseExpr parser
         retExpr = ParseJuxtaposedArgs parser, rawExpr
+        if parser.matchToken TokenType.TOK_COMMA {
+            elements: ASTNode[] = [retExpr]
+            wh true {
+                nextRaw: ASTNode = ParseExpr parser
+                nextExpr: ASTNode = ParseJuxtaposedArgs parser, nextRaw
+                elements.psh nextExpr
+                if !(parser.matchToken TokenType.TOK_COMMA) {
+                    brk
+                }
+            }
+            retExpr = ASTNode.createArr elements, retTok.line, retTok.col
+        }
     }
 
     if parser.matchToken TokenType.TOK_SEMICOLON {

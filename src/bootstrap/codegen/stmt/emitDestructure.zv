@@ -1,0 +1,185 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitDestructure Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitDestructure.zv
+ * =============================================================================
+ */
+
+imp TypeKind, StrToTypeKind frm ../../types
+imp ASTNode, NodeKind, Param frm ../../ast
+imp StrEndsWith frm ../../../util/commonFunctions
+imp isPointerType, isFloatType, llvmStackType, selectDefaultValue frm ../types
+imp boxValueToI64, unboxValueFromI64 frm ../array
+imp ExprResult, ScopeSymbol, FuncSignature frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitDestructure self: StmtCodegen, node: ASTNode :: void {
+    if node.children.ln == 0 {
+        ret
+    }
+    srcNode: ASTNode = node.children[0]
+    kind: str = node.val
+    isMut: bool = node.boolVal
+
+    srcRes: ExprResult = self.exprGen.emitExpr srcNode
+    ptrReg: str = srcRes.reg
+
+    if isFloatType srcRes.typeKind {
+        intReg: str = self.codegen.newReg
+        self.codegen.emit `${intReg} = fptosi double ${srcRes.reg} to i64`
+        convReg: str = self.codegen.newReg
+        self.codegen.emit `${convReg} = inttoptr i64 ${intReg} to ptr`
+        ptrReg = convReg
+    } els if !(isPointerType srcRes.typeKind) {
+        convReg: str = self.codegen.newReg
+        self.codegen.emit `${convReg} = inttoptr i64 ${srcRes.reg} to ptr`
+        ptrReg = convReg
+    }
+
+    structTypeName: str = ""
+    if kind == "object" {
+        structTypeName = srcNode.typeAnnotation
+        if structTypeName.ln == 0 && srcNode.kind == NodeKind.IdentExpr {
+            targetSym: ScopeSymbol = self.exprGen.findSymbol srcNode.name
+            if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                structTypeName = targetSym.typeName
+            }
+        }
+        if structTypeName.ln == 0 || !(self.exprGen.objGen.registry.hasType structTypeName) {
+            fr p of node.params {
+                fr l of self.exprGen.objGen.registry.layouts {
+                    if l.hasField p.name {
+                        structTypeName = l.typeName
+                        brk
+                    }
+                }
+                if structTypeName.ln > 0 {
+                    brk
+                }
+            }
+        }
+    }
+
+    pIdx: num = 0
+    fr p of node.params {
+        targetPropKind: TypeKind = TypeKind.Unknown
+        if kind == "object" {
+            targetPropKind = self.exprGen.objGen.registry.getFieldType structTypeName, p.name
+        } els {
+            if srcNode.kind == NodeKind.IdentExpr {
+                srcSym: ScopeSymbol = self.exprGen.findSymbol srcNode.name
+                if StrEndsWith(srcSym.typeName, "[]") {
+                    baseT: str = srcSym.typeName.slc 0, (srcSym.typeName.ln - 2)
+                    targetPropKind = StrToTypeKind baseT
+                } els if srcSym.typeKind != TypeKind.Unknown && srcSym.typeKind != TypeKind.Arr {
+                    targetPropKind = srcSym.typeKind
+                }
+            } els if srcNode.kind == NodeKind.ArrExpr {
+                if pIdx < srcNode.children.ln {
+                    targetPropKind = srcNode.children[pIdx].inferredType
+                }
+            } els if srcNode.kind == NodeKind.CallExpr {
+                fnName: str = srcNode.name.ln > 0 ? srcNode.name : (srcNode.children.ln > 0 ? srcNode.children[0].name : "")
+                if self.exprGen.hasFunc fnName {
+                    fnSig: FuncSignature = self.exprGen.findFunc fnName
+                    if StrEndsWith(fnSig.retTypeName, "[]") {
+                        baseT: str = fnSig.retTypeName.slc 0, (fnSig.retTypeName.ln - 2)
+                        targetPropKind = StrToTypeKind baseT
+                    } els if fnSig.retTypeKind != TypeKind.Unknown && fnSig.retTypeKind != TypeKind.Arr {
+                        targetPropKind = fnSig.retTypeKind
+                    }
+                }
+            }
+        }
+        if targetPropKind == TypeKind.Unknown {
+            targetPropKind = (kind == "object") ? TypeKind.Num : TypeKind.I64
+        }
+
+        rawValReg: str = ""
+        if kind == "object" {
+            offset: num = 0
+            if structTypeName.ln > 0 {
+                offset = self.exprGen.objGen.registry.getFieldOffset structTypeName, p.name
+            } els {
+                offset = self.exprGen.objGen.registry.getFieldOffset "", p.name
+            }
+            if offset < 0 {
+                offset = 0
+            }
+            gepReg: str = self.codegen.newReg
+            self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${ptrReg}, i64 ${offset}`
+            rawValReg = self.codegen.newReg
+            self.codegen.emit `${rawValReg} = load i64, ptr ${gepReg}`
+        } els {
+            // Array or MultiVar: 1-based index (0th is length header)
+            offset: num = pIdx + 1
+            gepReg: str = self.codegen.newReg
+            self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${ptrReg}, i64 ${offset}`
+            rawValReg = self.codegen.newReg
+            self.codegen.emit `${rawValReg} = load i64, ptr ${gepReg}`
+        }
+
+        unboxedVal: str = unboxValueFromI64 self.codegen, rawValReg, targetPropKind
+
+        // Store into target variable
+        slotReg: str = ""
+        isGlobal: bool = false
+        varType: TypeKind = targetPropKind
+
+        if self.isTopLevel {
+            existingGlobal: ScopeSymbol = self.exprGen.findGlobalSymbol p.name
+            if existingGlobal.name.ln > 0 {
+                slotReg = existingGlobal.reg
+                isGlobal = true
+                self.exprGen.setGlobalSymbolType p.name, varType, ""
+            }
+        }
+
+        if !isGlobal {
+            existingLocal: ScopeSymbol = self.exprGen.findSymbol p.name
+            if existingLocal.name.ln > 0 {
+                slotReg = existingLocal.reg
+            } els {
+                stType: str = llvmStackType varType
+                slotReg = self.codegen.newReg
+                self.codegen.emit `${slotReg} = alloca ${stType}`
+                self.exprGen.addSymbolWithType p.name, slotReg, varType, "", false, isMut
+            }
+        }
+
+        stType: str = llvmStackType varType
+        if isGlobal {
+            existingGlobal: ScopeSymbol = self.exprGen.findGlobalSymbol p.name
+            if existingGlobal.typeKind != TypeKind.Unknown {
+                stType = llvmStackType existingGlobal.typeKind
+            }
+        } els {
+            existingLocal: ScopeSymbol = self.exprGen.findSymbol p.name
+            if existingLocal.typeKind != TypeKind.Unknown {
+                stType = llvmStackType existingLocal.typeKind
+            }
+        }
+
+        storeVal: str = unboxedVal
+        if stType == "double" && targetPropKind == TypeKind.I64 {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = sitofp i64 ${unboxedVal} to double`
+            storeVal = convReg
+        } els if stType == "i64" && targetPropKind == TypeKind.Num {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = fptosi double ${unboxedVal} to i64`
+            storeVal = convReg
+        } els if stType == "ptr" && targetPropKind == TypeKind.I64 {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${unboxedVal} to ptr`
+            storeVal = convReg
+        } els if stType == "i64" && isPointerType targetPropKind {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = ptrtoint ptr ${unboxedVal} to i64`
+            storeVal = convReg
+        }
+        self.codegen.emit `store ${stType} ${storeVal}, ptr ${slotReg}`
+
+        pIdx++
+    }
+}

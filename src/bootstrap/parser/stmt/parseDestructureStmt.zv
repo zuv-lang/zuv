@@ -1,0 +1,177 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseDestructureStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseDestructureStmt.zv
+ * =============================================================================
+ */
+
+imp str
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+imp ParseJuxtaposedArgs frm parseJuxtaposedArgs
+
+/**
+ * Checks if lookahead indicates an object destructuring assignment:
+ * `{ ident (, ident)* } =`
+ */
+IsObjectDestructure parser: Parser :: bool {
+    if !(parser.check TokenType.TOK_LBRACE) {
+        -> false
+    }
+    p1: Token = parser.peek
+    if p1.kind != TokenType.TOK_IDENT {
+        -> false
+    }
+    offset: num = 2
+    wh true {
+        tok: Token = parser.peekAhead offset
+        if tok.kind == TokenType.TOK_EOF || tok.kind == TokenType.TOK_SEMICOLON {
+            -> false
+        }
+        if tok.kind == TokenType.TOK_COMMA {
+            offset = offset + 1
+            nextTok: Token = parser.peekAhead offset
+            if nextTok.kind == TokenType.TOK_RBRACE {
+                afterBrace: Token = parser.peekAhead (offset + 1)
+                -> (afterBrace.kind == TokenType.TOK_ASSIGN)
+            }
+            if nextTok.kind != TokenType.TOK_IDENT {
+                -> false
+            }
+            offset = offset + 1
+            cont
+        }
+        if tok.kind == TokenType.TOK_RBRACE {
+            afterBrace: Token = parser.peekAhead(offset + 1)
+            -> (afterBrace.kind == TokenType.TOK_ASSIGN)
+        }
+        -> false
+    }
+    -> false
+}
+
+/**
+ * Checks if lookahead indicates an array destructuring assignment:
+ * `[ ident (, ident)* ] =`
+ */
+IsArrayDestructure parser: Parser :: bool {
+    if !(parser.check TokenType.TOK_LBRACKET) {
+        -> false
+    }
+    p1: Token = parser.peek
+    if p1.kind != TokenType.TOK_IDENT {
+        -> false
+    }
+    offset: num = 2
+    wh true {
+        tok: Token = parser.peekAhead offset
+        if tok.kind == TokenType.TOK_EOF || tok.kind == TokenType.TOK_SEMICOLON {
+            -> false
+        }
+        if tok.kind == TokenType.TOK_COMMA {
+            offset = offset + 1
+            nextTok: Token = parser.peekAhead offset
+            if nextTok.kind == TokenType.TOK_RBRACKET {
+                afterBracket: Token = parser.peekAhead (offset + 1)
+                -> (afterBracket.kind == TokenType.TOK_ASSIGN)
+            }
+            if nextTok.kind != TokenType.TOK_IDENT {
+                -> false
+            }
+            offset = offset + 1
+            cont
+        }
+        if tok.kind == TokenType.TOK_RBRACKET {
+            afterBracket: Token = parser.peekAhead(offset + 1)
+            -> (afterBracket.kind == TokenType.TOK_ASSIGN)
+        }
+        -> false
+    }
+    -> false
+}
+
+/**
+ * Checks if lookahead indicates a multi-variable assignment:
+ * `ident , ident (, ident)* =`
+ */
+IsMultiVarDestructure parser: Parser :: bool {
+    if !(parser.check TokenType.TOK_IDENT) {
+        -> false
+    }
+    p1: Token = parser.peek
+    if p1.kind != TokenType.TOK_COMMA {
+        -> false
+    }
+    offset: num = 2
+    wh true {
+        tok: Token = parser.peekAhead offset
+        if tok.kind != TokenType.TOK_IDENT {
+            -> false
+        }
+        offset = offset + 1
+        afterIdent: Token = parser.peekAhead offset
+        if afterIdent.kind == TokenType.TOK_COMMA {
+            offset = offset + 1
+            cont
+        }
+        if afterIdent.kind == TokenType.TOK_ASSIGN {
+            -> true
+        }
+        -> false
+    }
+    -> false
+}
+
+/**
+ * Parses object, array, or multi-variable destructuring assignment statement.
+ */
+ParseDestructureStmt parser: Parser, kind: str, isMut: bool :: ASTNode {
+    startTok: Token = parser.cur
+    names: str[] = []
+
+    if kind == "object" {
+        parser.consume TokenType.TOK_LBRACE, "Expected '{' in object destructuring"
+        wh !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+            idTok: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier in destructuring"
+            names.psh idTok.val
+            if parser.matchToken TokenType.TOK_COMMA {
+                // optional comma
+            }
+        }
+        parser.consume TokenType.TOK_RBRACE, "Expected '}' after object destructuring"
+    } els if kind == "array" {
+        parser.consume TokenType.TOK_LBRACKET, "Expected '[' in array destructuring"
+        wh !(parser.check TokenType.TOK_RBRACKET) && !(parser.isAtEnd) {
+            idTok: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier in destructuring"
+            names.psh idTok.val
+            if parser.matchToken TokenType.TOK_COMMA {
+                // optional comma
+            }
+        }
+        parser.consume TokenType.TOK_RBRACKET, "Expected ']' after array destructuring"
+    } els {
+        // "multivar"
+        firstTok: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier in multi-variable assignment"
+        names.psh firstTok.val
+        wh parser.matchToken TokenType.TOK_COMMA {
+            idTok: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier after ','"
+            names.psh idTok.val
+        }
+    }
+
+    parser.consume TokenType.TOK_ASSIGN, "Expected '=' in destructuring assignment"
+    rawExpr: ASTNode = ParseExpr parser
+    srcExpr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    fr n of names {
+        parser.addVar n
+    }
+
+    -> ASTNode.createDestructure kind, names, srcExpr, isMut, startTok.line, startTok.col
+}
