@@ -16,6 +16,7 @@ imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, Find
 imp TypeInfo, TypeKind, StrToTypeKind frm ../../types
 imp Checker, Symbol, Scope frm ../checker
 imp InferStatement frm inferStatement
+imp IsIntegerLiteral frm ../../../util/commonFunctions
 
 /**
  * Validates and registers top-level declarations (types, objects, functions, enums, imports).
@@ -112,8 +113,13 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
                     retKind = TypeKind.Str
                     retTypeName = "str"
                 } els if retExpr.kind == NodeKind.NumExpr {
-                    retKind = TypeKind.Num
-                    retTypeName = "num"
+                    if retExpr.inferredType == TypeKind.I64 || (retExpr.val.ln > 0 && IsIntegerLiteral(retExpr.val)) {
+                        retKind = TypeKind.I64
+                        retTypeName = "i64"
+                    } els {
+                        retKind = TypeKind.Num
+                        retTypeName = "num"
+                    }
                 } els if retExpr.kind == NodeKind.BoolExpr {
                     retKind = TypeKind.Bool
                     retTypeName = "bool"

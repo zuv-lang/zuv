@@ -376,6 +376,18 @@ EmitMethodCall self: ExprCodegen, node: ASTNode :: ExprResult {
             ptrReg: str = self.codegen.newReg
             self.codegen.emit `${ptrReg} = inttoptr i64 ${callReg} to ptr`
             finalReg = ptrReg
+        } els if retKind == TypeKind.Num {
+            dblReg: str = self.codegen.newReg
+            self.codegen.emit `${dblReg} = bitcast i64 ${callReg} to double`
+            finalReg = dblReg
+        } els if retKind == TypeKind.Bool {
+            bReg: str = self.codegen.newReg
+            self.codegen.emit `${bReg} = trunc i64 ${callReg} to i1`
+            finalReg = bReg
+        } els if retKind == TypeKind.I32 {
+            iReg: str = self.codegen.newReg
+            self.codegen.emit `${iReg} = trunc i64 ${callReg} to i32`
+            finalReg = iReg
         }
         res: ExprResult = { reg: finalReg, typeKind: retKind }
         -> res

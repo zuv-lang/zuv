@@ -8,6 +8,7 @@
 
 imp str, arr
 imp TypeKind frm types
+imp IsIntegerLiteral frm ../util/commonFunctions
 
 enum NodeKind {
     // Declarations
@@ -800,6 +801,9 @@ FindVarInitType node: ASTNode, varName: str :: str {
                 -> (initE.name.ln > 0 ? initE.name : "obj")
             }
             if initE.kind == NodeKind.NumExpr {
+                if initE.inferredType == TypeKind.I64 || (initE.val.ln > 0 && IsIntegerLiteral(initE.val)) {
+                    -> "i64"
+                }
                 -> "num"
             }
             if initE.kind == NodeKind.BoolExpr {
@@ -821,6 +825,9 @@ FindVarInitType node: ASTNode, varName: str :: str {
                 -> (rhs.name.ln > 0 ? rhs.name : "obj")
             }
             if rhs.kind == NodeKind.NumExpr {
+                if rhs.inferredType == TypeKind.I64 || (rhs.val.ln > 0 && IsIntegerLiteral(rhs.val)) {
+                    -> "i64"
+                }
                 -> "num"
             }
             if rhs.kind == NodeKind.BoolExpr {

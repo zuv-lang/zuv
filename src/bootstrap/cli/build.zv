@@ -27,7 +27,7 @@ imp StmtCodegen frm ../codegen/stmt
 imp RuntimeCodegen frm ../codegen/runtime
 imp emitDirectObjectFile frm build/emitDirectObjectFile
 imp linkDirectObjectFile frm build/linkDirectObjectFile
-imp StrEndsWith frm ../../util/commonFunctions
+imp StrEndsWith, IsIntegerLiteral frm ../../util/commonFunctions
 
 /**
  * Resolves a friendly target name alias to its canonical LLVM target triple.
@@ -206,7 +206,11 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                             } els if retExpr.kind == NodeKind.ObjLitExpr {
                                 mRetType = (retExpr.name.ln > 0 ? retExpr.name : topNode.name)
                             } els if retExpr.kind == NodeKind.NumExpr {
-                                mRetType = "num"
+                                if retExpr.inferredType == TypeKind.I64 || (retExpr.val.ln > 0 && IsIntegerLiteral(retExpr.val)) {
+                                    mRetType = "i64"
+                                } els {
+                                    mRetType = "num"
+                                }
                             } els if retExpr.kind == NodeKind.BoolExpr {
                                 mRetType = "bool"
                             }
@@ -522,6 +526,12 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                             topNode.typeAnnotation = elemType + "[]"
                         } els if retExprKind == NodeKind.BoolExpr || retExprOp == "==" || retExprOp == "!=" || retExprOp == "<" || retExprOp == ">" || retExprOp == "<=" || retExprOp == ">=" {
                             topNode.typeAnnotation = "bool"
+                        } els if retExprKind == NodeKind.NumExpr {
+                            if retNode.inferredType == TypeKind.Num || (retExprVal.ln > 0 && !(IsIntegerLiteral retExprVal)) {
+                                topNode.typeAnnotation = "num"
+                            } els {
+                                topNode.typeAnnotation = "i64"
+                            }
                         } els if retExprKind == NodeKind.ObjLitExpr {
                             if retExprTypeAnn.ln > 0 {
                                 topNode.typeAnnotation = retExprTypeAnn
@@ -556,21 +566,38 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                 retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "double" ? "double" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" ? "i32" : "i64")))))
                 pTypes: str[] = []
                 fnHasRest: bool = false
-                fr p of topNode.params {
-                    pLLVM: str = "i64"
-                    if p.isRest {
-                        pLLVM = "ptr"
-                        fnHasRest = true
-                    } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") || regLayouts.hasType(p.typeAnnotation) {
-                        pLLVM = "ptr"
-                    } els if p.typeAnnotation == "bool" {
-                        pLLVM = "i1"
-                    } els if p.typeAnnotation == "i32" {
-                        pLLVM = "i32"
-                    } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
-                        pLLVM = "double"
+                isDecorated: bool = false
+                fr dm of decoratedMethodNames {
+                    if dm == topNode.name { isDecorated = true }
+                }
+                fr df of decoratedFuncNames {
+                    if df == topNode.name { isDecorated = true }
+                }
+                isSoloRest: bool = (topNode.params.ln == 1 && topNode.params[0].isRest)
+                if isDecorated {
+                    retLLVM = "i64"
+                    fr p of topNode.params {
+                        pTypes.psh("i64")
                     }
-                    pTypes.psh(pLLVM)
+                } els if isSoloRest {
+                    pTypes = ["i64", "i64", "i64", "i64"]
+                } els {
+                    fr p of topNode.params {
+                        pLLVM: str = "i64"
+                        if p.isRest {
+                            pLLVM = "ptr"
+                            fnHasRest = true
+                        } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") || regLayouts.hasType(p.typeAnnotation) {
+                            pLLVM = "ptr"
+                        } els if p.typeAnnotation == "bool" {
+                            pLLVM = "i1"
+                        } els if p.typeAnnotation == "i32" {
+                            pLLVM = "i32"
+                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                            pLLVM = "double"
+                        }
+                        pTypes.psh(pLLVM)
+                    }
                 }
                 fnRetKind: TypeKind = topNode.inferredType
                 if (fnRetKind == TypeKind.Unknown || fnRetKind == TypeKind.Void) && topNode.typeAnnotation.ln > 0 && topNode.typeAnnotation != "void" {
@@ -657,7 +684,11 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                 gType = TypeKind.I64
                             }
                         } els if cNode.kind == NodeKind.NumExpr {
-                            gType = TypeKind.I64
+                            if cNode.inferredType == TypeKind.Num || (cNode.val.ln > 0 && !(IsIntegerLiteral cNode.val)) {
+                                gType = TypeKind.Num
+                            } els {
+                                gType = TypeKind.I64
+                            }
                         } els if cNode.kind == NodeKind.SymExpr {
                             gType = TypeKind.I64
                             gTypeName = "sym"
@@ -854,28 +885,51 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         }
                     }
 
+                    isDecorated: bool = false
+                    fr dm of decoratedMethodNames {
+                        if dm == topNode.name { isDecorated = true }
+                    }
+                    fr df of decoratedFuncNames {
+                        if df == topNode.name { isDecorated = true }
+                    }
+                    isSoloRest: bool = (topNode.params.ln == 1 && topNode.params[0].isRest)
+
                     isPtrRet: bool = (topNode.typeAnnotation == "str" || topNode.typeAnnotation == "ptr" || topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") || regLayouts.hasType(topNode.typeAnnotation))
                     retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "double" ? "double" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" ? "i32" : "i64")))))
+                    if isDecorated {
+                        retLLVM = "i64"
+                    }
                     paramsSig: str = ""
-                    isFirstP = true
-                    fr p of topNode.params {
-                        pLLVM: str = "i64"
-                        if p.isRest {
-                            pLLVM = "ptr"
-                        } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") || regLayouts.hasType(p.typeAnnotation) {
-                            pLLVM = "ptr"
-                        } els if p.typeAnnotation == "bool" {
-                            pLLVM = "i1"
-                        } els if p.typeAnnotation == "i32" {
-                            pLLVM = "i32"
-                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
-                            pLLVM = "double"
+                    if isDecorated {
+                        isFirstP = true
+                        fr p of topNode.params {
+                            if !isFirstP { paramsSig = paramsSig + ", " }
+                            paramsSig = paramsSig + "i64 %arg_" + p.name
+                            isFirstP = false
                         }
-                        if !isFirstP {
-                            paramsSig = paramsSig + ", "
+                    } els if isSoloRest {
+                        paramsSig = "i64 %arg_a0, i64 %arg_a1, i64 %arg_a2, i64 %arg_a3"
+                    } els {
+                        isFirstP = true
+                        fr p of topNode.params {
+                            pLLVM: str = "i64"
+                            if p.isRest {
+                                pLLVM = "ptr"
+                            } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") || regLayouts.hasType(p.typeAnnotation) {
+                                pLLVM = "ptr"
+                            } els if p.typeAnnotation == "bool" {
+                                pLLVM = "i1"
+                            } els if p.typeAnnotation == "i32" {
+                                pLLVM = "i32"
+                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                                pLLVM = "double"
+                            }
+                            if !isFirstP {
+                                paramsSig = paramsSig + ", "
+                            }
+                            paramsSig = paramsSig + pLLVM + " %arg_" + p.name
+                            isFirstP = false
                         }
-                        paramsSig = paramsSig + pLLVM + " %arg_" + p.name
-                        isFirstP = false
                     }
                     exportAttr: str = (topNode.isPub || isCdylib ? "dllexport " : "")
                     cg.startFunction("define " + exportAttr + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
@@ -916,38 +970,115 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         stmtGen.setAsyncFunc(prmReg, prevModeReg)
                     }
 
-                    fr p of topNode.params {
-                        if p.isRest {
-                            slotReg: str = cg.newReg
-                            cg.emit `${slotReg} = alloca ptr`
-                            cg.emit `store ptr %arg_${p.name}, ptr ${slotReg}`
-                            exprGen.addSymbol(p.name, slotReg, TypeKind.Arr, true, true)
-                        } els {
-                            pLLVM: str = "i64"
+                    if isDecorated {
+                        fr p of topNode.params {
                             pKind = TypeKind.I64
                             if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
-                                pLLVM = "ptr"
                                 pKind = TypeKind.Str
                             } els if p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
-                                pLLVM = "ptr"
                                 pKind = TypeKind.Arr
                             } els if regLayouts.hasType(p.typeAnnotation) {
-                                pLLVM = "ptr"
                                 pKind = TypeKind.Obj
                             } els if p.typeAnnotation == "bool" {
-                                pLLVM = "i1"
                                 pKind = TypeKind.Bool
                             } els if p.typeAnnotation == "i32" {
-                                pLLVM = "i32"
                                 pKind = TypeKind.I32
                             } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
-                                pLLVM = "double"
                                 pKind = TypeKind.Num
                             }
-                            slotReg: str = cg.newReg
-                            cg.emit(`${slotReg} = alloca ${pLLVM}`)
-                            cg.emit(`store ${pLLVM} %arg_${p.name}, ptr ${slotReg}`)
-                            exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            if pKind == TypeKind.Str || pKind == TypeKind.Arr || pKind == TypeKind.Obj || pKind == TypeKind.Ptr {
+                                convReg: str = cg.newReg
+                                cg.emit `${convReg} = inttoptr i64 %arg_${p.name} to ptr`
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca ptr`
+                                cg.emit `store ptr ${convReg}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            } els if pKind == TypeKind.Num {
+                                convReg: str = cg.newReg
+                                cg.emit `${convReg} = bitcast i64 %arg_${p.name} to double`
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca double`
+                                cg.emit `store double ${convReg}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            } els if pKind == TypeKind.Bool {
+                                convReg: str = cg.newReg
+                                cg.emit `${convReg} = trunc i64 %arg_${p.name} to i1`
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca i1`
+                                cg.emit `store i1 ${convReg}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            } els if pKind == TypeKind.I32 {
+                                convReg: str = cg.newReg
+                                cg.emit `${convReg} = trunc i64 %arg_${p.name} to i32`
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca i32`
+                                cg.emit `store i32 ${convReg}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            } els {
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca i64`
+                                cg.emit `store i64 %arg_${p.name}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            }
+                        }
+                    } els if isSoloRest {
+                        restName: str = topNode.params[0].name
+                        rawRest: str = cg.newReg
+                        cg.emit `${rawRest} = call ptr @malloc(i64 48)`
+                        cg.emit `store i64 4, ptr ${rawRest}`
+                        restPtr: str = cg.newReg
+                        cg.emit `${restPtr} = getelementptr inbounds i64, ptr ${rawRest}, i64 1`
+                        cg.emit `store i64 4, ptr ${restPtr}`
+                        gepR1: str = cg.newReg
+                        cg.emit `${gepR1} = getelementptr inbounds i64, ptr ${restPtr}, i64 1`
+                        cg.emit `store i64 %arg_a0, ptr ${gepR1}`
+                        gepR2: str = cg.newReg
+                        cg.emit `${gepR2} = getelementptr inbounds i64, ptr ${restPtr}, i64 2`
+                        cg.emit `store i64 %arg_a1, ptr ${gepR2}`
+                        gepR3: str = cg.newReg
+                        cg.emit `${gepR3} = getelementptr inbounds i64, ptr ${restPtr}, i64 3`
+                        cg.emit `store i64 %arg_a2, ptr ${gepR3}`
+                        gepR4: str = cg.newReg
+                        cg.emit `${gepR4} = getelementptr inbounds i64, ptr ${restPtr}, i64 4`
+                        cg.emit `store i64 %arg_a3, ptr ${gepR4}`
+                        slotReg: str = cg.newReg
+                        cg.emit `${slotReg} = alloca ptr`
+                        cg.emit `store ptr ${restPtr}, ptr ${slotReg}`
+                        exprGen.addSymbol(restName, slotReg, TypeKind.Arr, true, true)
+                    } els {
+                        fr p of topNode.params {
+                            if p.isRest {
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca ptr`
+                                cg.emit `store ptr %arg_${p.name}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, TypeKind.Arr, true, true)
+                            } els {
+                                pLLVM: str = "i64"
+                                pKind = TypeKind.I64
+                                if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                                    pLLVM = "ptr"
+                                    pKind = TypeKind.Str
+                                } els if p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                                    pLLVM = "ptr"
+                                    pKind = TypeKind.Arr
+                                } els if regLayouts.hasType(p.typeAnnotation) {
+                                    pLLVM = "ptr"
+                                    pKind = TypeKind.Obj
+                                } els if p.typeAnnotation == "bool" {
+                                    pLLVM = "i1"
+                                    pKind = TypeKind.Bool
+                                } els if p.typeAnnotation == "i32" {
+                                    pLLVM = "i32"
+                                    pKind = TypeKind.I32
+                                } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                                    pLLVM = "double"
+                                    pKind = TypeKind.Num
+                                }
+                                slotReg: str = cg.newReg
+                                cg.emit(`${slotReg} = alloca ${pLLVM}`)
+                                cg.emit(`store ${pLLVM} %arg_${p.name}, ptr ${slotReg}`)
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            }
                         }
                     }
 
