@@ -15,5 +15,13 @@ refMut = &let counter
 lg "Immutable Reference Borrow:"
 lg refVal
 
+// *refVal = 80
+// lg "Attempted to mutate mutable reference (refVal = 80):"
+// lg refVal
+
 lg "Mutable Reference Borrow:"
+lg refMut
+
+*refMut = 80
+lg "Attempted to mutate mutable reference (refMut = 80):"
 lg refMut
