@@ -62,16 +62,19 @@ ParseVarDecl parser: Parser :: ASTNode {
         }
     }
 
-    initExpr = ASTNode.createNil nameTok.line, nameTok.col
     if parser.matchToken TokenType.TOK_ASSIGN {
         rawExpr: ASTNode = ParseExpr parser
-        initExpr = ParseJuxtaposedArgs parser, rawExpr
+        initExpr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            // optional trailing semicolon
+        }
+        parser.addVar nameTok.val
+        -> ASTNode.createVarDecl nameTok.val, typeAnnot, isBorrow, initExpr, startTok.line, startTok.col
+    } els {
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            // optional trailing semicolon
+        }
+        parser.addVar nameTok.val
+        -> ASTNode.createVarDeclUninit nameTok.val, typeAnnot, isBorrow, startTok.line, startTok.col
     }
-
-    if parser.matchToken TokenType.TOK_SEMICOLON {
-        // optional trailing semicolon
-    }
-
-    parser.addVar nameTok.val
-    -> ASTNode.createVarDecl nameTok.val, typeAnnot, isBorrow, initExpr, startTok.line, startTok.col
 }

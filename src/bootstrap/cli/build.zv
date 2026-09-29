@@ -774,8 +774,13 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         zeroVal = "0"
                     }
                     globReg: str = "@global_" + topNode.name
+                    globInitReg: str = ""
+                    if topNode.children.ln == 0 {
+                        globInitReg = "@global_" + topNode.name + "_is_init"
+                        cg.emitExtern(globInitReg + " = global i1 0")
+                    }
                     cg.emitExtern(globReg + " = global " + stType + " " + zeroVal)
-                    exprGen.addGlobalSymbolWithType(topNode.name, globReg, gType, gTypeName)
+                    exprGen.addGlobalSymbolWithInitFlag(topNode.name, globReg, gType, gTypeName, globInitReg)
                 }
             } els if topNode.kind == NodeKind.DestructureStmt {
                 srcNode: ASTNode = topNode.children.ln > 0 ? topNode.children[0] : topNode
@@ -835,8 +840,10 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                             zeroVal = "0"
                         }
                         globReg: str = "@global_" + p.name
+                        globInitReg: str = "@global_" + p.name + "_is_init"
+                        cg.emitExtern(globInitReg + " = global i1 1")
                         cg.emitExtern(globReg + " = global " + stType + " " + zeroVal)
-                        exprGen.addGlobalSymbolWithType(p.name, globReg, gType, gTypeName)
+                        exprGen.addGlobalSymbolWithInitFlag(p.name, globReg, gType, gTypeName, globInitReg)
                     }
                 }
             }

@@ -73,6 +73,7 @@ type ScopeSymbol = {
     isPtr: bool;
     isAlloca: bool;
     decorRole: num;
+    initFlagReg: str;
 };
 
 /**
@@ -191,7 +192,8 @@ obj ExprCodegen {
             typeName: "",
             isPtr,
             isAlloca,
-            decorRole: 0
+            decorRole: 0,
+            initFlagReg: ""
         }
         self.symbols.psh newSym
     },
@@ -204,7 +206,8 @@ obj ExprCodegen {
             typeName: "",
             isPtr,
             isAlloca,
-            decorRole
+            decorRole,
+            initFlagReg: ""
         }
         self.symbols.psh newSym
     },
@@ -217,7 +220,22 @@ obj ExprCodegen {
             typeName,
             isPtr,
             isAlloca,
-            decorRole: 0
+            decorRole: 0,
+            initFlagReg: ""
+        }
+        self.symbols.psh newSym
+    },
+
+    addSymbolWithInitFlag: name: str, reg: str, typeKind: TypeKind, typeName: str, isPtr: bool, isAlloca: bool, initFlagReg: str :: void => {
+        newSym: ScopeSymbol = {
+            name,
+            reg,
+            typeKind,
+            typeName,
+            isPtr,
+            isAlloca,
+            decorRole: 0,
+            initFlagReg
         }
         self.symbols.psh newSym
     },
@@ -238,7 +256,8 @@ obj ExprCodegen {
             typeName: "",
             isPtr: false,
             isAlloca: true,
-            decorRole: 0
+            decorRole: 0,
+            initFlagReg: ""
         }
         self.globalSymbols.psh newSym
     },
@@ -251,7 +270,22 @@ obj ExprCodegen {
             typeName,
             isPtr: false,
             isAlloca: true,
-            decorRole: 0
+            decorRole: 0,
+            initFlagReg: ""
+        }
+        self.globalSymbols.psh newSym
+    },
+
+    addGlobalSymbolWithInitFlag: name: str, reg: str, typeKind: TypeKind, typeName: str, initFlagReg: str :: void => {
+        newSym: ScopeSymbol = {
+            name,
+            reg,
+            typeKind,
+            typeName,
+            isPtr: false,
+            isAlloca: true,
+            decorRole: 0,
+            initFlagReg
         }
         self.globalSymbols.psh newSym
     },
@@ -270,7 +304,8 @@ obj ExprCodegen {
             typeName: "",
             isPtr: false,
             isAlloca: false,
-            decorRole: 0
+            decorRole: 0,
+            initFlagReg: ""
         }
         fr gItem of self.globalSymbols {
             if gItem.name == name {
@@ -300,7 +335,8 @@ obj ExprCodegen {
                     typeName: effTypeName,
                     isPtr: gItem.isPtr,
                     isAlloca: gItem.isAlloca,
-                    decorRole: gItem.decorRole
+                    decorRole: gItem.decorRole,
+                    initFlagReg: gItem.initFlagReg
                 }
                 self.globalSymbols[idx] = updated
             }
@@ -322,7 +358,8 @@ obj ExprCodegen {
             typeName: "",
             isPtr: false,
             isAlloca: false,
-            decorRole: 0
+            decorRole: 0,
+            initFlagReg: ""
         }
         fr item of self.symbols {
             if item.name == name {

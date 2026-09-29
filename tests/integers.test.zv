@@ -165,6 +165,7 @@ if newvari64 == nil {
     prnt "newvari64 initially nil ok"
 }
 newvari64 = 0
+prnt newvari64
 if newvari64 == 0 {
     prnt "newvari64 set to 0 ok"
 }
@@ -174,10 +175,11 @@ prnt uninitF32
 if uninitF32 == nil {
     prnt "uninitF32 initially nil ok"
 }
+uninitF32 = 0.0
+prnt uninitF32
 if uninitF32 == 0.0 {
-    prnt "uninit f32 default is 0.0"
+    prnt "uninitF32 set to 0 ok"
 }
-
 varwithouttype
 prnt varwithouttype
 if varwithouttype == nil {
@@ -186,4 +188,144 @@ if varwithouttype == nil {
 varwithouttype = 100
 if varwithouttype == 100 {
     prnt "varwithouttype set to 100 ok"
+}
+varwithouttype = 0
+prnt varwithouttype
+if varwithouttype == 0 {
+    prnt "varwithouttype set to 0 ok"
+}
+
+vNum: num
+prnt vNum
+if vNum == nil {
+    prnt "vNum initially nil ok"
+}
+vNum = 0
+prnt vNum
+if vNum == 0 {
+    prnt "vNum set to 0 ok"
+}
+if vNum != nil {
+    prnt "vNum != nil ok"
+}
+
+vI8: i8
+prnt vI8
+if vI8 == nil {
+    prnt "vI8 initially nil ok"
+}
+vI8 = 0
+prnt vI8
+if vI8 == 0 {
+    prnt "vI8 set to 0 ok"
+}
+
+vU8: u8
+prnt vU8
+if vU8 == nil {
+    prnt "vU8 initially nil ok"
+}
+vU8 = 0
+prnt vU8
+if vU8 == 0 {
+    prnt "vU8 set to 0 ok"
+}
+
+vI16: i16
+prnt vI16
+if vI16 == nil {
+    prnt "vI16 initially nil ok"
+}
+vI16 = 0
+prnt vI16
+if vI16 == 0 {
+    prnt "vI16 set to 0 ok"
+}
+
+vU16: u16
+prnt vU16
+if vU16 == nil {
+    prnt "vU16 initially nil ok"
+}
+vU16 = 0
+prnt vU16
+if vU16 == 0 {
+    prnt "vU16 set to 0 ok"
+}
+
+vI32: i32
+prnt vI32
+if vI32 == nil {
+    prnt "vI32 initially nil ok"
+}
+vI32 = 0
+prnt vI32
+if vI32 == 0 {
+    prnt "vI32 set to 0 ok"
+}
+
+vU32: u32
+prnt vU32
+if vU32 == nil {
+    prnt "vU32 initially nil ok"
+}
+vU32 = 0
+prnt vU32
+if vU32 == 0 {
+    prnt "vU32 set to 0 ok"
+}
+
+vU64: u64
+prnt vU64
+if vU64 == nil {
+    prnt "vU64 initially nil ok"
+}
+vU64 = 0
+prnt vU64
+if vU64 == 0 {
+    prnt "vU64 set to 0 ok"
+}
+
+vI128: i128
+prnt vI128
+if vI128 == nil {
+    prnt "vI128 initially nil ok"
+}
+vI128 = 0
+prnt vI128
+if vI128 == 0 {
+    prnt "vI128 set to 0 ok"
+}
+
+vU128: u128
+prnt vU128
+if vU128 == nil {
+    prnt "vU128 initially nil ok"
+}
+vU128 = 0
+prnt vU128
+if vU128 == 0 {
+    prnt "vU128 set to 0 ok"
+}
+
+vUnd: und
+prnt vUnd
+if vUnd == nil {
+    prnt "vUnd initially nil ok"
+}
+vUnd = und
+prnt vUnd
+if vUnd == und {
+    prnt "vUnd set to und ok"
+}
+
+vNil: nil
+prnt vNil
+if vNil == nil {
+    prnt "vNil initially nil ok"
+}
+vNil = nil
+prnt vNil
+if vNil == nil {
+    prnt "vNil set to nil ok"
 }

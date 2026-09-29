@@ -29,6 +29,9 @@ EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
         }
         if targetNode.kind == NodeKind.IdentExpr {
             foundSym = self.findSymbol targetNode.name
+            if foundSym.initFlagReg.ln > 0 {
+                self.codegen.emit `store i1 1, ptr ${foundSym.initFlagReg}`
+            }
             if foundSym.isAlloca {
                 stType: str = llvmStackType foundSym.typeKind
                 storeVal: str = rightRes.reg
@@ -423,29 +426,44 @@ EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
                 bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
                 -> bRes
             }
+            isLitNilR: bool = (node.children.ln > 1 && (node.children[1].kind == NodeKind.NilExpr || node.children[1].kind == NodeKind.UndExpr))
+            isLitNilL: bool = (node.children.ln > 0 && (node.children[0].kind == NodeKind.NilExpr || node.children[0].kind == NodeKind.UndExpr))
+            if isLitNilR && node.children.ln > 0 && node.children[0].kind == NodeKind.IdentExpr {
+                targetSym: ScopeSymbol = self.findSymbol node.children[0].name
+                if targetSym.initFlagReg.ln > 0 {
+                    flagReg: str = self.codegen.newReg
+                    self.codegen.emit `${flagReg} = load i1, ptr ${targetSym.initFlagReg}`
+                    cmpRes: str = self.codegen.newReg
+                    icmpOp: str = (op == "==") ? "eq" : "ne"
+                    self.codegen.emit `${cmpRes} = icmp ${icmpOp} i1 ${flagReg}, 0`
+                    bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
+                    -> bRes
+                }
+            }
+            if isLitNilL && node.children.ln > 1 && node.children[1].kind == NodeKind.IdentExpr {
+                targetSym: ScopeSymbol = self.findSymbol node.children[1].name
+                if targetSym.initFlagReg.ln > 0 {
+                    flagReg: str = self.codegen.newReg
+                    self.codegen.emit `${flagReg} = load i1, ptr ${targetSym.initFlagReg}`
+                    cmpRes: str = self.codegen.newReg
+                    icmpOp: str = (op == "==") ? "eq" : "ne"
+                    self.codegen.emit `${cmpRes} = icmp ${icmpOp} i1 ${flagReg}, 0`
+                    bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
+                    -> bRes
+                }
+            }
+            isIdentL: bool = (node.children.ln > 0 && node.children[0].kind == NodeKind.IdentExpr)
+            isIdentR: bool = (node.children.ln > 1 && node.children[1].kind == NodeKind.IdentExpr)
             isNumIntL: bool = isIntegerType leftRes.typeKind
             isNumIntR: bool = isIntegerType rightRes.typeKind
-            if (isNumIntL && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und)) ||
-               (isNumIntR && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und)) {
+            if (isNumIntL && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und) && isIdentL) ||
+               (isNumIntR && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und) && isIdentR) {
                 valReg: str = isNumIntL ? leftRes.reg : rightRes.reg
                 valType = isNumIntL ? leftRes.typeKind : rightRes.typeKind
                 llType: str = llvmType valType
                 cmpRes: str = self.codegen.newReg
                 icmpOp: str = (op == "==") ? "eq" : "ne"
                 self.codegen.emit `${cmpRes} = icmp ${icmpOp} ${llType} ${valReg}, 0`
-                bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
-                -> bRes
-            }
-            isNumFltL: bool = isFloatType leftRes.typeKind
-            isNumFltR: bool = isFloatType rightRes.typeKind
-            if (isNumFltL && (rightRes.typeKind == TypeKind.Nil || rightRes.typeKind == TypeKind.Und)) ||
-               (isNumFltR && (leftRes.typeKind == TypeKind.Nil || leftRes.typeKind == TypeKind.Und)) {
-                valReg: str = isNumFltL ? leftRes.reg : rightRes.reg
-                valType = isNumFltL ? leftRes.typeKind : rightRes.typeKind
-                llType: str = llvmType valType
-                cmpRes: str = self.codegen.newReg
-                fcmpOp: str = (op == "==") ? "fcmp oeq" : "fcmp one"
-                self.codegen.emit `${cmpRes} = ${fcmpOp} ${llType} ${valReg}, 0.0`
                 bRes: ExprResult = { reg: cmpRes, typeKind: TypeKind.Bool }
                 -> bRes
             }

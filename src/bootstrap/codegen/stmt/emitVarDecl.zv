@@ -19,7 +19,7 @@ EmitVarDecl self: StmtCodegen, node: ASTNode :: void {
         }
         initReg: str = ""
         initResKind = TypeKind.Unknown
-        hasInit: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
+        hasInit: bool = (node.children.ln > 0)
 
         if hasInit {
             initRes: ExprResult = self.exprGen.emitExpr node.children[0]
@@ -59,13 +59,22 @@ EmitVarDecl self: StmtCodegen, node: ASTNode :: void {
                 slotReg = existingGlobal.reg
                 isGlobal = true
                 self.exprGen.setGlobalSymbolType node.name, varType, effTypeName
+                if hasInit && existingGlobal.initFlagReg.ln > 0 {
+                    self.codegen.emit `store i1 1, ptr ${existingGlobal.initFlagReg}`
+                }
             }
         }
 
         if !isGlobal {
             slotReg = self.codegen.newReg
             self.codegen.emit `${slotReg} = alloca ${stType}`
-            self.exprGen.addSymbolWithType node.name, slotReg, varType, effTypeName, false, true
+            flagSlot: str = ""
+            if !hasInit {
+                flagSlot = self.codegen.newReg
+                self.codegen.emit `${flagSlot} = alloca i1`
+                self.codegen.emit `store i1 0, ptr ${flagSlot}`
+            }
+            self.exprGen.addSymbolWithInitFlag node.name, slotReg, varType, effTypeName, false, true, flagSlot
         }
         if initReg.ln > 0 {
             storeVal: str = initReg

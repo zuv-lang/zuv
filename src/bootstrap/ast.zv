@@ -620,6 +620,16 @@ obj ASTNode {
         -> node
     },
 
+    createVarDeclUninit: name: str, typeAnnotation: str, isBorrow: bool, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.VarDecl, line, col
+        node.name = name
+        node.typeAnnotation = typeAnnotation
+        node.isBorrow = isBorrow
+        emptyChildren: ASTNode[] = []
+        node.children = emptyChildren
+        -> node
+    },
+
     /**
      * Creates a function declaration AST node.
      *

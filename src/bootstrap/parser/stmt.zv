@@ -79,6 +79,13 @@ IsTypedVarDecl parser: Parser :: bool {
         }
         offset = offset + 1
     }
+    tTok: Token = parser.peekAhead 2
+    if tTok.kind == TokenType.TOK_IDENT || tTok.kind == TokenType.TOK_TYP ||
+       tTok.kind == TokenType.TOK_TYPE_NUM || tTok.kind == TokenType.TOK_TYPE_BOOL ||
+       tTok.kind == TokenType.TOK_TYPE_STR || tTok.kind == TokenType.TOK_TYPE_VOID ||
+       tTok.kind == TokenType.TOK_UND || tTok.kind == TokenType.TOK_NIL {
+        -> true
+    }
     -> false
 }
 
@@ -173,7 +180,20 @@ ParseStatement parser: Parser :: ASTNode {
         }
     }
 
-    // Typed variable declaration without 'let': ident: Type = expr
+    // Bare uninitialized variable declaration: varname
+    if curTok.kind == TokenType.TOK_IDENT && !(parser.hasVar curTok.val) && !(parser.isZeroArgFunc curTok.val) {
+        if peekTok.line != curTok.line || peekTok.kind == TokenType.TOK_SEMICOLON || peekTok.kind == TokenType.TOK_EOF {
+            nameTok: Token = parser.advance
+            if parser.matchToken TokenType.TOK_SEMICOLON {
+                // optional trailing semicolon
+            }
+            parser.addVar nameTok.val
+            emptyType: str = ""
+            -> ASTNode.createVarDeclUninit nameTok.val, emptyType, false, curTok.line, curTok.col
+        }
+    }
+
+    // Typed variable declaration without 'let': ident: Type [= expr]
     if IsTypedVarDecl parser {
         nameTok: Token = parser.advance
         parser.advance // consume ':'
@@ -189,14 +209,21 @@ ParseStatement parser: Parser :: ASTNode {
                 brk
             }
         }
-        parser.consume TokenType.TOK_ASSIGN, "Expected '=' in variable declaration"
-        rawExpr: ASTNode = ParseExpr parser
-        initExpr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
-        if parser.matchToken TokenType.TOK_SEMICOLON {
-            // optional trailing semicolon
+        if parser.matchToken TokenType.TOK_ASSIGN {
+            rawExpr: ASTNode = ParseExpr parser
+            initExpr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
+            if parser.matchToken TokenType.TOK_SEMICOLON {
+                // optional trailing semicolon
+            }
+            parser.addVar nameTok.val
+            -> ASTNode.createVarDecl nameTok.val, typeAnnot, false, initExpr, curTok.line, curTok.col
+        } els {
+            if parser.matchToken TokenType.TOK_SEMICOLON {
+                // optional trailing semicolon
+            }
+            parser.addVar nameTok.val
+            -> ASTNode.createVarDeclUninit nameTok.val, typeAnnot, false, curTok.line, curTok.col
         }
-        parser.addVar nameTok.val
-        -> ASTNode.createVarDecl nameTok.val, typeAnnot, false, initExpr, curTok.line, curTok.col
     }
 
     -> ParseExpressionStmt parser

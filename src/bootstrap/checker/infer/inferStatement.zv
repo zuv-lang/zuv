@@ -45,6 +45,9 @@ InferStatement checker: Checker, stmt: ASTNode :: void {
         if finalKind == TypeKind.Unknown {
             finalKind = initKind
         }
+        if finalKind == TypeKind.Unknown && stmt.children.ln == 0 {
+            finalKind = TypeKind.I64
+        }
         tName = stmt.typeAnnotation
         if tName.ln == 0 {
             if stmt.children.ln > 0 && stmt.children[0].kind == NodeKind.NewExpr && stmt.children[0].name.ln > 0 {

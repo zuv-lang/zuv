@@ -35,7 +35,8 @@ ParseImportDecl parser: Parser :: ASTNode {
     if parser.matchToken TokenType.TOK_FRM {
         // imp sym1, sym2 frm path
         pathStr: str = ""
-        wh (parser.check TokenType.TOK_IDENT) || (parser.check TokenType.TOK_DOT) || (parser.check TokenType.TOK_SLASH) || (parser.check TokenType.TOK_STRING) {
+        frmLine: num = parser.prev().line
+        wh (!parser.isAtEnd && parser.cur.line == frmLine) && ((parser.check TokenType.TOK_IDENT) || (parser.check TokenType.TOK_DOT) || (parser.check TokenType.TOK_SLASH) || (parser.check TokenType.TOK_STRING)) {
             partTok: Token = parser.advance
             pathStr = pathStr + partTok.val
         }

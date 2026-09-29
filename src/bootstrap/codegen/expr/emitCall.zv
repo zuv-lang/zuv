@@ -403,9 +403,33 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
         }
         fmtConst: str = self.codegen.addStringConstant fmtStr
         if argRegs.ln > 0 {
+            lblAfterPrint: str = ""
+            firstArgNode: ASTNode = node.children.ln > 1 ? node.children[1] : node.children[0]
+            if firstArgNode.kind == NodeKind.IdentExpr {
+                checkSym: ScopeSymbol = self.findSymbol firstArgNode.name
+                if checkSym.name.ln > 0 && checkSym.initFlagReg.ln > 0 {
+                    flagReg: str = self.codegen.newReg
+                    self.codegen.emit `${flagReg} = load i1, ptr ${checkSym.initFlagReg}`
+                    pInitLbl: str = self.codegen.newLabel "p_init"
+                    pUninitLbl: str = self.codegen.newLabel "p_uninit"
+                    lblAfterPrint = self.codegen.newLabel "p_after"
+                    self.codegen.emit `br i1 ${flagReg}, label %${pInitLbl}, label %${pUninitLbl}`
+                    self.codegen.emitLabel pUninitLbl
+                    nilStr: str = self.codegen.addStringConstant "nil"
+                    self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${nilStr})`
+                    self.codegen.emit `br label %${lblAfterPrint}`
+                    self.codegen.emitLabel pInitLbl
+                }
+            }
             firstArgReg: str = argRegs[0]
             firstArgType = argTypes[0]
-            if firstArgType == TypeKind.Str || firstArgType == TypeKind.Ptr || firstArgType == TypeKind.Arr || firstArgType == TypeKind.Obj {
+            if firstArgType == TypeKind.Nil {
+                nilStr: str = self.codegen.addStringConstant "nil"
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${nilStr})`
+            } els if firstArgType == TypeKind.Und {
+                undStr: str = self.codegen.addStringConstant "und"
+                self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${undStr})`
+            } els if firstArgType == TypeKind.Str || firstArgType == TypeKind.Ptr || firstArgType == TypeKind.Arr || firstArgType == TypeKind.Obj {
                 self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${fmtConst}, ptr ${firstArgReg})`
             } els if firstArgType == TypeKind.Num {
                 dFmt: str = self.codegen.addStringConstant dblFmtStr
@@ -487,6 +511,10 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
                 self.codegen.emit `call i32 (ptr, ...) @printf(ptr ${numFmt}, i64 ${unwrappedReg})`
                 self.codegen.emit `br label %${pEndLbl}`
                 self.codegen.emitLabel pEndLbl
+            }
+            if lblAfterPrint.ln > 0 {
+                self.codegen.emit `br label %${lblAfterPrint}`
+                self.codegen.emitLabel lblAfterPrint
             }
         } els {
             emptyFmt: str = self.codegen.addStringConstant "\n"
