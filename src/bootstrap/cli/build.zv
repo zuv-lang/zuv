@@ -767,10 +767,7 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     }
                     if gType == TypeKind.Unknown || gType == TypeKind.Void {
                         if topNode.children.ln == 0 {
-                            gType = TypeKind.Num
-                            if gTypeName.ln == 0 {
-                                gTypeName = "num"
-                            }
+                            gType = TypeKind.Unknown
                         } els {
                             gType = TypeKind.I64
                         }

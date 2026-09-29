@@ -29,14 +29,7 @@ EmitVarDecl self: StmtCodegen, node: ASTNode :: void {
                 varType = initRes.typeKind
             }
         } els {
-            if varType == TypeKind.Unknown {
-                varType = TypeKind.Num
-            }
             initReg = selectDefaultValue varType
-        }
-
-        if varType == TypeKind.Unknown {
-            varType = TypeKind.Num
         }
 
         stType: str = llvmStackType varType

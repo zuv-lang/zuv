@@ -344,6 +344,27 @@ obj ExprCodegen {
         }
     },
 
+    setSymbolType: name: str, typeKind: TypeKind, typeName: str :: void => {
+        idx: num = 0
+        fr item of self.symbols {
+            if item.name == name {
+                effTypeName: str = typeName.ln > 0 ? typeName : item.typeName
+                updated: ScopeSymbol = {
+                    name: item.name,
+                    reg: item.reg,
+                    typeKind,
+                    typeName: effTypeName,
+                    isPtr: item.isPtr,
+                    isAlloca: item.isAlloca,
+                    decorRole: item.decorRole,
+                    initFlagReg: item.initFlagReg
+                }
+                self.symbols[idx] = updated
+            }
+            idx++
+        }
+    },
+
     /**
      * Resolves a symbol by identifier from lexical scope table, falling back to globals.
      *

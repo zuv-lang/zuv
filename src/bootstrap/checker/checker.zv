@@ -251,6 +251,29 @@ obj Checker {
         -> true
     },
 
+    updateSymbolType: name: str, newType: TypeKind, newTypeName: str :: void => {
+        totalScopes: num = self.scopes.ln
+        sIdx: num = 0
+        wh sIdx < totalScopes {
+            curRevIdx: num = totalScopes - 1 - sIdx
+            sc: Scope = self.scopes[curRevIdx]
+            syms: Symbol[] = sc.symbols
+            idx: num = 0
+            fr sItem of syms {
+                if sItem.name == name {
+                    sItem.typeKind = newType
+                    sItem.typeName = newTypeName
+                    syms[idx] = sItem
+                    sc.symbols = syms
+                    self.scopes[curRevIdx] = sc
+                    ->
+                }
+                idx++
+            }
+            sIdx++
+        }
+    },
+
     resolveSymbol: name: str :: Symbol => {
         totalScopes: num = self.scopes.ln
         sIdx: num = 0

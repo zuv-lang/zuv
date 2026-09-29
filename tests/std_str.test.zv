@@ -98,3 +98,13 @@ lg char_value[0]
 lg name_value[0]
 
 lg "std/str Shortform Tests Completed!"
+
+newstr
+prnt newstr
+
+if newstr == nil {
+    prnt "newstr value nil ok"
+}
+
+newstr = "Hello Zuv"
+prnt newstr

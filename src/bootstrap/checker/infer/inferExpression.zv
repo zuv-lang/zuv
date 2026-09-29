@@ -309,6 +309,19 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         }
         if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" ||
            expr.op == "%=" || expr.op == "**=" || expr.op == "&=" || expr.op == "|=" || expr.op == "^=" {
+            if expr.op == "=" && expr.children.ln > 0 && expr.children[0].kind == NodeKind.IdentExpr {
+                tName: str = expr.children[0].name
+                curSym: Symbol = checker.resolveSymbol tName
+                if curSym.name.ln > 0 && curSym.typeKind == TypeKind.Unknown {
+                    resolvedRKind = rightKind
+                    if resolvedRKind == TypeKind.I64 {
+                        resolvedRKind = TypeKind.Num
+                    }
+                    checker.updateSymbolType tName, resolvedRKind, TypeKindToStr(resolvedRKind)
+                    leftKind = resolvedRKind
+                    expr.children[0].inferredType = resolvedRKind
+                }
+            }
             if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
                 isCompat = AreTypesCompatible leftKind, rightKind
                 if expr.op == "+=" && leftKind == TypeKind.Str {

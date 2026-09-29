@@ -32,6 +32,16 @@ EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
             if foundSym.initFlagReg.ln > 0 {
                 self.codegen.emit `store i1 1, ptr ${foundSym.initFlagReg}`
             }
+            if foundSym.typeKind == TypeKind.Unknown {
+                newKind = rightRes.typeKind
+                if newKind == TypeKind.I64 {
+                    newKind = TypeKind.Num
+                }
+                self.setSymbolType targetNode.name, newKind, TypeKindToStr(newKind)
+                self.setGlobalSymbolType targetNode.name, newKind, TypeKindToStr(newKind)
+                foundSym.typeKind = newKind
+                foundSym.typeName = TypeKindToStr newKind
+            }
             if foundSym.isAlloca {
                 stType: str = llvmStackType foundSym.typeKind
                 storeVal: str = rightRes.reg
