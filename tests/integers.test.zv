@@ -175,9 +175,9 @@ prnt uninitF32
 if uninitF32 == nil {
     prnt "uninitF32 initially nil ok"
 }
-uninitF32 = 0.0
+uninitF32 = 0
 prnt uninitF32
-if uninitF32 == 0.0 {
+if uninitF32 == 0 {
     prnt "uninitF32 set to 0 ok"
 }
 varwithouttype
@@ -185,14 +185,18 @@ prnt varwithouttype
 if varwithouttype == nil {
     prnt "varwithouttype initially nil ok"
 }
-varwithouttype = 100
-if varwithouttype == 100 {
-    prnt "varwithouttype set to 100 ok"
+varwithouttype = 100.1
+prnt varwithouttype
+if varwithouttype == 100.1 {
+    prnt "varwithouttype set to 100.1 ok"
 }
 varwithouttype = 0
 prnt varwithouttype
 if varwithouttype == 0 {
     prnt "varwithouttype set to 0 ok"
+}
+if typ varwithouttype == "num" {
+    prnt "typ varwithouttype is num ok"
 }
 
 vNum: num
@@ -200,10 +204,10 @@ prnt vNum
 if vNum == nil {
     prnt "vNum initially nil ok"
 }
-vNum = 0
+vNum = 100.1
 prnt vNum
-if vNum == 0 {
-    prnt "vNum set to 0 ok"
+if vNum == 100.1 {
+    prnt "vNum set to 100.1 ok"
 }
 if vNum != nil {
     prnt "vNum != nil ok"

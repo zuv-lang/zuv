@@ -766,7 +766,14 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                         }
                     }
                     if gType == TypeKind.Unknown || gType == TypeKind.Void {
-                        gType = TypeKind.I64
+                        if topNode.children.ln == 0 {
+                            gType = TypeKind.Num
+                            if gTypeName.ln == 0 {
+                                gTypeName = "num"
+                            }
+                        } els {
+                            gType = TypeKind.I64
+                        }
                     }
                     stType: str = llvmStackType(gType)
                     zeroVal: str = selectDefaultValue(gType)
