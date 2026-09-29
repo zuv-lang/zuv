@@ -16,7 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Symbol Primitives (`sym`)**: Implemented `sym` expression parsing (`NodeKind.SymExpr`), symbol interning table (`symNames`), equality/inequality comparison, truthiness checks, and `typ` reflection (`tests/sym.test.zv`).
 - **Extension Methods & Function Aliasing**: Implemented `Type.method` syntax, top-level method aliases, untyped function return inference, and `sitofp` float coercion (`tests/obj_methods.test.zv`).
 - **Object Construction & Methods**: Added `new Type{...}` / `new Type(...)` construction, `::` static method resolution, method chaining, and zero-argument method getters (`tests/new_keyword.test.zv`, `tests/obj_min.test.zv`).
-- **Result Pattern Matching**: Added `ok(val)` / `err(val)` constructors and `sw` pattern matching with bound variables (`tests/result_match.test.zv`).
 - **Global Object (`glb`)**: Added project-wide global `glb` singleton object supporting cross-function property mutation and retrieval (`tests/glb.test.zv`).
 - **Spread & Rest Parameters**: Added array spread, object literal spread, and variable rest parameter packing/unpacking (`tests/spread_rest.test.zv`).
 - **IEEE-754 Special Values**: Supported `nan` and `Infinity` floating-point literal constants with IEEE-754 64-bit precision (`tests/nan_inf.test.zv`).
@@ -38,8 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dynamic Arrays & Untyped Parameters**: Supported pointer conversions and writeback for array method calls on untyped parameters, alongside expression-level juxtaposed calls (`tests/empty_arr_task1.test.zv`).
 - **Arrow Functions & Pattern Matching**: Fixed `sw` pattern match return unwrapping, return type inference for match expressions, and dynamic property printing for anonymous objects (`tests/arrow_functions.test.zv`).
 - **Async / Await Primitives**: Supported `asc` declarations, `awt` expression parsing, return type inference, and zero-argument async dispatch (`tests/async_await.test.zv`).
-- **Promise Combinators**: Supported `new Prm` arrow callback instantiation, `Prm.all`, `Prm.race`, and `Prm.allSettled` runtime lowering (`tests/async_combinators.test.zv`).
-- **Async Promise Contexts**: Lowered `@st`/`ascST` single-thread contexts, `Prm` unwrapping, rejection propagation, and `try`/`cth` blocks (`tests/async_prm.test.zv`).
 - **Attributes & Struct Instantiation**: Supported attribute annotations (`@inline`, `@derive`), typed struct literal instantiation, field type coercions, and member offset resolution (`tests/attributes.test.zv`).
 - **BigInt Primitives**: Implemented BigInt literals (`123n`), `BigInt` constructor, `typ` introspection, and equality comparisons (`tests/bigint.test.zv`).
 - **Bounds Guard & Optional Indexing**: Added optional index navigation (`?.[i]`), global `args`/`os.args` CLI runtime, `sh` command execution, and runtime array bounds panic with exit code 101 (`tests/bounds_guard_task6.test.zv`).
