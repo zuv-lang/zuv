@@ -3,7 +3,7 @@ names: str[] = ["A", "B"]
 
 obj Person {
     name: str,
-    age: num
+    age: num,
 }
 
 type Named = {
