@@ -1,0 +1,300 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Statement Type Inference
+ * Path: sub_projects/zuv/src/bootstrap/checker/inferStatement.zv
+ * =============================================================================
+ *
+ * Implements semantic type checking and control flow validation for statements:
+ * - Variable declarations (VarDecl): initializer type checking and symbol registration
+ * - Control flow branches: IfStmt, WhileStmt, ForStmt, ForInStmt, ForOfStmt
+ * - Match / Switch patterns: MatchStmt arm validation and scoped pattern variables
+ * - Jump statements: ReturnStmt, BreakStmt, ContinueStmt
+ * - Exception handling: TryCatchStmt scoped error variable binding
+ */
+
+imp ASTNode, NodeKind, Param, FieldEntry frm ../../ast
+imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm ../../types
+imp Checker, Symbol, Scope frm ../checker
+imp InferExpression frm inferExpression
+imp InferDeclaration frm inferDeclaration
+
+/**
+ * Validates and type-checks a statement AST node within the current lexical scope.
+ *
+ * Handles variable declarations, control flow branches, loops, and pattern matching.
+ *
+ * @param {Checker} checker - The active semantic checker instance
+ * @param {ASTNode} stmt - The statement AST node to validate
+ * @returns {void}
+ */
+InferStatement checker: Checker, stmt: ASTNode :: void {
+    k = stmt.kind
+    if k == NodeKind.VarDecl {
+        initKind = TypeKind.Unknown
+        if stmt.children.ln > 0 {
+            initKind = InferExpression(checker, stmt.children[0])
+        }
+        declaredKind = TypeKind.Unknown
+        if stmt.typeAnnotation.ln > 0 {
+            declaredKind = StrToTypeKind(stmt.typeAnnotation)
+            if initKind != TypeKind.Unknown && !(AreTypesCompatible declaredKind, initKind) {
+                checker.addError("E0306", "Variable '" + stmt.name + "' declared as " + (TypeKindToStr declaredKind) + " but initialized with incompatible " + (TypeKindToStr initKind), stmt.line, stmt.col, stmt.name.ln, "ensure initializer matches declared type")
+            }
+        }
+        finalKind = declaredKind
+        if finalKind == TypeKind.Unknown {
+            finalKind = initKind
+        }
+        tName = stmt.typeAnnotation
+        if tName.ln == 0 {
+            if stmt.children.ln > 0 && stmt.children[0].kind == NodeKind.NewExpr && stmt.children[0].name.ln > 0 {
+                tName = stmt.children[0].name
+            } els if stmt.children.ln > 0 && stmt.children[0].typeAnnotation.ln > 0 {
+                tName = stmt.children[0].typeAnnotation
+            } els if finalKind != TypeKind.Unknown {
+                tName = TypeKindToStr(finalKind)
+            }
+        }
+        symVar = Symbol.create(stmt.name, finalKind, tName, stmt.isBorrow, true, checker.currentLevel(), stmt.line, stmt.col)
+        checker.defineSymbol(symVar)
+        stmt.inferredType = finalKind
+        stmt.typeAnnotation = tName
+        ->
+    }
+    if k == NodeKind.DestructureStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        srcNode: ASTNode = stmt.children.ln > 0 ? stmt.children[0] : stmt
+        kind: str = stmt.val
+        structTypeName: str = ""
+        if kind == "object" {
+            structTypeName = srcNode.typeAnnotation
+            if structTypeName.ln == 0 && srcNode.kind == NodeKind.IdentExpr {
+                srcSym = checker.resolveSymbol(srcNode.name)
+                if srcSym.name.ln > 0 && srcSym.typeName.ln > 0 {
+                    structTypeName = srcSym.typeName
+                }
+            }
+        }
+        pIdx: num = 0
+        fr p of stmt.params {
+            pType = TypeKind.Unknown
+            pTypeName = ""
+            if kind == "object" {
+                if structTypeName.ln > 0 {
+                    tInfo = checker.resolveType(structTypeName)
+                    if tInfo.kind != TypeKind.Unknown {
+                        fr fldName, idx of tInfo.fields {
+                            if fldName == p.name && idx < tInfo.fieldTypes.ln {
+                                pType = tInfo.fieldTypes[idx]
+                                pTypeName = TypeKindToStr(pType)
+                                brk
+                            }
+                        }
+                    }
+                }
+                if pType == TypeKind.Unknown {
+                    fr tItem of checker.types {
+                        fr fldName, idx of tItem.fields {
+                            if fldName == p.name && idx < tItem.fieldTypes.ln && tItem.fieldTypes[idx] != TypeKind.Unknown {
+                                pType = tItem.fieldTypes[idx]
+                                pTypeName = TypeKindToStr(pType)
+                                brk
+                            }
+                        }
+                        if pType != TypeKind.Unknown {
+                            brk
+                        }
+                    }
+                }
+            } els {
+                if srcNode.kind == NodeKind.IdentExpr {
+                    srcSym = checker.resolveSymbol(srcNode.name)
+                    tLen: num = srcSym.typeName.ln
+                    if tLen > 2 && srcSym.typeName[tLen - 2] == "[" && srcSym.typeName[tLen - 1] == "]" {
+                        pTypeName = srcSym.typeName.slc(0, tLen - 2)
+                        pType = StrToTypeKind(pTypeName)
+                    } els if srcSym.kind != TypeKind.Unknown && srcSym.kind != TypeKind.Arr {
+                        pType = srcSym.kind
+                        pTypeName = srcSym.typeName
+                    }
+                } els if srcNode.kind == NodeKind.ArrExpr {
+                    if pIdx < srcNode.children.ln {
+                        pType = srcNode.children[pIdx].inferredType
+                        pTypeName = TypeKindToStr(pType)
+                    }
+                } els if srcNode.kind == NodeKind.CallExpr {
+                    fnSym = checker.resolveSymbol(srcNode.name)
+                    if fnSym.kind != TypeKind.Unknown {
+                        fnType = checker.resolveType(fnSym.typeName)
+                        if fnType.kind == TypeKind.Func && fnType.retKind != TypeKind.Unknown && fnType.retKind != TypeKind.Arr {
+                            pType = fnType.retKind
+                            pTypeName = fnType.retTypeName
+                        }
+                    }
+                }
+            }
+            if pType == TypeKind.Unknown {
+                pType = TypeKind.Num
+                pTypeName = "num"
+            }
+            if !(checker.hasSymbolInCurrentScope(p.name)) {
+                symVar = Symbol.create(p.name, pType, pTypeName, false, true, checker.currentLevel(), p.line, p.col)
+                checker.defineSymbol(symVar)
+            }
+            pIdx++
+        }
+        ->
+    }
+    if k == NodeKind.ExprStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        ->
+    }
+    if k == NodeKind.BlockStmt {
+        checker.enterScope()
+        fr child of stmt.children {
+            InferStatement(checker, child)
+        }
+        checker.exitScope()
+        ->
+    }
+    if k == NodeKind.IfStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        if stmt.children.ln > 1 {
+            InferStatement(checker, stmt.children[1])
+        }
+        if stmt.children.ln > 2 {
+            InferStatement(checker, stmt.children[2])
+        }
+        ->
+    }
+    if k == NodeKind.WhStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        if stmt.children.ln > 1 {
+            InferStatement(checker, stmt.children[1])
+        }
+        ->
+    }
+    if k == NodeKind.FrInStmt || k == NodeKind.FrOfStmt {
+        if stmt.children.ln == 4 {
+            checker.enterScope()
+            InferStatement(checker, stmt.children[0])
+            InferExpression(checker, stmt.children[1])
+            InferExpression(checker, stmt.children[2])
+            InferStatement(checker, stmt.children[3])
+            checker.exitScope()
+            ->
+        }
+        collKind = TypeKind.Unknown
+        if stmt.children.ln > 0 {
+            collKind = InferExpression(checker, stmt.children[0])
+        }
+        checker.enterScope()
+        itemKind = TypeKind.I64
+        if k == NodeKind.FrInStmt {
+            if collKind == TypeKind.Arr {
+                itemKind = TypeKind.I64
+            } els {
+                itemKind = TypeKind.Str
+            }
+        } els {
+            if collKind == TypeKind.Str {
+                itemKind = TypeKind.Str
+            } els if collKind == TypeKind.Arr {
+                elemType = TypeKind.Unknown
+                collNode = stmt.children[0]
+                collTypeName = collNode.typeAnnotation
+                if collTypeName.ln == 0 && collNode.kind == NodeKind.IdentExpr {
+                    foundSym = checker.resolveSymbol(collNode.name)
+                    if foundSym.name.ln > 0 {
+                        collTypeName = foundSym.typeName
+                    }
+                }
+                if collTypeName.ln >= 2 {
+                    subSuffix = collTypeName.sub collTypeName.ln - 2, 2
+                    if subSuffix == "[]" {
+                        baseName = collTypeName.sub 0, collTypeName.ln - 2
+                        elemType = StrToTypeKind(baseName)
+                    }
+                }
+                if elemType != TypeKind.Unknown {
+                    itemKind = elemType
+                } els {
+                    itemKind = TypeKind.I64
+                }
+            }
+        }
+        stmt.inferredType = itemKind
+        symLoop = Symbol.create(stmt.name, itemKind, (TypeKindToStr itemKind), false, true, checker.currentLevel(), stmt.line, stmt.col)
+        checker.defineSymbol(symLoop)
+        if stmt.val.ln > 0 {
+            secKind = TypeKind.Num
+            if k == NodeKind.FrInStmt && collKind != TypeKind.Arr {
+                secKind = TypeKind.I64
+            }
+            symSec = Symbol.create(stmt.val, secKind, (TypeKindToStr secKind), false, true, checker.currentLevel(), stmt.line, stmt.col)
+            checker.defineSymbol(symSec)
+        }
+        if stmt.children.ln > 1 {
+            InferStatement(checker, stmt.children[1])
+        }
+        checker.exitScope()
+        ->
+    }
+    if k == NodeKind.RetStmt {
+        if stmt.children.ln > 0 {
+            retKind = InferExpression(checker, stmt.children[0])
+            stmt.inferredType = retKind
+        } els {
+            stmt.inferredType = TypeKind.Void
+        }
+        ->
+    }
+    if k == NodeKind.TryCthStmt {
+        if stmt.children.ln > 0 {
+            InferStatement(checker, stmt.children[0])
+        }
+        if stmt.children.ln > 1 {
+            checker.enterScope()
+            errSym = Symbol.create(stmt.name, TypeKind.Str, "str", false, true, checker.currentLevel(), stmt.line, stmt.col)
+            checker.defineSymbol(errSym)
+            InferStatement(checker, stmt.children[1])
+            checker.exitScope()
+        }
+        if stmt.children.ln > 2 {
+            InferStatement(checker, stmt.children[2])
+        }
+        ->
+    }
+    if k == NodeKind.SwStmt {
+        if stmt.children.ln > 0 {
+            InferExpression(checker, stmt.children[0])
+        }
+        caseIdx: num = 0
+        fr arm of stmt.cases {
+            armChildIdx: num = caseIdx + 1
+            if armChildIdx < stmt.children.ln {
+                child = stmt.children[armChildIdx]
+                if (arm.patternKind == "ok" || arm.patternKind == "err") && arm.varName.ln > 0 && arm.varName != "_" {
+                    checker.enterScope()
+                    armSym = Symbol.create(arm.varName, TypeKind.I64, "i64", false, true, checker.currentLevel(), arm.line, arm.col)
+                    checker.defineSymbol(armSym)
+                    InferStatement(checker, child)
+                    checker.exitScope()
+                } els {
+                    InferStatement(checker, child)
+                }
+            }
+            caseIdx++
+        }
+        ->
+    }
+    InferDeclaration(checker, stmt)
+}

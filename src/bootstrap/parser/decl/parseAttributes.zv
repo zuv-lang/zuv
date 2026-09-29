@@ -1,0 +1,60 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseAttributes Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl/parseAttributes.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp Attribute frm ../../ast
+imp Parser frm ../parser
+
+/**
+ * Parses zero or more leading decorators / attributes (@ident[(args)] or @ident "arg").
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {Attribute[]} Array of parsed Attribute records
+ */
+ParseAttributes parser: Parser :: Attribute[] {
+    attrs: Attribute[] = []
+    wh parser.check TokenType.TOK_AT {
+        atTok: Token = parser.advance // consume '@'
+        nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected attribute name after '@'"
+        attrArgs: str[] = []
+        if parser.matchToken TokenType.TOK_LPAREN {
+            wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+                argTok: Token = parser.cur
+                if argTok.kind == TokenType.TOK_IDENT || argTok.kind == TokenType.TOK_STRING || argTok.kind == TokenType.TOK_NUMBER {
+                    attrArgs.psh argTok.val
+                    parser.advance
+                    if parser.matchToken TokenType.TOK_COMMA {
+                        // continue
+                    }
+                } els {
+                    parser.advance
+                }
+            }
+            parser.consume TokenType.TOK_RPAREN, "Expected ')' after attribute arguments"
+        } els {
+            curArg: Token = parser.cur
+            wh curArg.line == nameTok.line && (curArg.kind == TokenType.TOK_STRING || curArg.kind == TokenType.TOK_NUMBER || curArg.kind == TokenType.TOK_IDENT) {
+                argTok: Token = parser.advance
+                attrArgs.psh argTok.val
+                curArg = parser.cur
+                if curArg.line == nameTok.line && parser.matchToken TokenType.TOK_COMMA {
+                    curArg = parser.cur
+                } els {
+                    brk
+                }
+            }
+        }
+        attr: Attribute = {
+            name: nameTok.val,
+            args: attrArgs,
+            line: atTok.line,
+            col: atTok.col
+        }
+        attrs.psh attr
+    }
+    -> attrs
+}

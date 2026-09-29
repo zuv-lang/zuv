@@ -1,0 +1,149 @@
+// =============================================================================
+// Nested Arrays and Objects Test Suite
+// =============================================================================
+lg true
+lg false
+
+lg "=== 1. Nested Array ==="
+address= {
+    city: "New York",
+    zip: 10001
+}
+matrix = [
+    [10, 20],
+    [30, 40],
+    [50, 60],
+    [true, false],
+    ['a', 'b'],
+    [address, address]
+]
+lg`======= MATRIX START =======`
+lg matrix[0][0]
+lg matrix[0][1]
+lg matrix[1][0]
+lg matrix[1][1]
+lg matrix[2][0]
+lg matrix[2][1]
+lg matrix[3][0]
+lg matrix[3][1]
+lg matrix[4][0]
+lg matrix[4][1]
+lg matrix[5][0].city
+lg matrix[5][0].zip
+lg matrix[5][1].city
+lg matrix[5]?.[1]?.zip
+lg`======= END =======`
+
+// 2D String Array
+grid = [
+    ["hello", "world"],
+    ["zuv", "compiler"]
+]
+lg grid[0][0]
+lg grid[0][1]
+lg grid[1][0]
+lg grid[1][1]
+
+// 3D Array
+cube = [
+    [[1, 2]],
+    [[3, 4]]
+]
+lg cube[0][0][0]
+lg cube[0][0][1]
+lg cube[1][0][0]
+lg cube[1][0][1]
+
+// Mutate nested array element
+matrix[1][0] = 99
+lg matrix[1][0]
+
+lg "=== 2. Nested Object ==="
+user = {
+    name: "Alice",
+    info: {
+        age: 28,
+        address: {
+            city: "New York",
+            zip: 10001
+        }
+    }
+}
+
+lg user.name
+lg user.info.age
+lg user.info.address.city
+lg user.info.address.zip
+
+// Mutate nested object field
+user.info.age = 29
+user.info.address.city = "San Francisco"
+lg user.info.age
+lg user.info.address.city
+
+lg "=== 3. Object in Nested Array ==="
+obj_matrix = [
+    [
+        { id: 1, title: "Item 1", status: true },
+        { id: 2, title: "Item 2", status: false }
+    ],
+    [
+        { id: 3, title: "Item 3", status: true },
+        { id: 4, title: "Item 4", status: false }
+    ]
+]
+
+lg obj_matrix[0][0].id
+lg obj_matrix[0][0].title
+lg obj_matrix[0][0].status
+lg obj_matrix[0][1].id
+lg obj_matrix[0][1].title
+lg obj_matrix[0][1].status
+lg obj_matrix[1][0].id
+lg obj_matrix[1][0].title
+lg obj_matrix[1][0].status
+lg obj_matrix[1][1].id
+lg obj_matrix[1][1].title
+lg obj_matrix[1][1].status
+
+// Mutate object inside nested array
+obj_matrix[0][1].title = "Updated Item 2"
+lg obj_matrix[0][1].title
+
+lg "=== 4. Array in Nested Object ==="
+company = {
+    name: "TechCorp",
+    departments: {
+        engineering: {
+            team_size: 5,
+            skills: ["Rust", "C++", "Zuv"],
+            scores: [95, 88, 92]
+        },
+        design: {
+            team_size: 3,
+            tools: ["Figma", "Photoshop"],
+            scores: [85, 90]
+        },
+    },
+    scores: [true, false]
+}
+
+lg company.name
+lg company.departments.engineering.team_size
+lg company.departments.engineering.skills[0]
+lg company.departments.engineering.skills[1]
+lg company.departments.engineering.skills[2]
+lg company.departments.engineering.scores[0]
+lg company.departments.engineering.scores[1]
+lg company.departments.engineering.scores[2]
+lg company.departments.design.team_size
+lg company.departments.design.tools[0]
+lg company.departments.design.tools[1]
+lg company.departments.design.scores[0]
+lg company?.departments?.design?.scores[1]
+lg company.scores[0]
+lg company.scores[1]
+
+// Mutate array inside nested object
+company.departments.engineering.skills[1] = "Zig"
+lg company.departments.engineering.skills[1]

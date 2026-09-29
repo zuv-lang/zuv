@@ -1,5 +1,5 @@
 // Native Standard Library std/str Unit Test Suite
-// Verifies imp str with pure dot-method shortforms (.ln, .cnt, .sub, .slc, .chr, .cat, .eq)
+// Verifies imp str with pure dot-method syntax (.len, .contains, .sub, .slice, .chr, .concat, .eq)
 
 imp str
 
@@ -7,14 +7,14 @@ lg "--- Testing std/str Pure Dot Method Syntax ---"
 
 text = "Hello Zuv Standard Library"
 
-// 1. Length (.ln)
-l1 = text.ln
-lg "Length via 'text.ln':"
+// 1. Length (.len)
+l1 = text.len
+lg "Length via 'text.len':"
 lg l1
 
-// 2. Contains (.cnt)
-has1 = text.cnt "Zuv"
-lg "Contains via 'text.cnt \"Zuv\"':"
+// 2. Contains (.contains)
+has1 = text.contains "Zuv"
+lg "Contains via 'text.contains \"Zuv\"':"
 lg has1
 
 // 3. Substring (.sub start, len)
@@ -22,9 +22,9 @@ s1 = text.sub 6, 3
 lg "Substr via 'text.sub 6, 3':"
 lg s1
 
-// 4. Slice (.slc start, end)
-sl1 = text.slc 0, 5
-lg "Slice via 'text.slc 0, 5':"
+// 4. Slice (.slice start, end)
+sl1 = text.slice 0, 5
+lg "Slice via 'text.slice 0, 5':"
 lg sl1
 
 // 5. CharAt (.chr)
@@ -36,9 +36,9 @@ c2 = text.chr 6
 lg "CharAt via 'text.chr 6':"
 lg c2
 
-// 6. Concat (.cat)
-res1 = text.cat " - Fast"
-lg "Concat via 'text.cat \" - Fast\"':"
+// 6. Concat (.concat)
+res1 = text.concat " - Fast"
+lg "Concat via 'text.concat \" - Fast\"':"
 lg res1
 
 // 7. Equality (.eq)
@@ -98,3 +98,13 @@ lg char_value[0]
 lg name_value[0]
 
 lg "std/str Shortform Tests Completed!"
+
+newstr
+prnt newstr
+
+if newstr == nil {
+    prnt "newstr value nil ok"
+}
+
+newstr = "Hello Zuv"
+prnt newstr

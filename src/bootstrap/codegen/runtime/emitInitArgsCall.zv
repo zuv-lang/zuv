@@ -1,0 +1,13 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitInitArgsCall Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitInitArgsCall.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitInitArgsCall self: RuntimeCodegen, srcFile: str :: void {
+        fileSym: str = self.codegen.addStringConstant srcFile
+        self.codegen.emit `call void @zuv_init_args(i32 %argc, ptr %argv, ptr ${fileSym})`
+}

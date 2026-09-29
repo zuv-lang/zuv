@@ -1,0 +1,65 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitArr Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitArr.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp isPointerType frm ../types
+imp ArraySpreadPart frm ../array
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitArr self: ExprCodegen, node: ASTNode :: ExprResult {
+    hasSpread: bool = false
+    fr ch of node.children {
+        if ch.kind == NodeKind.UnaryExpr && ch.op == "..." {
+            hasSpread = true
+        }
+    }
+    if hasSpread {
+        parts: ArraySpreadPart[] = []
+        fr elem of node.children {
+            if elem.kind == NodeKind.UnaryExpr && elem.op == "..." {
+                spRes: ExprResult = self.emitExpr elem.children[0]
+                arrPtrReg: str = spRes.reg
+                if !(isPointerType spRes.typeKind) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = inttoptr i64 ${spRes.reg} to ptr`
+                    arrPtrReg = convReg
+                }
+                spPart: ArraySpreadPart = {
+                    isSpread: true,
+                    valReg: arrPtrReg,
+                    valType: spRes.typeKind,
+                    lenReg: ""
+                }
+                parts.psh spPart
+            } els {
+                elemRes: ExprResult = self.emitExpr elem
+                singlePart: ArraySpreadPart = {
+                    isSpread: false,
+                    valReg: elemRes.reg,
+                    valType: elemRes.typeKind,
+                    lenReg: ""
+                }
+                parts.psh singlePart
+            }
+        }
+        arrPtr: str = self.arrGen.emitArraySpread parts
+        res: ExprResult = { reg: arrPtr, typeKind: TypeKind.Arr }
+        -> res
+    }
+
+    elemRegs: str[] = []
+    elemTypes: TypeKind[] = []
+    fr elem of node.children {
+        elemRes: ExprResult = self.emitExpr elem
+        elemRegs.psh elemRes.reg
+        elemTypes.psh elemRes.typeKind
+    }
+    arrPtr: str = self.arrGen.emitArrayLit elemRegs, elemTypes
+    res: ExprResult = { reg: arrPtr, typeKind: TypeKind.Arr }
+    -> res
+}

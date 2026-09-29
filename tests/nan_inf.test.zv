@@ -1,14 +1,24 @@
-let n = nan
-let p = inf
-let q = Infinity
-let ninf = 0 - inf
+isNan val :: bool {
+    -> (val == val) == false
+}
+
+isFin val :: bool {
+    if isNan val { -> false }
+    if val == Infinity || val == 0 - Infinity { -> false }
+    -> true
+}
+
+n = nan
+p = Infinity
+q = Infinity
+ninf = 0 - Infinity
 
 if isNan n {
     prnt "isNan nan ok"
 }
 
-let z0 = isNan 0
-if z0 == no {
+z0 = isNan 0
+if z0 == false {
     prnt "isNan 0 false ok"
 }
 
@@ -16,13 +26,13 @@ if isFin 1 {
     prnt "isFin 1 ok"
 }
 
-let zn = isFin n
-if zn == no {
+zn = isFin n
+if zn == false {
     prnt "isFin nan false ok"
 }
 
-let zp = isFin p
-if zp == no {
+zp = isFin p
+if zp == false {
     prnt "isFin inf false ok"
 }
 
@@ -30,19 +40,19 @@ if p == q {
     prnt "inf == Infinity ok"
 }
 
-if p == ninf == no {
+if p == ninf == false {
     prnt "+inf != -inf ok"
 }
 
-if (p == ninf) == no {
+if (p == ninf) == false {
     prnt "+inf != -inf paren ok"
 }
 
-if isFin ninf == no {
+if isFin ninf == false {
     prnt "isFin -inf false ok"
 }
 
-if (isFin ninf) == no {
+if (isFin ninf) == false {
     prnt "isFin -inf paren ok"
 }
 
@@ -50,15 +60,15 @@ if typ nan == "num" {
     prnt "typ nan ok"
 }
 
-if typ inf == "num" {
+if typ Infinity == "num" {
     prnt "typ inf ok"
 }
 
-if n == n == no {
+if n == n == false {
     prnt "nan != nan ok"
 }
 
-if (n == n) == no {
+if (n == n) == false {
     prnt "nan != nan paren ok"
 }
 

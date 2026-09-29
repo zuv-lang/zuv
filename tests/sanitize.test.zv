@@ -1,0 +1,31 @@
+// Test zero-dependency sanitizers: clean execution without false positives
+arr = [10, 20, 30]
+v = arr[0]
+if v != 10 {
+    prnt "FAIL: arr[0]"
+}
+
+s = "hello"
+c = s[0]
+if c != "h" {
+    prnt "FAIL: s[0]"
+}
+
+x = 100 / 5
+if x != 20 {
+    prnt "FAIL: 100 / 5"
+}
+
+m = 10 % 3
+if m != 1 {
+    prnt "FAIL: 10 % 3"
+}
+
+unsafe {
+    p = malloc 64
+    if p != 0 {
+        free p
+    }
+}
+
+prnt "Sanitizer test passed"

@@ -10,11 +10,13 @@
  * =============================================================================
  */
 
-imp str, arr
-imp TypeKind frm ../types
-imp ASTNode, NodeKind, FieldEntry frm ../ast
+imp TypeKind, StrToTypeKind frm ../types
+imp ASTNode, NodeKind frm ../ast
 imp Codegen frm codegen
-imp boxValueToI64, unboxValueFromI64 frm codegen/array
+
+imp EmitObjectLit frm decl/emitObjectLit
+imp EmitGetProperty frm decl/emitGetProperty
+imp EmitSetProperty frm decl/emitSetProperty
 
 /**
  * Metadata descriptor for a single field within a struct or object type.
@@ -55,36 +57,39 @@ createStructField name: str, offset: num, typeKind: TypeKind, typeName: str :: S
  * @returns {TypeKind} Inferred TypeKind variant
  */
 resolveFieldTypeKind typeName: str :: TypeKind {
+    -> StrToTypeKind typeName
+}
+
+/**
+ * Resolves the element TypeKind of an array type annotation string.
+ *
+ * @param {str} typeName - Array type annotation identifier (e.g. "[str]", "num[]", "[bool]")
+ * @returns {TypeKind} Inferred element TypeKind variant
+ */
+StrToElemTypeKind typeName: str :: TypeKind {
     nameLen: num = typeName.ln
     if nameLen >= 2 {
-        subSuffix: str = typeName.sub nameLen - 2, 2
-        if subSuffix == "[]" {
-            -> TypeKind.Arr
+        if (typeName.sub 0, 1) == "[" && (typeName.sub nameLen - 1, 1) == "]" {
+            inner: str = typeName.sub 1, nameLen - 2
+            commaIdx: num = -1
+            fr i = 0; i < inner.ln; i++ {
+                if inner.chr(i) == "," {
+                    commaIdx = i
+                    brk
+                }
+            }
+            if commaIdx > 0 {
+                firstElem: str = inner.sub 0, commaIdx
+                -> resolveFieldTypeKind firstElem
+            }
+            -> resolveFieldTypeKind inner
+        }
+        if (typeName.sub nameLen - 2, 2) == "[]" {
+            inner: str = typeName.sub 0, nameLen - 2
+            -> resolveFieldTypeKind inner
         }
     }
-    -> sw typeName {
-        "num"    => TypeKind.Num
-        "double" => TypeKind.Num
-        "f64"    => TypeKind.Num
-        "i64"    => TypeKind.I64
-        "u64"    => TypeKind.I64
-        "i32"    => TypeKind.I32
-        "u32"    => TypeKind.I32
-        "i16"    => TypeKind.I16
-        "u16"    => TypeKind.I16
-        "i8"     => TypeKind.I8
-        "u8"     => TypeKind.I8
-        "byte"   => TypeKind.I8
-        "bool"   => TypeKind.Bool
-        "str"    => TypeKind.Str
-        "void"   => TypeKind.Void
-        "ptr"    => TypeKind.Ptr
-        "arr"    => TypeKind.Arr
-        "enum"   => TypeKind.Enum
-        "und"    => TypeKind.Und
-        "nil"    => TypeKind.Nil
-        _        => TypeKind.Obj
-    }
+    -> TypeKind.Unknown
 }
 
 /**
@@ -106,7 +111,7 @@ obj StructLayout {
     create: typeName: str, fields: StructField[] :: StructLayout => {
         count: num = fields.ln
         bytes: num = (count == 0) ? 8 : count * 8
-        -> StructLayout {
+        -> {
             typeName,
             fields,
             fieldCount: count,
@@ -170,9 +175,18 @@ obj StructLayout {
      * @param {str} name - Field identifier
      * @returns {TypeKind} Inferred TypeKind or TypeKind.Unknown
      */
-    getFieldType: name: str :: TypeKind => {
+    resolveFieldType: name: str :: TypeKind => {
         fld: StructField = self.getField name
         -> fld.typeKind
+    },
+
+    setFieldType: name: str, typeKind: TypeKind :: void => {
+        fr fld, i of self.fields {
+            if fld.name == name {
+                self.fields[i].typeKind = typeKind
+                ->
+            }
+        }
     }
 }
 
@@ -182,6 +196,10 @@ obj StructLayout {
 obj StructLayoutRegistry {
     layouts: StructLayout[],
     dynamicFields: str[],
+    dynamicFieldTypes: TypeKind[],
+    enumNames: str[],
+    aliasNames: str[],
+    aliasTargets: str[],
 
     /**
      * Initializes an empty StructLayoutRegistry coordinator instance.
@@ -190,11 +208,57 @@ obj StructLayoutRegistry {
      */
     create: :: StructLayoutRegistry => {
         emptyLayouts: StructLayout[] = []
-        emptyDynFields: str[] = []
-        -> StructLayoutRegistry {
-            layouts: emptyLayouts,
-            dynamicFields: emptyDynFields
+        initialDynFields: str[] = [
+            "kind", "inferredType", "val", "line", "col", "name", "value", "left", "right", "op",
+            "callee", "args", "elements", "array", "index", "object",
+            "property", "typeName", "fields", "init", "condition",
+            "increment", "body", "statements", "params", "isAsync",
+            "isMut", "elseBranch", "thenBranch", "level", "symbols"
+        ]
+        emptyDynTypes: TypeKind[] = []
+        fr f of initialDynFields {
+            emptyDynTypes.psh TypeKind.Unknown
         }
+        emptyEnumNames: str[] = []
+        emptyAliasNames: str[] = []
+        emptyAliasTargets: str[] = []
+        -> {
+            layouts: emptyLayouts,
+            dynamicFields: initialDynFields,
+            dynamicFieldTypes: emptyDynTypes,
+            enumNames: emptyEnumNames,
+            aliasNames: emptyAliasNames,
+            aliasTargets: emptyAliasTargets
+        }
+    },
+
+    registerAlias: name: str, target: str :: void => {
+        fr n, i of self.aliasNames {
+            if n == name {
+                self.aliasTargets[i] = target
+                ret
+            }
+        }
+        self.aliasNames.psh name
+        self.aliasTargets.psh target
+    },
+
+    resolveAlias: name: str :: str => {
+        cur: str = name
+        fr step = 0; step < 10; step++ {
+            found: bool = false
+            fr n, i of self.aliasNames {
+                if n == cur {
+                    cur = self.aliasTargets[i]
+                    found = true
+                    brk
+                }
+            }
+            if !found {
+                brk
+            }
+        }
+        -> cur
     },
 
     /**
@@ -226,16 +290,28 @@ obj StructLayoutRegistry {
      * @returns {StructLayout} Constructed and registered StructLayout
      */
     registerFromAST: node: ASTNode :: StructLayout => {
+        if node.fields.ln == 0 && node.typeAnnotation.ln > 0 {
+            self.registerAlias node.name, node.typeAnnotation
+        }
         builtFields: StructField[] = []
         curIdx: num = 0
         fr fEntry of node.fields {
-            fType: TypeKind = resolveFieldTypeKind fEntry.valStr
-            fDesc: StructField = createStructField fEntry.name, curIdx, fType, fEntry.valStr
+            resolvedValStr: str = self.resolveAlias fEntry.valStr
+            fType: TypeKind = TypeKind.Unknown
+            if fEntry.valStr.ln > 0 && fEntry.valStr != fEntry.name && fEntry.valStr != "any" {
+                fType = resolveFieldTypeKind resolvedValStr
+            }
+            fDesc: StructField = createStructField fEntry.name, curIdx, fType, resolvedValStr
             builtFields.psh fDesc
             curIdx++
         }
         layout: StructLayout = StructLayout.create node.name, builtFields
         self.layouts.psh layout
+        fr child of node.children {
+            if child.kind == NodeKind.TypeDecl || child.kind == NodeKind.ObjDecl {
+                self.registerFromAST child
+            }
+        }
         -> layout
     },
 
@@ -254,6 +330,15 @@ obj StructLayoutRegistry {
         emptyFields: StructField[] = []
         fallback: StructLayout = StructLayout.create typeName, emptyFields
         -> fallback
+    },
+
+    hasType: typeName: str :: bool => {
+        fr item of self.layouts {
+            if item.typeName == typeName {
+                -> true
+            }
+        }
+        -> false
     },
 
     /**
@@ -280,7 +365,58 @@ obj StructLayoutRegistry {
             fIdx++
         }
         self.dynamicFields.psh fieldName
+        self.dynamicFieldTypes.psh TypeKind.Unknown
         -> fIdx
+    },
+
+    setFieldType: typeName: str, fieldName: str, typeKind: TypeKind :: void => {
+        if typeName.ln > 0 {
+            fr l, i of self.layouts {
+                if l.typeName == typeName {
+                    targetLayout: StructLayout = self.layouts[i]
+                    targetLayout.setFieldType fieldName, typeKind
+                    self.layouts[i] = targetLayout
+                    ->
+                }
+            }
+        }
+        self.setDynamicFieldType fieldName, typeKind
+    },
+
+    setDynamicFieldType: fieldName: str, fieldType: TypeKind :: void => {
+        if fieldType == TypeKind.I64 || fieldType == TypeKind.Unknown {
+            ret
+        }
+        fIdx: num = 0
+        fr df of self.dynamicFields {
+            if df == fieldName {
+                wh self.dynamicFieldTypes.ln <= fIdx {
+                    self.dynamicFieldTypes.psh TypeKind.Unknown
+                }
+                self.dynamicFieldTypes[fIdx] = fieldType
+                ->
+            }
+            fIdx++
+        }
+        self.dynamicFields.psh fieldName
+        wh self.dynamicFieldTypes.ln < fIdx {
+            self.dynamicFieldTypes.psh TypeKind.Unknown
+        }
+        self.dynamicFieldTypes.psh fieldType
+    },
+
+    getDynamicFieldType: fieldName: str :: TypeKind => {
+        fIdx: num = 0
+        fr df of self.dynamicFields {
+            if df == fieldName {
+                if fIdx < self.dynamicFieldTypes.ln {
+                    -> self.dynamicFieldTypes[fIdx]
+                }
+                -> TypeKind.Unknown
+            }
+            fIdx++
+        }
+        -> TypeKind.Unknown
     },
 
     /**
@@ -291,8 +427,95 @@ obj StructLayoutRegistry {
      * @returns {TypeKind} Field TypeKind or TypeKind.Unknown
      */
     getFieldType: typeName: str, fieldName: str :: TypeKind => {
-        layout: StructLayout = self.getLayout typeName
-        -> layout.getFieldType fieldName
+        if typeName.ln > 0 {
+            layout: StructLayout = self.getLayout typeName
+            fType = layout.resolveFieldType fieldName
+            if fType != TypeKind.Unknown {
+                -> fType
+            }
+        }
+        -> self.getDynamicFieldType fieldName
+    },
+
+    getFieldField: typeName: str, fieldName: str :: StructField => {
+        if typeName.ln > 0 {
+            layout: StructLayout = self.getLayout typeName
+            fDesc: StructField = layout.getField fieldName
+            if fDesc.name.ln > 0 {
+                -> fDesc
+            }
+        }
+        fr l of self.layouts {
+            if l.hasField fieldName {
+                -> l.getField fieldName
+            }
+        }
+        notF: StructField = createStructField "", -1, TypeKind.Unknown, ""
+        -> notF
+    },
+
+    /**
+     * Registers an enum definition as a constant namespace layout.
+     *
+     * @param {ASTNode} node - Enum declaration AST node
+     * @returns {StructLayout} Constructed and registered StructLayout
+     */
+    registerEnumFromAST: node: ASTNode :: StructLayout => {
+        builtFields: StructField[] = []
+        curIdx: num = 0
+        fr fEntry of node.fields {
+            fDesc: StructField = createStructField fEntry.name, curIdx, TypeKind.I8, "i8"
+            builtFields.psh fDesc
+            curIdx++
+        }
+        layout: StructLayout = StructLayout.create node.name, builtFields
+        self.layouts.psh layout
+        self.enumNames.psh node.name
+        -> layout
+    },
+
+    /**
+     * Checks whether a type name represents a registered enum namespace.
+     *
+     * @param {str} name - Identifier to check
+     * @returns {bool} True if name is an enum
+     */
+    isEnum: name: str :: bool => {
+        fr en of self.enumNames {
+            if en == name {
+                -> true
+            }
+        }
+        -> false
+    },
+
+    /**
+     * Retrieves the integer discriminant value for a named enum variant.
+     *
+     * @param {str} enumName - Enum namespace name
+     * @param {str} variantName - Variant identifier
+     * @returns {num} Discriminant value or -1 if not found
+     */
+    getEnumVariantVal: enumName: str, variantName: str :: num => {
+        layout: StructLayout = self.getLayout enumName
+        -> layout.getOffset variantName
+    },
+
+    /**
+     * Searches all registered enums for a variant identifier.
+     *
+     * @param {str} variantName - Bare variant identifier
+     * @returns {num} Discriminant value or -1 if not found
+     */
+    findVariantVal: variantName: str :: num => {
+        fr en of self.enumNames {
+            layout: StructLayout = self.getLayout en
+            off: num = layout.getOffset variantName
+            if off >= 0 {
+                -> off
+            }
+        }
+        -> -1
     }
 }
 
@@ -311,7 +534,7 @@ obj ObjectCodegen {
      * @returns {ObjectCodegen} Initialized ObjectCodegen instance
      */
     create: codegen: Codegen, registry: StructLayoutRegistry :: ObjectCodegen => {
-        -> ObjectCodegen {
+        -> {
             codegen,
             registry
         }
@@ -328,47 +551,7 @@ obj ObjectCodegen {
      * @returns {str} SSA register holding pointer to heap-allocated object
      */
     emitObjectLit: typeName: str, fieldNames: str[], valRegs: str[], valTypes: TypeKind[] :: str => {
-        count: num = fieldNames.ln
-        maxOffset: num = count
-        fr fName of fieldNames {
-            curOff: num = 0
-            if typeName.ln > 0 {
-                curOff = self.registry.getFieldOffset typeName, fName
-            } els {
-                curOff = self.registry.getFieldOffset "", fName
-            }
-            if curOff >= maxOffset {
-                maxOffset = curOff + 1
-            }
-        }
-        totalBytes: num = (maxOffset == 0) ? 8 : maxOffset * 8
-
-        rawPtr: str = self.codegen.newReg
-        self.codegen.emit `${rawPtr} = call ptr @malloc(i64 ${totalBytes})`
-
-        fieldIdx: num = 0
-        fr fName of fieldNames {
-            valReg: str = valRegs[fieldIdx]
-            valType: TypeKind = valTypes[fieldIdx]
-            boxedVal: str = boxValueToI64 self.codegen, valReg, valType
-
-            offset: num = fieldIdx
-            if typeName.ln > 0 {
-                regOffset: num = self.registry.getFieldOffset typeName, fName
-                if regOffset >= 0 {
-                    offset = regOffset
-                }
-            } els {
-                offset = self.registry.getFieldOffset "", fName
-            }
-
-            gepReg: str = self.codegen.newReg
-            self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${rawPtr}, i64 ${offset}`
-            self.codegen.emit `store i64 ${boxedVal}, ptr ${gepReg}`
-            fieldIdx++
-        }
-
-        -> rawPtr
+        -> EmitObjectLit self, typeName, fieldNames, valRegs, valTypes
     },
 
     /**
@@ -381,44 +564,7 @@ obj ObjectCodegen {
      * @returns {str} SSA register holding unboxed native value
      */
     emitGetProperty: objPtrReg: str, fieldOffset: num, targetType: TypeKind, isOptional: bool :: str => {
-        if isOptional {
-            slot: str = self.codegen.newReg
-            self.codegen.emit `${slot} = alloca i64`
-
-            isNull: str = self.codegen.newReg
-            self.codegen.emit `${isNull} = icmp eq ptr ${objPtrReg}, null`
-
-            nilLbl: str = self.codegen.newLabel "opt_prop_nil"
-            loadLbl: str = self.codegen.newLabel "opt_prop_load"
-            mergeLbl: str = self.codegen.newLabel "opt_prop_merge"
-
-            self.codegen.emit `br i1 ${isNull}, label %${nilLbl}, label %${loadLbl}`
-
-            self.codegen.emitLabel nilLbl
-            self.codegen.emit `store i64 0, ptr ${slot}`
-            self.codegen.emit `br label %${mergeLbl}`
-
-            self.codegen.emitLabel loadLbl
-            gep: str = self.codegen.newReg
-            self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
-            valReg: str = self.codegen.newReg
-            self.codegen.emit `${valReg} = load i64, ptr ${gep}`
-            self.codegen.emit `store i64 ${valReg}, ptr ${slot}`
-            self.codegen.emit `br label %${mergeLbl}`
-
-            self.codegen.emitLabel mergeLbl
-            rawVal: str = self.codegen.newReg
-            self.codegen.emit `${rawVal} = load i64, ptr ${slot}`
-            unboxedVal: str = unboxValueFromI64 self.codegen, rawVal, targetType
-            -> unboxedVal
-        }
-
-        gep: str = self.codegen.newReg
-        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
-        valReg: str = self.codegen.newReg
-        self.codegen.emit `${valReg} = load i64, ptr ${gep}`
-        unboxedVal: str = unboxValueFromI64 self.codegen, valReg, targetType
-        -> unboxedVal
+        -> EmitGetProperty self, objPtrReg, fieldOffset, targetType, isOptional
     },
 
     /**
@@ -431,9 +577,6 @@ obj ObjectCodegen {
      * @returns {void}
      */
     emitSetProperty: objPtrReg: str, fieldOffset: num, valReg: str, valType: TypeKind :: void => {
-        boxedVal: str = boxValueToI64 self.codegen, valReg, valType
-        gep: str = self.codegen.newReg
-        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
-        self.codegen.emit `store i64 ${boxedVal}, ptr ${gep}`
+        EmitSetProperty self, objPtrReg, fieldOffset, valReg, valType
     }
 }

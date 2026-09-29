@@ -1,0 +1,85 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitRuntimeGlobals Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitRuntimeGlobals.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitRuntimeGlobals self: RuntimeCodegen :: void {
+        // Emit required external function declarations if not already declared
+        self.emitRuntimeDecl "declare i32 @printf(ptr nocapture readonly, ...)", "@printf"
+        self.emitRuntimeDecl "declare ptr @getenv(ptr)", "@getenv"
+        self.emitRuntimeDecl "declare void @exit(i32) noreturn", "@exit"
+        self.emitRuntimeDecl "declare i32 @RtlCaptureStackBackTrace(i32, i32, ptr, ptr)", "@RtlCaptureStackBackTrace"
+        self.emitRuntimeDecl "declare ptr @AddVectoredExceptionHandler(i32, ptr)", "@AddVectoredExceptionHandler"
+        self.emitRuntimeDecl "declare ptr @malloc(i64)", "@malloc"
+        self.emitRuntimeDecl "declare i64 @strlen(ptr)", "@strlen"
+        self.emitRuntimeDecl "declare i32 @snprintf(ptr, i64, ptr, ...)", "@snprintf"
+        self.emitRuntimeDecl "declare double @llvm.pow.f64(double, double)", "@llvm.pow.f64"
+        self.emitRuntimeDecl "declare void @Sleep(i32)", "@Sleep"
+        self.emitRuntimeDecl "declare ptr @fopen(ptr, ptr)", "@fopen"
+        self.emitRuntimeDecl "declare i32 @fseek(ptr, i64, i32)", "@fseek"
+        self.emitRuntimeDecl "declare i64 @ftell(ptr)", "@ftell"
+        self.emitRuntimeDecl "declare void @rewind(ptr)", "@rewind"
+        self.emitRuntimeDecl "declare i64 @fread(ptr, i64, i64, ptr)", "@fread"
+        self.emitRuntimeDecl "declare i64 @fwrite(ptr, i64, i64, ptr)", "@fwrite"
+        self.emitRuntimeDecl "declare i32 @fclose(ptr)", "@fclose"
+        self.emitRuntimeDecl "declare i32 @remove(ptr)", "@remove"
+        self.emitRuntimeDecl "declare ptr @memcpy(ptr, ptr, i64)", "@memcpy"
+        self.emitRuntimeDecl "declare i32 @system(ptr)", "@system"
+        self.emitRuntimeDecl "@_zuv_empty_arr = internal constant [2 x i64] [i64 0, i64 0]", "@_zuv_empty_arr"
+        self.emitRuntimeDecl "@zuv_global_args = global i64 0", "@zuv_global_args"
+
+        // Type definition for function descriptor
+        self.codegen.header += "%struct.ZuvFuncDesc = type { ptr, ptr, ptr, i32 }\n\n"
+        self.codegen.header += `
+        @zuv_active_prm = internal global ptr null
+        @zuv_async_context_mode = internal global i32 0
+        @zuv_prm_is_rejected = internal global i32 0
+        @zuv_exc_value = internal global i64 0
+        `
+
+        numDescs: num = self.funcDescs.ln
+        if numDescs == 0 {
+            self.codegen.header += `
+            @zuv_fn_descs = internal global [0 x %struct.ZuvFuncDesc] zeroinitializer
+            @zuv_fn_count = internal constant i64 0
+            @zuv_fn_sorted = internal global i32 0
+            `
+        } els {
+            fr desc, i of self.funcDescs {
+                nStr: str = `zuv_fn_n_${i}`
+                fStr: str = `zuv_fn_f_${i}`
+                dLen: num = desc.displayName.ln + 1
+                fLen: num = desc.filePath.ln + 1
+                self.codegen.header += `@${nStr} = private unnamed_addr constant [${dLen} x i8] c"${desc.displayName}\\00"\n`
+                self.codegen.header += `@${fStr} = private unnamed_addr constant [${fLen} x i8] c"${desc.filePath}\\00"\n`
+            }
+
+            self.codegen.header += `\n@zuv_fn_descs = internal global [${numDescs} x %struct.ZuvFuncDesc] [\n`
+            fr desc, i of self.funcDescs {
+                nStr: str = `zuv_fn_n_${i}`
+                fStr: str = `zuv_fn_f_${i}`
+                comma: str = (i + 1 < numDescs) ? "," : ""
+                self.codegen.header += `  %struct.ZuvFuncDesc { ptr @${desc.llvmName}, ptr @${nStr}, ptr @${fStr}, i32 ${desc.startLine} }${comma}\n`
+            }
+            self.codegen.header += "]\n"
+            self.codegen.header += `@zuv_fn_count = internal constant i64 ${numDescs}\n`
+            self.codegen.header += "@zuv_fn_sorted = internal global i32 0\n\n"
+        }
+
+        // Format strings and runtime constant literals
+        self.codegen.header += `
+        @zuv_fmt_panic_msg = private unnamed_addr constant [37 x i8] c"\\0Afatal runtime error: %s\\0A  at %s:%d\\0A\\00"
+        @zuv_fmt_panic_simple = private unnamed_addr constant [26 x i8] c"\\0Afatal runtime error: %s\\0A\\00"
+        @zuv_fmt_bt_header = private unnamed_addr constant [18 x i8] c"stack backtrace:\\0A\\00"
+        @zuv_fmt_bt_frame_sym = private unnamed_addr constant [37 x i8] c"  %2d: %s\\0A       at %s:%d (+0x%llx)\\0A\\00"
+        @zuv_fmt_bt_frame_unk = private unnamed_addr constant [30 x i8] c"  %2d: [unknown] (0x%016llx)\\0A\\00"
+        @zuv_fmt_bt_hint = private unnamed_addr constant [78 x i8] c"note: run with 'ZUV_BACKTRACE=1' environment variable to display a backtrace\\0A\\00"
+        @zuv_env_backtrace = private unnamed_addr constant [14 x i8] c"ZUV_BACKTRACE\\00"
+        @zuv_fmt_crash_msg = private unnamed_addr constant [58 x i8] c"\\0Afatal runtime error: hardware crash 0x%08X at 0x%016llx\\0A\\00"
+        @zuv_err_oob = private unnamed_addr constant [20 x i8] c"index out of bounds\\00"
+        `
+}

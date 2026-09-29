@@ -1,0 +1,40 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitAwait Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitAwait.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitAwait self: ExprCodegen, node: ASTNode :: ExprResult {
+    if node.children.ln > 0 {
+        targetNode: ASTNode = node.children[0]
+        valRes: ExprResult = self.emitExpr targetNode
+        valReg: str = valRes.reg
+        if valRes.typeKind == TypeKind.Func {
+            valRes.typeKind = TypeKind.I64
+        } els if valRes.typeKind == TypeKind.Ptr || valRes.typeKind == TypeKind.Arr || valRes.typeKind == TypeKind.Obj {
+            cReg: str = self.codegen.newReg
+            self.codegen.emit `${cReg} = ptrtoint ptr ${valRes.reg} to i64`
+            valReg = cReg
+        }
+        awaitRes: str = self.codegen.newReg
+        self.codegen.emit `${awaitRes} = call i64 @zuv_prm_await(i64 ${valReg})`
+        if self.activeCatchLabel.ln > 0 {
+            rejReg: str = self.codegen.newReg
+            self.codegen.emit `${rejReg} = load i32, ptr @zuv_prm_is_rejected`
+            hasRejReg: str = self.codegen.newReg
+            self.codegen.emit `${hasRejReg} = icmp ne i32 ${rejReg}, 0`
+            okLbl: str = self.codegen.newLabel "awt_ok"
+            self.codegen.emit `br i1 ${hasRejReg}, label %${self.activeCatchLabel}, label %${okLbl}`
+            self.codegen.emitLabel okLbl
+        }
+        res: ExprResult = { reg: awaitRes, typeKind: TypeKind.I64 }
+        -> res
+    }
+    res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
+    -> res
+}

@@ -1,0 +1,95 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitVarDecl Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitVarDecl.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp llvmType, llvmStackType, selectDefaultValue, selectCastOp, isPointerType frm ../types
+imp resolveFieldTypeKind frm ../decl
+imp ExprResult, ScopeSymbol frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitVarDecl self: StmtCodegen, node: ASTNode :: void {
+        varType = node.inferredType
+        if varType == TypeKind.Unknown && node.typeAnnotation.ln > 0 {
+            varType = resolveFieldTypeKind node.typeAnnotation
+        }
+        initReg: str = ""
+        initResKind = TypeKind.Unknown
+        hasInit: bool = (node.children.ln > 0)
+
+        if hasInit {
+            initRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            initReg = initRes.reg
+            initResKind = initRes.typeKind
+            if varType == TypeKind.Unknown {
+                varType = initRes.typeKind
+            }
+        } els {
+            initReg = selectDefaultValue varType
+        }
+
+        stType: str = llvmStackType varType
+        slotReg: str = ""
+        isGlobal: bool = false
+
+        effTypeName: str = node.typeAnnotation
+        if node.children.ln > 0 && node.children[0].typeAnnotation.ln > 0 {
+            cTypeAnn: str = node.children[0].typeAnnotation
+            if effTypeName.ln == 0 {
+                effTypeName = cTypeAnn
+            } els if (cTypeAnn.sub 0, 1) == "[" && (cTypeAnn.sub cTypeAnn.ln - 1, 1) == "]" {
+                effTypeName = cTypeAnn
+            }
+        }
+        if effTypeName.ln == 0 && node.children.ln > 0 && node.children[0].name.ln > 0 {
+            effTypeName = node.children[0].name
+        }
+        if effTypeName.ln == 0 {
+            effTypeName = TypeKindToStr varType
+        }
+
+        if self.isTopLevel {
+            existingGlobal: ScopeSymbol = self.exprGen.findGlobalSymbol node.name
+            if existingGlobal.name.ln > 0 {
+                slotReg = existingGlobal.reg
+                isGlobal = true
+                self.exprGen.setGlobalSymbolType node.name, varType, effTypeName
+                if hasInit && existingGlobal.initFlagReg.ln > 0 {
+                    self.codegen.emit `store i1 1, ptr ${existingGlobal.initFlagReg}`
+                }
+            }
+        }
+
+        if !isGlobal {
+            slotReg = self.codegen.newReg
+            self.codegen.emit `${slotReg} = alloca ${stType}`
+            flagSlot: str = ""
+            if !hasInit {
+                flagSlot = self.codegen.newReg
+                self.codegen.emit `${flagSlot} = alloca i1`
+                self.codegen.emit `store i1 0, ptr ${flagSlot}`
+            }
+            self.exprGen.addSymbolWithInitFlag node.name, slotReg, varType, effTypeName, false, true, flagSlot
+        }
+        if initReg.ln > 0 {
+            storeVal: str = initReg
+            fromLLVM: str = llvmType initResKind
+            if fromLLVM != stType && initResKind != TypeKind.Unknown {
+                castOp: str = selectCastOp initResKind, varType
+                if castOp.ln > 0 {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = ${castOp} ${fromLLVM} ${initReg} to ${stType}`
+                    storeVal = convReg
+                } els if (isPointerType initResKind) && (isPointerType varType) {
+                    convReg: str = self.codegen.newReg
+                    self.codegen.emit `${convReg} = bitcast ${fromLLVM} ${initReg} to ${stType}`
+                    storeVal = convReg
+                }
+            }
+            self.codegen.emit `store ${stType} ${storeVal}, ptr ${slotReg}`
+        }
+}

@@ -1,0 +1,29 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitStmt Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitStmt.zv
+ * =============================================================================
+ */
+
+imp ASTNode, NodeKind frm ../../ast
+imp StmtCodegen frm ../stmt
+
+EmitStmt self: StmtCodegen, node: ASTNode :: void => sw node.kind {
+    NodeKind.VarDecl   => self.emitVarDecl node
+    NodeKind.BlockStmt => self.emitBlock node
+    NodeKind.ExprStmt  => self.emitExprStmt node
+    NodeKind.IfStmt    => self.emitIf node
+    NodeKind.WhStmt    => self.emitWh node
+    NodeKind.FrOfStmt  => self.emitFrOf node
+    NodeKind.FrInStmt  => self.emitFrIn node
+    NodeKind.SwStmt    => self.emitSw node
+    NodeKind.RetStmt   => self.emitRet node
+    NodeKind.BrkStmt   => self.emitBrk node
+    NodeKind.ContStmt  => self.emitCont node
+    NodeKind.PanicStmt => self.emitPanic node
+    NodeKind.TryCthStmt => self.emitTryCth node
+    NodeKind.DestructureStmt => self.emitDestructure node
+    _                  => {
+        self.exprGen.emitExpr node
+    }
+}

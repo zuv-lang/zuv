@@ -1,0 +1,113 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitRet Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitRet.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp llvmType, selectDefaultValue frm ../types
+imp ExprResult frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitRet self: StmtCodegen, node: ASTNode :: void {
+        hasVal: bool = (node.children.ln > 0 && node.children[0].kind != NodeKind.NilExpr)
+
+        if self.isAsync {
+            retValReg: str = "0"
+            if hasVal {
+                retRes: ExprResult = self.exprGen.emitExpr node.children[0]
+                if retRes.typeKind == TypeKind.Num {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = fptosi double ${retRes.reg} to i64`
+                    retValReg = cReg
+                } els if retRes.typeKind == TypeKind.Bool || retRes.typeKind == TypeKind.I8 {
+                    cReg: str = self.codegen.newReg
+                    srcLLVM: str = (retRes.typeKind == TypeKind.Bool) ? "i1" : "i8"
+                    self.codegen.emit `${cReg} = zext ${srcLLVM} ${retRes.reg} to i64`
+                    retValReg = cReg
+                } els if retRes.typeKind == TypeKind.I32 {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = sext i32 ${retRes.reg} to i64`
+                    retValReg = cReg
+                } els if retRes.typeKind == TypeKind.Str || retRes.typeKind == TypeKind.Ptr || retRes.typeKind == TypeKind.Arr || retRes.typeKind == TypeKind.Obj {
+                    cReg: str = self.codegen.newReg
+                    self.codegen.emit `${cReg} = ptrtoint ptr ${retRes.reg} to i64`
+                    retValReg = cReg
+                } els {
+                    retValReg = retRes.reg
+                }
+            }
+            self.codegen.emit `call void @zuv_prm_resolve(ptr ${self.asyncPrmReg}, i64 ${retValReg})`
+            if self.asyncPrevModeReg.ln > 0 {
+                self.codegen.emit `call void @zuv_set_async_context(i32 ${self.asyncPrevModeReg})`
+            }
+            prmInt: str = self.codegen.newReg
+            self.codegen.emit `${prmInt} = ptrtoint ptr ${self.asyncPrmReg} to i64`
+            self.codegen.emit `ret i64 ${prmInt}`
+            ->
+        }
+
+        if hasVal {
+            retRes: ExprResult = self.exprGen.emitExpr node.children[0]
+            if self.returnType == TypeKind.I32 && retRes.typeKind == TypeKind.I64 {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = trunc i64 ${retRes.reg} to i32`
+                self.codegen.emit `ret i32 ${tReg}`
+            } els if self.returnType == TypeKind.I32 && retRes.typeKind == TypeKind.Num {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = fptosi double ${retRes.reg} to i32`
+                self.codegen.emit `ret i32 ${tReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I8 {
+                wReg: str = self.codegen.newReg
+                self.codegen.emit `${wReg} = zext i8 ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${wReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I16 {
+                wReg: str = self.codegen.newReg
+                self.codegen.emit `${wReg} = zext i16 ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${wReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I32 {
+                wReg: str = self.codegen.newReg
+                self.codegen.emit `${wReg} = zext i32 ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${wReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.Bool {
+                wReg: str = self.codegen.newReg
+                self.codegen.emit `${wReg} = zext i1 ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${wReg}`
+            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.Num {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = fptosi double ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${cReg}`
+            } els if self.returnType == TypeKind.Num && retRes.typeKind == TypeKind.I64 {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i64 ${retRes.reg} to double`
+                self.codegen.emit `ret double ${cReg}`
+            } els if self.returnType == TypeKind.Num && retRes.typeKind == TypeKind.I32 {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = sitofp i32 ${retRes.reg} to double`
+                self.codegen.emit `ret double ${cReg}`
+            } els if self.returnType == TypeKind.I64 && (retRes.typeKind == TypeKind.Str || retRes.typeKind == TypeKind.Ptr || retRes.typeKind == TypeKind.Arr || retRes.typeKind == TypeKind.Obj) {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = ptrtoint ptr ${retRes.reg} to i64`
+                self.codegen.emit `ret i64 ${cReg}`
+            } els if (self.returnType == TypeKind.Str || self.returnType == TypeKind.Ptr || self.returnType == TypeKind.Arr || self.returnType == TypeKind.Obj) && retRes.typeKind == TypeKind.I64 {
+                cReg: str = self.codegen.newReg
+                self.codegen.emit `${cReg} = inttoptr i64 ${retRes.reg} to ptr`
+                self.codegen.emit `ret ptr ${cReg}`
+            } els if self.returnType == TypeKind.Void {
+                self.codegen.emit `ret void`
+            } els {
+                retTypeStr: str = llvmType self.returnType
+                self.codegen.emit `ret ${retTypeStr} ${retRes.reg}`
+            }
+        } els {
+            if self.returnType == TypeKind.Void {
+                self.codegen.emit `ret void`
+            } els {
+                rStr: str = llvmType self.returnType
+                dVal: str = selectDefaultValue self.returnType
+                self.codegen.emit `ret ${rStr} ${dVal}`
+            }
+        }
+}

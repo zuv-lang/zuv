@@ -1,0 +1,16 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Version Subcommand Handler
+ * Path: sub_projects/zuv/src/bootstrap/cli/version.zv
+ * =============================================================================
+ *
+ * Displays compiler name, version, host architecture, and copyright information.
+ */
+
+HandleVersion :: num {
+    prnt "Zuv Bootstrap Compiler v0.6.0 (LLVM Backend)"
+    prnt "Host Target: x86_64-pc-windows-msvc"
+    prnt "Copyright (c) 2026 Zuv Language Project"
+    -> 0
+}
+

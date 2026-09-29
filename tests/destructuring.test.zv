@@ -3,14 +3,14 @@
 // 1. Object destructuring with let
 obj User { name, age }
 u = User { name: "Alice", age: 30 }
-let { name, age } = u
+{ name, age } = u
 if name == "Alice" && age == 30 {
     prnt "Object destructuring successful"
 }
 
 // 2. Array destructuring with let
 coords = [100, 200]
-let [x, y] = coords
+[x, y] = coords
 if x == 100 && y == 200 {
     prnt "Array destructuring successful"
 }
@@ -37,7 +37,7 @@ divmod a, b {
     -> qVal, rVal
 }
 
-let q, r = divmod 10, 3
+q, r = divmod 10, 3
 if q == 3 && r == 1 {
     prnt "Multi-value return and assignment successful"
 }

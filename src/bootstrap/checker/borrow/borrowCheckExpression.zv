@@ -1,0 +1,71 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — BorrowCheckExpression Engine
+ * Path: sub_projects/zuv/src/bootstrap/checker/borrow/borrowCheckExpression.zv
+ * =============================================================================
+ */
+
+imp ASTNode, NodeKind frm ../../ast
+imp BorrowChecker frm ../borrow
+
+/**
+ * Traverses an expression AST node, enforcing borrow validity, move checks, and mutation constraints.
+ *
+ * @param {BorrowChecker} checker - Active borrow checker instance
+ * @param {ASTNode} expr - Expression AST node to validate
+ * @returns {void}
+ */
+BorrowCheckExpression checker: BorrowChecker, expr: ASTNode :: void {
+    k = expr.kind
+    if k == NodeKind.IdentExpr {
+        checker.checkUse expr.val, expr.line, expr.col
+        ->
+    }
+    if k == NodeKind.BinaryExpr {
+        if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" {
+            if expr.children.ln > 0 {
+                left = expr.children[0]
+                if left.kind == NodeKind.IdentExpr {
+                    checker.checkMutation left.val, left.line, left.col
+                }
+            }
+            if expr.children.ln > 1 {
+                BorrowCheckExpression checker, expr.children[1]
+            }
+            ->
+        }
+        fr child of expr.children {
+            BorrowCheckExpression checker, child
+        }
+        ->
+    }
+    if k == NodeKind.UnaryExpr {
+        if expr.op == "++" || expr.op == "--" {
+            if expr.children.ln > 0 {
+                operand = expr.children[0]
+                if operand.kind == NodeKind.IdentExpr {
+                    checker.checkMutation operand.val, operand.line, operand.col
+                }
+            }
+            ->
+        }
+        fr child of expr.children {
+            BorrowCheckExpression checker, child
+        }
+        ->
+    }
+    if k == NodeKind.BorrowExpr {
+        if expr.children.ln > 0 {
+            targetNode = expr.children[0]
+            if targetNode.kind == NodeKind.IdentExpr {
+                checker.checkUse targetNode.val, expr.line, expr.col
+            } els {
+                BorrowCheckExpression checker, targetNode
+            }
+        }
+        ->
+    }
+    fr child of expr.children {
+        BorrowCheckExpression checker, child
+    }
+}

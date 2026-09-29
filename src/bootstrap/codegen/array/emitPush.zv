@@ -1,0 +1,117 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitPush Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitPush.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ArrayCodegen, boxValueToI64 frm ../array
+
+EmitPush self: ArrayCodegen, arrPtrReg: str, valReg: str, valType: TypeKind, varSlotReg: str, varIsI64: bool :: str {
+    self.emitRuntimeGlobals
+    boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+
+    emptyPtr: str = self.emitEmptyArray
+    isEmp: str = self.codegen.newReg
+    self.codegen.emit `${isEmp} = icmp eq ptr ${arrPtrReg}, ${emptyPtr}`
+    isNull: str = self.codegen.newReg
+    self.codegen.emit `${isNull} = icmp eq ptr ${arrPtrReg}, null`
+    needAlloc: str = self.codegen.newReg
+    self.codegen.emit `${needAlloc} = or i1 ${isEmp}, ${isNull}`
+
+    allocLbl: str = self.codegen.newLabel "psh_alloc"
+    checkCapLbl: str = self.codegen.newLabel "psh_chk_cap"
+    growLbl: str = self.codegen.newLabel "psh_grow"
+    appendLbl: str = self.codegen.newLabel "psh_append"
+    mergeLbl: str = self.codegen.newLabel "psh_merge"
+
+    retSlot: str = self.codegen.newReg
+    self.codegen.emit `${retSlot} = alloca i64`
+    self.codegen.emit `br i1 ${needAlloc}, label %${allocLbl}, label %${checkCapLbl}`
+
+    // Case 1: Fresh allocation from empty/null array
+    self.codegen.emitLabel allocLbl
+    freshRaw: str = self.codegen.newReg
+    self.codegen.emit `${freshRaw} = call ptr @malloc(i64 48)`
+    self.codegen.emit `store i64 4, ptr ${freshRaw}`
+    freshArr: str = self.codegen.newReg
+    self.codegen.emit `${freshArr} = getelementptr inbounds i64, ptr ${freshRaw}, i64 1`
+    self.codegen.emit `store i64 1, ptr ${freshArr}`
+    firstElem: str = self.codegen.newReg
+    self.codegen.emit `${firstElem} = getelementptr inbounds i64, ptr ${freshArr}, i64 1`
+    self.codegen.emit `store i64 ${boxedVal}, ptr ${firstElem}`
+    if varSlotReg.ln > 0 {
+        if varIsI64 {
+            bReg: str = self.codegen.newReg
+            self.codegen.emit `${bReg} = ptrtoint ptr ${freshArr} to i64`
+            self.codegen.emit `store i64 ${bReg}, ptr ${varSlotReg}`
+        } els {
+            self.codegen.emit `store ptr ${freshArr}, ptr ${varSlotReg}`
+        }
+    }
+    self.codegen.emit `store i64 1, ptr ${retSlot}`
+    self.codegen.emit `br label %${mergeLbl}`
+
+    // Case 2: Check capacity vs length
+    self.codegen.emitLabel checkCapLbl
+    curLen: str = self.emitLength arrPtrReg
+    curCap: str = self.emitCapacity arrPtrReg
+    needGrow: str = self.codegen.newReg
+    self.codegen.emit `${needGrow} = icmp sge i64 ${curLen}, ${curCap}`
+    self.codegen.emit `br i1 ${needGrow}, label %${growLbl}, label %${appendLbl}`
+
+    // Case 3: Geometric doubling (new_cap = (curCap == 0) ? 4 : curCap * 2)
+    self.codegen.emitLabel growLbl
+    isZeroCap: str = self.codegen.newReg
+    self.codegen.emit `${isZeroCap} = icmp sle i64 ${curCap}, 0`
+    doubleCap: str = self.codegen.newReg
+    self.codegen.emit `${doubleCap} = mul i64 ${curCap}, 2`
+    newCap: str = self.codegen.newReg
+    self.codegen.emit `${newCap} = select i1 ${isZeroCap}, i64 4, i64 ${doubleCap}`
+    newSlots: str = self.codegen.newReg
+    self.codegen.emit `${newSlots} = add i64 ${newCap}, 2`
+    newBytes: str = self.codegen.newReg
+    self.codegen.emit `${newBytes} = mul i64 ${newSlots}, 8`
+    oldRaw: str = self.codegen.newReg
+    self.codegen.emit `${oldRaw} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 -1`
+    newRaw: str = self.codegen.newReg
+    self.codegen.emit `${newRaw} = call ptr @realloc(ptr ${oldRaw}, i64 ${newBytes})`
+    self.codegen.emit `store i64 ${newCap}, ptr ${newRaw}`
+    reallocArr: str = self.codegen.newReg
+    self.codegen.emit `${reallocArr} = getelementptr inbounds i64, ptr ${newRaw}, i64 1`
+    nextIdxGrow: str = self.codegen.newReg
+    self.codegen.emit `${nextIdxGrow} = add i64 ${curLen}, 1`
+    gepGrow: str = self.codegen.newReg
+    self.codegen.emit `${gepGrow} = getelementptr inbounds i64, ptr ${reallocArr}, i64 ${nextIdxGrow}`
+    self.codegen.emit `store i64 ${boxedVal}, ptr ${gepGrow}`
+    self.codegen.emit `store i64 ${nextIdxGrow}, ptr ${reallocArr}`
+    if varSlotReg.ln > 0 {
+        if varIsI64 {
+            bReg: str = self.codegen.newReg
+            self.codegen.emit `${bReg} = ptrtoint ptr ${reallocArr} to i64`
+            self.codegen.emit `store i64 ${bReg}, ptr ${varSlotReg}`
+        } els {
+            self.codegen.emit `store ptr ${reallocArr}, ptr ${varSlotReg}`
+        }
+    }
+    self.codegen.emit `store i64 ${nextIdxGrow}, ptr ${retSlot}`
+    self.codegen.emit `br label %${mergeLbl}`
+
+    // Case 4: Append in existing spare capacity
+    self.codegen.emitLabel appendLbl
+    nextIdx: str = self.codegen.newReg
+    self.codegen.emit `${nextIdx} = add i64 ${curLen}, 1`
+    gepAppend: str = self.codegen.newReg
+    self.codegen.emit `${gepAppend} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${nextIdx}`
+    self.codegen.emit `store i64 ${boxedVal}, ptr ${gepAppend}`
+    self.codegen.emit `store i64 ${nextIdx}, ptr ${arrPtrReg}`
+    self.codegen.emit `store i64 ${nextIdx}, ptr ${retSlot}`
+    self.codegen.emit `br label %${mergeLbl}`
+
+    // Merge: Return new array length
+    self.codegen.emitLabel mergeLbl
+    resLen: str = self.codegen.newReg
+    self.codegen.emit `${resLen} = load i64, ptr ${retSlot}`
+    -> resLen
+}

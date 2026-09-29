@@ -1,0 +1,179 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitTyp Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitTyp.zv
+ * =============================================================================
+ */
+
+imp TypeKind, TypeKindToStr frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitTyp self: ExprCodegen, node: ASTNode :: ExprResult {
+    typName: str = "und"
+    if node.children.ln > 0 {
+        child = node.children[0]
+        if child.kind == NodeKind.NumExpr {
+            typName = "num"
+        } els if child.kind == NodeKind.StrExpr {
+            typName = "str"
+        } els if child.kind == NodeKind.BoolExpr {
+            typName = "bool"
+        } els if child.kind == NodeKind.NilExpr {
+            typName = "nil"
+        } els if child.kind == NodeKind.UndExpr {
+            typName = "und"
+        } els if child.kind == NodeKind.BigIntExpr {
+            typName = "bigint"
+        } els if child.kind == NodeKind.SymExpr {
+            typName = "sym"
+        } els if child.kind == NodeKind.ArrExpr {
+            typName = "arr"
+        } els if child.kind == NodeKind.ObjLitExpr {
+            typName = "obj"
+        } els if child.kind == NodeKind.CallExpr {
+            cNode = child.children[0]
+            cName: str = cNode.name.ln > 0 ? cNode.name : cNode.val
+            if cName == "BigInt" {
+                typName = "bigint"
+            } els {
+                typName = TypeKindToStr child.inferredType
+            }
+        } els if child.kind == NodeKind.CastExpr {
+            t: str = child.typeAnnotation
+            if t == "str" {
+                typName = "str"
+            } els if t == "bool" {
+                typName = "bool"
+            } els if t == "i8" {
+                typName = "i8"
+            } els if t == "u8" || t == "byte" {
+                typName = "u8"
+            } els if t == "i16" {
+                typName = "i16"
+            } els if t == "u16" {
+                typName = "u16"
+            } els if t == "i32" {
+                typName = "i32"
+            } els if t == "u32" {
+                typName = "u32"
+            } els if t == "i64" {
+                typName = "i64"
+            } els if t == "u64" {
+                typName = "u64"
+            } els if t == "i128" {
+                typName = "i128"
+            } els if t == "u128" {
+                typName = "u128"
+            } els if t == "f32" {
+                typName = "f32"
+            } els if t == "num" {
+                typName = "num"
+            } els {
+                typName = t
+            }
+        } els if child.kind == NodeKind.IdentExpr {
+            cName: str = child.val
+            if cName.ln == 0 {
+                cName = child.name
+            }
+            if self.objGen.registry.isEnum cName {
+                typName = "obj"
+            } els {
+                targetSym = self.findSymbol cName
+                sName: str = targetSym.typeName
+                if sName.ln == 0 && child.typeAnnotation.ln > 0 {
+                    sName = child.typeAnnotation
+                }
+                if sName == "bigint" {
+                    typName = "bigint"
+                } els if sName == "sym" {
+                    typName = "sym"
+                } els if sName == "i8" {
+                    typName = "i8"
+                } els if sName == "u8" || sName == "byte" {
+                    typName = "u8"
+                } els if sName == "i16" {
+                    typName = "i16"
+                } els if sName == "u16" {
+                    typName = "u16"
+                } els if sName == "i32" {
+                    typName = "i32"
+                } els if sName == "u32" {
+                    typName = "u32"
+                } els if sName == "i64" {
+                    typName = "i64"
+                } els if sName == "u64" {
+                    typName = "u64"
+                } els if sName == "i128" {
+                    typName = "i128"
+                } els if sName == "u128" {
+                    typName = "u128"
+                } els if sName == "f32" {
+                    typName = "f32"
+                } els if sName == "num" {
+                    typName = "num"
+                } els if sName == "str" {
+                    typName = "str"
+                } els if sName == "bool" {
+                    typName = "bool"
+                } els if sName == "arr" {
+                    typName = "arr"
+                } els if sName == "obj" {
+                    typName = "obj"
+                } els {
+                    if targetSym.name.ln > 0 {
+                        if targetSym.typeKind == TypeKind.I64 || targetSym.typeKind == TypeKind.Num {
+                            typName = "num"
+                        } els {
+                            typName = TypeKindToStr targetSym.typeKind
+                        }
+                    } els {
+                        if child.inferredType == TypeKind.I64 || child.inferredType == TypeKind.Num {
+                            typName = "num"
+                        } els {
+                            typName = TypeKindToStr child.inferredType
+                        }
+                    }
+                }
+            }
+        } els if child.kind == NodeKind.PropExpr {
+            pTarget = child.children[0]
+            if pTarget.kind == NodeKind.IdentExpr {
+                pName: str = pTarget.val
+                if pName.ln == 0 {
+                    pName = pTarget.name
+                }
+                if self.objGen.registry.isEnum pName {
+                    typName = "i8"
+                } els {
+                    k = child.inferredType
+                    if k == TypeKind.Num || k == TypeKind.I64 {
+                        typName = "num"
+                    } els {
+                        typName = TypeKindToStr k
+                    }
+                }
+            } els {
+                k = child.inferredType
+                if k == TypeKind.Num || k == TypeKind.I64 {
+                    typName = "num"
+                } els {
+                    typName = TypeKindToStr k
+                }
+            }
+        } els {
+            k = child.inferredType
+            if k == TypeKind.Num || k == TypeKind.I64 {
+                typName = "num"
+            } els {
+                typName = TypeKindToStr k
+            }
+        }
+    }
+    strConst: str = self.codegen.addStringConstant typName
+    gepReg: str = self.codegen.newReg
+    self.codegen.emit `${gepReg} = getelementptr inbounds i8, ptr ${strConst}, i64 0`
+    res: ExprResult = { reg: gepReg, typeKind: TypeKind.Str }
+    -> res
+}

@@ -1,0 +1,36 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseIfStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseIfStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+imp ParseStatementOrBlock frm parseStatementOrBlock
+
+/**
+ * Parses an if statement with optional else / else-if branches.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} IfStmt AST node
+ */
+ParseIfStmt parser: Parser :: ASTNode {
+    ifTok: Token = parser.consume TokenType.TOK_IF, "Expected 'if'"
+    condNode: ASTNode = ParseExpr parser
+    thenBlock: ASTNode = ParseStatementOrBlock parser
+    elseBlock = ASTNode.createNil ifTok.line, ifTok.col
+
+    if parser.matchToken TokenType.TOK_ELS {
+        if parser.check TokenType.TOK_IF {
+            nestedIf: ASTNode = ParseIfStmt parser
+            elseBlock = ASTNode.createBlock [nestedIf], nestedIf.line, nestedIf.col
+        } els {
+            elseBlock = ParseStatementOrBlock parser
+        }
+    }
+
+    -> ASTNode.createIf condNode, thenBlock, elseBlock, ifTok.line, ifTok.col
+}

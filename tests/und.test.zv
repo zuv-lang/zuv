@@ -1,5 +1,5 @@
-let u = und
-let n = nil
+u = und
+n = nil
 
 if u == und {
     prnt "u == und ok"
@@ -45,7 +45,7 @@ if nil {
     prnt "nil falsy ok"
 }
 
-let x = und
+x = und
 if x == und {
     prnt "assigned und ok"
 }

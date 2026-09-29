@@ -1,0 +1,85 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitObjLit Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitObjLit.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp isPointerType frm ../types
+imp boxValueToI64 frm ../array
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitObjLit self: ExprCodegen, node: ASTNode :: ExprResult {
+    hasSpread: bool = false
+    fr fEntry of node.fields {
+        if fEntry.isSpread {
+            hasSpread = true
+        }
+    }
+    if hasSpread {
+        objAllocBytes: num = 1024
+        objPtr: str = self.codegen.newReg
+        self.codegen.emit `${objPtr} = call ptr @malloc(i64 ${objAllocBytes})`
+        setReg: str = self.codegen.newReg
+        self.codegen.emit `${setReg} = call ptr @memset(ptr ${objPtr}, i32 0, i64 ${objAllocBytes})`
+
+        childIdx: num = 0
+        fr fEntry of node.fields {
+            if childIdx < node.children.ln {
+                if fEntry.isSpread {
+                    srcRes: ExprResult = self.emitExpr node.children[childIdx]
+                    srcPtrReg: str = srcRes.reg
+                    if !(isPointerType srcRes.typeKind) {
+                        convReg: str = self.codegen.newReg
+                        self.codegen.emit `${convReg} = inttoptr i64 ${srcRes.reg} to ptr`
+                        srcPtrReg = convReg
+                    }
+                    isNull: str = self.codegen.newReg
+                    self.codegen.emit `${isNull} = icmp eq ptr ${srcPtrReg}, null`
+                    skipLbl: str = self.codegen.newLabel "obj_sp_skip"
+                    cpyLbl: str = self.codegen.newLabel "obj_sp_cpy"
+                    self.codegen.emit `br i1 ${isNull}, label %${skipLbl}, label %${cpyLbl}`
+                    self.codegen.emitLabel cpyLbl
+                    cpyReg: str = self.codegen.newReg
+                    self.codegen.emit `${cpyReg} = call ptr @memcpy(ptr ${objPtr}, ptr ${srcPtrReg}, i64 ${objAllocBytes})`
+                    self.codegen.emit `br label %${skipLbl}`
+                    self.codegen.emitLabel skipLbl
+                } els {
+                    childRes: ExprResult = self.emitExpr node.children[childIdx]
+                    self.objGen.registry.setDynamicFieldType fEntry.name, childRes.typeKind
+                    offset: num = self.objGen.registry.getFieldOffset "", fEntry.name
+                    boxedVal: str = boxValueToI64 self.codegen, childRes.reg, childRes.typeKind
+                    gepReg: str = self.codegen.newReg
+                    self.codegen.emit `${gepReg} = getelementptr inbounds i64, ptr ${objPtr}, i64 ${offset}`
+                    self.codegen.emit `store i64 ${boxedVal}, ptr ${gepReg}`
+                }
+            }
+            childIdx++
+        }
+        res: ExprResult = { reg: objPtr, typeKind: TypeKind.Obj }
+        -> res
+    }
+
+    fieldNames: str[] = []
+    valRegs: str[] = []
+    valTypes: TypeKind[] = []
+    childIdx: num = 0
+    fr fEntry of node.fields {
+        if childIdx < node.children.ln {
+            childRes: ExprResult = self.emitExpr node.children[childIdx]
+            fieldNames.psh fEntry.name
+            valRegs.psh childRes.reg
+            valTypes.psh childRes.typeKind
+        }
+        childIdx++
+    }
+    structName: str = node.name
+    if structName.ln == 0 {
+        structName = node.typeAnnotation
+    }
+    objPtr: str = self.objGen.emitObjectLit structName, fieldNames, valRegs, valTypes
+    res: ExprResult = { reg: objPtr, typeKind: TypeKind.Obj }
+    -> res
+}

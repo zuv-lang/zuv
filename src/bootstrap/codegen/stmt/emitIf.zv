@@ -1,0 +1,53 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitIf Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitIf.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp llvmType, isPointerType frm ../types
+imp ExprResult frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitIf self: StmtCodegen, node: ASTNode :: void {
+        condRes: ExprResult = self.exprGen.emitExpr node.children[0]
+        thenLbl: str = self.codegen.newLabel "if_then"
+        elseLbl: str = self.codegen.newLabel "if_else"
+        mergeLbl: str = self.codegen.newLabel "if_merge"
+
+        condReg: str = condRes.reg
+        if condRes.typeKind != TypeKind.Bool {
+            cType: str = llvmType condRes.typeKind
+            cmpReg: str = self.codegen.newReg
+            if condRes.typeKind == TypeKind.Num {
+                self.codegen.emit `${cmpReg} = fcmp one double ${condReg}, 0.0`
+            } els if isPointerType condRes.typeKind {
+                self.codegen.emit `${cmpReg} = icmp ne ptr ${condReg}, null`
+            } els {
+                self.codegen.emit `${cmpReg} = icmp ne ${cType} ${condReg}, 0`
+            }
+            condReg = cmpReg
+        }
+
+        hasElse: bool = (node.children.ln > 2 && node.children[2].kind != NodeKind.NilExpr)
+        targetElseLbl: str = mergeLbl
+        if hasElse {
+            targetElseLbl = elseLbl
+        }
+
+        self.codegen.emit `br i1 ${condReg}, label %${thenLbl}, label %${targetElseLbl}`
+
+        self.codegen.emitLabel thenLbl
+        self.emitStmt node.children[1]
+        self.codegen.emit `br label %${mergeLbl}`
+
+        if hasElse {
+            self.codegen.emitLabel elseLbl
+            self.emitStmt node.children[2]
+            self.codegen.emit `br label %${mergeLbl}`
+        }
+
+        self.codegen.emitLabel mergeLbl
+}

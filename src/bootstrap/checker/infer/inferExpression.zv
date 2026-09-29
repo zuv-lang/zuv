@@ -1,0 +1,782 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Expression Type Inference
+ * Path: sub_projects/zuv/src/bootstrap/checker/inferExpression.zv
+ * =============================================================================
+ *
+ * Implements semantic type inference and AST annotation for expressions:
+ * - Literals: NumExpr (Double/I64), StrExpr, BoolExpr, NilExpr, UndExpr, BigIntExpr
+ * - Identifiers: Scoped symbol resolution and type propagation
+ * - Array & Object Literals: Element and struct schema resolution
+ * - Unary & Binary Expressions: Strict numeric and boolean type validation
+ * - Member Access (PropExpr): Strict struct member verification without heuristics (E0302)
+ * - Array Indexing: Bounds and numeric index validation (E0307)
+ * - Function & Method Calls: Signature validation, argument count, and return type inference
+ * - Ternary & Cast Expressions: Compatibility validation and type casting
+ */
+
+imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../../ast
+imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind, IsNumericType, IsIntegerType frm ../../types
+imp Checker, Symbol, Scope frm ../checker
+imp IsIntegerLiteral frm ../../../util/commonFunctions
+
+/**
+ * Infers the semantic TypeKind of an expression AST node and annotates it.
+ *
+ * @param {Checker} checker - The active semantic checker instance
+ * @param {ASTNode} expr - The expression AST node to evaluate and annotate
+ * @returns {TypeKind} Inferred TypeKind variant
+ */
+InferExpression checker: Checker, expr: ASTNode :: TypeKind {
+    k = expr.kind
+    if k == NodeKind.NumExpr {
+        kind = TypeKind.Num
+        if expr.val.ln > 0 {
+            isInt = IsIntegerLiteral(expr.val)
+            if isInt {
+                kind = TypeKind.I64
+            }
+        }
+        expr.inferredType = kind
+        -> kind
+    }
+    if k == NodeKind.StrExpr {
+        expr.inferredType = TypeKind.Str
+        -> TypeKind.Str
+    }
+    if k == NodeKind.BoolExpr {
+        expr.inferredType = TypeKind.Bool
+        -> TypeKind.Bool
+    }
+    if k == NodeKind.NilExpr {
+        expr.inferredType = TypeKind.Nil
+        -> TypeKind.Nil
+    }
+    if k == NodeKind.UndExpr {
+        expr.inferredType = TypeKind.Und
+        -> TypeKind.Und
+    }
+    if k == NodeKind.BigIntExpr {
+        expr.inferredType = TypeKind.Str
+        expr.typeAnnotation = "bigint"
+        -> TypeKind.Str
+    }
+    if k == NodeKind.IdentExpr {
+        symName = expr.name
+        foundSym = checker.resolveSymbol(symName)
+        if foundSym.name.ln > 0 {
+            if foundSym.scopeLevel > 0 {
+                expr.inferredType = foundSym.typeKind
+                if expr.typeAnnotation.ln == 0 {
+                    expr.typeAnnotation = foundSym.typeName
+                }
+                -> foundSym.typeKind
+            }
+            if symName == "Infinity" || symName == "nan" {
+                expr.inferredType = TypeKind.Num
+                expr.typeAnnotation = "num"
+                -> TypeKind.Num
+            }
+            expr.inferredType = foundSym.typeKind
+            if expr.typeAnnotation.ln == 0 {
+                expr.typeAnnotation = foundSym.typeName
+            }
+            -> foundSym.typeKind
+        }
+        if checker.currentFuncName.ln >= 9 {
+            fnPrefix = checker.currentFuncName.sub 0, 9
+            if fnPrefix == "__lambda_" {
+                expr.inferredType = TypeKind.Unknown
+                -> TypeKind.Unknown
+            }
+        }
+        if symName == "byte" || symName == "i8" || symName == "u8" || symName == "i16" || symName == "u16" ||
+           symName == "i32" || symName == "u32" || symName == "i64" || symName == "u64" || symName == "f32" ||
+           symName == "f64" || symName == "num" || symName == "str" || symName == "bool" || symName == "ptr" || symName == "void" {
+            expr.inferredType = TypeKind.Num
+            -> TypeKind.Num
+        }
+        checker.addError("E0202", "Undefined identifier '" + symName + "'", expr.line, expr.col, symName.ln, "check variable spelling or define variable")
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.ArrExpr {
+        elemKind = TypeKind.Unknown
+        isFirst = true
+        isHetero = false
+        allTypesStr = "["
+        cIdx = 0
+        fr child of expr.children {
+            curElemKind = InferExpression(checker, child)
+            if isFirst {
+                elemKind = curElemKind
+                isFirst = false
+            } els if curElemKind != elemKind || child.typeAnnotation != expr.children[0].typeAnnotation {
+                isHetero = true
+            }
+            if cIdx > 0 {
+                allTypesStr = allTypesStr + ", "
+            }
+            childTypeName = child.typeAnnotation
+            if childTypeName.ln == 0 {
+                childTypeName = TypeKindToStr(curElemKind)
+            }
+            allTypesStr = allTypesStr + childTypeName
+            cIdx = cIdx + 1
+        }
+        allTypesStr = allTypesStr + "]"
+        if isHetero {
+            expr.typeAnnotation = allTypesStr
+        } els if elemKind != TypeKind.Unknown {
+            firstTypeStr = ""
+            if expr.children.ln > 0 && expr.children[0].typeAnnotation.ln > 0 {
+                firstTypeStr = expr.children[0].typeAnnotation
+            }
+            if firstTypeStr.ln > 0 {
+                expr.typeAnnotation = firstTypeStr + "[]"
+            } els {
+                expr.typeAnnotation = (TypeKindToStr elemKind) + "[]"
+            }
+        }
+        expr.inferredType = TypeKind.Arr
+        -> TypeKind.Arr
+    }
+    if k == NodeKind.ObjLitExpr {
+        fr child of expr.children {
+            InferExpression(checker, child)
+        }
+        fCount = expr.fields.ln
+        matchedStruct = ""
+        if expr.name.ln > 0 {
+            matchedStruct = expr.name
+        }
+        if matchedStruct.ln == 0 {
+            fr tItem of checker.types {
+                if tItem.kind == TypeKind.Obj && tItem.fields.ln == fCount && fCount > 0 {
+                    allMatched = true
+                    fr fld, f of expr.fields {
+                        if fld.name != tItem.fields[f] {
+                            allMatched = false
+                            brk
+                        }
+                    }
+                    if allMatched {
+                        matchedStruct = tItem.name
+                        brk
+                    }
+                }
+            }
+        }
+        if matchedStruct.ln > 0 {
+            expr.typeAnnotation = matchedStruct
+            fr tItem, tIdx of checker.types {
+                if tItem.name == matchedStruct {
+                    fr fld, fIdx of expr.fields {
+                        if fIdx < expr.children.ln {
+                            fKind = expr.children[fIdx].inferredType
+                            if fKind != TypeKind.Unknown {
+                                fr sfName, sfIdx of tItem.fields {
+                                    if sfName == fld.name && sfIdx < tItem.fieldTypes.ln && tItem.fieldTypes[sfIdx] == TypeKind.Unknown {
+                                        tItem.fieldTypes[sfIdx] = fKind
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    checker.types[tIdx] = tItem
+                    brk
+                }
+            }
+        }
+        expr.inferredType = TypeKind.Obj
+        -> TypeKind.Obj
+    }
+    if k == NodeKind.UnaryExpr {
+        opKind = TypeKind.Unknown
+        if expr.children.ln > 0 {
+            opKind = InferExpression(checker, expr.children[0])
+        }
+        if expr.op == "!" || expr.op == "not" {
+            expr.inferredType = TypeKind.Bool
+            -> TypeKind.Bool
+        }
+        if expr.op == "-" || expr.op == "+" || expr.op == "++" || expr.op == "--" {
+            if !(IsNumericType opKind) && opKind != TypeKind.Unknown {
+                checker.addError("E0303", "Unary operator '" + expr.op + "' requires numeric operand, got " + (TypeKindToStr opKind), expr.line, expr.col, expr.op.ln, "provide a numeric expression")
+            }
+            expr.inferredType = opKind
+            -> opKind
+        }
+        if expr.op == "~" {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        if expr.op == "..." {
+            elemType = TypeKind.Unknown
+            if expr.children.ln > 0 {
+                childNode = expr.children[0]
+                tName = childNode.typeAnnotation
+                if tName.ln == 0 && childNode.kind == NodeKind.IdentExpr {
+                    foundSym = checker.resolveSymbol(childNode.name)
+                    if foundSym.name.ln > 0 {
+                        tName = foundSym.typeName
+                    }
+                }
+                if tName.ln >= 2 {
+                    subSuffix = tName.sub tName.ln - 2, 2
+                    if subSuffix == "[]" {
+                        baseName = tName.sub 0, tName.ln - 2
+                        elemType = StrToTypeKind(baseName)
+                    }
+                }
+            }
+            if elemType == TypeKind.Unknown && opKind == TypeKind.Arr {
+                elemType = TypeKind.I64
+            }
+            if elemType == TypeKind.Unknown {
+                elemType = opKind
+            }
+            expr.inferredType = elemType
+            -> elemType
+        }
+        expr.inferredType = opKind
+        -> opKind
+    }
+    if k == NodeKind.BinaryExpr {
+        leftKind = TypeKind.Unknown
+        rightKind = TypeKind.Unknown
+        if expr.children.ln > 0 {
+            leftKind = InferExpression(checker, expr.children[0])
+        }
+        if expr.children.ln > 1 {
+            rightKind = InferExpression(checker, expr.children[1])
+        }
+        if expr.op == "+" && (leftKind == TypeKind.Str || rightKind == TypeKind.Str) {
+            expr.inferredType = TypeKind.Str
+            -> TypeKind.Str
+        }
+        if expr.op == "-" && (leftKind == TypeKind.Ptr || rightKind == TypeKind.Ptr) {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        if expr.op == "+" && (leftKind == TypeKind.Ptr || rightKind == TypeKind.Ptr) {
+            expr.inferredType = TypeKind.Ptr
+            -> TypeKind.Ptr
+        }
+        if expr.op == "+" || expr.op == "-" || expr.op == "*" || expr.op == "/" || expr.op == "%" || expr.op == "**" {
+            if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
+                if !(IsNumericType leftKind) || !(IsNumericType rightKind) {
+                    checker.addError("E0304", "Arithmetic operator '" + expr.op + "' requires numeric operands, got " + (TypeKindToStr leftKind) + " and " + (TypeKindToStr rightKind), expr.line, expr.col, expr.op.ln, "convert operands to numbers")
+                }
+            }
+            if leftKind == TypeKind.Num || rightKind == TypeKind.Num {
+                expr.inferredType = TypeKind.Num
+                -> TypeKind.Num
+            }
+            if leftKind == TypeKind.I64 || rightKind == TypeKind.I64 {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            expr.inferredType = leftKind
+            -> leftKind
+        }
+        if expr.op == "&" || expr.op == "|" || expr.op == "^" || expr.op == "<<" || expr.op == ">>" || expr.op == ">>>" {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        if expr.op == "==" || expr.op == "!=" {
+            expr.inferredType = TypeKind.Bool
+            -> TypeKind.Bool
+        }
+        if expr.op == "<" || expr.op == ">" || expr.op == "<=" || expr.op == ">=" {
+            if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
+                isNumComp = (IsNumericType leftKind) && (IsNumericType rightKind)
+                isStrComp = (leftKind == TypeKind.Str) && (rightKind == TypeKind.Str)
+                if !isNumComp && !isStrComp {
+                    checker.addError("E0305", "Comparison operator '" + expr.op + "' requires comparable types, got " + (TypeKindToStr leftKind) + " and " + (TypeKindToStr rightKind), expr.line, expr.col, expr.op.ln, "ensure operands are both numeric or strings")
+                }
+            }
+            expr.inferredType = TypeKind.Bool
+            -> TypeKind.Bool
+        }
+        if expr.op == "&&" || expr.op == "||" || expr.op == "and" || expr.op == "or" {
+            expr.inferredType = TypeKind.Bool
+            -> TypeKind.Bool
+        }
+        if expr.op == "??" {
+            resType = leftKind
+            if leftKind == TypeKind.Nil || leftKind == TypeKind.Und || leftKind == TypeKind.Unknown {
+                resType = rightKind
+            }
+            expr.inferredType = resType
+            -> resType
+        }
+        if expr.op == "=" || expr.op == "+=" || expr.op == "-=" || expr.op == "*=" || expr.op == "/=" ||
+           expr.op == "%=" || expr.op == "**=" || expr.op == "&=" || expr.op == "|=" || expr.op == "^=" {
+            if expr.op == "=" && expr.children.ln > 0 && expr.children[0].kind == NodeKind.IdentExpr {
+                tName: str = expr.children[0].name
+                curSym: Symbol = checker.resolveSymbol tName
+                if curSym.name.ln > 0 && curSym.typeKind == TypeKind.Unknown {
+                    resolvedRKind = rightKind
+                    if resolvedRKind == TypeKind.I64 {
+                        resolvedRKind = TypeKind.Num
+                    }
+                    checker.updateSymbolType tName, resolvedRKind, TypeKindToStr(resolvedRKind)
+                    leftKind = resolvedRKind
+                    expr.children[0].inferredType = resolvedRKind
+                }
+            }
+            if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
+                isCompat = AreTypesCompatible leftKind, rightKind
+                if expr.op == "+=" && leftKind == TypeKind.Str {
+                    isCompat = true
+                }
+                if !isCompat {
+                    checker.addError("E0306", "Cannot assign value of type " + (TypeKindToStr rightKind) + " to target of type " + (TypeKindToStr leftKind), expr.line, expr.col, expr.op.ln, "ensure assigned value matches variable type")
+                }
+            }
+            expr.inferredType = leftKind
+            -> leftKind
+        }
+        expr.inferredType = leftKind
+        -> leftKind
+    }
+    if k == NodeKind.PropExpr {
+        if expr.children.ln == 0 {
+            expr.inferredType = TypeKind.Unknown
+            -> TypeKind.Unknown
+        }
+        targetNode = expr.children[0]
+        targetKind = InferExpression(checker, targetNode)
+        propName = expr.name
+        if propName == "len" && (targetKind == TypeKind.Arr || targetKind == TypeKind.Str || targetKind == TypeKind.Unknown) {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        if propName == "cap" && (targetKind == TypeKind.Arr || targetKind == TypeKind.Unknown) {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        typeName = targetNode.typeAnnotation
+        if typeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
+            targetIdent = targetNode.name.ln > 0 ? targetNode.name : targetNode.val
+            foundSym = checker.resolveSymbol(targetIdent)
+            typeName = foundSym.typeName
+        }
+        if expr.op == "?." && (targetKind == TypeKind.Nil || targetKind == TypeKind.Und || typeName == "nil" || typeName == "und") {
+            expr.inferredType = TypeKind.Nil
+            -> TypeKind.Nil
+        }
+        if typeName.ln > 0 {
+            typeInfo = checker.resolveType(typeName)
+            if typeInfo.kind != TypeKind.Unknown {
+                foundField = false
+                resKind = TypeKind.Unknown
+                fr fldName, idx of typeInfo.fields {
+                    if fldName == propName {
+                        foundField = true
+                        if idx < typeInfo.fieldTypes.ln {
+                            resKind = typeInfo.fieldTypes[idx]
+                        }
+                        brk
+                    }
+                }
+                if foundField {
+                    expr.inferredType = resKind
+                    -> resKind
+                }
+                mangledMethod = typeName + "_" + propName
+                methodSym = checker.resolveSymbol(mangledMethod)
+                if methodSym.name.ln > 0 {
+                    mTypeInfo = checker.resolveType(methodSym.typeName)
+                    retKind = methodSym.typeKind
+                    if mTypeInfo.kind == TypeKind.Func && mTypeInfo.retKind != TypeKind.Unknown {
+                        retKind = mTypeInfo.retKind
+                    }
+                    expr.inferredType = retKind
+                    -> retKind
+                }
+                bareMethodSym = checker.resolveSymbol(propName)
+                if bareMethodSym.name.ln > 0 {
+                    bTypeInfo = checker.resolveType(bareMethodSym.typeName)
+                    retKind = bareMethodSym.typeKind
+                    if bTypeInfo.kind == TypeKind.Func && bTypeInfo.retKind != TypeKind.Unknown {
+                        retKind = bTypeInfo.retKind
+                    }
+                    expr.inferredType = retKind
+                    -> retKind
+                }
+                checker.addError("E0302", "Property '" + propName + "' does not exist on type '" + typeName + "'", expr.line, expr.col, propName.ln, "check member spelling or add field to " + typeName)
+                expr.inferredType = TypeKind.Unknown
+                -> TypeKind.Unknown
+            }
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.IndexExpr {
+        if expr.children.ln < 2 {
+            expr.inferredType = TypeKind.Unknown
+            -> TypeKind.Unknown
+        }
+        tKind = InferExpression(checker, expr.children[0])
+        iKind = InferExpression(checker, expr.children[1])
+        if !(IsNumericType iKind) && iKind != TypeKind.Unknown {
+            checker.addError("E0307", "Index expression must be numeric, got " + (TypeKindToStr iKind), expr.line, expr.col, 1, "use an integer index")
+        }
+        if tKind == TypeKind.Str {
+            expr.inferredType = TypeKind.Str
+            -> TypeKind.Str
+        }
+        if tKind == TypeKind.Arr {
+            elemType = TypeKind.Unknown
+            targetNode = expr.children[0]
+            targetTypeName = targetNode.typeAnnotation
+            if targetTypeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
+                foundSym = checker.resolveSymbol(targetNode.name)
+                if foundSym.name.ln > 0 {
+                    targetTypeName = foundSym.typeName
+                }
+            }
+            if targetTypeName.ln >= 2 {
+                subSuffix = targetTypeName.sub targetTypeName.ln - 2, 2
+                if subSuffix == "[]" {
+                    baseName = targetTypeName.sub 0, targetTypeName.ln - 2
+                    elemType = StrToTypeKind(baseName)
+                    if baseName.ln >= 2 && (baseName.sub baseName.ln - 2, 2) == "[]" {
+                        expr.typeAnnotation = baseName
+                    } els if elemType == TypeKind.Obj {
+                        bInfo = checker.resolveType baseName
+                        if bInfo.fields.ln > 0 {
+                            expr.typeAnnotation = baseName
+                        } els {
+                            elemType = TypeKind.Unknown
+                        }
+                    } els {
+                        expr.typeAnnotation = baseName
+                    }
+                } els if (targetTypeName.sub 0, 1) == "[" && (targetTypeName.sub targetTypeName.ln - 1, 1) == "]" && expr.children[1].val.ln > 0 {
+                    idxValStr = expr.children[1].val
+                    rowIdx: num = 0
+                    fr i = 0; i < idxValStr.ln; i++ {
+                        c: str = idxValStr.sub i, 1
+                        d: num = c == "0" ? 0 : (c == "1" ? 1 : (c == "2" ? 2 : (c == "3" ? 3 : (c == "4" ? 4 : (c == "5" ? 5 : (c == "6" ? 6 : (c == "7" ? 7 : (c == "8" ? 8 : (c == "9" ? 9 : -1)))))))))
+                        if d >= 0 {
+                            rowIdx = rowIdx * 10 + d
+                        }
+                    }
+                    innerContent: str = targetTypeName.sub 1, targetTypeName.ln - 2
+                    curPart: str = ""
+                    pIdx: num = 0
+                    bracketDepth: num = 0
+                    fr i = 0; i < innerContent.ln; i++ {
+                        ch: str = innerContent.sub i, 1
+                        if ch == "[" {
+                            bracketDepth = bracketDepth + 1
+                            curPart = curPart + ch
+                        } els if ch == "]" {
+                            bracketDepth = bracketDepth - 1
+                            curPart = curPart + ch
+                        } els if ch == "," && bracketDepth == 0 {
+                            if pIdx == rowIdx {
+                                brk
+                            }
+                            curPart = ""
+                            pIdx = pIdx + 1
+                        } els if ch != " " || curPart.ln > 0 {
+                            curPart = curPart + ch
+                        }
+                    }
+                    if curPart.ln > 0 {
+                        elemType = StrToTypeKind(curPart)
+                        expr.typeAnnotation = curPart
+                    }
+                }
+            }
+            if elemType == TypeKind.Unknown {
+                elemType = TypeKind.I64
+            }
+            expr.inferredType = elemType
+            -> elemType
+        }
+        if expr.op == "?." {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.CallExpr {
+        if expr.children.ln == 0 {
+            expr.inferredType = TypeKind.Unknown
+            -> TypeKind.Unknown
+        }
+        calleeNode = expr.children[0]
+        argCount = expr.children.ln - 1
+        isFirstChild = true
+        fr child of expr.children {
+            if isFirstChild {
+                isFirstChild = false
+            } els {
+                InferExpression(checker, child)
+            }
+        }
+        if calleeNode.kind == NodeKind.IdentExpr {
+            calleeName = calleeNode.name
+            if calleeName == "prnt" || calleeName == "lg" || calleeName == "wrn" || calleeName == "inf" || calleeName == "err" || calleeName == "panic" || calleeName == "exit" {
+                expr.inferredType = TypeKind.Void
+                -> TypeKind.Void
+            }
+            if calleeName == "size" {
+                expr.inferredType = TypeKind.Num
+                -> TypeKind.Num
+            }
+            if calleeName == "ok" {
+                expr.inferredType = TypeKind.Obj
+                expr.typeAnnotation = "Result"
+                -> TypeKind.Obj
+            }
+            if calleeName == "sh" || calleeName == "sys" || calleeName == "exec" {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            if calleeName == "BigInt" {
+                expr.inferredType = TypeKind.Str
+                expr.typeAnnotation = "bigint"
+                -> TypeKind.Str
+            }
+            if calleeName == "Prm.all" || calleeName == "Prm.race" || calleeName == "Prm.allSettled" ||
+               calleeName == "Promise.all" || calleeName == "Promise.race" || calleeName == "Promise.allSettled" {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            if calleeName == "len" || calleeName == "cap" {
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            if calleeName == "contains" {
+                expr.inferredType = TypeKind.Bool
+                -> TypeKind.Bool
+            }
+            isStdLibCall: bool = false
+            if calleeName.ln >= 3 {
+                p3: str = calleeName.sub(0, 3)
+                if p3 == "fs." || p3 == "os." || p3 == "io." {
+                    isStdLibCall = true
+                }
+            }
+            if !isStdLibCall && calleeName.ln >= 4 {
+                p4: str = calleeName.sub(0, 4)
+                if p4 == "sys." || p4 == "mem." || p4 == "ffi." {
+                    isStdLibCall = true
+                }
+            }
+            if !isStdLibCall && calleeName.ln >= 5 {
+                p5: str = calleeName.sub(0, 5)
+                if p5 == "time." {
+                    isStdLibCall = true
+                }
+            }
+            if isStdLibCall {
+                if calleeName == "fs.rF" || calleeName == "fs.read" {
+                    expr.inferredType = TypeKind.Str
+                    -> TypeKind.Str
+                }
+                if calleeName == "time.sleep" || calleeName == "time.sl" {
+                    expr.inferredType = TypeKind.Num
+                    -> TypeKind.Num
+                }
+                expr.inferredType = TypeKind.I64
+                -> TypeKind.I64
+            }
+            fnSym = checker.resolveSymbol(calleeName)
+            if fnSym.name.ln > 0 {
+                fnInfo = checker.resolveType(fnSym.typeName)
+                if fnInfo.kind == TypeKind.Func {
+                    hasRest: bool = false
+                    minParamCount: num = fnInfo.fields.ln
+                    fr fld of fnInfo.fields {
+                        if fld.ln >= 3 && fld[0] == "." && fld[1] == "." && fld[2] == "." {
+                            hasRest = true
+                            minParamCount = fnInfo.fields.ln - 1
+                        }
+                    }
+                    if hasRest {
+                        if argCount < minParamCount {
+                            checker.addError("E0308", "Function '" + calleeName + "' expects at least " + minParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                        }
+                    } els {
+                        expectedParamCount = fnInfo.fields.ln
+                        if argCount != expectedParamCount {
+                            checker.addError("E0308", "Function '" + calleeName + "' expects " + expectedParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                        }
+                    }
+                    fr fieldStr, pIdx of fnInfo.fields {
+                        if !(fieldStr.ln >= 3 && fieldStr[0] == "." && fieldStr[1] == "." && fieldStr[2] == ".") {
+                            if pIdx < argCount {
+                                expectedKind = StrToTypeKind(fieldStr)
+                                argNode = expr.children[pIdx + 1]
+                                if !(AreTypesCompatible expectedKind, argNode.inferredType) && argNode.inferredType != TypeKind.Unknown {
+                                    checker.addError("E0306", "Argument " + (pIdx + 1) + " of '" + calleeName + "' expects " + (TypeKindToStr expectedKind) + ", got " + (TypeKindToStr argNode.inferredType), argNode.line, argNode.col, 1, "pass a compatible argument type")
+                                }
+                            }
+                        }
+                    }
+                    expr.inferredType = fnInfo.elemType
+                    -> fnInfo.elemType
+                }
+                expr.inferredType = fnSym.typeKind
+                -> fnSym.typeKind
+            }
+        }
+        calleeKind = InferExpression(checker, calleeNode)
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.MethodCallExpr {
+        isFirstMethodChild = true
+        fr child of expr.children {
+            if isFirstMethodChild {
+                isFirstMethodChild = false
+                InferExpression(checker, child)
+            } els {
+                InferExpression(checker, child)
+            }
+        }
+        if expr.children.ln > 0 {
+            targetNode = expr.children[0]
+            methodName = expr.name
+            tName = targetNode.typeAnnotation
+            if tName.ln == 0 && targetNode.inferredType == TypeKind.Obj {
+                tName = targetNode.typeAnnotation
+            }
+            if tName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
+                targetSym = checker.resolveSymbol(targetNode.name)
+                if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                    tName = targetSym.typeName
+                } els {
+                    tName = targetNode.name
+                }
+            }
+            if tName.ln > 0 {
+                mangledMethod = tName + "_" + methodName
+                foundFn = checker.resolveSymbol(mangledMethod)
+                if foundFn.name.ln > 0 {
+                    fnT = checker.resolveType(foundFn.typeName)
+                    if fnT.elemType != TypeKind.Unknown {
+                        expr.inferredType = fnT.elemType
+                        expr.typeAnnotation = fnT.elemTypeName
+                        -> fnT.elemType
+                    }
+                }
+            }
+            standaloneFn = checker.resolveSymbol(methodName)
+            if standaloneFn.name.ln > 0 {
+                sfnT = checker.resolveType(standaloneFn.typeName)
+                if sfnT.elemType != TypeKind.Unknown {
+                    expr.inferredType = sfnT.elemType
+                    expr.typeAnnotation = sfnT.elemTypeName
+                    -> sfnT.elemType
+                }
+            }
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.CastExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        targetKind = StrToTypeKind(expr.typeAnnotation)
+        expr.inferredType = targetKind
+        -> targetKind
+    }
+    if k == NodeKind.BorrowExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        expr.inferredType = TypeKind.Ptr
+        -> TypeKind.Ptr
+    }
+    if k == NodeKind.DerefExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        expr.inferredType = TypeKind.I64
+        -> TypeKind.I64
+    }
+    if k == NodeKind.TernaryExpr {
+        if expr.children.ln >= 3 {
+            InferExpression(checker, expr.children[0])
+            thenKind = InferExpression(checker, expr.children[1])
+            elseKind = InferExpression(checker, expr.children[2])
+            if AreTypesCompatible(thenKind, elseKind) {
+                expr.inferredType = thenKind
+                -> thenKind
+            }
+            if AreTypesCompatible(elseKind, thenKind) {
+                expr.inferredType = elseKind
+                -> elseKind
+            }
+        }
+        expr.inferredType = TypeKind.Unknown
+        -> TypeKind.Unknown
+    }
+    if k == NodeKind.AwaitExpr {
+        if expr.children.ln > 0 {
+            awKind = InferExpression(checker, expr.children[0])
+            if awKind == TypeKind.Func {
+                targetIdent: str = expr.children[0].name
+                if targetIdent.ln == 0 {
+                    targetIdent = expr.children[0].val
+                }
+                fnSym = checker.resolveSymbol targetIdent
+                if fnSym.name.ln > 0 {
+                    fnT = checker.resolveType fnSym.typeName
+                    if fnT.elemType != TypeKind.Unknown && fnT.elemType != TypeKind.Func {
+                        awKind = fnT.elemType
+                    } els {
+                        awKind = TypeKind.I64
+                    }
+                } els {
+                    awKind = TypeKind.I64
+                }
+            } els if awKind == TypeKind.Ptr || awKind == TypeKind.Unknown {
+                awKind = TypeKind.I64
+            }
+            expr.inferredType = awKind
+            -> awKind
+        }
+        expr.inferredType = TypeKind.I64
+        -> TypeKind.I64
+    }
+    if k == NodeKind.TypExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        expr.inferredType = TypeKind.Str
+        -> TypeKind.Str
+    }
+    if k == NodeKind.NewExpr {
+        fr child of expr.children {
+            InferExpression(checker, child)
+        }
+        if expr.name == "Prm" || expr.name == "Promise" {
+            expr.inferredType = TypeKind.I64
+            -> TypeKind.I64
+        }
+        expr.inferredType = TypeKind.Obj
+        expr.typeAnnotation = expr.name
+        -> TypeKind.Obj
+    }
+    if k == NodeKind.SymExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        expr.inferredType = TypeKind.I64
+        expr.typeAnnotation = "sym"
+        -> TypeKind.I64
+    }
+    expr.inferredType = TypeKind.Unknown
+    -> TypeKind.Unknown
+}

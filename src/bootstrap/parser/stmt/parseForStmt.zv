@@ -1,0 +1,100 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseForStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseForStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr, ParseStatement frm ../stmt
+imp ParseStatementOrBlock frm parseStatementOrBlock
+
+/**
+ * Parses a for loop statement (`fr item in arr { ... }` or `fr i = 0; i < n; i++ { ... }`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} For statement AST node (FrInStmt or FrOfStmt)
+ */
+ParseForStmt parser: Parser :: ASTNode {
+    frTok: Token = parser.consume TokenType.TOK_FOR, "Expected 'fr'"
+
+    // Check for for-in / for-of:
+    // Pair form: fr item, idx of coll { ... } | fr key, val in coll { ... }
+    // Single form: fr item in coll { ... } | fr item of coll { ... }
+    if parser.check TokenType.TOK_IDENT {
+        peekTok: Token = parser.peek
+        if peekTok.kind == TokenType.TOK_COMMA {
+            t2: Token = parser.peekAhead 2
+            t3: Token = parser.peekAhead 3
+            if t2.kind == TokenType.TOK_IDENT && (t3.kind == TokenType.TOK_IN || t3.kind == TokenType.TOK_OF) {
+                firstTok: Token = parser.advance
+                parser.consume TokenType.TOK_COMMA, "Expected ','"
+                secondTok: Token = parser.consume TokenType.TOK_IDENT, "Expected identifier after ','"
+                isIn: bool = parser.matchToken TokenType.TOK_IN
+                if !isIn {
+                    parser.consume TokenType.TOK_OF, "Expected 'in' or 'of'"
+                }
+                iterExpr: ASTNode = ParseExpr parser
+                parser.enterScope()
+                parser.addVar firstTok.val
+                parser.addVar secondTok.val
+                bodyBlock: ASTNode = ParseStatementOrBlock parser
+                parser.exitScope()
+
+                node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
+                if !isIn {
+                    node.kind = NodeKind.FrOfStmt
+                }
+                node.name = firstTok.val
+                node.val = secondTok.val
+                node.children = [iterExpr, bodyBlock]
+                -> node
+            }
+        }
+        if peekTok.kind == TokenType.TOK_IN {
+            itemTok: Token = parser.advance
+            parser.advance // consume 'in'
+            iterExpr: ASTNode = ParseExpr parser
+            parser.enterScope()
+            parser.addVar itemTok.val
+            bodyBlock: ASTNode = ParseStatementOrBlock parser
+            parser.exitScope()
+            node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
+            node.name = itemTok.val
+            node.val = ""
+            node.children = [iterExpr, bodyBlock]
+            -> node
+        } els if peekTok.kind == TokenType.TOK_OF {
+            itemTok: Token = parser.advance
+            parser.advance // consume 'of'
+            iterExpr: ASTNode = ParseExpr parser
+            parser.enterScope()
+            parser.addVar itemTok.val
+            bodyBlock: ASTNode = ParseStatementOrBlock parser
+            parser.exitScope()
+            node = ASTNode.createBase NodeKind.FrOfStmt, frTok.line, frTok.col
+            node.name = itemTok.val
+            node.val = ""
+            node.children = [iterExpr, bodyBlock]
+            -> node
+        }
+    }
+
+    // C-style for loop: fr init; cond; post { body }
+    initStmt: ASTNode = ParseStatement parser
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional semicolon after init
+    }
+    condExpr: ASTNode = ParseExpr parser
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional semicolon after cond
+    }
+    postExpr: ASTNode = ParseExpr parser
+    bodyBlock: ASTNode = ParseStatementOrBlock parser
+
+    node = ASTNode.createBase NodeKind.FrInStmt, frTok.line, frTok.col
+    node.children = [initStmt, condExpr, postExpr, bodyBlock]
+    -> node
+}

@@ -1,0 +1,253 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Declaration Type Inference
+ * Path: sub_projects/zuv/src/bootstrap/checker/inferDeclaration.zv
+ * =============================================================================
+ *
+ * Implements semantic type checking and symbol table registration for declarations:
+ * - Type aliases and struct schemas (TypeDecl)
+ * - Object definitions (ObjDecl) with methods and fields
+ * - Standalone functions (FuncDecl) with typed parameters and return types
+ * - Enumerations (EnumDecl) with variant values
+ * - Foreign function interfaces (ExternDecl) and module imports (ImportDecl)
+ */
+
+imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../../ast
+imp TypeInfo, TypeKind, StrToTypeKind frm ../../types
+imp Checker, Symbol, Scope frm ../checker
+imp InferStatement frm inferStatement
+imp IsIntegerLiteral frm ../../../util/commonFunctions
+
+/**
+ * Validates and registers top-level declarations (types, objects, functions, enums, imports).
+ *
+ * Populates the symbol table and type registry with declared entities and checks method bodies.
+ *
+ * @param {Checker} checker - The active semantic checker instance
+ * @param {ASTNode} decl - The declaration AST node to process
+ * @returns {void}
+ */
+InferDeclaration checker: Checker, decl: ASTNode :: void {
+    k = decl.kind
+    if k == NodeKind.TypeDecl {
+        tInfo = TypeInfo.createObject(decl.name)
+        fr fEntry of decl.fields {
+            fKind = StrToTypeKind(fEntry.valStr)
+            tInfo.addField(fEntry.name, fKind)
+        }
+        checker.registerType(tInfo)
+        fr child of decl.children {
+            InferDeclaration(checker, child)
+        }
+        ->
+    }
+    if k == NodeKind.ObjDecl {
+        tInfo = TypeInfo.createObject(decl.name)
+        fr fEntry of decl.fields {
+            fKind = StrToTypeKind(fEntry.valStr)
+            tInfo.addField(fEntry.name, fKind)
+        }
+        checker.registerType(tInfo)
+        ctorSym = Symbol.create(decl.name, TypeKind.Obj, decl.name, false, true, 0, decl.line, decl.col)
+        checker.defineSymbol(ctorSym)
+        fr mNode of decl.children {
+            retKind = TypeKind.Void
+            retTypeName = mNode.typeAnnotation
+            if mNode.typeAnnotation.ln > 0 {
+                retKind = StrToTypeKind(mNode.typeAnnotation)
+            } els {
+                retExpr: ASTNode = ASTNode.createNil(0, 0)
+                fr bChild of mNode.children {
+                    if bChild.kind == NodeKind.BlockStmt {
+                        fr s of bChild.children {
+                            if s.kind == NodeKind.RetStmt && s.children.ln > 0 {
+                                retExpr = s.children[0]
+                            }
+                        }
+                    } els if bChild.kind == NodeKind.RetStmt && bChild.children.ln > 0 {
+                        retExpr = bChild.children[0]
+                    } els if bChild.kind != NodeKind.BlockStmt {
+                        retExpr = bChild
+                    }
+                }
+                if retExpr.kind == NodeKind.PropExpr && retExpr.children.ln > 0 && retExpr.children[0].name == "self" {
+                    fr fEntry of decl.fields {
+                        if fEntry.name == retExpr.name {
+                            retKind = StrToTypeKind(fEntry.valStr)
+                            retTypeName = fEntry.valStr
+                            brk
+                        }
+                    }
+                } els if retExpr.kind == NodeKind.IdentExpr {
+                    if retExpr.name == "self" {
+                        retKind = TypeKind.Obj
+                        retTypeName = decl.name
+                    } els {
+                        vType = FindVarInitType(mNode, retExpr.name)
+                        if vType.ln > 0 {
+                            retKind = StrToTypeKind(vType)
+                            retTypeName = vType
+                        } els if NodeUsesAsArray(mNode, retExpr.name) {
+                            retKind = TypeKind.Arr
+                            retTypeName = "arr"
+                        } els {
+                            fr fEntry of decl.fields {
+                                if fEntry.name == retExpr.name {
+                                    retKind = StrToTypeKind(fEntry.valStr)
+                                    retTypeName = fEntry.valStr
+                                    brk
+                                }
+                            }
+                        }
+                    }
+                } els if retExpr.kind == NodeKind.IndexExpr {
+                    retKind = TypeKind.Obj
+                    retTypeName = decl.name
+                } els if retExpr.kind == NodeKind.ObjLitExpr {
+                    retKind = TypeKind.Obj
+                    retTypeName = (retExpr.name.ln > 0 ? retExpr.name : decl.name)
+                } els if retExpr.kind == NodeKind.ArrExpr {
+                    retKind = TypeKind.Arr
+                    retTypeName = "arr"
+                } els if retExpr.kind == NodeKind.StrExpr || (retExpr.kind == NodeKind.BinaryExpr && retExpr.op == "+") {
+                    retKind = TypeKind.Str
+                    retTypeName = "str"
+                } els if retExpr.kind == NodeKind.NumExpr {
+                    if retExpr.inferredType == TypeKind.I64 || (retExpr.val.ln > 0 && IsIntegerLiteral(retExpr.val)) {
+                        retKind = TypeKind.I64
+                        retTypeName = "i64"
+                    } els {
+                        retKind = TypeKind.Num
+                        retTypeName = "num"
+                    }
+                } els if retExpr.kind == NodeKind.BoolExpr {
+                    retKind = TypeKind.Bool
+                    retTypeName = "bool"
+                }
+            }
+            paramTypeNames: str[] = []
+            fr pItem of mNode.params {
+                if pItem.typeAnnotation.ln == 0 {
+                    fAssigned = FindFieldAssignedType(mNode, pItem.name, decl.name, decl.fields)
+                    if fAssigned.ln > 0 {
+                        pItem.typeAnnotation = fAssigned
+                    } els if NodeUsesAsArray(mNode, pItem.name) {
+                        pItem.typeAnnotation = "arr"
+                    }
+                }
+                paramTypeNames.psh(pItem.typeAnnotation)
+            }
+            fnTypeName = "fn_" + mNode.name
+            fnTypeInfo = TypeInfo.createFunc(retKind, retTypeName, paramTypeNames)
+            fnTypeInfo.name = fnTypeName
+            checker.registerType(fnTypeInfo)
+
+            mangledMethodName = decl.name + "_" + mNode.name
+            mMethodSym = Symbol.create(mangledMethodName, TypeKind.Func, fnTypeName, false, true, 0, mNode.line, mNode.col)
+            checker.defineSymbol(mMethodSym)
+            qualMethodName = decl.name + "." + mNode.name
+            qualSym = Symbol.create(qualMethodName, TypeKind.Func, fnTypeName, false, true, 0, mNode.line, mNode.col)
+            checker.defineSymbol(qualSym)
+
+            checker.enterScope()
+            selfSym = Symbol.create("self", TypeKind.Obj, decl.name, false, true, checker.currentLevel(), mNode.line, mNode.col)
+            checker.defineSymbol(selfSym)
+
+            fr param of mNode.params {
+                pKind = StrToTypeKind(param.typeAnnotation)
+                pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+                checker.defineSymbol(pSym)
+            }
+            fr bStmt of mNode.children {
+                InferStatement(checker, bStmt)
+            }
+            checker.exitScope()
+        }
+        ->
+    }
+    if k == NodeKind.FuncDecl {
+        retKind = TypeKind.Unknown
+        if decl.typeAnnotation.ln > 0 {
+            retKind = StrToTypeKind(decl.typeAnnotation)
+        }
+        paramTypeNames: str[] = []
+        fr pItem of decl.params {
+            if pItem.isRest {
+                paramTypeNames.psh("..." + pItem.typeAnnotation)
+            } els {
+                paramTypeNames.psh(pItem.typeAnnotation)
+            }
+        }
+        fnTypeName = "fn_" + decl.name
+        fnTypeInfo = TypeInfo.createFunc(retKind, decl.typeAnnotation, paramTypeNames)
+        fnTypeInfo.name = fnTypeName
+        checker.registerType(fnTypeInfo)
+
+        fnSym = Symbol.create(decl.name, TypeKind.Func, fnTypeName, false, true, checker.currentLevel(), decl.line, decl.col)
+        checker.defineSymbol(fnSym)
+
+        prevFnName = checker.currentFuncName
+        checker.currentFuncName = decl.name
+        checker.enterScope()
+        fr param of decl.params {
+            pKind = StrToTypeKind(param.typeAnnotation)
+            if param.isRest {
+                pKind = TypeKind.Arr
+            }
+            pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+            checker.defineSymbol(pSym)
+        }
+        fr bStmt of decl.children {
+            InferStatement(checker, bStmt)
+        }
+        checker.exitScope()
+        checker.currentFuncName = prevFnName
+        ->
+    }
+    if k == NodeKind.EnumDecl {
+        eInfo = TypeInfo.createEnum(decl.name)
+        fr fld of decl.fields {
+            eInfo.addField(fld.name, TypeKind.I8)
+            if !(checker.hasSymbol(fld.name)) {
+                vSym = Symbol.create(fld.name, TypeKind.I8, "i8", false, true, 0, fld.line, fld.col)
+                checker.defineSymbol(vSym)
+            }
+        }
+        checker.registerType(eInfo)
+        eSym = Symbol.create(decl.name, TypeKind.Obj, decl.name, false, true, 0, decl.line, decl.col)
+        checker.defineSymbol(eSym)
+        ->
+    }
+    if k == NodeKind.ImportDecl {
+        fr symEntry of decl.fields {
+            if !(checker.hasSymbol(symEntry.name)) {
+                impSym = Symbol.create(symEntry.name, TypeKind.Obj, symEntry.name, false, true, 0, symEntry.line, symEntry.col)
+                checker.defineSymbol(impSym)
+            }
+        }
+        ->
+    }
+    if k == NodeKind.ExternDecl {
+        fr fnChild of decl.children {
+            retKind = TypeKind.Unknown
+            if fnChild.typeAnnotation.ln > 0 {
+                retKind = StrToTypeKind(fnChild.typeAnnotation)
+            }
+            paramTypeNames: str[] = []
+            fr pItem of fnChild.params {
+                paramTypeNames.psh(pItem.typeAnnotation)
+            }
+            fnTypeName = "fn_" + fnChild.name
+            fnTypeInfo = TypeInfo.createFunc(retKind, fnChild.typeAnnotation, paramTypeNames)
+            fnTypeInfo.name = fnTypeName
+            checker.registerType(fnTypeInfo)
+            fnSym = Symbol.create(fnChild.name, TypeKind.Func, fnTypeName, false, true, 0, fnChild.line, fnChild.col)
+            checker.defineSymbol(fnSym)
+        }
+        ->
+    }
+    if k == NodeKind.VarDecl {
+        InferStatement(checker, decl)
+        ->
+    }
+}

@@ -1,0 +1,206 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitFrIn Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitFrIn.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp llvmType, isPointerType frm ../types
+imp ExprResult frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitFrIn self: StmtCodegen, node: ASTNode :: void {
+        if node.children.ln == 4 {
+            initNode: ASTNode = node.children[0]
+            condNode: ASTNode = node.children[1]
+            postNode: ASTNode = node.children[2]
+            bodyNode: ASTNode = node.children[3]
+
+            if initNode.kind == NodeKind.VarDecl {
+                self.emitVarDecl initNode
+            } els {
+                self.emitStmt initNode
+            }
+
+            condLbl: str = self.codegen.newLabel "fr_cond"
+            bodyLbl: str = self.codegen.newLabel "fr_body"
+            stepLbl: str = self.codegen.newLabel "fr_step"
+            endLbl: str = self.codegen.newLabel "fr_end"
+
+            self.breakLabels.psh endLbl
+            self.continueLabels.psh stepLbl
+
+            self.codegen.emit `br label %${condLbl}`
+            self.codegen.emitLabel condLbl
+
+            condRes: ExprResult = self.exprGen.emitExpr condNode
+            condI1: str = condRes.reg
+            if condRes.typeKind != TypeKind.Bool {
+                cmpReg: str = self.codegen.newReg
+                itype: str = llvmType condRes.typeKind
+                self.codegen.emit `${cmpReg} = icmp ne ${itype} ${condRes.reg}, 0`
+                condI1 = cmpReg
+            }
+            self.codegen.emit `br i1 ${condI1}, label %${bodyLbl}, label %${endLbl}`
+
+            self.codegen.emitLabel bodyLbl
+            self.emitStmt bodyNode
+            self.codegen.emit `br label %${stepLbl}`
+
+            self.codegen.emitLabel stepLbl
+            self.exprGen.emitExpr postNode
+            self.codegen.emit `br label %${condLbl}`
+
+            self.codegen.emitLabel endLbl
+            self.breakLabels.pp
+            self.continueLabels.pp
+            ->
+        }
+
+        collRes: ExprResult = self.exprGen.emitExpr node.children[0]
+        isArr: bool = (collRes.typeKind == TypeKind.Arr || node.children[0].inferredType == TypeKind.Arr)
+
+        condLbl: str = self.codegen.newLabel "frin_cond"
+        bodyLbl: str = self.codegen.newLabel "frin_body"
+        stepLbl: str = self.codegen.newLabel "frin_step"
+        endLbl: str = self.codegen.newLabel "frin_end"
+
+        self.breakLabels.psh endLbl
+        self.continueLabels.psh stepLbl
+
+        idxSlot: str = self.codegen.newReg
+        self.codegen.emit `${idxSlot} = alloca i64`
+        self.codegen.emit `store i64 0, ptr ${idxSlot}`
+
+        if isArr {
+            arrPtrReg: str = collRes.reg
+            if !(isPointerType collRes.typeKind) {
+                convReg: str = self.codegen.newReg
+                self.codegen.emit `${convReg} = inttoptr i64 ${collRes.reg} to ptr`
+                arrPtrReg = convReg
+            }
+            lenReg: str = self.exprGen.arrGen.emitLength arrPtrReg
+            firstSlot: str = self.codegen.newReg
+            self.codegen.emit `${firstSlot} = alloca i64`
+            self.exprGen.addSymbol node.name, firstSlot, TypeKind.I64, false, true
+
+            secondSlot: str = ""
+            if node.val.ln > 0 {
+                secondSlot = self.codegen.newReg
+                self.codegen.emit `${secondSlot} = alloca double`
+                self.exprGen.addSymbol node.val, secondSlot, TypeKind.Num, false, true
+            }
+
+            self.codegen.emit `br label %${condLbl}`
+            self.codegen.emitLabel condLbl
+
+            curIdxReg: str = self.codegen.newReg
+            self.codegen.emit `${curIdxReg} = load i64, ptr ${idxSlot}`
+            hasMore: str = self.codegen.newReg
+            self.codegen.emit `${hasMore} = icmp ult i64 ${curIdxReg}, ${lenReg}`
+            self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
+
+            self.codegen.emitLabel bodyLbl
+            self.codegen.emit `store i64 ${curIdxReg}, ptr ${firstSlot}`
+
+            if secondSlot.ln > 0 {
+                elemRaw: str = self.exprGen.arrGen.emitGetElement arrPtrReg, curIdxReg, false, node.line
+                elemDbl: str = self.codegen.newReg
+                self.codegen.emit `${elemDbl} = sitofp i64 ${elemRaw} to double`
+                self.codegen.emit `store double ${elemDbl}, ptr ${secondSlot}`
+            }
+
+            self.emitStmt node.children[1]
+            self.codegen.emit `br label %${stepLbl}`
+
+            self.codegen.emitLabel stepLbl
+            sIdx: str = self.codegen.newReg
+            self.codegen.emit `${sIdx} = load i64, ptr ${idxSlot}`
+            nextIdx: str = self.codegen.newReg
+            self.codegen.emit `${nextIdx} = add i64 ${sIdx}, 1`
+            self.codegen.emit `store i64 ${nextIdx}, ptr ${idxSlot}`
+            self.codegen.emit `br label %${condLbl}`
+
+            self.codegen.emitLabel endLbl
+            self.breakLabels.pp
+            self.continueLabels.pp
+            ->
+        }
+
+        // Object iteration
+        keysOff: num = self.exprGen.objGen.registry.getFieldOffset "", "__keys"
+        kSlotGep: str = self.codegen.newReg
+        self.codegen.emit `${kSlotGep} = getelementptr inbounds i64, ptr ${collRes.reg}, i64 ${keysOff}`
+        keysInt: str = self.codegen.newReg
+        self.codegen.emit `${keysInt} = load i64, ptr ${kSlotGep}`
+        keysBuf: str = self.codegen.newReg
+        self.codegen.emit `${keysBuf} = inttoptr i64 ${keysInt} to ptr`
+
+        objLenReg: str = self.codegen.newReg
+        self.codegen.emit `${objLenReg} = load i64, ptr ${keysBuf}`
+
+        firstSlot: str = self.codegen.newReg
+        self.codegen.emit `${firstSlot} = alloca ptr`
+        self.exprGen.addSymbol node.name, firstSlot, TypeKind.Str, false, true
+
+        secondSlot: str = ""
+        valsBuf: str = ""
+        if node.val.ln > 0 {
+            valsOff: num = self.exprGen.objGen.registry.getFieldOffset "", "__vals"
+            vSlotGep: str = self.codegen.newReg
+            self.codegen.emit `${vSlotGep} = getelementptr inbounds i64, ptr ${collRes.reg}, i64 ${valsOff}`
+            valsInt: str = self.codegen.newReg
+            self.codegen.emit `${valsInt} = load i64, ptr ${vSlotGep}`
+            valsBuf = self.codegen.newReg
+            self.codegen.emit `${valsBuf} = inttoptr i64 ${valsInt} to ptr`
+
+            secondSlot = self.codegen.newReg
+            self.codegen.emit `${secondSlot} = alloca i64`
+            self.exprGen.addSymbol node.val, secondSlot, TypeKind.I64, false, true
+        }
+
+        self.codegen.emit `br label %${condLbl}`
+        self.codegen.emitLabel condLbl
+
+        curIdxReg: str = self.codegen.newReg
+        self.codegen.emit `${curIdxReg} = load i64, ptr ${idxSlot}`
+        hasMore: str = self.codegen.newReg
+        self.codegen.emit `${hasMore} = icmp ult i64 ${curIdxReg}, ${objLenReg}`
+        self.codegen.emit `br i1 ${hasMore}, label %${bodyLbl}, label %${endLbl}`
+
+        self.codegen.emitLabel bodyLbl
+        kElemOffset: str = self.codegen.newReg
+        self.codegen.emit `${kElemOffset} = add i64 ${curIdxReg}, 1`
+        kGep: str = self.codegen.newReg
+        self.codegen.emit `${kGep} = getelementptr inbounds i64, ptr ${keysBuf}, i64 ${kElemOffset}`
+        kInt: str = self.codegen.newReg
+        self.codegen.emit `${kInt} = load i64, ptr ${kGep}`
+        kPtr: str = self.codegen.newReg
+        self.codegen.emit `${kPtr} = inttoptr i64 ${kInt} to ptr`
+        self.codegen.emit `store ptr ${kPtr}, ptr ${firstSlot}`
+
+        if secondSlot.ln > 0 {
+            vGep: str = self.codegen.newReg
+            self.codegen.emit `${vGep} = getelementptr inbounds i64, ptr ${valsBuf}, i64 ${kElemOffset}`
+            vInt: str = self.codegen.newReg
+            self.codegen.emit `${vInt} = load i64, ptr ${vGep}`
+            self.codegen.emit `store i64 ${vInt}, ptr ${secondSlot}`
+        }
+
+        self.emitStmt node.children[1]
+        self.codegen.emit `br label %${stepLbl}`
+
+        self.codegen.emitLabel stepLbl
+        sIdx: str = self.codegen.newReg
+        self.codegen.emit `${sIdx} = load i64, ptr ${idxSlot}`
+        nextIdx: str = self.codegen.newReg
+        self.codegen.emit `${nextIdx} = add i64 ${sIdx}, 1`
+        self.codegen.emit `store i64 ${nextIdx}, ptr ${idxSlot}`
+        self.codegen.emit `br label %${condLbl}`
+
+        self.codegen.emitLabel endLbl
+        self.breakLabels.pp
+        self.continueLabels.pp
+}

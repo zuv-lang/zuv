@@ -1,0 +1,185 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseInfixExpr Expression Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/expr/parseInfixExpr.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType, IsOperator frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseCastType frm parseCastType
+imp ParseExpression frm ../expr
+
+/**
+ * Parses postfix operations and binary infix expressions using Pratt precedence climbing.
+ *
+ * Handles calls `f(x)`, indexing `a[i]`, property access `o.p`, safe navigation `o?.p`,
+ * postfix `++`/`--`, binary arithmetic/bitwise/logical, ternary `? :`, and casts `as Type`.
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {ASTNode} left - Left-hand side operand node
+ * @param {num} prec - Current operator precedence level
+ * @returns {ASTNode} Combined expression AST node
+ */
+ParseInfixExpr parser: Parser, left: ASTNode, prec: num :: ASTNode {
+    opTok: Token = parser.cur
+
+    // Postfix Call: callee(arg1, arg2)
+    if opTok.kind == TokenType.TOK_LPAREN {
+        parser.advance // consume '('
+        args: ASTNode[] = []
+        wh !(parser.check TokenType.TOK_RPAREN) && !(parser.isAtEnd) {
+            arg: ASTNode = ParseExpression parser, 1
+            args.psh arg
+            if parser.matchToken TokenType.TOK_COMMA {
+                // continue parsing next argument
+            } els {
+                brk
+            }
+        }
+        parser.consume TokenType.TOK_RPAREN, "Expected ')' after call arguments"
+        if left.kind == NodeKind.PropExpr {
+            target = left.children[0]
+            if target.kind == NodeKind.IdentExpr && (target.name == "fs" || target.name == "net" || target.name == "os" || target.name == "sys" || target.name == "io" || target.name == "Prm" || target.name == "Promise" || target.name == "mth" || target.name == "Math") {
+                cName: str = target.name + "." + left.name
+                calleeNode = ASTNode.createIdent cName, left.line, left.col
+                -> ASTNode.createCall calleeNode, args, left.line, left.col
+            }
+            -> ASTNode.createMethodCall target, left.name, args, left.line, left.col
+        }
+        -> ASTNode.createCall left, args, left.line, left.col
+    }
+
+    // Postfix Index: target[index]
+    if opTok.kind == TokenType.TOK_LBRACKET {
+        parser.advance // consume '['
+        idxExpr: ASTNode = ParseExpression parser, 1
+        parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
+        -> ASTNode.createIndex left, idxExpr, left.line, left.col
+    }
+
+    // Postfix Member Access: target.property or target::property
+    if opTok.kind == TokenType.TOK_DOT || opTok.kind == TokenType.TOK_COLON_COLON {
+        parser.advance // consume '.' or '::'
+        propTok: Token = parser.cur
+        if propTok.kind == TokenType.TOK_IDENT || propTok.isKeyword {
+            parser.advance
+        } els {
+            parser.consume TokenType.TOK_IDENT, "Expected property name after '.'"
+        }
+        propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
+        propNode.name = propTok.val
+        propNode.children = [left]
+
+        curTok: Token = parser.cur
+        isOpAfter: bool = curTok.kind != TokenType.TOK_MINUS && curTok.kind != TokenType.TOK_NOT && (IsOperator curTok.kind)
+        allowBracket: bool = (left.name == "Prm" || left.name == "Promise")
+        if left.kind == NodeKind.IdentExpr && (left.name == "fs" || left.name == "os" || left.name == "sys" || left.name == "io" || left.name == "Prm" || left.name == "Promise" || left.name == "mem" || left.name == "ffi" || left.name == "time") {
+            if !parser.isAtEnd && curTok.line == propTok.line && !isOpAfter &&
+               curTok.kind != TokenType.TOK_SEMICOLON && curTok.kind != TokenType.TOK_EOF &&
+               curTok.kind != TokenType.TOK_RPAREN && curTok.kind != TokenType.TOK_RBRACE &&
+               curTok.kind != TokenType.TOK_COMMA && curTok.kind != TokenType.TOK_ASSIGN &&
+               curTok.kind != TokenType.TOK_LPAREN && (!allowBracket ? curTok.kind != TokenType.TOK_LBRACKET : true) &&
+               curTok.kind != TokenType.TOK_DOT && curTok.kind != TokenType.TOK_FAT_ARROW {
+                args: ASTNode[] = []
+                wh true {
+                    argExpr: ASTNode = ParseExpression parser, 1
+                    args.psh argExpr
+                    if parser.matchToken TokenType.TOK_COMMA {
+                        // continue
+                    } els {
+                        brk
+                    }
+                }
+                cName: str = left.name + "." + propTok.val
+                calleeNode = ASTNode.createIdent cName, propTok.line, propTok.col
+                -> ASTNode.createCall calleeNode, args, propTok.line, propTok.col
+            }
+        }
+
+        curTok: Token = parser.cur
+        if !parser.isAtEnd && curTok.line == propTok.line &&
+           (curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_STRING ||
+            curTok.kind == TokenType.TOK_TEMPLATE_STRING || curTok.kind == TokenType.TOK_TRUE ||
+            curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL ||
+            curTok.kind == TokenType.TOK_UND || curTok.kind == TokenType.TOK_IDENT ||
+            curTok.kind == TokenType.TOK_ELLIPSIS) {
+            args: ASTNode[] = []
+            wh true {
+                argExpr: ASTNode = ParseExpression parser, 1
+                args.psh argExpr
+                if parser.matchToken TokenType.TOK_COMMA {
+                    // continue
+                } els {
+                    brk
+                }
+            }
+            -> ASTNode.createMethodCall left, propTok.val, args, propTok.line, propTok.col
+        }
+
+        -> propNode
+    }
+
+    // Postfix Safe Navigation: target?.property or target?.[index]
+    if opTok.kind == TokenType.TOK_OPT_DOT {
+        parser.advance // consume '?.'
+        if parser.check TokenType.TOK_LBRACKET {
+            parser.advance // consume '['
+            idxExpr: ASTNode = ParseExpression parser, 1
+            parser.consume TokenType.TOK_RBRACKET, "Expected ']' after index expression"
+            idxNode = ASTNode.createIndex left, idxExpr, opTok.line, opTok.col
+            idxNode.op = "?."
+            -> idxNode
+        }
+        propTok: Token = parser.cur
+        if propTok.kind == TokenType.TOK_IDENT || propTok.isKeyword {
+            parser.advance
+        } els {
+            parser.consume TokenType.TOK_IDENT, "Expected property name after '?.'"
+        }
+        propNode = ASTNode.createBase NodeKind.PropExpr, propTok.line, propTok.col
+        propNode.name = propTok.val
+        propNode.op = "?."
+        propNode.children = [left]
+        -> propNode
+    }
+
+    // Postfix Increment / Decrement: x++, x--
+    if opTok.kind == TokenType.TOK_INC {
+        parser.advance
+        -> ASTNode.createUnary "++", left, false, opTok.line, opTok.col
+    }
+    if opTok.kind == TokenType.TOK_DEC {
+        parser.advance
+        -> ASTNode.createUnary "--", left, false, opTok.line, opTok.col
+    }
+
+    // Type Cast: expr as Type
+    if opTok.kind == TokenType.TOK_AS {
+        parser.advance // consume 'as'
+        castType: str = ParseCastType parser
+        -> ASTNode.createCast left, castType, opTok.line, opTok.col
+    }
+
+    // Ternary Conditional: cond ? thenVal : elseVal
+    if opTok.kind == TokenType.TOK_QUESTION {
+        parser.advance // consume '?'
+        thenExpr: ASTNode = ParseExpression parser, 1
+        parser.consume TokenType.TOK_COLON, "Expected ':' in ternary conditional"
+        elseExpr: ASTNode = ParseExpression parser, 3 // PREC_TERNARY
+        -> ASTNode.createTernary left, thenExpr, elseExpr, opTok.line, opTok.col
+    }
+
+    // Binary Infix Operations (+, -, *, /, %, ==, !=, <, >, <=, >=, &&, ||, ??, =, +=, -=, etc.)
+    parser.advance // consume binary operator
+    nextMinPrec: num = prec
+    // Right-associative operators (assignment, pow) keep the same precedence level
+    if opTok.kind == TokenType.TOK_ASSIGN || opTok.kind == TokenType.TOK_POW ||
+       opTok.kind == TokenType.TOK_PLUS_EQ || opTok.kind == TokenType.TOK_MINUS_EQ {
+        nextMinPrec = prec - 1
+    }
+
+    right: ASTNode = ParseExpression parser, nextMinPrec
+    -> ASTNode.createBinary opTok.val, left, right, opTok.line, opTok.col
+}

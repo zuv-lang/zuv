@@ -1,0 +1,16 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitArrayRuntimeGlobals Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitRuntimeGlobals.zv
+ * =============================================================================
+ */
+
+imp ArrayCodegen frm ../array
+
+EmitArrayRuntimeGlobals self: ArrayCodegen :: void {
+    if self.globalsEmitted {
+        -> und
+    }
+    self.codegen.emitExtern "@_zuv_empty_arr = internal constant [2 x i64] [i64 0, i64 0]"
+    self.globalsEmitted = true
+}

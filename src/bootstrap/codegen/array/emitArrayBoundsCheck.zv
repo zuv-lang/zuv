@@ -1,0 +1,17 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitArrayBoundsCheck Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitArrayBoundsCheck.zv
+ * =============================================================================
+ */
+
+imp Codegen frm ../codegen
+
+EmitArrayBoundsCheck codegen: Codegen, arrPtrReg: str, idxReg: str, lineNum: num :: void {
+    sFile: str = codegen.sourceFile
+    if sFile.ln == 0 {
+        sFile = "main.zv"
+    }
+    fileSym: str = codegen.addStringConstant sFile
+    codegen.emit `call void @zuv_check_bounds(ptr ${arrPtrReg}, i64 ${idxReg}, ptr ${fileSym}, i32 ${lineNum})`
+}

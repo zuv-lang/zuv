@@ -1,0 +1,25 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseWhileStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseWhileStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+imp ParseStatementOrBlock frm parseStatementOrBlock
+
+/**
+ * Parses a while loop statement (`wh condition { body }` or `wh condition stmt`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} WhStmt AST node
+ */
+ParseWhileStmt parser: Parser :: ASTNode {
+    whTok: Token = parser.consume TokenType.TOK_WH, "Expected 'wh'"
+    condNode: ASTNode = ParseExpr parser
+    bodyBlock: ASTNode = ParseStatementOrBlock parser
+    -> ASTNode.createWh condNode, bodyBlock, whTok.line, whTok.col
+}

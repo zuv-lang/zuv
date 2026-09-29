@@ -1,0 +1,64 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitGetElement Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitGetElement.zv
+ * =============================================================================
+ */
+
+imp ArrayCodegen, emitArrayBoundsCheck frm ../array
+
+EmitGetElement self: ArrayCodegen, arrPtrReg: str, idxReg: str, isOptional: bool, lineNum: num :: str {
+    if isOptional {
+        slot: str = self.codegen.newReg
+        self.codegen.emit `${slot} = alloca i64`
+
+        emptyPtr: str = self.emitEmptyArray
+        isEmp: str = self.codegen.newReg
+        self.codegen.emit `${isEmp} = icmp eq ptr ${arrPtrReg}, ${emptyPtr}`
+        isNull: str = self.codegen.newReg
+        self.codegen.emit `${isNull} = icmp eq ptr ${arrPtrReg}, null`
+        isInvalid: str = self.codegen.newReg
+        self.codegen.emit `${isInvalid} = or i1 ${isEmp}, ${isNull}`
+
+        nilLbl: str = self.codegen.newLabel "opt_idx_nil"
+        checkLbl: str = self.codegen.newLabel "opt_idx_chk"
+        loadLbl: str = self.codegen.newLabel "opt_idx_load"
+        mergeLbl: str = self.codegen.newLabel "opt_idx_merge"
+
+        self.codegen.emit `br i1 ${isInvalid}, label %${nilLbl}, label %${checkLbl}`
+
+        self.codegen.emitLabel nilLbl
+        self.codegen.emit `store i64 0, ptr ${slot}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        self.codegen.emitLabel checkLbl
+        lenReg: str = self.emitLength arrPtrReg
+        inBounds: str = self.codegen.newReg
+        self.codegen.emit `${inBounds} = icmp ult i64 ${idxReg}, ${lenReg}`
+        self.codegen.emit `br i1 ${inBounds}, label %${loadLbl}, label %${nilLbl}`
+
+        self.codegen.emitLabel loadLbl
+        elemIdx: str = self.codegen.newReg
+        self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+        gep: str = self.codegen.newReg
+        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdx}`
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+        self.codegen.emit `store i64 ${valReg}, ptr ${slot}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        self.codegen.emitLabel mergeLbl
+        res: str = self.codegen.newReg
+        self.codegen.emit `${res} = load i64, ptr ${slot}`
+        -> res
+    }
+
+    emitArrayBoundsCheck self.codegen, arrPtrReg, idxReg, lineNum
+    elemIdx: str = self.codegen.newReg
+    self.codegen.emit `${elemIdx} = add i64 ${idxReg}, 1`
+    gep: str = self.codegen.newReg
+    self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 ${elemIdx}`
+    valReg: str = self.codegen.newReg
+    self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+    -> valReg
+}

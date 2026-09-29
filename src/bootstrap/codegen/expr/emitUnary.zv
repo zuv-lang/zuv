@@ -1,0 +1,75 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitUnary Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitUnary.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp llvmType, llvmStackType, isPointerType frm ../types
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitUnary self: ExprCodegen, node: ASTNode :: ExprResult {
+    op: str = node.op
+    operandRes: ExprResult = self.emitExpr node.children[0]
+
+    if op == "-" || op == "neg" {
+        resReg: str = self.codegen.newReg
+        if operandRes.typeKind == TypeKind.Num {
+            self.codegen.emit `${resReg} = fsub double 0.0, ${operandRes.reg}`
+            fRes: ExprResult = { reg: resReg, typeKind: TypeKind.Num }
+            -> fRes
+        }
+        itype: str = llvmType operandRes.typeKind
+        self.codegen.emit `${resReg} = sub ${itype} 0, ${operandRes.reg}`
+        iRes: ExprResult = { reg: resReg, typeKind: operandRes.typeKind }
+        -> iRes
+    }
+
+    if op == "!" || op == "not" {
+        resReg: str = self.codegen.newReg
+        if operandRes.typeKind == TypeKind.Bool {
+            self.codegen.emit `${resReg} = xor i1 ${operandRes.reg}, true`
+            bRes: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+            -> bRes
+        }
+        if isPointerType operandRes.typeKind {
+            self.codegen.emit `${resReg} = icmp eq ptr ${operandRes.reg}, null`
+            pRes: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+            -> pRes
+        }
+        itype: str = llvmType operandRes.typeKind
+        self.codegen.emit `${resReg} = icmp eq ${itype} ${operandRes.reg}, 0`
+        cRes: ExprResult = { reg: resReg, typeKind: TypeKind.Bool }
+        -> cRes
+    }
+
+    if op == "~" {
+        resReg: str = self.codegen.newReg
+        itype: str = llvmType operandRes.typeKind
+        self.codegen.emit `${resReg} = xor ${itype} ${operandRes.reg}, -1`
+        tRes: ExprResult = { reg: resReg, typeKind: operandRes.typeKind }
+        -> tRes
+    }
+
+    if op == "++" || op == "--" {
+        childNode: ASTNode = node.children[0]
+        if childNode.kind == NodeKind.IdentExpr {
+            foundSym = self.findSymbol childNode.name
+            if foundSym.isAlloca {
+                stType: str = llvmStackType foundSym.typeKind
+                curReg: str = operandRes.reg
+                nextReg: str = self.codegen.newReg
+                deltaOp: str = (op == "++") ? "add" : "sub"
+                self.codegen.emit `${nextReg} = ${deltaOp} ${stType} ${curReg}, 1`
+                self.codegen.emit `store ${stType} ${nextReg}, ptr ${foundSym.reg}`
+                retReg: str = node.isPrefix ? nextReg : curReg
+                res: ExprResult = { reg: retReg, typeKind: foundSym.typeKind }
+                -> res
+            }
+        }
+    }
+
+    -> operandRes
+}

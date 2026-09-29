@@ -1,0 +1,135 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitIdent Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitIdent.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp llvmStackType frm ../types
+imp ExprCodegen, ExprResult, FuncSignature frm ../expr
+
+EmitIdent self: ExprCodegen, node: ASTNode :: ExprResult {
+    foundSym = self.findSymbol node.name
+    if foundSym.name.ln > 0 && foundSym.isAlloca {
+        stType: str = llvmStackType foundSym.typeKind
+        loadReg: str = self.codegen.newReg
+        self.codegen.emit `${loadReg} = load ${stType}, ptr ${foundSym.reg}`
+        res: ExprResult = { reg: loadReg, typeKind: foundSym.typeKind }
+        -> res
+    }
+    if foundSym.reg.ln > 0 && !(foundSym.isAlloca) {
+        res: ExprResult = { reg: foundSym.reg, typeKind: foundSym.typeKind }
+        -> res
+    }
+
+    dRole: num = 0
+    if foundSym.name.ln > 0 && foundSym.decorRole > 0 {
+        dRole = foundSym.decorRole
+    } els {
+        dRole = self.getDecorRole node.name
+    }
+    if dRole == 1 {
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load i64, ptr @__active_decor_orig`
+        res: ExprResult = { reg: valReg, typeKind: TypeKind.I64 }
+        -> res
+    }
+    if dRole == 2 {
+        rawReg: str = self.codegen.newReg
+        self.codegen.emit `${rawReg} = load i64, ptr @__active_decor_ctx`
+        ptrReg: str = self.codegen.newReg
+        self.codegen.emit `${ptrReg} = inttoptr i64 ${rawReg} to ptr`
+        res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Obj }
+        -> res
+    }
+    if dRole == 3 {
+        rawReg: str = self.codegen.newReg
+        self.codegen.emit `${rawReg} = load i64, ptr @__active_factory_arg`
+        ptrReg: str = self.codegen.newReg
+        self.codegen.emit `${ptrReg} = inttoptr i64 ${rawReg} to ptr`
+        res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Str }
+        -> res
+    }
+    if node.name == "time" || node.name == "os" || node.name == "mth" || node.name == "Math" {
+        res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
+        -> res
+    }
+    if node.name == "nan" {
+        rReg: str = self.codegen.newReg
+        self.codegen.emit `${rReg} = fadd double 0.0, 0x7FF8000000000000`
+        res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+        -> res
+    }
+    if node.name == "Infinity" {
+        rReg: str = self.codegen.newReg
+        self.codegen.emit `${rReg} = fadd double 0.0, 0x7FF0000000000000`
+        res: ExprResult = { reg: rReg, typeKind: TypeKind.Num }
+        -> res
+    }
+    if foundSym.reg.ln > 0 {
+        res: ExprResult = { reg: foundSym.reg, typeKind: foundSym.typeKind }
+        -> res
+    }
+    if node.name == "args" {
+        self.codegen.emitExtern "@zuv_global_args = global i64 0"
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load i64, ptr @zuv_global_args`
+        ptrReg: str = self.codegen.newReg
+        self.codegen.emit `${ptrReg} = inttoptr i64 ${valReg} to ptr`
+        res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Arr }
+        -> res
+    }
+    if node.name == "glb" {
+        self.codegen.emitExtern "@zuv_global_glb = global ptr null"
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load ptr, ptr @zuv_global_glb`
+        res: ExprResult = { reg: valReg, typeKind: TypeKind.Obj }
+        -> res
+    }
+    // Check if bare enum variant name (e.g. Pending, Active, Archived)
+    vVal: num = self.objGen.registry.findVariantVal node.name
+    if vVal < 0 && node.val.ln > 0 {
+        vVal = self.objGen.registry.findVariantVal node.val
+    }
+    if vVal >= 0 {
+        resReg: str = self.codegen.newReg
+        self.codegen.emit `${resReg} = add i8 0, ${vVal}`
+        vRes: ExprResult = { reg: resReg, typeKind: TypeKind.I8 }
+        -> vRes
+    }
+    // Check if zero-argument function call or function pointer value
+    fnSig: FuncSignature = self.findFunc node.name
+    if fnSig.name.ln > 0 {
+        if fnSig.paramTypes.ln == 0 {
+            if fnSig.retType == "void" {
+                self.codegen.emit `call void @${node.name}()`
+                vRes: ExprResult = { reg: "", typeKind: TypeKind.Void }
+                -> vRes
+            }
+            callReg: str = self.codegen.newReg
+            self.codegen.emit `${callReg} = call ${fnSig.retType} @${node.name}()`
+            callKind = TypeKind.I64
+            if fnSig.retType == "ptr" {
+                callKind = TypeKind.Ptr
+            } els if fnSig.retType == "i32" {
+                callKind = TypeKind.I32
+            } els if fnSig.retType == "double" {
+                callKind = TypeKind.Num
+            } els if fnSig.retType == "i1" {
+                callKind = TypeKind.Bool
+            }
+            cRes: ExprResult = { reg: callReg, typeKind: callKind }
+            -> cRes
+        } els {
+            ptrReg: str = self.codegen.newReg
+            self.codegen.emit `${ptrReg} = ptrtoint ptr @${node.name} to i64`
+            fpRes: ExprResult = { reg: ptrReg, typeKind: TypeKind.I64 }
+            -> fpRes
+        }
+    }
+    fallbackReg: str = `%${node.name}`
+    fRes: ExprResult = { reg: fallbackReg, typeKind: node.inferredType }
+    -> fRes
+}

@@ -1,0 +1,48 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitWh Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitWh.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp llvmType, isPointerType frm ../types
+imp ExprResult frm ../expr
+imp StmtCodegen frm ../stmt
+
+EmitWh self: StmtCodegen, node: ASTNode :: void {
+        condLbl: str = self.codegen.newLabel "wh_cond"
+        bodyLbl: str = self.codegen.newLabel "wh_body"
+        endLbl: str = self.codegen.newLabel "wh_end"
+
+        self.breakLabels.psh endLbl
+        self.continueLabels.psh condLbl
+
+        self.codegen.emit `br label %${condLbl}`
+        self.codegen.emitLabel condLbl
+
+        condRes: ExprResult = self.exprGen.emitExpr node.children[0]
+        condReg: str = condRes.reg
+        if condRes.typeKind != TypeKind.Bool {
+            cType: str = llvmType condRes.typeKind
+            cmpReg: str = self.codegen.newReg
+            if condRes.typeKind == TypeKind.Num {
+                self.codegen.emit `${cmpReg} = fcmp one double ${condReg}, 0.0`
+            } els if isPointerType condRes.typeKind {
+                self.codegen.emit `${cmpReg} = icmp ne ptr ${condReg}, null`
+            } els {
+                self.codegen.emit `${cmpReg} = icmp ne ${cType} ${condReg}, 0`
+            }
+            condReg = cmpReg
+        }
+        self.codegen.emit `br i1 ${condReg}, label %${bodyLbl}, label %${endLbl}`
+
+        self.codegen.emitLabel bodyLbl
+        self.emitStmt node.children[1]
+        self.codegen.emit `br label %${condLbl}`
+
+        self.codegen.emitLabel endLbl
+        self.breakLabels.pp
+        self.continueLabels.pp
+}

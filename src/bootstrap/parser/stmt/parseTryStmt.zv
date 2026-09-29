@@ -1,0 +1,39 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseTryStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseTryStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseBlockStmt frm parseBlockStmt
+
+/**
+ * Parses an exception handling block (`try { ... } cth err { ... } [fin { ... }]`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} TryCthStmt AST node
+ */
+ParseTryStmt parser: Parser :: ASTNode {
+    tryTok: Token = parser.consume TokenType.TOK_TRY, "Expected 'try'"
+    tryBlock: ASTNode = ParseBlockStmt parser
+
+    parser.consume TokenType.TOK_CTH, "Expected 'cth' after try block"
+    errVarTok: Token = parser.consume TokenType.TOK_IDENT, "Expected error variable identifier in catch"
+    parser.enterScope()
+    parser.addVar errVarTok.val
+    catchBlock: ASTNode = ParseBlockStmt parser
+    parser.exitScope()
+
+    finBlock = ASTNode.createNil tryTok.line, tryTok.col
+    if parser.matchToken TokenType.TOK_FIN {
+        finBlock = ParseBlockStmt parser
+    }
+
+    node = ASTNode.createBase NodeKind.TryCthStmt, tryTok.line, tryTok.col
+    node.name = errVarTok.val
+    node.children = [tryBlock, catchBlock, finBlock]
+    -> node
+}

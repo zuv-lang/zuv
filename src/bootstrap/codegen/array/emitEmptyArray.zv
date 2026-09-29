@@ -1,0 +1,15 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitEmptyArray Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitEmptyArray.zv
+ * =============================================================================
+ */
+
+imp ArrayCodegen frm ../array
+
+EmitEmptyArray self: ArrayCodegen :: str {
+    self.emitRuntimeGlobals
+    empPtr: str = self.codegen.newReg
+    self.codegen.emit `${empPtr} = getelementptr inbounds [2 x i64], ptr @_zuv_empty_arr, i64 0, i64 1`
+    -> empPtr
+}

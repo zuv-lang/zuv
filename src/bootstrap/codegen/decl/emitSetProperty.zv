@@ -1,0 +1,17 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitSetProperty Object Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/decl/emitSetProperty.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp boxValueToI64 frm ../array
+imp ObjectCodegen frm ../decl
+
+EmitSetProperty self: ObjectCodegen, objPtrReg: str, fieldOffset: num, valReg: str, valType: TypeKind :: void {
+    boxedVal: str = boxValueToI64 self.codegen, valReg, valType
+    gep: str = self.codegen.newReg
+    self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
+    self.codegen.emit `store i64 ${boxedVal}, ptr ${gep}`
+}

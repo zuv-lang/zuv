@@ -1,0 +1,1507 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Build Pipeline & Codegen Orchestration
+ * Path: sub_projects/zuv/src/bootstrap/cli/build.zv
+ * =============================================================================
+ *
+ * Emits LLVM IR, object files (.obj), and links native executables / cdylibs.
+ */
+
+imp time
+imp Token frm ../tokens
+imp TypeKind, StrToTypeKind frm ../types
+imp ASTNode, NodeKind, NodeUsesSelf, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../ast
+imp Lexer frm ../lexer
+imp Parser frm ../parser/parser
+imp ParseProgram frm ../parser/program
+imp Checker frm ../checker/checker
+imp InferProgram frm ../checker/infer
+imp BorrowChecker, BorrowCheckProgram frm ../checker/borrow
+imp Codegen frm ../codegen/codegen
+imp ExternManager frm ../codegen/extern
+imp llvmStackType, selectDefaultValue frm ../codegen/types
+imp ObjectCodegen, StructLayoutRegistry, resolveFieldTypeKind frm ../codegen/decl
+imp ArrayCodegen frm ../codegen/array
+imp ExprCodegen frm ../codegen/expr
+imp StmtCodegen frm ../codegen/stmt
+imp RuntimeCodegen frm ../codegen/runtime
+imp emitDirectObjectFile frm build/emitDirectObjectFile
+imp linkDirectObjectFile frm build/linkDirectObjectFile
+imp StrEndsWith, IsIntegerLiteral frm ../../util/commonFunctions
+
+/**
+ * Resolves a friendly target name alias to its canonical LLVM target triple.
+ *
+ * @param {str} alias - Target alias name (e.g. 'win64', 'linux-x64', 'macos-arm64')
+ * @returns {str} Canonical LLVM target triple string
+ */
+ResolveTargetTriple alias: str :: str => sw alias {
+    "win64"         => "x86_64-pc-windows-msvc"
+    "windows-x64"   => "x86_64-pc-windows-msvc"
+    "linux-x64"     => "x86_64-unknown-linux-gnu"
+    "linux-amd64"   => "x86_64-unknown-linux-gnu"
+    "linux-arm64"   => "aarch64-unknown-linux-gnu"
+    "linux-aarch64" => "aarch64-unknown-linux-gnu"
+    "macos-arm64"   => "arm64-apple-darwin"
+    "darwin-arm64"  => "arm64-apple-darwin"
+    "macos-x64"     => "x86_64-apple-darwin"
+    "darwin-x64"    => "x86_64-apple-darwin"
+    _               => (alias.ln > 0 ? alias : "x86_64-pc-windows-msvc")
+}
+
+
+/**
+ * Compiles a Zuv source file into an LLVM IR module or linked executable.
+ */
+HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emitLlvm: bool, isCdylib: bool, isQuiet: bool, isVerbose: bool :: num {
+        if !(fE file) {
+            prnt "error: source file not found: " + file
+            -> 1
+        }
+        code: str = rF file
+        if !(isQuiet) {
+            prnt "==========================================="
+            prnt "     Zuv Bootstrap Compiler [BUILD]        "
+            prnt "==========================================="
+            prnt "Compiling target file: " + file
+            if isRelease {
+                prnt "Optimization: Release Mode (-O3 Native)"
+            } els {
+                prnt "Optimization: Debug Mode"
+            }
+        }
+
+        lex = Lexer.create(code)
+        tokens: Token[] = lex.tokenizeAll()
+
+        parser = Parser.create(tokens, file, code)
+        prog: ASTNode = ParseProgram(parser)
+        if parser.hasErrors() {
+            prnt parser.formatErrors()
+            -> 1
+        }
+
+        // Import resolution: parse imported local .zv modules and prepend declarations
+        importedNodes: ASTNode[] = []
+        fr child of prog.children {
+            if child.kind == NodeKind.ImportDecl {
+                modPath: str = child.val
+                if modPath.ln > 0 && modPath != "os" && modPath != "fs" && modPath != "str" && modPath != "arr" && modPath != "time" {
+                    fullPath: str = modPath + ".zv"
+                    if !(fE fullPath) {
+                        fullPath = "tests/" + modPath + ".zv"
+                    }
+                    if fE fullPath {
+                        modCode: str = rF fullPath
+                        modLex = Lexer.create(modCode)
+                        modTokens: Token[] = modLex.tokenizeAll()
+                        modParser = Parser.create(modTokens, fullPath, modCode)
+                        modProg: ASTNode = ParseProgram(modParser)
+                        fr modChild of modProg.children {
+                            importedNodes.psh modChild
+                        }
+                    }
+                }
+            }
+        }
+        if importedNodes.ln > 0 {
+            allChildren: ASTNode[] = []
+            fr impItem of importedNodes {
+                allChildren.psh impItem
+            }
+            fr origItem of prog.children {
+                allChildren.psh origItem
+            }
+            prog.children = allChildren
+        }
+
+        checker = Checker.create file, code
+        InferProgram checker, prog
+        if checker.hasErrors() {
+            prnt checker.formatErrors()
+            -> 1
+        }
+
+        borrow = BorrowChecker.create(file, code)
+        BorrowCheckProgram(borrow, prog)
+        if borrow.hasErrors() {
+            prnt borrow.formatErrors()
+            -> 1
+        }
+
+        // LLVM Codegen
+        cg = Codegen.create(targetTriple, isRelease)
+        cg.sourceFile = file
+        regLayouts = StructLayoutRegistry.create()
+        rtGen = RuntimeCodegen.create(cg)
+        rtGen.registry = regLayouts
+        extMgr = ExternManager.create()
+
+        rtGen.emitAll()
+        extMgr.emitCRuntimeDecls(cg)
+
+        targetExe: str = outputFile
+        if targetExe.ln == 0 {
+            targetExe = (isCdylib ? "output.dll" : "output.exe")
+        }
+
+        // Expand ObjDecl methods and defined ExternDecl functions into synthetic FuncDecls
+        expandedChildren: ASTNode[] = []
+        fr topNode of prog.children {
+            expandedChildren.psh topNode
+            if topNode.kind == NodeKind.ExternDecl {
+                fr extChild of topNode.children {
+                    if extChild.children.ln > 0 {
+                        extChild.isPub = true
+                        expandedChildren.psh extChild
+                    }
+                }
+            } els if topNode.kind == NodeKind.ObjDecl {
+                fr mNode of topNode.children {
+                    mangledName: str = topNode.name + "_" + mNode.name
+                    mRetType: str = mNode.typeAnnotation
+                    if mRetType.ln == 0 {
+                        retExpr: ASTNode = ASTNode.createNil(0, 0)
+                        if mNode.children.ln > 0 {
+                            if mNode.children[0].kind == NodeKind.BlockStmt && mNode.children[0].children.ln > 0 {
+                                fr blkStmt of mNode.children[0].children {
+                                    if blkStmt.kind == NodeKind.RetStmt && blkStmt.children.ln > 0 {
+                                        retExpr = blkStmt.children[0]
+                                    }
+                                }
+                            } els if mNode.children[0].kind != NodeKind.BlockStmt {
+                                retExpr = mNode.children[0]
+                            }
+                            if retExpr.kind == NodeKind.PropExpr && retExpr.children.ln > 0 && retExpr.children[0].name == "self" {
+                                fr fEntry of topNode.fields {
+                                    if fEntry.name == retExpr.name {
+                                        mRetType = fEntry.valStr
+                                        brk
+                                    }
+                                }
+                            } els if retExpr.kind == NodeKind.IdentExpr {
+                                if retExpr.name == "self" {
+                                    mRetType = topNode.name
+                                } els {
+                                    vType: str = FindVarInitType(mNode, retExpr.name)
+                                    if vType.ln > 0 {
+                                        mRetType = vType
+                                    } els if NodeUsesAsArray(mNode, retExpr.name) {
+                                        mRetType = "arr"
+                                    } els {
+                                        fr fEntry of topNode.fields {
+                                            if fEntry.name == retExpr.name {
+                                                mRetType = fEntry.valStr
+                                                brk
+                                            }
+                                        }
+                                    }
+                                }
+                            } els if retExpr.kind == NodeKind.IndexExpr {
+                                mRetType = topNode.name
+                            } els if retExpr.kind == NodeKind.StrExpr || (retExpr.kind == NodeKind.BinaryExpr && retExpr.op == "+" && retExpr.children.ln > 1 && (retExpr.children[0].kind == NodeKind.StrExpr || retExpr.children[1].kind == NodeKind.StrExpr || retExpr.children[0].typeAnnotation == "str" || retExpr.children[1].typeAnnotation == "str")) {
+                                mRetType = "str"
+                            } els if retExpr.kind == NodeKind.ArrExpr {
+                                mRetType = "arr"
+                            } els if retExpr.kind == NodeKind.ObjLitExpr {
+                                mRetType = (retExpr.name.ln > 0 ? retExpr.name : topNode.name)
+                            } els if retExpr.kind == NodeKind.NumExpr {
+                                if retExpr.inferredType == TypeKind.I64 || (retExpr.val.ln > 0 && IsIntegerLiteral(retExpr.val)) {
+                                    mRetType = "i64"
+                                } els {
+                                    mRetType = "num"
+                                }
+                            } els if retExpr.kind == NodeKind.BoolExpr {
+                                mRetType = "bool"
+                            }
+                        }
+                    }
+                    synthFn: ASTNode = ASTNode.createFuncDecl mangledName, mRetType, false, false, mNode.line, mNode.col
+                    usesSelf: bool = NodeUsesSelf(mNode)
+                    synthParams: Param[] = []
+                    if usesSelf {
+                        selfParam: Param = {
+                            name: "self",
+                            typeAnnotation: topNode.name,
+                            isRest: false,
+                            isOptional: false,
+                            line: mNode.line,
+                            col: mNode.col
+                        }
+                        synthParams.psh selfParam
+                    }
+                    fr p of mNode.params {
+                        synthParams.psh p
+                    }
+                    synthFn.params = synthParams
+                    fr p, pIdx of synthFn.params {
+                        if p.name != "self" && p.typeAnnotation.ln == 0 {
+                            fr f of topNode.fields {
+                                if f.name == p.name {
+                                    p.typeAnnotation = f.valStr
+                                    brk
+                                }
+                            }
+                            if p.typeAnnotation.ln == 0 {
+                                fAssigned: str = FindFieldAssignedType(mNode, p.name, topNode.name, topNode.fields)
+                                if fAssigned.ln > 0 {
+                                    p.typeAnnotation = fAssigned
+                                } els if NodeUsesAsArray(mNode, p.name) {
+                                    p.typeAnnotation = "arr"
+                                }
+                            }
+                        }
+                    }
+                    if mRetType == "str" && synthFn.params.ln > 0 && synthFn.params[0].typeAnnotation.ln == 0 {
+                        synthFn.params[0].typeAnnotation = "str"
+                    }
+                    if mNode.children.ln > 0 && mNode.children[0].kind != NodeKind.BlockStmt {
+                        retNode: ASTNode = ASTNode.createRet mNode.children[0], mNode.children[0].line, mNode.children[0].col
+                        synthBlock: ASTNode = ASTNode.createBlock [retNode], mNode.children[0].line, mNode.children[0].col
+                        synthFn.children = [synthBlock]
+                    } els {
+                        synthFn.children = mNode.children
+                    }
+                    synthFn.attributes = []
+                    expandedChildren.psh synthFn
+                }
+            }
+        }
+        prog.children = expandedChildren
+
+        // Decorator tracking
+        userDecorators: str[] = []
+        decoratorFactories: str[] = []
+        objDecorators: str[] = []
+        decoratedFuncNames: str[] = []
+        decoratedMethodNames: str[] = []
+
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.FuncDecl {
+                fr attr of topNode.attributes {
+                    aName: str = attr.name
+                    if aName != "st" && aName != "single_threaded" && aName != "inline" && aName != "noinline" && aName != "test" && aName != "derive" && aName != "custom" {
+                        userDecorators.psh aName
+                        if attr.args.ln > 0 {
+                            decoratorFactories.psh aName
+                        }
+                        decoratedFuncNames.psh topNode.name
+                    }
+                }
+            } els if topNode.kind == NodeKind.ObjDecl {
+                fr attr of topNode.attributes {
+                    aName: str = attr.name
+                    if aName != "st" && aName != "single_threaded" && aName != "inline" && aName != "noinline" && aName != "test" && aName != "derive" && aName != "custom" {
+                        userDecorators.psh aName
+                        if attr.args.ln > 0 {
+                            decoratorFactories.psh aName
+                        }
+                        objDecorators.psh aName
+                    }
+                }
+                fr mNode of topNode.children {
+                    mName: str = topNode.name + "_" + mNode.name
+                    fr mAttr of mNode.attributes {
+                        aName: str = mAttr.name
+                        if aName != "st" && aName != "single_threaded" && aName != "inline" && aName != "noinline" && aName != "test" && aName != "derive" && aName != "custom" {
+                            userDecorators.psh aName
+                            if mAttr.args.ln > 0 {
+                                decoratorFactories.psh aName
+                            }
+                            decoratedMethodNames.psh mName
+                        }
+                    }
+                }
+            }
+        }
+
+        cg.emitExtern "@__active_decor_orig = global i64 0"
+        cg.emitExtern "@__active_decor_ctx = global i64 0"
+        cg.emitExtern "@__active_factory_arg = global i64 0"
+
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.ObjDecl {
+                cg.emitExtern ("@" + topNode.name + "_prototype = global i64 0")
+            }
+        }
+        fr dm of decoratedMethodNames {
+            cg.emitExtern ("@" + dm + "_orig = global i64 0")
+            cg.emitExtern ("@" + dm + "_ctx = global i64 0")
+            cg.emitExtern ("@" + dm + "_fnptr = global i64 0")
+        }
+        fr df of decoratedFuncNames {
+            cg.emitExtern ("@" + df + "_orig = global i64 0")
+            cg.emitExtern ("@" + df + "_ctx = global i64 0")
+            cg.emitExtern ("@" + df + "_fnptr = global i64 0")
+        }
+
+        // Emit functions and statements
+        topLevelStmts: ASTNode[] = []
+        hasExplicitMain: bool = false
+        mainNode: ASTNode = ASTNode.createNil(0, 0)
+
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.TypeDecl || topNode.kind == NodeKind.ObjDecl {
+                regLayouts.registerFromAST(topNode)
+            } els if topNode.kind == NodeKind.EnumDecl {
+                regLayouts.registerEnumFromAST(topNode)
+            } els if topNode.kind == NodeKind.ExternDecl {
+                extMgr.emitExternDeclNode(topNode, cg)
+            } els if topNode.kind == NodeKind.FuncDecl {
+                if topNode.name == "main" {
+                    hasExplicitMain = true
+                    mainNode = topNode
+                }
+            } els {
+                topLevelStmts.psh(topNode)
+            }
+        }
+
+        objGen = ObjectCodegen.create(cg, regLayouts)
+        arrGen = ArrayCodegen.create(cg)
+        exprGen = ExprCodegen.create(cg, objGen, arrGen)
+        stmtGen = StmtCodegen.create(cg, exprGen)
+
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.ObjDecl {
+                fr mNode of topNode.children {
+                    mName: str = topNode.name + "_" + mNode.name
+                    exprGen.addMethodMapping mNode.name, mName
+                }
+                fr f of topNode.fields {
+                    if f.valStr.ln > 0 && f.valStr != "str" && f.valStr != "num" && f.valStr != "bool" && f.valStr != "i64" && f.valStr != "i32" && f.valStr != "ptr" && f.valStr != "any" {
+                        exprGen.addMethodMapping f.name, f.valStr
+                    }
+                }
+            }
+        }
+        fr dm of decoratedMethodNames {
+            exprGen.decoratedMethods.psh dm
+        }
+        fr df of decoratedFuncNames {
+            exprGen.decoratedMethods.psh df
+        }
+
+        // Infer return types for untyped functions
+        inferPass: num = 0
+        wh inferPass < 3 {
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.FuncDecl && topNode.typeAnnotation.ln == 0 {
+                    hasRet: bool = false
+                    retExprKind: NodeKind = NodeKind.NilExpr
+                    retExprVal: str = ""
+                    retExprName: str = ""
+                    retExprOp: str = ""
+                    retExprTypeAnn: str = ""
+
+                    retNode: ASTNode = ASTNode.createNil(0, 0)
+
+                    if topNode.children.ln > 0 {
+                        body: ASTNode = topNode.children[0]
+                        if body.kind == NodeKind.BlockStmt {
+                            fr s of body.children {
+                                if s.kind == NodeKind.RetStmt {
+                                    hasRet = true
+                                    if s.children.ln > 0 {
+                                        rNode: ASTNode = s.children[0]
+                                        retNode = rNode
+                                        retExprKind = rNode.kind
+                                        retExprVal = rNode.val
+                                        retExprName = rNode.name
+                                        retExprOp = rNode.op
+                                        retExprTypeAnn = rNode.typeAnnotation
+                                        if rNode.kind == NodeKind.CallExpr && rNode.children.ln > 0 {
+                                            calleeNode: ASTNode = rNode.children[0]
+                                            retExprName = calleeNode.name
+                                            if retExprName.ln == 0 {
+                                                retExprName = calleeNode.val
+                                            }
+                                        }
+                                    }
+                                } els if s.kind == NodeKind.SwStmt {
+                                    fr armIdx = 1; armIdx < s.children.ln; armIdx++ {
+                                        armBody: ASTNode = s.children[armIdx]
+                                        if armBody.kind == NodeKind.BlockStmt {
+                                            fr armStmt of armBody.children {
+                                                if armStmt.kind == NodeKind.RetStmt && armStmt.children.ln > 0 {
+                                                    hasRet = true
+                                                    rNode: ASTNode = armStmt.children[0]
+                                                    retNode = rNode
+                                                    retExprKind = rNode.kind
+                                                    retExprVal = rNode.val
+                                                    retExprName = rNode.name
+                                                    retExprOp = rNode.op
+                                                    retExprTypeAnn = rNode.typeAnnotation
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } els if body.kind == NodeKind.RetStmt {
+                            hasRet = true
+                            if body.children.ln > 0 {
+                                rNode: ASTNode = body.children[0]
+                                retNode = rNode
+                                retExprKind = rNode.kind
+                                retExprVal = rNode.val
+                                retExprName = rNode.name
+                                retExprOp = rNode.op
+                                retExprTypeAnn = rNode.typeAnnotation
+                            }
+                        } els if body.kind == NodeKind.SwStmt {
+                            fr armIdx = 1; armIdx < body.children.ln; armIdx++ {
+                                armBody: ASTNode = body.children[armIdx]
+                                if armBody.kind == NodeKind.BlockStmt {
+                                    fr armStmt of armBody.children {
+                                        if armStmt.kind == NodeKind.RetStmt && armStmt.children.ln > 0 {
+                                            hasRet = true
+                                            rNode: ASTNode = armStmt.children[0]
+                                            retNode = rNode
+                                            retExprKind = rNode.kind
+                                            retExprVal = rNode.val
+                                            retExprName = rNode.name
+                                            retExprOp = rNode.op
+                                            retExprTypeAnn = rNode.typeAnnotation
+                                        }
+                                    }
+                                }
+                            }
+                        } els {
+                            hasRet = true
+                            retNode = body
+                            retExprKind = body.kind
+                            retExprVal = body.val
+                            retExprName = body.name
+                            retExprOp = body.op
+                            retExprTypeAnn = body.typeAnnotation
+                        }
+                    }
+
+                    if hasRet {
+                        isConcat: bool = false
+                        if retExprKind == NodeKind.BinaryExpr && retExprOp == "+" && retNode.children.ln > 1 {
+                            lhs: ASTNode = retNode.children[0]
+                            rhs: ASTNode = retNode.children[1]
+                            if lhs.kind == NodeKind.StrExpr || rhs.kind == NodeKind.StrExpr || lhs.typeAnnotation == "str" || rhs.typeAnnotation == "str" {
+                                isConcat = true
+                            }
+                        }
+                        if retExprKind == NodeKind.StrExpr || isConcat {
+                            topNode.typeAnnotation = "str"
+                            if isConcat && retNode.children.ln > 1 {
+                                lhs: ASTNode = retNode.children[0]
+                                rhs: ASTNode = retNode.children[1]
+                                fr p, pIdx of topNode.params {
+                                    if (lhs.kind == NodeKind.IdentExpr && lhs.name == p.name) || (rhs.kind == NodeKind.IdentExpr && rhs.name == p.name) {
+                                        topNode.params[pIdx].typeAnnotation = "str"
+                                    }
+                                }
+                            }
+                        } els if retExprKind == NodeKind.ArrExpr {
+                            elemType: str = "i64"
+                            if retNode.children.ln > 0 {
+                                firstElem: ASTNode = retNode.children[0]
+                                if firstElem.kind == NodeKind.StrExpr || firstElem.typeAnnotation == "str" {
+                                    elemType = "str"
+                                } els if firstElem.kind == NodeKind.BoolExpr || firstElem.typeAnnotation == "bool" {
+                                    elemType = "bool"
+                                } els if firstElem.kind == NodeKind.IdentExpr {
+                                    fr bStmt of topNode.children {
+                                        if bStmt.kind == NodeKind.BlockStmt {
+                                            fr s of bStmt.children {
+                                                if s.kind == NodeKind.VarDecl && s.name == firstElem.name {
+                                                    if s.children.ln > 0 {
+                                                        initK: NodeKind = s.children[0].kind
+                                                        if initK == NodeKind.StrExpr { elemType = "str" }
+                                                        els if initK == NodeKind.BoolExpr { elemType = "bool" }
+                                                        els if initK == NodeKind.NumExpr { elemType = "i64" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            topNode.typeAnnotation = elemType + "[]"
+                        } els if retExprKind == NodeKind.BoolExpr || retExprOp == "==" || retExprOp == "!=" || retExprOp == "<" || retExprOp == ">" || retExprOp == "<=" || retExprOp == ">=" {
+                            topNode.typeAnnotation = "bool"
+                        } els if retExprKind == NodeKind.NumExpr {
+                            if retNode.inferredType == TypeKind.Num || (retExprVal.ln > 0 && !(IsIntegerLiteral retExprVal)) {
+                                topNode.typeAnnotation = "num"
+                            } els {
+                                topNode.typeAnnotation = "i64"
+                            }
+                        } els if retExprKind == NodeKind.ObjLitExpr {
+                            if retExprTypeAnn.ln > 0 {
+                                topNode.typeAnnotation = retExprTypeAnn
+                            }
+                        } els if retExprKind == NodeKind.IdentExpr && retExprName == "self" {
+                            fr p of topNode.params {
+                                if p.name == "self" && p.typeAnnotation.ln > 0 {
+                                    topNode.typeAnnotation = p.typeAnnotation
+                                }
+                            }
+                        } els if retExprKind == NodeKind.CallExpr && retExprName.ln > 0 {
+                            fr otherNode of prog.children {
+                                if otherNode.kind == NodeKind.FuncDecl && otherNode.name == retExprName && otherNode.typeAnnotation.ln > 0 {
+                                    topNode.typeAnnotation = otherNode.typeAnnotation
+                                }
+                            }
+                        }
+                    } els {
+                        if topNode.name != "main" {
+                            topNode.typeAnnotation = "void"
+                        }
+                    }
+                }
+            }
+            inferPass = inferPass + 1
+        }
+
+        // Pre-register user function signatures
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.FuncDecl {
+                isPtrRet: bool = (topNode.typeAnnotation == "str" || topNode.typeAnnotation == "ptr" || topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") || regLayouts.hasType(topNode.typeAnnotation))
+                retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "double" ? "double" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" ? "i32" : "i64")))))
+                pTypes: str[] = []
+                fnHasRest: bool = false
+                isDecorated: bool = false
+                fr dm of decoratedMethodNames {
+                    if dm == topNode.name { isDecorated = true }
+                }
+                fr df of decoratedFuncNames {
+                    if df == topNode.name { isDecorated = true }
+                }
+                isSoloRest: bool = (topNode.params.ln == 1 && topNode.params[0].isRest)
+                if isDecorated {
+                    retLLVM = "i64"
+                    fr p of topNode.params {
+                        pTypes.psh("i64")
+                    }
+                } els if isSoloRest {
+                    pTypes = ["i64", "i64", "i64", "i64"]
+                } els {
+                    fr p of topNode.params {
+                        pLLVM: str = "i64"
+                        if p.isRest {
+                            pLLVM = "ptr"
+                            fnHasRest = true
+                        } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") || regLayouts.hasType(p.typeAnnotation) {
+                            pLLVM = "ptr"
+                        } els if p.typeAnnotation == "bool" {
+                            pLLVM = "i1"
+                        } els if p.typeAnnotation == "i32" {
+                            pLLVM = "i32"
+                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                            pLLVM = "double"
+                        }
+                        pTypes.psh(pLLVM)
+                    }
+                }
+                fnRetKind: TypeKind = topNode.inferredType
+                if (fnRetKind == TypeKind.Unknown || fnRetKind == TypeKind.Void) && topNode.typeAnnotation.ln > 0 && topNode.typeAnnotation != "void" {
+                    fnRetKind = StrToTypeKind(topNode.typeAnnotation)
+                }
+                exprGen.registerFunc(topNode.name, retLLVM, pTypes, fnHasRest, fnRetKind, topNode.typeAnnotation)
+            }
+        }
+
+        fr extFn of extMgr.functions {
+            extRetKind: TypeKind = StrToTypeKind(extFn.retType)
+            exprGen.registerFunc(extFn.name, extFn.retType, extFn.paramTypes, false, extRetKind, extFn.retType)
+        }
+
+        fr tItem of checker.types {
+            if tItem.kind == TypeKind.Obj {
+                fr fldName, fIdx of tItem.fields {
+                    if fIdx < tItem.fieldTypes.ln && tItem.fieldTypes[fIdx] != TypeKind.Unknown {
+                        regLayouts.setFieldType tItem.name, fldName, tItem.fieldTypes[fIdx]
+                    }
+                }
+            }
+        }
+        fr s of topLevelStmts {
+            if s.kind == NodeKind.VarDecl && s.children.ln > 0 {
+                cNode: ASTNode = s.children[0]
+                if cNode.kind == NodeKind.ObjLitExpr && cNode.name.ln > 0 {
+                    fr fld, fIdx of cNode.fields {
+                        if fIdx < cNode.children.ln {
+                            fKind: TypeKind = cNode.children[fIdx].inferredType
+                            if fKind == TypeKind.Unknown {
+                                fChild: ASTNode = cNode.children[fIdx]
+                                if fChild.kind == NodeKind.StrExpr { fKind = TypeKind.Str }
+                                els if fChild.kind == NodeKind.BoolExpr { fKind = TypeKind.Bool }
+                                els if fChild.kind == NodeKind.NumExpr { fKind = TypeKind.Num }
+                            }
+                            if fKind != TypeKind.Unknown {
+                                regLayouts.setFieldType cNode.name, fld.name, fKind
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Pre-register top-level global variables
+        declaredGlobals: str[] = []
+        fr topNode of topLevelStmts {
+            if topNode.kind == NodeKind.VarDecl {
+                isAlreadyDecl: bool = false
+                fr gName of declaredGlobals {
+                    if gName == topNode.name {
+                        isAlreadyDecl = true
+                    }
+                }
+                if !isAlreadyDecl {
+                    declaredGlobals.psh(topNode.name)
+                    gType = topNode.inferredType
+                    if gType == TypeKind.Func {
+                        gType = TypeKind.I64
+                    }
+                    gTypeName: str = topNode.typeAnnotation
+                    if topNode.children.ln > 0 && topNode.children[0].typeAnnotation.ln > 0 {
+                        cTypeAnn: str = topNode.children[0].typeAnnotation
+                        if gTypeName.ln == 0 {
+                            gTypeName = cTypeAnn
+                        } els if (cTypeAnn.sub 0, 1) == "[" && (cTypeAnn.sub cTypeAnn.ln - 1, 1) == "]" {
+                            gTypeName = cTypeAnn
+                        }
+                    }
+                    if gTypeName.ln == 0 && topNode.children.ln > 0 && topNode.children[0].name.ln > 0 {
+                        gTypeName = topNode.children[0].name
+                    }
+                    if gType == TypeKind.Unknown && gTypeName.ln > 0 {
+                        gType = resolveFieldTypeKind(gTypeName)
+                    }
+                    if gType == TypeKind.Unknown && topNode.children.ln > 0 {
+                        cNode: ASTNode = topNode.children[0]
+                        if cNode.kind == NodeKind.ObjLitExpr {
+                            gType = TypeKind.Obj
+                        } els if cNode.kind == NodeKind.AwaitExpr {
+                            gType = cNode.inferredType
+                            if gType == TypeKind.Unknown || gType == TypeKind.Func {
+                                gType = TypeKind.I64
+                            }
+                        } els if cNode.kind == NodeKind.NumExpr {
+                            if cNode.inferredType == TypeKind.Num || (cNode.val.ln > 0 && !(IsIntegerLiteral cNode.val)) {
+                                gType = TypeKind.Num
+                            } els {
+                                gType = TypeKind.I64
+                            }
+                        } els if cNode.kind == NodeKind.SymExpr {
+                            gType = TypeKind.I64
+                            gTypeName = "sym"
+                        } els if cNode.kind == NodeKind.StrExpr {
+                            gType = TypeKind.Str
+                        } els if cNode.kind == NodeKind.BoolExpr {
+                            gType = TypeKind.Bool
+                        } els if cNode.kind == NodeKind.MethodCallExpr {
+                            mName: str = cNode.name
+                            if mName == "sub" || mName == "slice" || mName == "chr" || mName == "charAt" || mName == "concat" {
+                                gType = TypeKind.Str
+                            } els if mName == "contains" || mName == "eq" {
+                                gType = TypeKind.Bool
+                            } els if mName == "len" || mName == "cap" || mName == "push" {
+                                gType = TypeKind.I64
+                            } els {
+                                mTarget: str = ""
+                                if cNode.children.ln > 0 && cNode.children[0].kind == NodeKind.IdentExpr {
+                                    mTarget = cNode.children[0].name
+                                }
+                                mangled: str = exprGen.getMethodMapping mName
+                                if mangled.ln == 0 && mTarget.ln > 0 {
+                                    mangled = mTarget + "_" + mName
+                                }
+                                if mangled.ln > 0 {
+                                    mSig: FuncSignature = exprGen.findFunc mangled
+                                    if mSig.name.ln > 0 {
+                                        if mSig.retType == "ptr" {
+                                            gType = TypeKind.Str
+                                        } els if mSig.retType == "void" {
+                                            gType = TypeKind.Void
+                                        } els if mSig.retType == "double" {
+                                            gType = TypeKind.Num
+                                        } els if mSig.retType == "i1" {
+                                            gType = TypeKind.Bool
+                                        } els {
+                                            gType = TypeKind.I64
+                                        }
+                                    }
+                                }
+                            }
+                        } els if cNode.kind == NodeKind.CallExpr {
+                            cName: str = ""
+                            if cNode.children.ln > 0 && cNode.children[0].kind == NodeKind.IdentExpr {
+                                cName = cNode.children[0].name
+                            }
+                            if cName.ln > 0 {
+                                cSig: FuncSignature = exprGen.findFunc cName
+                                if cSig.name.ln > 0 {
+                                    if cSig.retType == "ptr" {
+                                        gType = TypeKind.Str
+                                    } els if cSig.retType == "void" {
+                                        gType = TypeKind.Void
+                                    } els if cSig.retType == "double" {
+                                        gType = TypeKind.Num
+                                    } els if cSig.retType == "i1" {
+                                        gType = TypeKind.Bool
+                                    } els {
+                                        gType = TypeKind.I64
+                                    }
+                                }
+                            }
+                        } els if cNode.kind == NodeKind.IndexExpr {
+                            if cNode.children.ln > 0 {
+                                idxTarget: ASTNode = cNode.children[0]
+                                if idxTarget.kind == NodeKind.StrExpr {
+                                    gType = TypeKind.Str
+                                } els if idxTarget.kind == NodeKind.IdentExpr {
+                                    tSym: ScopeSymbol = exprGen.findGlobalSymbol(idxTarget.name)
+                                    if tSym.typeKind == TypeKind.Str {
+                                        gType = TypeKind.Str
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if gType == TypeKind.Unknown || gType == TypeKind.Void {
+                        if topNode.children.ln == 0 {
+                            gType = TypeKind.Unknown
+                        } els {
+                            gType = TypeKind.I64
+                        }
+                    }
+                    stType: str = llvmStackType(gType)
+                    zeroVal: str = selectDefaultValue(gType)
+                    if zeroVal.ln == 0 {
+                        zeroVal = "0"
+                    }
+                    globReg: str = "@global_" + topNode.name
+                    globInitReg: str = ""
+                    if topNode.children.ln == 0 {
+                        globInitReg = "@global_" + topNode.name + "_is_init"
+                        cg.emitExtern(globInitReg + " = global i1 0")
+                    }
+                    cg.emitExtern(globReg + " = global " + stType + " " + zeroVal)
+                    exprGen.addGlobalSymbolWithInitFlag(topNode.name, globReg, gType, gTypeName, globInitReg)
+                }
+            } els if topNode.kind == NodeKind.DestructureStmt {
+                srcNode: ASTNode = topNode.children.ln > 0 ? topNode.children[0] : topNode
+                structName: str = ""
+                if topNode.val == "object" {
+                    structName = srcNode.typeAnnotation
+                    if structName.ln == 0 && srcNode.kind == NodeKind.IdentExpr {
+                        targetSym: ScopeSymbol = exprGen.findGlobalSymbol(srcNode.name)
+                        if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+                            structName = targetSym.typeName
+                        }
+                    }
+                }
+                fr p, pIdx of topNode.params {
+                    isAlreadyDecl: bool = false
+                    fr gName of declaredGlobals {
+                        if gName == p.name {
+                            isAlreadyDecl = true
+                        }
+                    }
+                    if !isAlreadyDecl {
+                        declaredGlobals.psh(p.name)
+                        gType: TypeKind = TypeKind.Unknown
+                        if topNode.val == "object" {
+                            gType = regLayouts.getFieldType(structName, p.name)
+                        } els {
+                            if srcNode.kind == NodeKind.IdentExpr {
+                                srcSym: ScopeSymbol = exprGen.findGlobalSymbol(srcNode.name)
+                                if StrEndsWith(srcSym.typeName, "[]") {
+                                    baseT: str = srcSym.typeName.slc(0, srcSym.typeName.ln - 2)
+                                    gType = StrToTypeKind(baseT)
+                                }
+                            } els if srcNode.kind == NodeKind.ArrExpr {
+                                if pIdx < srcNode.children.ln {
+                                    gType = srcNode.children[pIdx].inferredType
+                                }
+                            } els if srcNode.kind == NodeKind.CallExpr {
+                                cName: str = srcNode.name.ln > 0 ? srcNode.name : (srcNode.children.ln > 0 ? srcNode.children[0].name : "")
+                                if exprGen.hasFunc(cName) {
+                                    fnSig: FuncSignature = exprGen.findFunc(cName)
+                                    if StrEndsWith(fnSig.retTypeName, "[]") {
+                                        baseT: str = fnSig.retTypeName.slc(0, fnSig.retTypeName.ln - 2)
+                                        gType = StrToTypeKind(baseT)
+                                    } els if fnSig.retTypeKind != TypeKind.Unknown && fnSig.retTypeKind != TypeKind.Arr {
+                                        gType = fnSig.retTypeKind
+                                    }
+                                }
+                            }
+                        }
+                        if gType == TypeKind.Unknown || gType == TypeKind.Void {
+                            gType = (topNode.val == "object") ? TypeKind.Num : TypeKind.I64
+                        }
+                        gTypeName: str = TypeKindToStr(gType)
+                        stType: str = llvmStackType(gType)
+                        zeroVal: str = selectDefaultValue(gType)
+                        if zeroVal.ln == 0 {
+                            zeroVal = "0"
+                        }
+                        globReg: str = "@global_" + p.name
+                        globInitReg: str = "@global_" + p.name + "_is_init"
+                        cg.emitExtern(globInitReg + " = global i1 1")
+                        cg.emitExtern(globReg + " = global " + stType + " " + zeroVal)
+                        exprGen.addGlobalSymbolWithInitFlag(p.name, globReg, gType, gTypeName, globInitReg)
+                    }
+                }
+            }
+        }
+
+        // Emit custom functions (excluding main)
+        stmtGen.setTopLevel(false)
+        fr topNode of prog.children {
+            if topNode.kind == NodeKind.FuncDecl {
+                if topNode.name != "main" {
+                    exprGen.clearSymbols()
+
+                    parentFuncName: str = topNode.val
+                    parentIsDecor: bool = false
+                    parentIsFactory: bool = false
+                    if parentFuncName.ln > 0 {
+                        fr dec of userDecorators {
+                            if dec == parentFuncName { parentIsDecor = true }
+                        }
+                        fr fac of decoratorFactories {
+                            if fac == parentFuncName { parentIsFactory = true }
+                        }
+                    }
+                    if parentIsDecor {
+                        fr pNode of prog.children {
+                            if pNode.kind == NodeKind.FuncDecl && pNode.name == parentFuncName {
+                                if parentIsFactory {
+                                    if pNode.params.ln > 0 {
+                                        exprGen.setDecorRole pNode.params[0].name, 3
+                                    }
+                                    if topNode.params.ln > 0 {
+                                        exprGen.setDecorRole topNode.params[0].name, 1
+                                    }
+                                    if topNode.params.ln > 1 {
+                                        exprGen.setDecorRole topNode.params[1].name, 2
+                                    }
+                                } els {
+                                    if pNode.params.ln > 0 {
+                                        exprGen.setDecorRole pNode.params[0].name, 1
+                                    }
+                                    if pNode.params.ln > 1 {
+                                        exprGen.setDecorRole pNode.params[1].name, 2
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    isDecorated: bool = false
+                    fr dm of decoratedMethodNames {
+                        if dm == topNode.name { isDecorated = true }
+                    }
+                    fr df of decoratedFuncNames {
+                        if df == topNode.name { isDecorated = true }
+                    }
+                    isSoloRest: bool = (topNode.params.ln == 1 && topNode.params[0].isRest)
+
+                    isPtrRet: bool = (topNode.typeAnnotation == "str" || topNode.typeAnnotation == "ptr" || topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") || regLayouts.hasType(topNode.typeAnnotation))
+                    retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "double" ? "double" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" ? "i32" : "i64")))))
+                    if isDecorated {
+                        retLLVM = "i64"
+                    }
+                    paramsSig: str = ""
+                    if isDecorated {
+                        isFirstP = true
+                        fr p of topNode.params {
+                            if !isFirstP { paramsSig = paramsSig + ", " }
+                            paramsSig = paramsSig + "i64 %arg_" + p.name
+                            isFirstP = false
+                        }
+                    } els if isSoloRest {
+                        paramsSig = "i64 %arg_a0, i64 %arg_a1, i64 %arg_a2, i64 %arg_a3"
+                    } els {
+                        isFirstP = true
+                        fr p of topNode.params {
+                            pLLVM: str = "i64"
+                            if p.isRest {
+                                pLLVM = "ptr"
+                            } els if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" || p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") || regLayouts.hasType(p.typeAnnotation) {
+                                pLLVM = "ptr"
+                            } els if p.typeAnnotation == "bool" {
+                                pLLVM = "i1"
+                            } els if p.typeAnnotation == "i32" {
+                                pLLVM = "i32"
+                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                                pLLVM = "double"
+                            }
+                            if !isFirstP {
+                                paramsSig = paramsSig + ", "
+                            }
+                            paramsSig = paramsSig + pLLVM + " %arg_" + p.name
+                            isFirstP = false
+                        }
+                    }
+                    exportAttr: str = (topNode.isPub || isCdylib ? "dllexport " : "")
+                    cg.startFunction("define " + exportAttr + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
+                    if retLLVM == "void" {
+                        stmtGen.setReturnType(TypeKind.Void)
+                    } els if retLLVM == "ptr" {
+                        if topNode.typeAnnotation == "str" {
+                            stmtGen.setReturnType(TypeKind.Str)
+                        } els if topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") {
+                            stmtGen.setReturnType(TypeKind.Arr)
+                        } els if regLayouts.hasType(topNode.typeAnnotation) {
+                            stmtGen.setReturnType(TypeKind.Obj)
+                        } els {
+                            stmtGen.setReturnType(TypeKind.Ptr)
+                        }
+                    } els if retLLVM == "double" {
+                        stmtGen.setReturnType(TypeKind.Num)
+                    } els if retLLVM == "i1" {
+                        stmtGen.setReturnType(TypeKind.Bool)
+                    } els if retLLVM == "i32" {
+                        stmtGen.setReturnType(TypeKind.I32)
+                    } els {
+                        stmtGen.setReturnType(TypeKind.I64)
+                    }
+
+                    prmReg: str = ""
+                    prevModeReg: str = ""
+                    if topNode.isAsync {
+                        asyncMode: num = 1
+                        if topNode.val == "st" {
+                            asyncMode = 0
+                        }
+                        prevModeReg = cg.newReg
+                        cg.emit(`${prevModeReg} = call i32 @zuv_get_async_context()`)
+                        cg.emit(`call void @zuv_set_async_context(i32 ${asyncMode})`)
+                        prmReg = cg.newReg
+                        cg.emit(`${prmReg} = call ptr @zuv_prm_new(i32 ${asyncMode})`)
+                        stmtGen.setAsyncFunc(prmReg, prevModeReg)
+                    }
+
+                    if isDecorated {
+                        fr p of topNode.params {
+                            pKind = TypeKind.I64
+                            if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                                pKind = TypeKind.Str
+                            } els if p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                                pKind = TypeKind.Arr
+                            } els if regLayouts.hasType(p.typeAnnotation) {
+                                pKind = TypeKind.Obj
+                            } els if p.typeAnnotation == "bool" {
+                                pKind = TypeKind.Bool
+                            } els if p.typeAnnotation == "i32" {
+                                pKind = TypeKind.I32
+                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                                pKind = TypeKind.Num
+                            }
+                            if pKind == TypeKind.Str || pKind == TypeKind.Arr || pKind == TypeKind.Obj || pKind == TypeKind.Ptr {
+                                convReg: str = cg.newReg
+                                cg.emit `${convReg} = inttoptr i64 %arg_${p.name} to ptr`
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca ptr`
+                                cg.emit `store ptr ${convReg}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            } els if pKind == TypeKind.Num {
+                                convReg: str = cg.newReg
+                                cg.emit `${convReg} = bitcast i64 %arg_${p.name} to double`
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca double`
+                                cg.emit `store double ${convReg}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            } els if pKind == TypeKind.Bool {
+                                convReg: str = cg.newReg
+                                cg.emit `${convReg} = trunc i64 %arg_${p.name} to i1`
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca i1`
+                                cg.emit `store i1 ${convReg}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            } els if pKind == TypeKind.I32 {
+                                convReg: str = cg.newReg
+                                cg.emit `${convReg} = trunc i64 %arg_${p.name} to i32`
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca i32`
+                                cg.emit `store i32 ${convReg}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            } els {
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca i64`
+                                cg.emit `store i64 %arg_${p.name}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            }
+                        }
+                    } els if isSoloRest {
+                        restName: str = topNode.params[0].name
+                        rawRest: str = cg.newReg
+                        cg.emit `${rawRest} = call ptr @malloc(i64 48)`
+                        cg.emit `store i64 4, ptr ${rawRest}`
+                        restPtr: str = cg.newReg
+                        cg.emit `${restPtr} = getelementptr inbounds i64, ptr ${rawRest}, i64 1`
+                        cg.emit `store i64 4, ptr ${restPtr}`
+                        gepR1: str = cg.newReg
+                        cg.emit `${gepR1} = getelementptr inbounds i64, ptr ${restPtr}, i64 1`
+                        cg.emit `store i64 %arg_a0, ptr ${gepR1}`
+                        gepR2: str = cg.newReg
+                        cg.emit `${gepR2} = getelementptr inbounds i64, ptr ${restPtr}, i64 2`
+                        cg.emit `store i64 %arg_a1, ptr ${gepR2}`
+                        gepR3: str = cg.newReg
+                        cg.emit `${gepR3} = getelementptr inbounds i64, ptr ${restPtr}, i64 3`
+                        cg.emit `store i64 %arg_a2, ptr ${gepR3}`
+                        gepR4: str = cg.newReg
+                        cg.emit `${gepR4} = getelementptr inbounds i64, ptr ${restPtr}, i64 4`
+                        cg.emit `store i64 %arg_a3, ptr ${gepR4}`
+                        slotReg: str = cg.newReg
+                        cg.emit `${slotReg} = alloca ptr`
+                        cg.emit `store ptr ${restPtr}, ptr ${slotReg}`
+                        exprGen.addSymbol(restName, slotReg, TypeKind.Arr, true, true)
+                    } els {
+                        fr p of topNode.params {
+                            if p.isRest {
+                                slotReg: str = cg.newReg
+                                cg.emit `${slotReg} = alloca ptr`
+                                cg.emit `store ptr %arg_${p.name}, ptr ${slotReg}`
+                                exprGen.addSymbol(p.name, slotReg, TypeKind.Arr, true, true)
+                            } els {
+                                pLLVM: str = "i64"
+                                pKind = TypeKind.I64
+                                if p.typeAnnotation == "str" || p.typeAnnotation == "ptr" {
+                                    pLLVM = "ptr"
+                                    pKind = TypeKind.Str
+                                } els if p.typeAnnotation == "arr" || StrEndsWith(p.typeAnnotation, "[]") {
+                                    pLLVM = "ptr"
+                                    pKind = TypeKind.Arr
+                                } els if regLayouts.hasType(p.typeAnnotation) {
+                                    pLLVM = "ptr"
+                                    pKind = TypeKind.Obj
+                                } els if p.typeAnnotation == "bool" {
+                                    pLLVM = "i1"
+                                    pKind = TypeKind.Bool
+                                } els if p.typeAnnotation == "i32" {
+                                    pLLVM = "i32"
+                                    pKind = TypeKind.I32
+                                } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                                    pLLVM = "double"
+                                    pKind = TypeKind.Num
+                                }
+                                slotReg: str = cg.newReg
+                                cg.emit(`${slotReg} = alloca ${pLLVM}`)
+                                cg.emit(`store ${pLLVM} %arg_${p.name}, ptr ${slotReg}`)
+                                exprGen.addSymbol(p.name, slotReg, pKind, false, true)
+                            }
+                        }
+                    }
+
+                    hasExplicitRet: bool = false
+                    if topNode.children.ln > 0 {
+                        bodyBlock: ASTNode = topNode.children[0]
+                        fr bodyStmt of bodyBlock.children {
+                            stmtGen.emitStmt(bodyStmt)
+                        }
+                        if bodyBlock.children.ln > 0 {
+                            lastStmt: ASTNode = bodyBlock.children[bodyBlock.children.ln - 1]
+                            if lastStmt.kind == NodeKind.RetStmt {
+                                hasExplicitRet = true
+                            }
+                        }
+                    }
+
+                    if topNode.isAsync {
+                        if !hasExplicitRet {
+                            cg.emit(`call void @zuv_prm_resolve(ptr ${prmReg}, i64 0)`)
+                            if prevModeReg.ln > 0 {
+                                cg.emit(`call void @zuv_set_async_context(i32 ${prevModeReg})`)
+                            }
+                            prmInt: str = cg.newReg
+                            cg.emit(`${prmInt} = ptrtoint ptr ${prmReg} to i64`)
+                            cg.emit(`ret i64 ${prmInt}`)
+                        }
+                        stmtGen.clearAsyncFunc()
+                    } els {
+                        if !hasExplicitRet {
+                            if retLLVM == "void" {
+                                cg.emit("ret void")
+                            } els if retLLVM == "ptr" {
+                                cg.emit("ret ptr null")
+                            } els {
+                                cg.emit("ret i64 0")
+                            }
+                        }
+                    }
+                    cg.finishFunction()
+                }
+            }
+        }
+
+        // Emit @main function
+        exprGen.clearSymbols()
+        if hasExplicitMain {
+            cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
+            rtGen.emitInitArgsCall(file)
+            rtGen.emitInitCrashHandlerCall()
+            cg.emitExtern("@zuv_global_glb = global ptr null")
+            glbMem: str = cg.newReg
+            cg.emit(`${glbMem} = call ptr @malloc(i64 8192)`)
+            cg.emit(`call ptr @memset(ptr ${glbMem}, i32 0, i64 8192)`)
+            cg.emit(`store ptr ${glbMem}, ptr @zuv_global_glb`)
+
+            // 1. Initialize decorated free functions
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.FuncDecl && topNode.name != "main" {
+                    fr attr of topNode.attributes {
+                        aName: str = attr.name
+                        isUserDec: bool = false
+                        fr uDec of userDecorators {
+                            if uDec == aName { isUserDec = true }
+                        }
+                        if isUserDec {
+                            fnName: str = topNode.name
+                            fnBits: str = cg.newReg
+                            cg.emit `${fnBits} = ptrtoint ptr @${fnName} to i64`
+                            cg.emit `store i64 ${fnBits}, ptr @${fnName}_orig`
+
+                            ctxAlloc: str = cg.newReg
+                            cg.emit `${ctxAlloc} = call ptr @malloc(i64 8192)`
+                            cg.emit `call ptr @memset(ptr ${ctxAlloc}, i32 0, i64 8192)`
+                            nameConst: str = cg.addStringConstant fnName
+                            nameBits: str = cg.newReg
+                            cg.emit `${nameBits} = ptrtoint ptr ${nameConst} to i64`
+                            cg.emit `store i64 ${nameBits}, ptr ${ctxAlloc}`
+                            ctxGep: str = cg.newReg
+                            cg.emit `${ctxGep} = getelementptr inbounds i64, ptr ${ctxAlloc}, i64 5`
+                            cg.emit `store i64 ${nameBits}, ptr ${ctxGep}`
+                            ctxInt: str = cg.newReg
+                            cg.emit `${ctxInt} = ptrtoint ptr ${ctxAlloc} to i64`
+                            cg.emit `store i64 ${ctxInt}, ptr @${fnName}_ctx`
+
+                            cg.emit `store i64 ${fnBits}, ptr @__active_decor_orig`
+                            cg.emit `store i64 ${ctxInt}, ptr @__active_decor_ctx`
+
+                            if attr.args.ln > 0 {
+                                rawArg: str = attr.args[0]
+                                if rawArg.ln >= 2 && ((rawArg[0] == 34 && rawArg[rawArg.ln - 1] == 34) || (rawArg[0] == 39 && rawArg[rawArg.ln - 1] == 39)) {
+                                    rawArg = rawArg.sub 1, (rawArg.ln - 2)
+                                }
+                                argConst: str = cg.addStringConstant rawArg
+                                argBits: str = cg.newReg
+                                cg.emit `${argBits} = ptrtoint ptr ${argConst} to i64`
+                                cg.emit `store i64 ${argBits}, ptr @__active_factory_arg`
+                                facRes: str = cg.newReg
+                                cg.emit `${facRes} = call i64 @${aName}(i64 ${argBits})`
+                                facPtr: str = cg.newReg
+                                cg.emit `${facPtr} = inttoptr i64 ${facRes} to ptr`
+                                wrapRes: str = cg.newReg
+                                cg.emit `${wrapRes} = call i64 ${facPtr}(i64 ${fnBits}, i64 ${ctxInt})`
+                                cg.emit `store i64 ${wrapRes}, ptr @${fnName}_fnptr`
+                            } els {
+                                wrapRes: str = cg.newReg
+                                cg.emit `${wrapRes} = call i64 @${aName}(i64 ${fnBits}, i64 ${ctxInt})`
+                                cg.emit `store i64 ${wrapRes}, ptr @${fnName}_fnptr`
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Initialize Object prototypes and Class Decorators
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.ObjDecl {
+                    protoReg: str = "@" + topNode.name + "_prototype"
+                    pAlloc: str = cg.newReg
+                    cg.emit `${pAlloc} = call ptr @malloc(i64 8192)`
+                    cg.emit `call ptr @memset(ptr ${pAlloc}, i32 0, i64 8192)`
+                    pAllocInt: str = cg.newReg
+                    cg.emit `${pAllocInt} = ptrtoint ptr ${pAlloc} to i64`
+                    cg.emit `store i64 ${pAllocInt}, ptr ${protoReg}`
+
+                    fr attr of topNode.attributes {
+                        aName: str = attr.name
+                        isUserDec: bool = false
+                        fr uDec of userDecorators {
+                            if uDec == aName { isUserDec = true }
+                        }
+                        if isUserDec {
+                            cg.emit `call i64 @${aName}(i64 ${pAllocInt})`
+                        }
+                    }
+                }
+            }
+
+            // 3. Initialize decorated methods
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.ObjDecl {
+                    fr mNode of topNode.children {
+                        fr mAttr of mNode.attributes {
+                            aName: str = mAttr.name
+                            isUserDec: bool = false
+                            fr uDec of userDecorators {
+                                if uDec == aName { isUserDec = true }
+                            }
+                            if isUserDec {
+                                mangledName: str = topNode.name + "_" + mNode.name
+                                fnBits: str = cg.newReg
+                                cg.emit `${fnBits} = ptrtoint ptr @${mangledName} to i64`
+                                cg.emit `store i64 ${fnBits}, ptr @${mangledName}_orig`
+
+                                ctxAlloc: str = cg.newReg
+                                cg.emit `${ctxAlloc} = call ptr @malloc(i64 8192)`
+                                cg.emit `call ptr @memset(ptr ${ctxAlloc}, i32 0, i64 8192)`
+                                nameConst: str = cg.addStringConstant mNode.name
+                                nameBits: str = cg.newReg
+                                cg.emit `${nameBits} = ptrtoint ptr ${nameConst} to i64`
+                                cg.emit `store i64 ${nameBits}, ptr ${ctxAlloc}`
+                                ctxGep: str = cg.newReg
+                                cg.emit `${ctxGep} = getelementptr inbounds i64, ptr ${ctxAlloc}, i64 5`
+                                cg.emit `store i64 ${nameBits}, ptr ${ctxGep}`
+                                ctxInt: str = cg.newReg
+                                cg.emit `${ctxInt} = ptrtoint ptr ${ctxAlloc} to i64`
+                                cg.emit `store i64 ${ctxInt}, ptr @${mangledName}_ctx`
+
+                                cg.emit `store i64 ${fnBits}, ptr @__active_decor_orig`
+                                cg.emit `store i64 ${ctxInt}, ptr @__active_decor_ctx`
+
+                                if mAttr.args.ln > 0 {
+                                    rawArg: str = mAttr.args[0]
+                                    if rawArg.ln >= 2 && ((rawArg[0] == 34 && rawArg[rawArg.ln - 1] == 34) || (rawArg[0] == 39 && rawArg[rawArg.ln - 1] == 39)) {
+                                        rawArg = rawArg.sub 1, (rawArg.ln - 2)
+                                    }
+                                    argConst: str = cg.addStringConstant rawArg
+                                    argBits: str = cg.newReg
+                                    cg.emit `${argBits} = ptrtoint ptr ${argConst} to i64`
+                                    cg.emit `store i64 ${argBits}, ptr @__active_factory_arg`
+                                    facRes: str = cg.newReg
+                                    cg.emit `${facRes} = call i64 @${aName}(i64 ${argBits})`
+                                    facPtr: str = cg.newReg
+                                    cg.emit `${facPtr} = inttoptr i64 ${facRes} to ptr`
+                                    wrapRes: str = cg.newReg
+                                    cg.emit `${wrapRes} = call i64 ${facPtr}(i64 ${fnBits}, i64 ${ctxInt})`
+                                    cg.emit `store i64 ${wrapRes}, ptr @${mangledName}_fnptr`
+                                } els {
+                                    wrapRes: str = cg.newReg
+                                    cg.emit `${wrapRes} = call i64 @${aName}(i64 ${fnBits}, i64 ${ctxInt})`
+                                    cg.emit `store i64 ${wrapRes}, ptr @${mangledName}_fnptr`
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            stmtGen.setReturnType(TypeKind.I32)
+            stmtGen.setTopLevel(true)
+            fr topStmt of topLevelStmts {
+                stmtGen.emitStmt(topStmt)
+            }
+            if mainNode.children.ln > 0 {
+                bodyBlock: ASTNode = mainNode.children[0]
+                fr bodyStmt of bodyBlock.children {
+                    stmtGen.emitStmt(bodyStmt)
+                }
+            }
+            cg.emit("ret i32 0")
+            cg.finishFunction()
+        } els if !(isCdylib) {
+            cg.startFunction("define i32 @main(i32 %argc, ptr %argv) {")
+            rtGen.emitInitArgsCall(file)
+            rtGen.emitInitCrashHandlerCall()
+            cg.emitExtern("@zuv_global_glb = global ptr null")
+            glbMem: str = cg.newReg
+            cg.emit(`${glbMem} = call ptr @malloc(i64 8192)`)
+            cg.emit(`call ptr @memset(ptr ${glbMem}, i32 0, i64 8192)`)
+            cg.emit(`store ptr ${glbMem}, ptr @zuv_global_glb`)
+
+            // 1. Initialize decorated free functions
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.FuncDecl && topNode.name != "main" {
+                    fr attr of topNode.attributes {
+                        aName: str = attr.name
+                        isUserDec: bool = false
+                        fr uDec of userDecorators {
+                            if uDec == aName { isUserDec = true }
+                        }
+                        if isUserDec {
+                            fnName: str = topNode.name
+                            fnBits: str = cg.newReg
+                            cg.emit `${fnBits} = ptrtoint ptr @${fnName} to i64`
+                            cg.emit `store i64 ${fnBits}, ptr @${fnName}_orig`
+
+                            ctxAlloc: str = cg.newReg
+                            cg.emit `${ctxAlloc} = call ptr @malloc(i64 8192)`
+                            cg.emit `call ptr @memset(ptr ${ctxAlloc}, i32 0, i64 8192)`
+                            nameConst: str = cg.addStringConstant fnName
+                            nameBits: str = cg.newReg
+                            cg.emit `${nameBits} = ptrtoint ptr ${nameConst} to i64`
+                            cg.emit `store i64 ${nameBits}, ptr ${ctxAlloc}`
+                            ctxGep: str = cg.newReg
+                            cg.emit `${ctxGep} = getelementptr inbounds i64, ptr ${ctxAlloc}, i64 5`
+                            cg.emit `store i64 ${nameBits}, ptr ${ctxGep}`
+                            ctxInt: str = cg.newReg
+                            cg.emit `${ctxInt} = ptrtoint ptr ${ctxAlloc} to i64`
+                            cg.emit `store i64 ${ctxInt}, ptr @${fnName}_ctx`
+
+                            cg.emit `store i64 ${fnBits}, ptr @__active_decor_orig`
+                            cg.emit `store i64 ${ctxInt}, ptr @__active_decor_ctx`
+
+                            if attr.args.ln > 0 {
+                                rawArg: str = attr.args[0]
+                                if rawArg.ln >= 2 && ((rawArg[0] == 34 && rawArg[rawArg.ln - 1] == 34) || (rawArg[0] == 39 && rawArg[rawArg.ln - 1] == 39)) {
+                                    rawArg = rawArg.sub 1, (rawArg.ln - 2)
+                                }
+                                argConst: str = cg.addStringConstant rawArg
+                                argBits: str = cg.newReg
+                                cg.emit `${argBits} = ptrtoint ptr ${argConst} to i64`
+                                cg.emit `store i64 ${argBits}, ptr @__active_factory_arg`
+                                facRes: str = cg.newReg
+                                cg.emit `${facRes} = call i64 @${aName}(i64 ${argBits})`
+                                facPtr: str = cg.newReg
+                                cg.emit `${facPtr} = inttoptr i64 ${facRes} to ptr`
+                                wrapRes: str = cg.newReg
+                                cg.emit `${wrapRes} = call i64 ${facPtr}(i64 ${fnBits}, i64 ${ctxInt})`
+                                cg.emit `store i64 ${wrapRes}, ptr @${fnName}_fnptr`
+                            } els {
+                                wrapRes: str = cg.newReg
+                                cg.emit `${wrapRes} = call i64 @${aName}(i64 ${fnBits}, i64 ${ctxInt})`
+                                cg.emit `store i64 ${wrapRes}, ptr @${fnName}_fnptr`
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Initialize Object prototypes and Class Decorators
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.ObjDecl {
+                    protoReg: str = "@" + topNode.name + "_prototype"
+                    pAlloc: str = cg.newReg
+                    cg.emit `${pAlloc} = call ptr @malloc(i64 8192)`
+                    cg.emit `call ptr @memset(ptr ${pAlloc}, i32 0, i64 8192)`
+                    pAllocInt: str = cg.newReg
+                    cg.emit `${pAllocInt} = ptrtoint ptr ${pAlloc} to i64`
+                    cg.emit `store i64 ${pAllocInt}, ptr ${protoReg}`
+
+                    fr attr of topNode.attributes {
+                        aName: str = attr.name
+                        isUserDec: bool = false
+                        fr uDec of userDecorators {
+                            if uDec == aName { isUserDec = true }
+                        }
+                        if isUserDec {
+                            cg.emit `call i64 @${aName}(i64 ${pAllocInt})`
+                        }
+                    }
+                }
+            }
+
+            // 3. Initialize decorated methods
+            fr topNode of prog.children {
+                if topNode.kind == NodeKind.ObjDecl {
+                    fr mNode of topNode.children {
+                        fr mAttr of mNode.attributes {
+                            aName: str = mAttr.name
+                            isUserDec: bool = false
+                            fr uDec of userDecorators {
+                                if uDec == aName { isUserDec = true }
+                            }
+                            if isUserDec {
+                                mangledName: str = topNode.name + "_" + mNode.name
+                                fnBits: str = cg.newReg
+                                cg.emit `${fnBits} = ptrtoint ptr @${mangledName} to i64`
+                                cg.emit `store i64 ${fnBits}, ptr @${mangledName}_orig`
+
+                                ctxAlloc: str = cg.newReg
+                                cg.emit `${ctxAlloc} = call ptr @malloc(i64 8192)`
+                                cg.emit `call ptr @memset(ptr ${ctxAlloc}, i32 0, i64 8192)`
+                                nameConst: str = cg.addStringConstant mNode.name
+                                nameBits: str = cg.newReg
+                                cg.emit `${nameBits} = ptrtoint ptr ${nameConst} to i64`
+                                cg.emit `store i64 ${nameBits}, ptr ${ctxAlloc}`
+                                ctxGep: str = cg.newReg
+                                cg.emit `${ctxGep} = getelementptr inbounds i64, ptr ${ctxAlloc}, i64 5`
+                                cg.emit `store i64 ${nameBits}, ptr ${ctxGep}`
+                                ctxInt: str = cg.newReg
+                                cg.emit `${ctxInt} = ptrtoint ptr ${ctxAlloc} to i64`
+                                cg.emit `store i64 ${ctxInt}, ptr @${mangledName}_ctx`
+
+                                cg.emit `store i64 ${fnBits}, ptr @__active_decor_orig`
+                                cg.emit `store i64 ${ctxInt}, ptr @__active_decor_ctx`
+
+                                if mAttr.args.ln > 0 {
+                                    rawArg: str = mAttr.args[0]
+                                    if rawArg.ln >= 2 && ((rawArg[0] == 34 && rawArg[rawArg.ln - 1] == 34) || (rawArg[0] == 39 && rawArg[rawArg.ln - 1] == 39)) {
+                                        rawArg = rawArg.sub 1, (rawArg.ln - 2)
+                                    }
+                                    argConst: str = cg.addStringConstant rawArg
+                                    argBits: str = cg.newReg
+                                    cg.emit `${argBits} = ptrtoint ptr ${argConst} to i64`
+                                    cg.emit `store i64 ${argBits}, ptr @__active_factory_arg`
+                                    facRes: str = cg.newReg
+                                    cg.emit `${facRes} = call i64 @${aName}(i64 ${argBits})`
+                                    facPtr: str = cg.newReg
+                                    cg.emit `${facPtr} = inttoptr i64 ${facRes} to ptr`
+                                    wrapRes: str = cg.newReg
+                                    cg.emit `${wrapRes} = call i64 ${facPtr}(i64 ${fnBits}, i64 ${ctxInt})`
+                                    cg.emit `store i64 ${wrapRes}, ptr @${mangledName}_fnptr`
+                                } els {
+                                    wrapRes: str = cg.newReg
+                                    cg.emit `${wrapRes} = call i64 @${aName}(i64 ${fnBits}, i64 ${ctxInt})`
+                                    cg.emit `store i64 ${wrapRes}, ptr @${mangledName}_fnptr`
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            stmtGen.setReturnType(TypeKind.I32)
+            stmtGen.setTopLevel(true)
+            fr topStmt of topLevelStmts {
+                stmtGen.emitStmt(topStmt)
+            }
+            cg.emit("ret i32 0")
+            cg.finishFunction()
+        }
+
+        moduleIR: str = cg.getModuleIR()
+
+        if emitLlvm {
+            llvmOut: str = targetExe
+            if !(StrEndsWith(llvmOut, ".ll")) {
+                llvmOut = llvmOut + ".ll"
+            }
+            wF llvmOut, moduleIR
+            if !(isQuiet) {
+                prnt "[zuv build] Emitted LLVM IR to " + llvmOut
+            }
+            -> 0
+        }
+
+        // 1. Emit native object file directly via in-process LLVM
+        tmpObj: str = "_zuv_tmp_" + (time.now()) + ".obj"
+        objRes: num = emitDirectObjectFile(moduleIR, tmpObj, isRelease, targetTriple)
+        if objRes != 0 {
+            prnt "[zuv build] In-process LLVM compilation failed"
+            if fE tmpObj {
+                rmF tmpObj
+            }
+            -> objRes
+        }
+
+        // 2. Link executable or library via lld-link
+        linkRes: num = linkDirectObjectFile(tmpObj, targetExe, isCdylib, extMgr.getExternLibs())
+        if fE tmpObj {
+            rmF tmpObj
+        }
+
+
+        if linkRes == 0 {
+            if !(isQuiet) {
+                prnt "[zuv build] Successfully generated " + targetExe
+            }
+            -> 0
+        }
+
+        prnt "[zuv build] Compilation failed during linking (exit code " + linkRes + ")"
+        -> 1
+
+}

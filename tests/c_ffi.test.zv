@@ -1,8 +1,8 @@
 // C Foreign Function Interface (FFI) Test Suite
-extern "msvcrt.dll" puts s: str -> num
-extern "kernel32.dll" GetCurrentProcessId -> num
-extern "kernel32.dll" Sleep ms: num -> void
-extern "user32.dll" GetSystemMetrics nIndex: num -> num
+extern "msvcrt.dll" puts s: str :: num
+extern "kernel32.dll" GetCurrentProcessId :: num
+extern "kernel32.dll" Sleep ms: num :: void
+extern "user32.dll" GetSystemMetrics nIndex: num :: num
 
 // Call C runtime function directly
 puts "=== Native C FFI Test Output ==="

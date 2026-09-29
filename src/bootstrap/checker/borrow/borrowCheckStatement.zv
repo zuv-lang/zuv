@@ -1,0 +1,139 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — BorrowCheckStatement Engine
+ * Path: sub_projects/zuv/src/bootstrap/checker/borrow/borrowCheckStatement.zv
+ * =============================================================================
+ */
+
+imp ASTNode, NodeKind frm ../../ast
+imp BorrowChecker frm ../borrow
+imp BorrowCheckExpression frm borrowCheckExpression
+
+/**
+ * Traverses a statement AST node, managing scope boundaries, variable declarations, and borrow bindings.
+ *
+ * @param {BorrowChecker} checker - Active borrow checker instance
+ * @param {ASTNode} stmt - Statement AST node to validate
+ * @returns {void}
+ */
+BorrowCheckStatement checker: BorrowChecker, stmt: ASTNode :: void {
+    k = stmt.kind
+    if k == NodeKind.VarDecl {
+        if stmt.isBorrow {
+            targetName: str = ""
+            if stmt.children.ln > 0 {
+                initNode = stmt.children[0]
+                if initNode.kind == NodeKind.BorrowExpr && initNode.children.ln > 0 {
+                    targetName = initNode.children[0].val
+                } els if initNode.kind == NodeKind.IdentExpr {
+                    targetName = initNode.val
+                } els {
+                    targetName = initNode.val
+                }
+            }
+            checker.defineVar stmt.name, true, targetName, false, stmt.line, stmt.col
+            checker.recordBorrow targetName, stmt.name, stmt.line, stmt.col
+            ->
+        }
+        checker.defineVar stmt.name, false, "", true, stmt.line, stmt.col
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        ->
+    }
+    if k == NodeKind.DestructureStmt {
+        fr p of stmt.params {
+            existingVar = checker.getVar(p.name)
+            if existingVar.name.ln == 0 {
+                checker.defineVar p.name, false, "", true, p.line, p.col
+            }
+        }
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        ->
+    }
+    if k == NodeKind.ExprStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        ->
+    }
+    if k == NodeKind.BlockStmt {
+        checker.enterScope
+        fr child of stmt.children {
+            BorrowCheckStatement checker, child
+        }
+        checker.exitScope
+        ->
+    }
+    if k == NodeKind.IfStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        checker.enterScope
+        if stmt.children.ln > 1 {
+            BorrowCheckStatement checker, stmt.children[1]
+        }
+        checker.exitScope
+        if stmt.children.ln > 2 {
+            checker.enterScope
+            BorrowCheckStatement checker, stmt.children[2]
+            checker.exitScope
+        }
+        ->
+    }
+    if k == NodeKind.WhStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        checker.enterScope
+        if stmt.children.ln > 1 {
+            BorrowCheckStatement checker, stmt.children[1]
+        }
+        checker.exitScope
+        ->
+    }
+    if k == NodeKind.FrOfStmt || k == NodeKind.FrInStmt {
+        if stmt.children.ln == 4 {
+            checker.enterScope
+            BorrowCheckStatement checker, stmt.children[0]
+            BorrowCheckExpression checker, stmt.children[1]
+            BorrowCheckExpression checker, stmt.children[2]
+            BorrowCheckStatement checker, stmt.children[3]
+            checker.exitScope
+            ->
+        }
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        checker.enterScope
+        checker.defineVar stmt.name, false, "", true, stmt.line, stmt.col
+        if stmt.val.ln > 0 {
+            checker.defineVar stmt.val, false, "", true, stmt.line, stmt.col
+        }
+        if stmt.children.ln > 1 {
+            BorrowCheckStatement checker, stmt.children[1]
+        }
+        checker.exitScope
+        ->
+    }
+    if k == NodeKind.FuncDecl {
+        checker.defineVar stmt.name, false, "", false, stmt.line, stmt.col
+        checker.enterScope
+        fr param of stmt.params {
+            checker.defineVar param.name, false, "", true, param.line, param.col
+        }
+        fr bStmt of stmt.children {
+            BorrowCheckStatement checker, bStmt
+        }
+        checker.exitScope
+        ->
+    }
+    if k == NodeKind.RetStmt {
+        if stmt.children.ln > 0 {
+            BorrowCheckExpression checker, stmt.children[0]
+        }
+        ->
+    }
+}

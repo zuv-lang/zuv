@@ -2,8 +2,8 @@ sayThree msg {
     prnt msg
 }
 
-let n = 2
-mch n {
+n = 2
+sw n {
     1 => {
         prnt "num One"
     }
@@ -18,8 +18,8 @@ mch n {
     }
 }
 
-let m = 9
-mch m {
+m = 9
+sw m {
     1 => {
         prnt "wild miss"
     }
@@ -31,8 +31,8 @@ mch m {
     }
 }
 
-let s = "hi"
-mch s {
+s = "hi"
+sw s {
     "bye" => {
         prnt "str bye"
     }
@@ -44,12 +44,12 @@ mch s {
     }
 }
 
-let b = yes
-mch b {
-    no => {
+b = true
+sw b {
+    false => {
         prnt "bool no"
     }
-    yes => {
+    true => {
         prnt "bool yes ok"
     }
     _ => {
@@ -57,8 +57,8 @@ mch b {
     }
 }
 
-let k = 3
-mch k {
+k = 3
+sw k {
     1 => {
         prnt "expr One"
     }
@@ -69,18 +69,18 @@ mch k {
     }
 }
 
-let j = 2
-mch j {
+j = 2
+sw j {
     1 => prnt "expr skip"
     2 => prnt "expr Two ok"
     _ => prnt "expr miss"
 }
 
-let swN = 1
+swN = 1
 sw swN {
     1 => prnt "sw One ok"
     2 => prnt "sw Two"
     _ => prnt "sw Default"
 }
 
-prnt "mch value test complete"
+prnt "sw value test complete"

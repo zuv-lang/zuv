@@ -1,0 +1,63 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitCrashHandler Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitCrashHandler.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitCrashHandler self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define internal i32 @zuv_crash_handler(ptr %pExc) {
+        entry:
+            ; Inspect exception code from EXCEPTION_POINTERS -> EXCEPTION_RECORD
+            %rec_ptr = load ptr, ptr %pExc
+            %code = load i32, ptr %rec_ptr
+            %is_av = icmp eq i32 %code, -1073741819 ; 0xC0000005: Access Violation
+            %is_dz = icmp eq i32 %code, -1073741676 ; 0xC0000094: Integer Division by Zero
+            %is_ab = icmp eq i32 %code, -1073741684 ; 0xC000008C: Array Bounds / Abort
+            %is_so = icmp eq i32 %code, -1073741571 ; 0xC00000FD: Stack Overflow
+            %fatal1 = or i1 %is_av, %is_dz
+            %fatal2 = or i1 %is_ab, %is_so
+            %is_fatal = or i1 %fatal1, %fatal2
+            br i1 %is_fatal, label %handle_crash, label %pass
+
+        handle_crash:
+            ; Hardware crash detected: print exception code and faulting instruction pointer
+            %addr_ptr = getelementptr inbounds i8, ptr %rec_ptr, i64 16
+            %fault_pc = load ptr, ptr %addr_ptr
+            %fault_pc_i64 = ptrtoint ptr %fault_pc to i64
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_crash_msg, i32 %code, i64 %fault_pc_i64)
+            %env = call ptr @getenv(ptr @zuv_env_backtrace)
+            %has_env = icmp ne ptr %env, null
+            br i1 %has_env, label %check_crash_env, label %print_crash_hint
+
+        check_crash_env:
+            ; Check if backtrace is disabled (ZUV_BACKTRACE="0")
+            %ch = load i8, ptr %env
+            %is_zero = icmp eq i8 %ch, 48
+            br i1 %is_zero, label %print_crash_hint, label %print_crash_bt
+
+        print_crash_bt:
+            ; Unwind and dump crash backtrace
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_header)
+            call void @zuv_walk_stack(i32 0, i32 32)
+            br label %exit_crash
+
+        print_crash_hint:
+            ; Print crash diagnostic hint
+            call i32 (ptr, ...) @printf(ptr @zuv_fmt_bt_hint)
+            br label %exit_crash
+
+        exit_crash:
+            ; Terminate process with exit code 101
+            call void @exit(i32 101)
+            ret i32 0
+
+        pass:
+            ; Non-fatal exception: pass through to subsequent exception handlers
+            ret i32 0
+        }
+        `
+}

@@ -1,0 +1,16 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitCapacity Array Code Generation
+ * Path: sub_projects/zuv/src/bootstrap/codegen/array/emitCapacity.zv
+ * =============================================================================
+ */
+
+imp ArrayCodegen frm ../array
+
+EmitCapacity self: ArrayCodegen, arrPtrReg: str :: str {
+    capPtr: str = self.codegen.newReg
+    self.codegen.emit `${capPtr} = getelementptr inbounds i64, ptr ${arrPtrReg}, i64 -1`
+    capReg: str = self.codegen.newReg
+    self.codegen.emit `${capReg} = load i64, ptr ${capPtr}`
+    -> capReg
+}

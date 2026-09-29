@@ -1,0 +1,80 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseVarDecl Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseVarDecl.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+imp ParseJuxtaposedArgs frm parseJuxtaposedArgs
+imp IsMultiVarDestructure, ParseDestructureStmt frm parseDestructureStmt
+
+/**
+ * Parses a variable binding declaration (`let name [: Type] = init` or `&let name = init`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} VarDecl AST node
+ */
+ParseVarDecl parser: Parser :: ASTNode {
+    isBorrow: bool = false
+    startTok: Token = parser.cur
+
+    if parser.matchToken TokenType.TOK_AMP_LET {
+        isBorrow = true
+    } els {
+        parser.consume TokenType.TOK_LET, "Expected 'let' or '&let'"
+    }
+
+    isMut: bool = false
+    if (parser.check TokenType.TOK_IDENT) && parser.cur.val == "mut" {
+        parser.advance
+        isMut = true
+    }
+
+    if parser.check TokenType.TOK_LBRACE {
+        -> ParseDestructureStmt parser, "object", isMut
+    }
+    if parser.check TokenType.TOK_LBRACKET {
+        -> ParseDestructureStmt parser, "array", isMut
+    }
+    if IsMultiVarDestructure parser {
+        -> ParseDestructureStmt parser, "multivar", isMut
+    }
+
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected variable name identifier"
+    typeAnnot: str = ""
+
+    if parser.matchToken TokenType.TOK_COLON {
+        tTok: Token = parser.cur
+        typeAnnot = tTok.val
+        parser.advance
+        wh parser.check TokenType.TOK_LBRACKET {
+            if parser.checkPeek TokenType.TOK_RBRACKET {
+                parser.advance
+                parser.advance
+                typeAnnot = typeAnnot + "[]"
+            } els {
+                brk
+            }
+        }
+    }
+
+    if parser.matchToken TokenType.TOK_ASSIGN {
+        rawExpr: ASTNode = ParseExpr parser
+        initExpr: ASTNode = ParseJuxtaposedArgs parser, rawExpr
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            // optional trailing semicolon
+        }
+        parser.addVar nameTok.val
+        -> ASTNode.createVarDecl nameTok.val, typeAnnot, isBorrow, initExpr, startTok.line, startTok.col
+    } els {
+        if parser.matchToken TokenType.TOK_SEMICOLON {
+            // optional trailing semicolon
+        }
+        parser.addVar nameTok.val
+        -> ASTNode.createVarDeclUninit nameTok.val, typeAnnot, isBorrow, startTok.line, startTok.col
+    }
+}

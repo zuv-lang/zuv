@@ -10,9 +10,9 @@ lg "--- Testing 100% Comprehensive std/os Suite ---"
 
 // 1. Global Process Arguments (args & os.args)
 lg "1. Global process args length:"
-lg args.ln
+lg args.len
 lg "1b. os.args length:"
-lg os.args.ln
+lg os.args.len
 lg "1c. Program executable path (args[0]):"
 lg args[0]
 lg "1d. Script source file path (args[1]):"
@@ -78,7 +78,7 @@ lg temp_dir
 lg "9. Endianness:"
 lg os.endian
 lg "9b. Line ending length:"
-lg os.eol.ln
+lg os.eol.len
 lg "9c. Null device:"
 lg os.devNull
 

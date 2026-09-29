@@ -1,0 +1,37 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseArrayLiteral Expression Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/expr/parseArrayLiteral.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseExpression frm ../expr
+
+/**
+ * Parses an array literal expression (`[elem1, elem2, ...]`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} ArrExpr AST node
+ */
+ParseArrayLiteral parser: Parser :: ASTNode {
+    lbTok: Token = parser.consume TokenType.TOK_LBRACKET, "Expected '['"
+    elems: ASTNode[] = []
+
+    wh !(parser.check TokenType.TOK_RBRACKET) && !(parser.isAtEnd) {
+        el: ASTNode = ParseExpression parser, 1
+        elems.psh el
+        if parser.matchToken TokenType.TOK_COMMA {
+            // continue parsing next element
+        } els {
+            brk
+        }
+    }
+
+    parser.consume TokenType.TOK_RBRACKET, "Expected ']' after array literal"
+    node = ASTNode.createBase NodeKind.ArrExpr, lbTok.line, lbTok.col
+    node.children = elems
+    -> node
+}

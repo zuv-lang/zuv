@@ -1,9 +1,9 @@
 // Test for Task 13 & Task 28: Unsafe Blocks & Raw Memory Primitives (unsafe, *ptr, mem)
 
 unsafe {
-    let ptr = malloc 64 as *byte
+    ptr = malloc 64 as *byte
     *ptr = 42
-    let val = *ptr
+    val = *ptr
     prnt val
     if val == 42 {
         prnt "Dereferenced malloc pointer matches 42"
@@ -13,16 +13,16 @@ unsafe {
 
 // Pointer arithmetic and offset dereferencing
 unsafe {
-    let buffer = malloc 128 as *num
+    buffer = malloc 128 as *num
     *buffer = 10
-    let second = buffer + 8
+    second = buffer + 8
     *second = 20
-    let third = buffer + 16
+    third = buffer + 16
     *third = 30
 
-    let v1 = *buffer
-    let v2 = *second
-    let v3 = *third
+    v1 = *buffer
+    v2 = *second
+    v3 = *third
     prnt v1
     prnt v2
     prnt v3
@@ -36,9 +36,9 @@ unsafe {
 
 // Address-of variable
 unsafe {
-    let x = 1234
-    let xPtr = &x
-    let xVal = *xPtr
+    x = 1234
+    xPtr = &x
+    xVal = *xPtr
     prnt xVal
     if xVal == 1234 {
         prnt "Address-of stack variable passed"
@@ -48,16 +48,16 @@ unsafe {
 // Task 28: Low-Level Memory Reallocation, Copy & Fill Primitives
 unsafe {
     // 1. Heap Allocation & Byte Set
-    let p1 = mem.alloc 16
+    p1 = mem.alloc 16
     mem.set p1, 65, 10
     prnt "Filled 10 bytes with 65 (ASCII 'A') using mem.set"
 
     // 2. Heap Reallocation
-    let p1_expanded = mem.realloc p1, 64
+    p1_expanded = mem.realloc p1, 64
     prnt "Reallocated buffer to 64 bytes using mem.realloc"
 
     // 3. Fast Block Copy (mem.cp)
-    let p2 = mem.alloc 64
+    p2 = mem.alloc 64
     mem.cp p2, p1_expanded, 10
     prnt "Copied 10 bytes using mem.cp"
 
@@ -65,16 +65,16 @@ unsafe {
     mem.free p2
 }
 
-// Size Layout Queries (sz / sizeof)
-sz_byte = sz byte
-sz_i16 = sz i16
-sz_i32 = sz i32
-sz_i64 = sz i64
-sz_num = sz num
-sz_str = sizeof str
-sz_bool = sizeof bool
-sz_ptr = sizeof ptr
+// Size Layout Queries (size)
+size_byte = size byte
+size_i16 = size i16
+size_i32 = size i32
+size_i64 = size i64
+size_num = size num
+size_str = size str
+size_bool = size bool
+size_ptr = size ptr
 
-if sz_byte == 1 and sz_i16 == 2 and sz_i32 == 4 and sz_i64 == 8 and sz_num == 8 {
-    prnt "Size queries (sz / sizeof) passed"
+if size_byte == 1 and size_i16 == 2 and size_i32 == 4 and size_i64 == 8 and size_num == 8 {
+    prnt "Size queries (size) passed"
 }

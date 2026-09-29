@@ -50,8 +50,6 @@ enum TokenType {
     TOK_OR,
     TOK_NOT,
     TOK_MATCH,
-    TOK_OK,
-    TOK_ERR,
     TOK_FAT_ARROW,
     TOK_QUESTION,
     TOK_NULLISH,
@@ -60,8 +58,7 @@ enum TokenType {
     TOK_ASYNC_ST,
     TOK_AWAIT,
     TOK_TYP,
-    TOK_SIZEOF,
-    TOK_SZ,
+    TOK_SIZE,
     TOK_SYM,
     TOK_ENUM,
     TOK_AS,
@@ -215,19 +212,16 @@ TokenTypeToStr kind: TokenType :: str => sw kind {
     TokenType.TOK_AND             => "and"
     TokenType.TOK_OR              => "or"
     TokenType.TOK_NOT             => "not"
-    TokenType.TOK_MATCH           => "mch"
-    TokenType.TOK_OK              => "ok"
-    TokenType.TOK_ERR             => "err"
+    TokenType.TOK_MATCH           => "sw"
     TokenType.TOK_FAT_ARROW       => "=>"
     TokenType.TOK_QUESTION        => "?"
     TokenType.TOK_NULLISH         => "??"
     TokenType.TOK_OPT_DOT         => "?."
-    TokenType.TOK_ASYNC           => "async"
-    TokenType.TOK_ASYNC_ST        => "asyncST"
-    TokenType.TOK_AWAIT           => "await"
+    TokenType.TOK_ASYNC           => "asc"
+    TokenType.TOK_ASYNC_ST        => "ascST"
+    TokenType.TOK_AWAIT           => "awt"
     TokenType.TOK_TYP             => "typ"
-    TokenType.TOK_SIZEOF          => "sizeof"
-    TokenType.TOK_SZ              => "sz"
+    TokenType.TOK_SIZE            => "size"
     TokenType.TOK_SYM             => "sym"
     TokenType.TOK_ENUM            => "enum"
     TokenType.TOK_AS              => "as"
@@ -332,14 +326,11 @@ IsKeyword kind: TokenType :: bool => sw kind {
     TokenType.TOK_OR        => true
     TokenType.TOK_NOT       => true
     TokenType.TOK_MATCH     => true
-    TokenType.TOK_OK        => true
-    TokenType.TOK_ERR       => true
     TokenType.TOK_ASYNC     => true
     TokenType.TOK_ASYNC_ST  => true
     TokenType.TOK_AWAIT     => true
     TokenType.TOK_TYP       => true
-    TokenType.TOK_SIZEOF    => true
-    TokenType.TOK_SZ        => true
+    TokenType.TOK_SIZE      => true
     TokenType.TOK_SYM       => true
     TokenType.TOK_ENUM      => true
     TokenType.TOK_AS        => true
@@ -353,6 +344,7 @@ IsKeyword kind: TokenType :: bool => sw kind {
     TokenType.TOK_UNSAFE    => true
     TokenType.TOK_PUB       => true
     TokenType.TOK_LET       => true
+    TokenType.TOK_AMP_LET   => true
     TokenType.TOK_FN        => true
     TokenType.TOK_STRUCT    => true
     TokenType.TOK_MACRO     => true
@@ -469,15 +461,16 @@ LookupKeyword text: str :: TokenType => sw text {
     "enum"     => TokenType.TOK_ENUM
     "pub"      => TokenType.TOK_PUB
     "extern"   => TokenType.TOK_EXTERN
-    "ffi"      => TokenType.TOK_EXTERN
     "if"       => TokenType.TOK_IF
     "els"      => TokenType.TOK_ELS
+    "and"      => TokenType.TOK_AND
+    "or"       => TokenType.TOK_OR
+    "not"      => TokenType.TOK_NOT
     "wh"       => TokenType.TOK_WH
     "fr"       => TokenType.TOK_FOR
     "in"       => TokenType.TOK_IN
     "of"       => TokenType.TOK_OF
     "sw"       => TokenType.TOK_MATCH
-    "mch"      => TokenType.TOK_MATCH
     "ret"      => TokenType.TOK_RET
     "brk"      => TokenType.TOK_BRK
     "cont"     => TokenType.TOK_CONT
@@ -489,23 +482,15 @@ LookupKeyword text: str :: TokenType => sw text {
     "panic"    => TokenType.TOK_PANIC
     "imp"      => TokenType.TOK_IMP
     "frm"      => TokenType.TOK_FRM
-    "from"     => TokenType.TOK_FRM
     "asc"      => TokenType.TOK_ASYNC
-    "async"    => TokenType.TOK_ASYNC
     "ascST"    => TokenType.TOK_ASYNC_ST
-    "asyncST"  => TokenType.TOK_ASYNC_ST
     "awt"      => TokenType.TOK_AWAIT
-    "await"    => TokenType.TOK_AWAIT
     "wrk"      => TokenType.TOK_WRK
-    "worker"   => TokenType.TOK_WRK
     "typ"      => TokenType.TOK_TYP
-    "type"     => TokenType.TOK_TYP
-    "sizeof"   => TokenType.TOK_SIZEOF
-    "sz"       => TokenType.TOK_SZ
+    "size"     => TokenType.TOK_SIZE
     "sym"      => TokenType.TOK_SYM
     "as"       => TokenType.TOK_AS
     "new"      => TokenType.TOK_NEW
-    "nw"       => TokenType.TOK_NEW
     "unsafe"   => TokenType.TOK_UNSAFE
     "macro"    => TokenType.TOK_MACRO
     "prnt"     => TokenType.TOK_PRNT
@@ -514,12 +499,8 @@ LookupKeyword text: str :: TokenType => sw text {
     "inf"      => TokenType.TOK_INFO
     "nan"      => TokenType.TOK_NAN
     "Infinity" => TokenType.TOK_INFINITY
-    "ok"       => TokenType.TOK_OK
-    "err"      => TokenType.TOK_ERR
     "true"     => TokenType.TOK_TRUE
-    "yes"      => TokenType.TOK_TRUE
     "false"    => TokenType.TOK_FALSE
-    "no"       => TokenType.TOK_FALSE
     "nil"      => TokenType.TOK_NIL
     "und"      => TokenType.TOK_UND
     "num"      => TokenType.TOK_TYPE_NUM

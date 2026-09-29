@@ -4,15 +4,27 @@ enum Status {
     Archived
 }
 
-let s = Status.Active
+s = Status.Active
 
 if s == Status.Active {
     prnt "enum eq Active ok"
 }
 
-let d0 = Status.Pending
-let d1 = Status.Active
-let d2 = Status.Archived
+if typ Status == "obj" {
+    prnt "typ Status ok"
+}
+
+if typ Status.Active == "i8" {
+    prnt "typ Status.Active ok"
+}
+
+if typ s == "i8" {
+    prnt "typ s ok"
+}
+
+d0 = Status.Pending
+d1 = Status.Active
+d2 = Status.Archived
 
 if d0 == 0 {
     prnt "enum disc Pending=0 ok"
@@ -26,7 +38,7 @@ if d2 == 2 {
     prnt "enum disc Archived=2 ok"
 }
 
-mch s {
+sw s {
     Status.Pending => {
         prnt "match pending"
     }
@@ -38,8 +50,8 @@ mch s {
     }
 }
 
-let t = Status.Pending
-mch t {
+t = Status.Pending
+sw t {
     Pending => {
         prnt "bare Pending ok"
     }

@@ -1,0 +1,34 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitBoundsCheckHandler Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitBoundsCheckHandler.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitBoundsCheckHandler self: RuntimeCodegen :: void {
+        self.codegen.funcs += `
+        define internal void @zuv_check_bounds(ptr %arr, i64 %idx, ptr %file, i32 %line) {
+        entry:
+            ; Reject null pointer dereference
+            %is_null = icmp eq ptr %arr, null
+            br i1 %is_null, label %fail, label %check
+
+        check:
+            ; Load array length header and check bounds: 0 <= idx < len
+            %len = load i64, ptr %arr
+            %in_bounds = icmp ult i64 %idx, %len
+            br i1 %in_bounds, label %ok, label %fail
+
+        fail:
+            ; Out of bounds violation: invoke runtime panic with file and line metadata
+            call void @zuv_panic(ptr @zuv_err_oob, ptr %file, i32 %line)
+            unreachable
+
+        ok:
+            ; Index within valid range, proceed with operation
+            ret void
+        }
+        `
+}

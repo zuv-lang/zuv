@@ -1,0 +1,8 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — System & Path Constants
+ * Path: sub_projects/zuv/src/util/constants.zv
+ * =============================================================================
+ */
+
+LOCAL_LLD_BIN_PATH = "D:/LLVM/bin/lld-link.exe"

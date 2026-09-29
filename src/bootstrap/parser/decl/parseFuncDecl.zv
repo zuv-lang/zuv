@@ -1,0 +1,197 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseFuncDecl Declaration Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/decl/parseFuncDecl.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind, Param frm ../../ast
+imp Parser frm ../parser
+imp ParseStatement, ParseBlockStmt, ParseMatchStmt, ParseExpr, ParseJuxtaposedArgs frm ../stmt
+imp ParseParamList frm parseParamList
+imp ParseTypeString frm parseTypeString
+
+/**
+ * Parses a function declaration (`fn name params [:: RetType] { body }` or `name p1, p2 => expr`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @param {bool} isPub - True if exported public function
+ * @param {bool} isAsync - True if asynchronous function
+ * @returns {ASTNode} Function declaration AST node
+ */
+ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
+    if parser.matchToken TokenType.TOK_FN {
+        // consumed optional 'fn'
+    }
+
+    nameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected function name identifier"
+    name: str = nameTok.val
+    isExtension: bool = false
+    extTypeName: str = ""
+    if parser.matchToken TokenType.TOK_DOT {
+        subNameTok: Token = parser.consume TokenType.TOK_IDENT, "Expected method identifier after '.'"
+        extTypeName = name
+        name = extTypeName + "_" + subNameTok.val
+        isExtension = true
+    }
+    prevFnName: str = parser.curFuncName
+    parser.curFuncName = name
+
+    params: Param[] = []
+    if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_ARROW) && !(parser.check TokenType.TOK_FAT_ARROW) {
+        params = ParseParamList parser
+    }
+
+    returnType: str = ""
+    if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) {
+        returnType = ParseTypeString parser
+    }
+
+    node = ASTNode.createFuncDecl name, returnType, isAsync, isPub, nameTok.line, nameTok.col
+    if isExtension {
+        selfParam: Param = {
+            name: "self",
+            typeAnnotation: extTypeName,
+            isRest: false,
+            isOptional: false,
+            line: nameTok.line,
+            col: nameTok.col
+        }
+        allParams: Param[] = [selfParam]
+        fr p of params {
+            allParams.psh p
+        }
+        node.params = allParams
+    } els {
+        node.params = params
+    }
+
+    if node.params.ln == 0 {
+        parser.addZeroArgFunc name
+    }
+
+    parser.enterScope()
+    fr p of node.params {
+        parser.addVar p.name
+    }
+
+    if parser.matchToken TokenType.TOK_FAT_ARROW {
+        if parser.check TokenType.TOK_LBRACE {
+            isObjLit: bool = false
+            peekTok: Token = parser.peek
+            if peekTok.kind == TokenType.TOK_RBRACE || peekTok.kind == TokenType.TOK_ELLIPSIS {
+                isObjLit = true
+            } els if peekTok.kind == TokenType.TOK_IDENT {
+                peek2: Token = parser.peekAhead 2
+                if peek2.kind == TokenType.TOK_COLON || peek2.kind == TokenType.TOK_COMMA || peek2.kind == TokenType.TOK_RBRACE {
+                    isObjLit = true
+                }
+            }
+            if isObjLit {
+                objExpr: ASTNode = ParseExpr parser
+                retNode: ASTNode = ASTNode.createRet objExpr, objExpr.line, objExpr.col
+                bodyBlock: ASTNode = ASTNode.createBlock [retNode], objExpr.line, objExpr.col
+                node.children.psh bodyBlock
+            } els {
+                bodyBlock: ASTNode = ParseBlockStmt parser
+                node.children.psh bodyBlock
+            }
+        } els if parser.check TokenType.TOK_MATCH {
+            matchNode: ASTNode = ParseMatchStmt parser
+            fr armIdx = 1; armIdx < matchNode.children.ln; armIdx++ {
+                armBody: ASTNode = matchNode.children[armIdx]
+                if armBody.kind == NodeKind.BlockStmt && armBody.children.ln > 0 {
+                    firstStmt: ASTNode = armBody.children[0]
+                    retExpr: ASTNode = firstStmt
+                    if firstStmt.kind == NodeKind.ExprStmt && firstStmt.children.ln > 0 {
+                        retExpr = firstStmt.children[0]
+                    }
+                    if firstStmt.kind != NodeKind.RetStmt {
+                        retArm: ASTNode = ASTNode.createRet retExpr, retExpr.line, retExpr.col
+                        armBody.children = [retArm]
+                    }
+                }
+            }
+            bodyBlock: ASTNode = ASTNode.createBlock [matchNode], matchNode.line, matchNode.col
+            node.children.psh bodyBlock
+        } els {
+            curLTok: Token = parser.cur
+            prevLTok: Token = parser.prev
+            isSameLine: bool = (curLTok.line == prevLTok.line)
+            hasExplicitRet: bool = false
+            if !isSameLine {
+                off: num = 0
+                braceDepth: num = 0
+                wh true {
+                    tAhead: Token = parser.peekAhead off
+                    if tAhead.kind == TokenType.TOK_EOF {
+                        brk
+                    }
+                    if tAhead.kind == TokenType.TOK_LBRACE {
+                        braceDepth = braceDepth + 1
+                    } els if tAhead.kind == TokenType.TOK_RBRACE {
+                        braceDepth = braceDepth - 1
+                    }
+                    if braceDepth == 0 {
+                        if tAhead.kind == TokenType.TOK_ARROW || tAhead.kind == TokenType.TOK_RET {
+                            hasExplicitRet = true
+                            brk
+                        }
+                        if tAhead.kind == TokenType.TOK_IMP || tAhead.kind == TokenType.TOK_ENUM || tAhead.kind == TokenType.TOK_STRUCT || tAhead.kind == TokenType.TOK_PUB || tAhead.kind == TokenType.TOK_EXTERN {
+                            brk
+                        }
+                        if tAhead.kind == TokenType.TOK_FN {
+                            brk
+                        }
+                        if tAhead.kind == TokenType.TOK_IDENT {
+                            isOtherFn: bool = false
+                            fnOff: num = off + 1
+                            wh true {
+                                nTok: Token = parser.peekAhead fnOff
+                                if nTok.kind == TokenType.TOK_EOF || nTok.line != tAhead.line {
+                                    brk
+                                }
+                                if nTok.kind == TokenType.TOK_FAT_ARROW || nTok.kind == TokenType.TOK_LBRACE {
+                                    isOtherFn = true
+                                    brk
+                                }
+                                fnOff = fnOff + 1
+                            }
+                            if isOtherFn {
+                                brk
+                            }
+                        }
+                    }
+                    off = off + 1
+                }
+            }
+            if hasExplicitRet {
+                stmts: ASTNode[] = []
+                wh !(parser.isAtEnd) {
+                    s: ASTNode = ParseStatement parser
+                    stmts.psh s
+                    if s.kind == NodeKind.RetStmt {
+                        brk
+                    }
+                }
+                bodyBlock: ASTNode = ASTNode.createBlock stmts, node.line, node.col
+                node.children.psh bodyBlock
+            } els {
+                exprNode: ASTNode = ParseExpr parser
+                exprNode = ParseJuxtaposedArgs parser, exprNode
+                retNode: ASTNode = ASTNode.createRet exprNode, exprNode.line, exprNode.col
+                bodyBlock: ASTNode = ASTNode.createBlock [retNode], exprNode.line, exprNode.col
+                node.children.psh bodyBlock
+            }
+        }
+    } els if parser.check TokenType.TOK_LBRACE {
+        bodyBlock: ASTNode = ParseBlockStmt parser
+        node.children.psh bodyBlock
+    }
+
+    parser.exitScope()
+    parser.curFuncName = prevFnName
+
+    -> node
+}

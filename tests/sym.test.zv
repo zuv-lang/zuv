@@ -1,6 +1,6 @@
-let a = sym "key"
-let b = sym "key"
-let c = sym "other"
+a = sym "key"
+b = sym "key"
+c = sym "other"
 
 if a == b {
     prnt "same key equal ok"
@@ -22,7 +22,7 @@ if a {
     prnt "sym truthy ok"
 }
 
-let d = sym "key"
+d = sym "key"
 if d == a {
     prnt "third same key ok"
 }

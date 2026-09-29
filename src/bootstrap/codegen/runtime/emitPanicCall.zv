@@ -1,0 +1,15 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitPanicCall Runtime Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/runtime/emitPanicCall.zv
+ * =============================================================================
+ */
+
+imp RuntimeCodegen frm ../runtime
+
+EmitPanicCall self: RuntimeCodegen, msg: str, file: str, line: num :: void {
+        msgSym: str = self.codegen.addStringConstant msg
+        fileSym: str = self.codegen.addStringConstant file
+        self.codegen.emit `call void @zuv_panic(ptr ${msgSym}, ptr ${fileSym}, i32 ${line})`
+        self.codegen.emit "unreachable"
+}

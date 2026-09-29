@@ -1,0 +1,193 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitProp Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitProp.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode, NodeKind frm ../../ast
+imp isPointerType frm ../types
+imp ExprCodegen, ExprResult, FuncSignature frm ../expr
+
+EmitProp self: ExprCodegen, node: ASTNode :: ExprResult {
+    targetNode: ASTNode = node.children[0]
+    propName: str = node.name
+
+    // Check for os.args
+    if targetNode.kind == NodeKind.IdentExpr && targetNode.name == "os" && propName == "args" {
+        self.codegen.emitExtern "@zuv_global_args = global i64 0"
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load i64, ptr @zuv_global_args`
+        ptrReg: str = self.codegen.newReg
+        self.codegen.emit `${ptrReg} = inttoptr i64 ${valReg} to ptr`
+        res: ExprResult = { reg: ptrReg, typeKind: TypeKind.Arr }
+        -> res
+    }
+
+    // Check for time.mono
+    if targetNode.kind == NodeKind.IdentExpr && targetNode.name == "time" && propName == "mono" {
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = call double @zuv_time_mono()`
+        res: ExprResult = { reg: valReg, typeKind: TypeKind.Num }
+        -> res
+    }
+
+    // Check for enum property access, e.g. Status.Active
+    if targetNode.kind == NodeKind.IdentExpr {
+        objName: str = targetNode.val
+        if objName.ln == 0 {
+            objName = targetNode.name
+        }
+        isE: bool = self.objGen.registry.isEnum objName
+        if isE {
+            disc: num = self.objGen.registry.getEnumVariantVal objName, propName
+            if disc < 0 {
+                disc = 0
+            }
+            resReg: str = self.codegen.newReg
+            self.codegen.emit `${resReg} = add i8 0, ${disc}`
+            eRes: ExprResult = { reg: resReg, typeKind: TypeKind.I8 }
+            -> eRes
+        }
+    }
+
+    targetRes: ExprResult = self.emitExpr targetNode
+
+    if propName == "len" {
+        if targetRes.typeKind == TypeKind.Str {
+            lenReg: str = self.codegen.newReg
+            self.codegen.emit `${lenReg} = call i64 @strlen(ptr ${targetRes.reg})`
+            res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
+            -> res
+        }
+        arrPtrReg: str = targetRes.reg
+        if !(isPointerType targetRes.typeKind) {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
+            arrPtrReg = convReg
+        }
+        lenReg: str = self.arrGen.emitLength arrPtrReg
+        res: ExprResult = { reg: lenReg, typeKind: TypeKind.I64 }
+        -> res
+    }
+
+    if propName == "pop" {
+        arrPtrReg: str = targetRes.reg
+        if !(isPointerType targetRes.typeKind) {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
+            arrPtrReg = convReg
+        }
+        valReg: str = self.arrGen.emitPop arrPtrReg
+        popType = node.inferredType
+        if popType == TypeKind.Unknown {
+            popType = TypeKind.I64
+        }
+        res: ExprResult = { reg: valReg, typeKind: popType }
+        -> res
+    }
+
+    if propName == "cap" {
+        arrPtrReg: str = targetRes.reg
+        if !(isPointerType targetRes.typeKind) {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
+            arrPtrReg = convReg
+        }
+        capReg: str = self.arrGen.emitCapacity arrPtrReg
+        res: ExprResult = { reg: capReg, typeKind: TypeKind.I64 }
+        -> res
+    }
+
+    structTypeName: str = targetNode.typeAnnotation
+    if structTypeName.ln == 0 && targetNode.kind == NodeKind.IdentExpr {
+        targetSym = self.findSymbol targetNode.name
+        if targetSym.name.ln > 0 && targetSym.typeName.ln > 0 {
+            structTypeName = targetSym.typeName
+        }
+    }
+    if structTypeName.ln == 0 || !(self.objGen.registry.hasType structTypeName) {
+        fr l of self.objGen.registry.layouts {
+            if l.hasField propName {
+                structTypeName = l.typeName
+                brk
+            }
+        }
+    }
+
+    objPtrReg: str = targetRes.reg
+    if !(isPointerType targetRes.typeKind) {
+        convReg: str = self.codegen.newReg
+        self.codegen.emit `${convReg} = inttoptr i64 ${targetRes.reg} to ptr`
+        objPtrReg = convReg
+    }
+
+    // Check if propName is a method on the object / struct
+    methodMangled: str = structTypeName.ln > 0 ? (structTypeName + "_" + propName) : ""
+    if methodMangled.ln == 0 || !(self.hasFunc(methodMangled)) {
+        mappedMethod: str = self.getMethodMapping(propName)
+        if mappedMethod.ln > 0 && self.hasFunc(mappedMethod) {
+            methodMangled = mappedMethod
+        }
+    }
+    if methodMangled.ln == 0 && self.hasFunc(propName) {
+        methodMangled = propName
+    }
+    if methodMangled.ln > 0 && self.hasFunc(methodMangled) {
+        mSig: FuncSignature = self.findFunc(methodMangled)
+        callArgsStr: str = ""
+        pIdx: num = 0
+        wh pIdx < mSig.paramTypes.ln {
+            if pIdx > 0 {
+                callArgsStr = callArgsStr + ", "
+            }
+            pType: str = mSig.paramTypes[pIdx]
+            if pIdx == 0 && pType == "ptr" {
+                callArgsStr = callArgsStr + "ptr " + objPtrReg
+            } els if pType == "double" {
+                callArgsStr = callArgsStr + "double 0.0"
+            } els if pType == "i1" {
+                callArgsStr = callArgsStr + "i1 0"
+            } els if pType == "ptr" {
+                callArgsStr = callArgsStr + "ptr null"
+            } els {
+                callArgsStr = callArgsStr + pType + " 0"
+            }
+            pIdx = pIdx + 1
+        }
+        mRetKind: TypeKind = node.inferredType
+        if mRetKind == TypeKind.Unknown || mRetKind == TypeKind.Func {
+            if mSig.retTypeKind != TypeKind.Unknown {
+                mRetKind = mSig.retTypeKind
+            } els if mSig.retType == "ptr" {
+                mRetKind = TypeKind.Obj
+            } els if mSig.retType == "void" {
+                mRetKind = TypeKind.Void
+            } els if mSig.retType == "double" {
+                mRetKind = TypeKind.Num
+            } els if mSig.retType == "i1" {
+                mRetKind = TypeKind.Bool
+            } els {
+                mRetKind = TypeKind.I64
+            }
+        }
+        callReg: str = self.codegen.newReg
+        self.codegen.emit `${callReg} = call ${mSig.retType} @${methodMangled}(${callArgsStr})`
+        res: ExprResult = { reg: callReg, typeKind: mRetKind }
+        -> res
+    }
+
+    off: num = self.objGen.registry.getFieldOffset structTypeName, propName
+    if off < 0 {
+        off = 0
+    }
+    targetPropKind = node.inferredType
+    if targetPropKind == TypeKind.Unknown {
+        targetPropKind = self.objGen.registry.getFieldType structTypeName, propName
+    }
+    isOpt: bool = (node.op == "?.")
+    valReg: str = self.objGen.emitGetProperty objPtrReg, off, targetPropKind, isOpt
+    res: ExprResult = { reg: valReg, typeKind: targetPropKind }
+    -> res
+}

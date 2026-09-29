@@ -1,0 +1,335 @@
+// Integer and float types test: i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f32
+
+a: i8 = 42
+b: i16 = 1000
+c: i32 = 100000
+d: i64 = 5000000000
+e: i128 = 9000000000
+u1: u8 = 200
+u2: u16 = 40000
+u3: u32 = 3000000000
+u4: u64 = 10000000000
+u5: u128 = 20000000000
+f: f32 = 1.5
+
+if a == 42 {
+    prnt "i8 value ok"
+}
+
+if b == 1000 {
+    prnt "i16 value ok"
+}
+
+if c == 100000 {
+    prnt "i32 value ok"
+}
+
+if d == 5000000000 {
+    prnt "i64 value ok"
+}
+
+if e == 9000000000 {
+    prnt "i128 value ok"
+}
+
+if u1 == 200 {
+    prnt "u8 value ok"
+}
+
+if u2 == 40000 {
+    prnt "u16 value ok"
+}
+
+if u3 == 3000000000 {
+    prnt "u32 value ok"
+}
+
+if u4 == 10000000000 {
+    prnt "u64 value ok"
+}
+
+if u5 == 20000000000 {
+    prnt "u128 value ok"
+}
+
+if f == 1.5 {
+    prnt "f32 value ok"
+}
+
+if typ a == "i8" {
+    prnt "typ i8 ok"
+}
+
+if typ b == "i16" {
+    prnt "typ i16 ok"
+}
+
+if typ c == "i32" {
+    prnt "typ i32 ok"
+}
+
+if typ d == "i64" {
+    prnt "typ i64 ok"
+}
+
+if typ e == "i128" {
+    prnt "typ i128 ok"
+}
+
+if typ u1 == "u8" {
+    prnt "typ u8 ok"
+}
+
+if typ u2 == "u16" {
+    prnt "typ u16 ok"
+}
+
+if typ u3 == "u32" {
+    prnt "typ u32 ok"
+}
+
+if typ u4 == "u64" {
+    prnt "typ u64 ok"
+}
+
+if typ u5 == "u128" {
+    prnt "typ u128 ok"
+}
+
+if typ f == "f32" {
+    prnt "typ f32 ok"
+}
+
+// Cast tests
+ca = 10 as i8
+cb = 200 as i16
+cc = 30000 as i32
+cd = 400000 as i64
+ce = 500000 as i128
+cu1 = 150 as u8
+cu2 = 35000 as u16
+cu3 = 2500000000 as u32
+cu4 = 8000000000 as u64
+cu5 = 15000000000 as u128
+cf = 1.5 as f32
+
+if typ ca == "i8" {
+    prnt "cast to i8 typ ok"
+}
+
+if typ cb == "i16" {
+    prnt "cast to i16 typ ok"
+}
+
+if typ cc == "i32" {
+    prnt "cast to i32 typ ok"
+}
+
+if typ cd == "i64" {
+    prnt "cast to i64 typ ok"
+}
+
+if typ ce == "i128" {
+    prnt "cast to i128 typ ok"
+}
+
+if typ cu1 == "u8" {
+    prnt "cast to u8 typ ok"
+}
+
+if typ cu2 == "u16" {
+    prnt "cast to u16 typ ok"
+}
+
+if typ cu3 == "u32" {
+    prnt "cast to u32 typ ok"
+}
+
+if typ cu4 == "u64" {
+    prnt "cast to u64 typ ok"
+}
+
+if typ cu5 == "u128" {
+    prnt "cast to u128 typ ok"
+}
+
+if typ cf == "f32" {
+    prnt "cast to f32 typ ok"
+}
+
+prnt "all integer tests completed successfully"
+
+newvari64: i64
+prnt newvari64
+if newvari64 == nil {
+    prnt "newvari64 initially nil ok"
+}
+newvari64 = 0
+prnt newvari64
+if newvari64 == 0 {
+    prnt "newvari64 set to 0 ok"
+}
+
+uninitF32: f32
+prnt uninitF32
+if uninitF32 == nil {
+    prnt "uninitF32 initially nil ok"
+}
+uninitF32 = 0
+prnt uninitF32
+if uninitF32 == 0 {
+    prnt "uninitF32 set to 0 ok"
+}
+varwithouttype
+prnt varwithouttype
+if varwithouttype == nil {
+    prnt "varwithouttype initially nil ok"
+}
+varwithouttype = 100.1
+prnt varwithouttype
+if varwithouttype == 100.1 {
+    prnt "varwithouttype set to 100.1 ok"
+}
+varwithouttype = 0
+prnt varwithouttype
+if varwithouttype == 0 {
+    prnt "varwithouttype set to 0 ok"
+}
+if typ varwithouttype == "num" {
+    prnt "typ varwithouttype is num ok"
+}
+
+vNum: num
+prnt vNum
+if vNum == nil {
+    prnt "vNum initially nil ok"
+}
+vNum = 100.1
+prnt vNum
+if vNum == 100.1 {
+    prnt "vNum set to 100.1 ok"
+}
+if vNum != nil {
+    prnt "vNum != nil ok"
+}
+
+vI8: i8
+prnt vI8
+if vI8 == nil {
+    prnt "vI8 initially nil ok"
+}
+vI8 = 0
+prnt vI8
+if vI8 == 0 {
+    prnt "vI8 set to 0 ok"
+}
+
+vU8: u8
+prnt vU8
+if vU8 == nil {
+    prnt "vU8 initially nil ok"
+}
+vU8 = 0
+prnt vU8
+if vU8 == 0 {
+    prnt "vU8 set to 0 ok"
+}
+
+vI16: i16
+prnt vI16
+if vI16 == nil {
+    prnt "vI16 initially nil ok"
+}
+vI16 = 0
+prnt vI16
+if vI16 == 0 {
+    prnt "vI16 set to 0 ok"
+}
+
+vU16: u16
+prnt vU16
+if vU16 == nil {
+    prnt "vU16 initially nil ok"
+}
+vU16 = 0
+prnt vU16
+if vU16 == 0 {
+    prnt "vU16 set to 0 ok"
+}
+
+vI32: i32
+prnt vI32
+if vI32 == nil {
+    prnt "vI32 initially nil ok"
+}
+vI32 = 0
+prnt vI32
+if vI32 == 0 {
+    prnt "vI32 set to 0 ok"
+}
+
+vU32: u32
+prnt vU32
+if vU32 == nil {
+    prnt "vU32 initially nil ok"
+}
+vU32 = 0
+prnt vU32
+if vU32 == 0 {
+    prnt "vU32 set to 0 ok"
+}
+
+vU64: u64
+prnt vU64
+if vU64 == nil {
+    prnt "vU64 initially nil ok"
+}
+vU64 = 0
+prnt vU64
+if vU64 == 0 {
+    prnt "vU64 set to 0 ok"
+}
+
+vI128: i128
+prnt vI128
+if vI128 == nil {
+    prnt "vI128 initially nil ok"
+}
+vI128 = 0
+prnt vI128
+if vI128 == 0 {
+    prnt "vI128 set to 0 ok"
+}
+
+vU128: u128
+prnt vU128
+if vU128 == nil {
+    prnt "vU128 initially nil ok"
+}
+vU128 = 0
+prnt vU128
+if vU128 == 0 {
+    prnt "vU128 set to 0 ok"
+}
+
+vUnd: und
+prnt vUnd
+if vUnd == nil {
+    prnt "vUnd initially nil ok"
+}
+vUnd = und
+prnt vUnd
+if vUnd == und {
+    prnt "vUnd set to und ok"
+}
+
+vNil: nil
+prnt vNil
+if vNil == nil {
+    prnt "vNil initially nil ok"
+}
+vNil = nil
+prnt vNil
+if vNil == nil {
+    prnt "vNil set to nil ok"
+}

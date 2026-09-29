@@ -1,0 +1,51 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitGetProperty Object Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/decl/emitGetProperty.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp unboxValueFromI64 frm ../array
+imp ObjectCodegen frm ../decl
+
+EmitGetProperty self: ObjectCodegen, objPtrReg: str, fieldOffset: num, targetType: TypeKind, isOptional: bool :: str {
+    if isOptional {
+        slot: str = self.codegen.newReg
+        self.codegen.emit `${slot} = alloca i64`
+
+        isNull: str = self.codegen.newReg
+        self.codegen.emit `${isNull} = icmp eq ptr ${objPtrReg}, null`
+
+        nilLbl: str = self.codegen.newLabel "opt_prop_nil"
+        loadLbl: str = self.codegen.newLabel "opt_prop_load"
+        mergeLbl: str = self.codegen.newLabel "opt_prop_merge"
+
+        self.codegen.emit `br i1 ${isNull}, label %${nilLbl}, label %${loadLbl}`
+
+        self.codegen.emitLabel nilLbl
+        self.codegen.emit `store i64 0, ptr ${slot}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        self.codegen.emitLabel loadLbl
+        gep: str = self.codegen.newReg
+        self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
+        valReg: str = self.codegen.newReg
+        self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+        self.codegen.emit `store i64 ${valReg}, ptr ${slot}`
+        self.codegen.emit `br label %${mergeLbl}`
+
+        self.codegen.emitLabel mergeLbl
+        rawVal: str = self.codegen.newReg
+        self.codegen.emit `${rawVal} = load i64, ptr ${slot}`
+        unboxedVal: str = unboxValueFromI64 self.codegen, rawVal, targetType
+        -> unboxedVal
+    }
+
+    gep: str = self.codegen.newReg
+    self.codegen.emit `${gep} = getelementptr inbounds i64, ptr ${objPtrReg}, i64 ${fieldOffset}`
+    valReg: str = self.codegen.newReg
+    self.codegen.emit `${valReg} = load i64, ptr ${gep}`
+    unboxedVal: str = unboxValueFromI64 self.codegen, valReg, targetType
+    -> unboxedVal
+}

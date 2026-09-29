@@ -1,0 +1,73 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseReturnStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseReturnStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode, NodeKind frm ../../ast
+imp Parser frm ../parser
+imp ParseExpr frm ../stmt
+imp ParseJuxtaposedArgs frm parseJuxtaposedArgs
+imp ParseMatchStmt frm parseMatchStmt
+
+/**
+ * Parses a return statement (`-> expr` or `ret expr`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} RetStmt AST node
+ */
+ParseReturnStmt parser: Parser :: ASTNode {
+    retTok: Token = parser.advance // consume '->' or 'ret'
+    retExpr = ASTNode.createNil retTok.line, retTok.col
+
+    if !(parser.check TokenType.TOK_SEMICOLON) && !(parser.check TokenType.TOK_RBRACE) && !(parser.isAtEnd) {
+        if parser.check TokenType.TOK_MATCH {
+            matchNode: ASTNode = ParseMatchStmt parser
+            fr armIdx = 1; armIdx < matchNode.children.ln; armIdx++ {
+                armBody: ASTNode = matchNode.children[armIdx]
+                if armBody.kind == NodeKind.BlockStmt && armBody.children.ln > 0 {
+                    lastIdx: num = armBody.children.ln - 1
+                    lastStmt: ASTNode = armBody.children[lastIdx]
+                    retExpr: ASTNode = lastStmt
+                    if lastStmt.kind == NodeKind.ExprStmt && lastStmt.children.ln > 0 {
+                        retExpr = lastStmt.children[0]
+                    }
+                    if lastStmt.kind != NodeKind.RetStmt {
+                        retArm: ASTNode = ASTNode.createRet retExpr, retExpr.line, retExpr.col
+                        armBody.children[lastIdx] = retArm
+                    }
+                }
+            }
+            -> matchNode
+        }
+        rawExpr: ASTNode = ParseExpr parser
+        retExpr = ParseJuxtaposedArgs parser, rawExpr
+        if parser.check TokenType.TOK_COMMA {
+            commaTok: Token = parser.cur
+            afterComma: Token = parser.peek
+            if afterComma.line == commaTok.line && afterComma.kind != TokenType.TOK_EOF && afterComma.kind != TokenType.TOK_RBRACE && afterComma.kind != TokenType.TOK_SEMICOLON && parser.peekAhead(2).kind != TokenType.TOK_COLON {
+                elements: ASTNode[] = [retExpr]
+                wh parser.check TokenType.TOK_COMMA {
+                    cTok: Token = parser.cur
+                    nxtTok: Token = parser.peek
+                    if nxtTok.line != cTok.line || nxtTok.kind == TokenType.TOK_EOF || nxtTok.kind == TokenType.TOK_RBRACE || nxtTok.kind == TokenType.TOK_SEMICOLON || parser.peekAhead(2).kind == TokenType.TOK_COLON {
+                        brk
+                    }
+                    parser.advance
+                    nextRaw: ASTNode = ParseExpr parser
+                    nextExpr: ASTNode = ParseJuxtaposedArgs parser, nextRaw
+                    elements.psh nextExpr
+                }
+                retExpr = ASTNode.createArr elements, retTok.line, retTok.col
+            }
+        }
+    }
+
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+
+    -> ASTNode.createRet retExpr, retTok.line, retTok.col
+}

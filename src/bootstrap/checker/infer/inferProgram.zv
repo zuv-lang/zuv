@@ -1,0 +1,152 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Program AST Type Inference Coordinator
+ * Path: sub_projects/zuv/src/bootstrap/checker/inferProgram.zv
+ * =============================================================================
+ *
+ * Implements whole-program semantic type inference coordination:
+ * - Pass 1: Forward registration of top-level functions, types, enums, and imports
+ * - Pass 2: Scoped statement and method body inference traversal
+ */
+
+imp ASTNode, NodeKind, Param, FieldEntry, NodeUsesAsArray, FindVarInitType, FindFieldAssignedType frm ../../ast
+imp TypeInfo, TypeKind, TypeKindToStr, AreTypesCompatible, StrToTypeKind frm ../../types
+imp Checker, Symbol, Scope frm ../checker
+imp InferDeclaration frm inferDeclaration
+imp InferStatement frm inferStatement
+
+/**
+ * Traverses a top-level program AST node, running complete semantic validation on all declarations and statements.
+ *
+ * @param {Checker} checker - The active semantic checker instance
+ * @param {ASTNode} program - Root ProgramDecl AST node
+ * @returns {void}
+ */
+InferProgram checker: Checker, program: ASTNode :: void {
+    // Pass 1: Pre-register all top-level functions, types, enums, and imports
+    fr child of program.children {
+        if child.isDecl() {
+            k = child.kind
+            if k == NodeKind.FuncDecl {
+                retKind = TypeKind.Unknown
+                if child.typeAnnotation.ln > 0 {
+                    retKind = StrToTypeKind(child.typeAnnotation)
+                }
+                paramTypeNames: str[] = []
+                fr pItem of child.params {
+                    if pItem.isRest {
+                        paramTypeNames.psh("..." + pItem.typeAnnotation)
+                    } els {
+                        paramTypeNames.psh(pItem.typeAnnotation)
+                    }
+                }
+                fnTypeName = "fn_" + child.name
+                fnTypeInfo = TypeInfo.createFunc(retKind, child.typeAnnotation, paramTypeNames)
+                fnTypeInfo.name = fnTypeName
+                checker.registerType(fnTypeInfo)
+                fnSym = Symbol.create(child.name, TypeKind.Func, fnTypeName, false, true, 0, child.line, child.col)
+                checker.defineSymbol(fnSym)
+            } els if k == NodeKind.ExternDecl {
+                fr fnChild of child.children {
+                    retKind = TypeKind.Unknown
+                    if fnChild.typeAnnotation.ln > 0 {
+                        retKind = StrToTypeKind(fnChild.typeAnnotation)
+                    }
+                    paramTypeNames: str[] = []
+                    fr pItem of fnChild.params {
+                        if pItem.isRest {
+                            paramTypeNames.psh("..." + pItem.typeAnnotation)
+                        } els {
+                            paramTypeNames.psh(pItem.typeAnnotation)
+                        }
+                    }
+                    fnTypeName = "fn_" + fnChild.name
+                    fnTypeInfo = TypeInfo.createFunc(retKind, fnChild.typeAnnotation, paramTypeNames)
+                    fnTypeInfo.name = fnTypeName
+                    checker.registerType(fnTypeInfo)
+                    fnSym = Symbol.create(fnChild.name, TypeKind.Func, fnTypeName, false, true, 0, fnChild.line, fnChild.col)
+                    checker.defineSymbol(fnSym)
+                }
+            } els if k == NodeKind.TypeDecl {
+                tInfo = TypeInfo.createObject(child.name)
+                fr fEntry of child.fields {
+                    fKind = StrToTypeKind(fEntry.valStr)
+                    tInfo.addField(fEntry.name, fKind)
+                }
+                checker.registerType(tInfo)
+                fr sub of child.children {
+                    if sub.kind == NodeKind.TypeDecl || sub.kind == NodeKind.ObjDecl {
+                        sInfo = TypeInfo.createObject(sub.name)
+                        fr sf of sub.fields {
+                            sfKind = StrToTypeKind(sf.valStr)
+                            sInfo.addField(sf.name, sfKind)
+                        }
+                        checker.registerType(sInfo)
+                    }
+                }
+            } els if k == NodeKind.EnumDecl {
+                eInfo = TypeInfo.createEnum(child.name)
+                fr fld of child.fields {
+                    eInfo.addField(fld.name, TypeKind.I8)
+                    if !(checker.hasSymbol(fld.name)) {
+                        vSym = Symbol.create(fld.name, TypeKind.I8, "i8", false, true, 0, fld.line, fld.col)
+                        checker.defineSymbol(vSym)
+                    }
+                }
+                checker.registerType(eInfo)
+                eSym = Symbol.create(child.name, TypeKind.Obj, child.name, false, true, 0, child.line, child.col)
+                checker.defineSymbol(eSym)
+            } els if k == NodeKind.ImportDecl {
+                fr symEntry of child.fields {
+                    if !(checker.hasSymbol(symEntry.name)) {
+                        impSym = Symbol.create(symEntry.name, TypeKind.Obj, symEntry.name, false, true, 0, symEntry.line, symEntry.col)
+                        checker.defineSymbol(impSym)
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 2: Validate function and method bodies and statements
+    fr child of program.children {
+        if child.isDecl() {
+            if child.kind == NodeKind.FuncDecl {
+                prevFn = checker.currentFuncName
+                checker.currentFuncName = child.name
+                checker.enterScope()
+                fr param of child.params {
+                    pKind = StrToTypeKind(param.typeAnnotation)
+                    pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+                    checker.defineSymbol(pSym)
+                }
+                fr bStmt of child.children {
+                    InferStatement(checker, bStmt)
+                }
+                checker.exitScope()
+                checker.currentFuncName = prevFn
+            } els if child.kind == NodeKind.ExternDecl {
+                fr fnChild of child.children {
+                    if fnChild.children.ln > 0 {
+                        prevFn = checker.currentFuncName
+                        checker.currentFuncName = fnChild.name
+                        checker.enterScope()
+                        fr param of fnChild.params {
+                            pKind = StrToTypeKind(param.typeAnnotation)
+                            pSym = Symbol.create(param.name, pKind, param.typeAnnotation, false, true, checker.currentLevel(), param.line, param.col)
+                            checker.defineSymbol(pSym)
+                        }
+                        fr bStmt of fnChild.children {
+                            InferStatement(checker, bStmt)
+                        }
+                        checker.exitScope()
+                        checker.currentFuncName = prevFn
+                    }
+                }
+            } els if child.kind != NodeKind.ImportDecl && child.kind != NodeKind.EnumDecl {
+                InferDeclaration(checker, child)
+            }
+        } els {
+            InferStatement(checker, child)
+        }
+    }
+}

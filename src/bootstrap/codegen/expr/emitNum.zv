@@ -1,0 +1,122 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitNum Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitNum.zv
+ * =============================================================================
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp llvmType, isFloatType frm ../types
+imp ExprCodegen, ExprResult frm ../expr
+
+EmitNum self: ExprCodegen, node: ASTNode :: ExprResult {
+    valStr: str = node.val
+    if valStr.ln == 0 {
+        valStr = `${node.numVal}`
+    }
+    valStr = parseBaseNumber valStr
+    resReg: str = self.codegen.newReg
+    targetKind = node.inferredType
+    if targetKind == TypeKind.Unknown {
+        targetKind = TypeKind.I64
+    }
+    if isFloatType targetKind {
+        fStr: str = valStr
+        hasDot: bool = fStr.cnt "."
+        if !hasDot {
+            eIdx: num = -1
+            k: num = 0
+            wh k < fStr.ln {
+                ch: str = fStr.chr k
+                if ch == "e" || ch == "E" {
+                    eIdx = k
+                    brk
+                }
+                k = k + 1
+            }
+            if eIdx >= 0 {
+                fStr = (fStr.sub 0, eIdx) + ".0" + (fStr.sub eIdx, fStr.ln - eIdx)
+            } els {
+                fStr = fStr + ".0"
+            }
+        }
+        fltLLVM: str = llvmType targetKind
+        self.codegen.emit `${resReg} = fadd ${fltLLVM} 0.0, ${fStr}`
+        fRes: ExprResult = { reg: resReg, typeKind: targetKind }
+        -> fRes
+    }
+    itype: str = llvmType targetKind
+    self.codegen.emit `${resReg} = add ${itype} 0, ${valStr}`
+    iRes: ExprResult = { reg: resReg, typeKind: targetKind }
+    -> iRes
+}
+
+/**
+ * Converts a base-prefixed numeric string (0b..., 0o..., 0x...) to a standard decimal string.
+ */
+parseBaseNumber valStr: str :: str {
+    if valStr.ln >= 3 && valStr[0] == "0" {
+        p: str = valStr[1]
+        if p == "b" || p == "B" {
+            acc: i64 = 0
+            idx: i64 = 2
+            wh idx < valStr.ln {
+                ch: str = valStr[idx]
+                if ch == "1" {
+                    acc = acc * 2 + 1
+                } els if ch == "0" {
+                    acc = acc * 2
+                }
+                idx++
+            }
+            -> `${acc}`
+        }
+        if p == "o" || p == "O" {
+            acc: i64 = 0
+            idx: i64 = 2
+            wh idx < valStr.ln {
+                ch: str = valStr[idx]
+                d: i64 = 0
+                if ch == "1" { d = 1 }
+                els if ch == "2" { d = 2 }
+                els if ch == "3" { d = 3 }
+                els if ch == "4" { d = 4 }
+                els if ch == "5" { d = 5 }
+                els if ch == "6" { d = 6 }
+                els if ch == "7" { d = 7 }
+                acc = acc * 8 + d
+                idx++
+            }
+            -> `${acc}`
+        }
+        if p == "x" || p == "X" {
+            acc: i64 = 0
+            idx: i64 = 2
+            wh idx < valStr.ln {
+                ch: str = valStr[idx]
+                d: i64 = 0
+                if ch == "1" { d = 1 }
+                els if ch == "2" { d = 2 }
+                els if ch == "3" { d = 3 }
+                els if ch == "4" { d = 4 }
+                els if ch == "5" { d = 5 }
+                els if ch == "6" { d = 6 }
+                els if ch == "7" { d = 7 }
+                els if ch == "8" { d = 8 }
+                els if ch == "9" { d = 9 }
+                els if ch == "a" || ch == "A" { d = 10 }
+                els if ch == "b" || ch == "B" { d = 11 }
+                els if ch == "c" || ch == "C" { d = 12 }
+                els if ch == "d" || ch == "D" { d = 13 }
+                els if ch == "e" || ch == "E" { d = 14 }
+                els if ch == "f" || ch == "F" { d = 15 }
+                acc = acc * 16 + d
+                idx++
+            }
+            -> `${acc}`
+        }
+    }
+    -> valStr
+}
+

@@ -8,10 +8,10 @@
    with special characters: !@#$%^&*()
 */
 
-mut x = 10 // 3. End of line comment
+x = 10 // 3. End of line comment
 
 /* 4. Inline block comment within expression */
-mut y = x + /* inline comment */ 20
+y = x + /* inline comment */ 20
 
 // 5. Multi-line block comment commenting out dead code
 /*
@@ -24,7 +24,7 @@ deadCodeFunction a, b {
 /* 6. Multiple block comments in sequence */
 /* First */ /* Second */ /* Third */
 
-mut z = y * 2
+z = y * 2
 
 /*
  * 7. Asterisk-style formatted block comment

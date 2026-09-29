@@ -1,0 +1,24 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — ParseContinueStmt Statement Parser
+ * Path: sub_projects/zuv/src/bootstrap/parser/stmt/parseContinueStmt.zv
+ * =============================================================================
+ */
+
+imp Token, TokenType frm ../../tokens
+imp ASTNode frm ../../ast
+imp Parser frm ../parser
+
+/**
+ * Parses a continue statement (`cont`).
+ *
+ * @param {Parser} parser - Parser coordinator instance
+ * @returns {ASTNode} ContStmt AST node
+ */
+ParseContinueStmt parser: Parser :: ASTNode {
+    tok: Token = parser.consume TokenType.TOK_CONT, "Expected 'cont'"
+    if parser.matchToken TokenType.TOK_SEMICOLON {
+        // optional trailing semicolon
+    }
+    -> ASTNode.createCont tok.line, tok.col
+}

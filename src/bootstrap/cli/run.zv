@@ -1,0 +1,31 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — Run Subcommand Handler
+ * Path: sub_projects/zuv/src/bootstrap/cli/run.zv
+ * =============================================================================
+ *
+ * Compiles a Zuv source file and immediately runs the resulting binary.
+ */
+
+imp HandleBuild frm build
+
+HandleRun file: str, outputFile: str, targetTriple: str, isRelease: bool, emitLlvm: bool, isCdylib: bool, isQuiet: bool, isVerbose: bool :: num {
+    exeName: str = outputFile
+    if exeName.ln == 0 {
+        exeName = "output.exe"
+    }
+    buildRes: num = HandleBuild(file, exeName, targetTriple, isRelease, emitLlvm, isCdylib, isQuiet, isVerbose)
+    if buildRes != 0 {
+        -> buildRes
+    }
+    if !(isQuiet) {
+        prnt "[zuv run] Executing " + exeName + "..."
+        prnt "-------------------------------------------"
+    }
+    runCmd: str = ".\\" + exeName
+    runRes: num = sh runCmd
+    if !(isQuiet) {
+        prnt "-------------------------------------------"
+    }
+    -> runRes
+}

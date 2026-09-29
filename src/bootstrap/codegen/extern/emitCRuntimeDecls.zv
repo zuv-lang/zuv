@@ -1,0 +1,43 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitCRuntimeDecls Extern Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/extern/emitCRuntimeDecls.zv
+ * =============================================================================
+ */
+
+imp Codegen frm ../codegen
+imp ExternManager frm ../extern
+
+/**
+ * Emits standard C runtime library declarations required by the Zuv language runtime.
+ *
+ * @param {ExternManager} self - Extern manager instance
+ * @param {Codegen} codegen - LLVM module coordinator
+ * @returns {void}
+ */
+EmitCRuntimeDecls self: ExternManager, codegen: Codegen :: void {
+    // Memory management functions
+    self.emitFunctionDecl "malloc", "c", "ptr", ["i64"], false, codegen
+    self.emitFunctionDecl "realloc", "c", "ptr", ["ptr", "i64"], false, codegen
+    self.emitFunctionDecl "free", "c", "void", ["ptr"], false, codegen
+    self.emitFunctionDecl "memcpy", "c", "ptr", ["ptr", "ptr", "i64"], false, codegen
+    self.emitFunctionDecl "memset", "c", "ptr", ["ptr", "i32", "i64"], false, codegen
+    self.emitFunctionDecl "memmove", "c", "ptr", ["ptr", "ptr", "i64"], false, codegen
+
+    // Strings & formatted I/O functions
+    self.emitFunctionDecl "strlen", "c", "i64", ["ptr"], false, codegen
+    self.emitFunctionDecl "strcmp", "c", "i32", ["ptr", "ptr"], false, codegen
+    self.emitFunctionDecl "strncmp", "c", "i32", ["ptr", "ptr", "i64"], false, codegen
+    self.emitFunctionDecl "strstr", "c", "ptr", ["ptr", "ptr"], false, codegen
+    self.emitFunctionDecl "snprintf", "c", "i32", ["ptr", "i64", "ptr"], true, codegen
+    self.emitFunctionDecl "printf", "c", "i32", ["ptr"], true, codegen
+
+    // System & process execution functions
+    self.emitFunctionDecl "exit", "c", "void", ["i32"], false, codegen
+    self.emitFunctionDecl "system", "c", "i32", ["ptr"], false, codegen
+    self.emitFunctionDecl "getenv", "c", "ptr", ["ptr"], false, codegen
+
+    // High-resolution timing
+    self.emitFunctionDecl "QueryPerformanceCounter", "kernel32", "i32", ["ptr"], false, codegen
+    self.emitFunctionDecl "QueryPerformanceFrequency", "kernel32", "i32", ["ptr"], false, codegen
+}

@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.14.0]
+
+### ⚙️ Self-Host Compiler Frontend & Codegen Improvements
+- **Destructuring & Multi-Variable Assignment**: Added object, array, and bare destructuring with structural type resolution and multi-value returns (`tests/destructuring.test.zv`).
+- **Anonymous Object Field Mutation**: Fixed top-level property assignment (`pt.x = 99`) from being misparsed as method aliasing by requiring registered struct types for `Type.method = func` (`tests/anonymous_object.test.zv`).
+- **Symbol Primitives (`sym`)**: Implemented `sym` expression parsing (`NodeKind.SymExpr`), symbol interning table (`symNames`), equality/inequality comparison, truthiness checks, and `typ` reflection (`tests/sym.test.zv`).
+- **Extension Methods & Function Aliasing**: Implemented `Type.method` syntax, top-level method aliases, untyped function return inference, and `sitofp` float coercion (`tests/obj_methods.test.zv`).
+- **Object Construction & Methods**: Added `new Type{...}` / `new Type(...)` construction, `::` static method resolution, method chaining, and zero-argument method getters (`tests/new_keyword.test.zv`, `tests/obj_min.test.zv`).
+- **Global Object (`glb`)**: Added project-wide global `glb` singleton object supporting cross-function property mutation and retrieval (`tests/glb.test.zv`).
+- **Spread & Rest Parameters**: Added array spread, object literal spread, and variable rest parameter packing/unpacking (`tests/spread_rest.test.zv`).
+- **IEEE-754 Special Values**: Supported `nan` and `Infinity` floating-point literal constants with IEEE-754 64-bit precision (`tests/nan_inf.test.zv`).
+- **Native Length & Capacity**: Standardized standalone and property `.len` and `.cap` for collections, removing redundant aliases (`ln`, `length`, and `capacity`).
+- **Array Container Writeback & Method Normalization**: Added container slot writeback for `PropExpr` and `IndexExpr` on reallocation, standardizing array and string methods to `push`, `pop`, `concat`, `contains`, `slice`, and `sub` while removing abbreviated short codes (`psh`, `pp`, `cat`, `cnt`, `slc`, `substr`).
+- **Optional Chaining (`?.`, `?.[ ]`)**: Added null/und guards for property and index access in type checker and codegen (`tests/optional_chain.test.zv`).
+- **User-Defined Decorators**: Added AST-driven, generalized decorator support for class/object decorators, method decorators, parameterized decorator factories, profiling/timing behavior-changing wrappers, and free-function decorators. Supported rest-parameter lambda wrapping, dynamic prototype mutation, and return type propagation (`tests/decorators.test.zv`).
+- **Compound Assignment**: Supported `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `|=`, `^=` with memory store lowering and string `+=` concatenation (`tests/compound_assign.test.zv`).
+- **Base Literals**: Added standalone parser/converter for binary (`0b`), octal (`0o`), and hex (`0x`) numbers before LLVM IR emission (`tests/bases.test.zv`).
+- **Type Inspection (`typ`)**: Fixed `emitTyp` to classify numeric expressions as `"num"`, preserving `"i8"` for enum variants and `"obj"` for enums (`tests/typ.test.zv`).
+- **Prefix `++` / `--`**: Added prefix increment/decrement parsing in `ParsePrefixExpr` alongside postfix evaluation (`tests/incr_decr.test.zv`).
+- **Logical Keywords**: Added `and`, `or`, and `not` keyword parsing and truthy boolean condition evaluation (`tests/logical_symbols.test.zv`).
+- **Bitwise & Cast Safety**: Added `i1` boolean cast rules (`zext`/`uitofp`), guarded against illegal `bitcast i1`, and coerced `if`/`wh` conditions to `i1` (`tests/bitwise.test.zv`).
+- **Strict Equality & Precedence**: Allowed cross-type `==`/`!=` with `strcmp` lowering, and unified Pratt expression parsing (`tests/strict_eq.test.zv`, `tests/ternary.test.zv`).
+- **Braceless Control Flow**: Supported single-statement braceless bodies for `if`, `els`, `wh`, and `fr` (`tests/control_flow.test.zv`).
+- **Collection Iteration (`fr in` / `fr of`)**: Added single and two-variable iteration over arrays and objects with `__keys`/`__vals` buffer generation (`tests/fr_in.test.zv`, `tests/fr_of.test.zv`).
+- **Keyword Cleanup & Deduplication**: Removed obsolete `mut`, `&mut`, `yes`, and `no` keywords, retaining standard `true` and `false` booleans. Removed redundant keyword aliases: removed `mch` (retained `sw`), `from` (retained `frm`), `async`/`asyncST` (retained `asc`/`ascST`), `await` (retained `awt`), `worker` (retained `wrk`), `type` (retained `typ`), `sz`, and `nw` (retained `new`). Renamed `sizeof` to `size` and removed `ok` and `err` tokens from `tokens.zv`, standardizing on ordinary identifier representations.
+- **Type Casting (`as`)**: Supported primitive keywords (`num`, `str`, `bool`), pointer types (`*byte`), integer truncation/widening, and dynamic string/boolean conversions (`tests/as_cast.test.zv`).
+- **Dynamic Arrays & Untyped Parameters**: Supported pointer conversions and writeback for array method calls on untyped parameters, alongside expression-level juxtaposed calls (`tests/empty_arr_task1.test.zv`).
+- **Arrow Functions & Pattern Matching**: Fixed `sw` pattern match return unwrapping, return type inference for match expressions, and dynamic property printing for anonymous objects (`tests/arrow_functions.test.zv`).
+- **Async / Await Primitives**: Supported `asc` declarations, `awt` expression parsing, return type inference, and zero-argument async dispatch (`tests/async_await.test.zv`).
+- **Attributes & Struct Instantiation**: Supported attribute annotations (`@inline`, `@derive`), typed struct literal instantiation, field type coercions, and member offset resolution (`tests/attributes.test.zv`).
+- **BigInt Primitives**: Implemented BigInt literals (`123n`), `BigInt` constructor, `typ` introspection, and equality comparisons (`tests/bigint.test.zv`).
+- **Bounds Guard & Optional Indexing**: Added optional index navigation (`?.[i]`), global `args`/`os.args` CLI runtime, `sh` command execution, and runtime array bounds panic with exit code 101 (`tests/bounds_guard_task6.test.zv`).
+- **Bulk Memcpy & Array Spreads**: Added prefix `...` spread operator parsing, exact capacity allocation, null/nil spread guards, and bulk memory block copying (`tests/bulk_memcpy_task9.test.zv`).
+- **Cache Locality & Unsafe Blocks**: Added `unsafe` blocks, element address-of (`&arr[i]`), pointer subtraction byte offsets, `mem.cp` memory copy intrinsic, and 64-bit integer `fr in` index iteration (`tests/cache_locality_task7.test.zv`).
+- **External C FFI & DLL Linking**: Mapped C ABI `num` to `double` and passed external `.lib` dependencies to `lld-link` (`tests/call_cdylib.test.zv`).
+- **Logical Short-Circuit (`&&`, `||`)**: Added branching basic blocks to avoid eager evaluation and out-of-bounds evaluation (`tests/panic_backtrace.test.zv`).
+- **Nullish Coalescing (`??`)**: Added code generation and inferred fallback type when left operand is `nil`/`und` (`tests/nullish.test.zv`).
+- **Power Operator (`**`)**: Fixed double operand promotion in LLVM emission (`tests/pow.test.zv`).
+- **Scientific Notation**: Formatted float literals missing decimal points (e.g. `123e2` -> `123.0e2`) for LLVM IR compatibility (`tests/sci_notation.test.zv`).
+- **Typed Array Objects**: Added `isPointerType` guards, type alias tracking (`StructLayoutRegistry`), and string numeric index resolution (`tests/array_object_typed.test.zv`).
+- **Test Runner (`zuv test`)**: Switched runner to invoke `zuv_bootstrap.exe` over `zuv.exe` (`cli/test.zv`).
+- **Switch Syntax (`sw`)**: Replaced deprecated `mch` with `sw` across all tests.
+
+
 ## [0.13.0] - 2026-09-17
 
 ### 🔄 Rewrite Zuv Bootstrap with Proper Structure
@@ -125,7 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added heap reallocation: `realloc(ptr, size)` and `mem.realloc(ptr, size)`.
 - Added memory buffer copy: `memcpy(dst, src, len)`, `mem.cp(dst, src, len)`, `mem.copy(dst, src, len)`.
 - Added memory byte fill: `memset(dst, val, len)` and `mem.set(dst, val, len)`.
-- Added type layout size queries: `sz <type>`, `sizeof <type>`, `sizeof User`, `sz(ptr)`.
+- Added type layout size queries: `size <type>`, `size User`, `size(ptr)`.
 - Added `mem` module namespace (`mem.alloc`, `mem.free`, `mem.realloc`, `mem.cp`, `mem.set`).
 - Added comprehensive unit test in `tests/std_mem.test.zv`.
 

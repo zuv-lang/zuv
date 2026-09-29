@@ -1,0 +1,15 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitExprStmt Statement Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/stmt/emitExprStmt.zv
+ * =============================================================================
+ */
+
+imp ASTNode frm ../../ast
+imp StmtCodegen frm ../stmt
+
+EmitExprStmt self: StmtCodegen, node: ASTNode :: void {
+        if node.children.ln > 0 {
+            self.exprGen.emitExpr node.children[0]
+        }
+}

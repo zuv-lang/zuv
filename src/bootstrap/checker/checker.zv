@@ -77,6 +77,7 @@ obj Checker {
     errors: Diagnostic[],
     file: str,
     source: str,
+    currentFuncName: str,
 
     create: file: str, source: str :: Checker => {
         rootSyms: Symbol[] = []
@@ -89,6 +90,11 @@ obj Checker {
         symTime = Symbol.create "time", TypeKind.Obj, "time", false, true, 0, 0, 0
         symNet = Symbol.create "net", TypeKind.Obj, "net", false, true, 0, 0, 0
         symHttp = Symbol.create "http", TypeKind.Obj, "http", false, true, 0, 0, 0
+        symFfi = Symbol.create "ffi", TypeKind.Obj, "ffi", false, true, 0, 0, 0
+        symMem = Symbol.create "mem", TypeKind.Obj, "mem", false, true, 0, 0, 0
+        symMth = Symbol.create "mth", TypeKind.Obj, "mth", false, true, 0, 0, 0
+        symMath = Symbol.create "Math", TypeKind.Obj, "Math", false, true, 0, 0, 0
+        symGlb = Symbol.create "glb", TypeKind.Obj, "glb", false, true, 0, 0, 0
         rootSyms.psh symOs
         rootSyms.psh symFs
         rootSyms.psh symStr
@@ -96,18 +102,44 @@ obj Checker {
         rootSyms.psh symTime
         rootSyms.psh symNet
         rootSyms.psh symHttp
+        rootSyms.psh symFfi
+        rootSyms.psh symMem
+        rootSyms.psh symMth
+        rootSyms.psh symMath
+        rootSyms.psh symGlb
 
         // Built-in runtime utility functions
         symPrnt = Symbol.create "prnt", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symLg = Symbol.create "lg", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symWrn = Symbol.create "wrn", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
+        symInf = Symbol.create "inf", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symErr = Symbol.create "err", TypeKind.Func, "fn(...any)->void", false, true, 0, 0, 0
         symPanic = Symbol.create "panic", TypeKind.Func, "fn(str)->void", false, true, 0, 0, 0
+        symSh = Symbol.create "sh", TypeKind.Func, "fn(str)->i64", false, true, 0, 0, 0
+        symArgs = Symbol.create "args", TypeKind.Arr, "str[]", false, true, 0, 0, 0
+        symOk = Symbol.create "ok", TypeKind.Func, "fn(...any)->any", false, true, 0, 0, 0
+        symExit = Symbol.create "exit", TypeKind.Func, "fn(i32)->void", false, true, 0, 0, 0
+        symLen = Symbol.create "len", TypeKind.Func, "fn(...any)->i64", false, true, 0, 0, 0
+        symCap = Symbol.create "cap", TypeKind.Func, "fn(...any)->i64", false, true, 0, 0, 0
         rootSyms.psh symPrnt
         rootSyms.psh symLg
         rootSyms.psh symWrn
+        rootSyms.psh symInf
         rootSyms.psh symErr
         rootSyms.psh symPanic
+        rootSyms.psh symSh
+        rootSyms.psh symArgs
+        rootSyms.psh symOk
+        rootSyms.psh symExit
+        rootSyms.psh symLen
+        rootSyms.psh symCap
+
+        symNan = Symbol.create "nan", TypeKind.Num, "num", false, true, 0, 0, 0
+        symInfinity = Symbol.create "Infinity", TypeKind.Num, "num", false, true, 0, 0, 0
+        symSize = Symbol.create "size", TypeKind.Func, "fn(...any)->num", false, true, 0, 0, 0
+        rootSyms.psh symNan
+        rootSyms.psh symInfinity
+        rootSyms.psh symSize
 
         rootScope = Scope.create 0, rootSyms
         rootScopes: Scope[] = [rootScope]
@@ -141,7 +173,8 @@ obj Checker {
             types: initTypes,
             errors: emptyErrors,
             file: file,
-            source: source
+            source: source,
+            currentFuncName: ""
         }
         -> checkerInstance
     },
@@ -193,20 +226,52 @@ obj Checker {
         topIdx: num = self.scopes.ln - 1
         curScope: Scope = self.scopes[topIdx]
         symList: Symbol[] = curScope.symbols
+        idx: num = 0
         fr existing of symList {
             if existing.name == targetSym.name {
-                sLine: num = targetSym.line
-                sCol: num = targetSym.col
-                sLen: num = targetSym.name.ln
-                self.addError "E0301", "Variable '" + targetSym.name + "' is already declared in the current scope", sLine, sCol, sLen, "consider reusing or renaming variable"
-                -> false
+                if existing.line > 0 || existing.col > 0 {
+                    sLine: num = targetSym.line
+                    sCol: num = targetSym.col
+                    sLen: num = targetSym.name.ln
+                    self.addError "E0301", "Variable '" + targetSym.name + "' is already declared in the current scope", sLine, sCol, sLen, "consider reusing or renaming variable"
+                    -> false
+                }
+                targetSym.scopeLevel = topIdx
+                symList[idx] = targetSym
+                curScope.symbols = symList
+                self.scopes[topIdx] = curScope
+                -> true
             }
+            idx++
         }
         targetSym.scopeLevel = topIdx
         symList.psh targetSym
         curScope.symbols = symList
         self.scopes[topIdx] = curScope
         -> true
+    },
+
+    updateSymbolType: name: str, newType: TypeKind, newTypeName: str :: void => {
+        totalScopes: num = self.scopes.ln
+        sIdx: num = 0
+        wh sIdx < totalScopes {
+            curRevIdx: num = totalScopes - 1 - sIdx
+            sc: Scope = self.scopes[curRevIdx]
+            syms: Symbol[] = sc.symbols
+            idx: num = 0
+            fr sItem of syms {
+                if sItem.name == name {
+                    sItem.typeKind = newType
+                    sItem.typeName = newTypeName
+                    syms[idx] = sItem
+                    sc.symbols = syms
+                    self.scopes[curRevIdx] = sc
+                    ->
+                }
+                idx++
+            }
+            sIdx++
+        }
     },
 
     resolveSymbol: name: str :: Symbol => {
@@ -250,6 +315,12 @@ obj Checker {
     },
 
     registerType: info: TypeInfo :: void => {
+        fr i = 0; i < self.types.ln; i++ {
+            if self.types[i].name == info.name {
+                self.types[i] = info
+                ->
+            }
+        }
         self.types.psh info
     },
 
