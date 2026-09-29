@@ -47,6 +47,12 @@ ParsePrefixExpr parser: Parser :: ASTNode {
         -> node
     }
 
+    if tok.kind == TokenType.TOK_ASTERISK {
+        opTok: Token = parser.advance
+        operand: ASTNode = ParseExpression parser, 17 // PREC_PREFIX
+        -> ASTNode.createDeref operand, opTok.line, opTok.col
+    }
+
     if tok.kind == TokenType.TOK_AWAIT {
         awTok: Token = parser.advance
         target: ASTNode = ParseExpression parser, 17 // PREC_PREFIX

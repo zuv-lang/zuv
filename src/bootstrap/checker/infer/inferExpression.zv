@@ -259,6 +259,10 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
             expr.inferredType = TypeKind.I64
             -> TypeKind.I64
         }
+        if expr.op == "+" && (leftKind == TypeKind.Ptr || rightKind == TypeKind.Ptr) {
+            expr.inferredType = TypeKind.Ptr
+            -> TypeKind.Ptr
+        }
         if expr.op == "+" || expr.op == "-" || expr.op == "*" || expr.op == "/" || expr.op == "%" || expr.op == "**" {
             if leftKind != TypeKind.Unknown && rightKind != TypeKind.Unknown {
                 if !(IsNumericType leftKind) || !(IsNumericType rightKind) {
@@ -693,6 +697,13 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
         }
         expr.inferredType = TypeKind.Ptr
         -> TypeKind.Ptr
+    }
+    if k == NodeKind.DerefExpr {
+        if expr.children.ln > 0 {
+            InferExpression(checker, expr.children[0])
+        }
+        expr.inferredType = TypeKind.I64
+        -> TypeKind.I64
     }
     if k == NodeKind.TernaryExpr {
         if expr.children.ln >= 3 {

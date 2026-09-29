@@ -44,6 +44,7 @@ imp EmitAwait frm expr/emitAwait
 imp EmitNew frm expr/emitNew
 imp EmitBorrow frm expr/emitBorrow
 imp EmitSym frm expr/emitSym
+imp EmitDeref frm expr/emitDeref
 imp EmitDefault frm expr/emitDefault
 /**
  * Result descriptor produced by evaluating an expression AST node.
@@ -482,5 +483,6 @@ obj ExprCodegen {
     emitNew: node: ASTNode :: ExprResult => EmitNew(self, node),
     emitBorrow: node: ASTNode :: ExprResult => EmitBorrow(self, node),
     emitSym: node: ASTNode :: ExprResult => EmitSym(self, node),
+    emitDeref: node: ASTNode :: ExprResult => EmitDeref(self, node),
     emitDefault: node: ASTNode :: ExprResult => EmitDefault(self, node)
 }

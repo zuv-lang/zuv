@@ -58,7 +58,8 @@ enum NodeKind {
     AwaitExpr,
     TypExpr,
     NewExpr,
-    SymExpr
+    SymExpr,
+    DerefExpr
 }
 
 type Param = {
@@ -411,6 +412,21 @@ obj ASTNode {
         node.isBorrow = true
         node.inferredType = TypeKind.Ptr
         node.children = [target]
+        -> node
+    },
+
+    /**
+     * Creates a pointer dereference expression node (*ptr rvalue read).
+     *
+     * @param {ASTNode} operand - Pointer operand expression
+     * @param {num} line - Source line number
+     * @param {num} col - Source column number
+     * @returns {ASTNode} Deref expression AST node
+     */
+    createDeref: operand: ASTNode, line: num, col: num :: ASTNode => {
+        node = ASTNode.createBase NodeKind.DerefExpr, line, col
+        node.inferredType = TypeKind.Unknown
+        node.children = [operand]
         -> node
     },
 
@@ -940,6 +956,7 @@ NodeKindToStr kind: NodeKind :: str => sw kind {
     NodeKind.AwaitExpr      => "AwaitExpr"
     NodeKind.TypExpr        => "TypExpr"
     NodeKind.NewExpr        => "NewExpr"
+    NodeKind.DerefExpr      => "DerefExpr"
     _                       => "UnknownNode"
 }
 
@@ -1012,6 +1029,7 @@ IsExprNode kind: NodeKind :: bool => sw kind {
     NodeKind.AwaitExpr      => true
     NodeKind.TypExpr        => true
     NodeKind.NewExpr        => true
+    NodeKind.DerefExpr      => true
     _                       => false
 }
 

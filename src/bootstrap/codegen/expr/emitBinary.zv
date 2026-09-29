@@ -134,6 +134,30 @@ EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
                 setValType = TypeKind.I64
             }
             self.objGen.emitSetProperty objPtrReg, off, setValReg, setValType
+        } els if targetNode.kind == NodeKind.DerefExpr {
+            // *ptr = value  =>  store i64 %val, ptr %ptrAddr
+            ptrNode: ASTNode = targetNode.children[0]
+            ptrRes: ExprResult = self.emitExpr ptrNode
+            rawPtr: str = ptrRes.reg
+            if !(isPointerType ptrRes.typeKind) {
+                convReg: str = self.codegen.newReg
+                if ptrRes.typeKind == TypeKind.Num {
+                    iReg: str = self.codegen.newReg
+                    self.codegen.emit `${iReg} = fptosi double ${ptrRes.reg} to i64`
+                    self.codegen.emit `${convReg} = inttoptr i64 ${iReg} to ptr`
+                } els {
+                    self.codegen.emit `${convReg} = inttoptr i64 ${ptrRes.reg} to ptr`
+                }
+                rawPtr = convReg
+            }
+            storeVal: str = rightRes.reg
+            // Convert double to i64 for raw pointer stores
+            if rightRes.typeKind == TypeKind.Num {
+                iConv: str = self.codegen.newReg
+                self.codegen.emit `${iConv} = fptosi double ${rightRes.reg} to i64`
+                storeVal = iConv
+            }
+            self.codegen.emit `store i64 ${storeVal}, ptr ${rawPtr}`
         }
         -> rightRes
     }
@@ -510,6 +534,27 @@ EmitBinary self: ExprCodegen, node: ASTNode :: ExprResult {
         diffReg: str = self.codegen.newReg
         self.codegen.emit `${diffReg} = sub i64 ${pLeft}, ${pRight}`
         res: ExprResult = { reg: diffReg, typeKind: TypeKind.I64 }
+        -> res
+    }
+
+    if op == "+" && (leftRes.typeKind == TypeKind.Ptr || rightRes.typeKind == TypeKind.Ptr) {
+        // pointer + integer byte offset => GEP i8
+        baseReg: str = leftRes.typeKind == TypeKind.Ptr ? leftRes.reg : rightRes.reg
+        offRes: ExprResult = leftRes.typeKind == TypeKind.Ptr ? rightRes : leftRes
+        offReg: str = offRes.reg
+        if offRes.typeKind == TypeKind.Num {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = fptosi double ${offReg} to i64`
+            offReg = convReg
+        } els if offRes.typeKind == TypeKind.I32 || offRes.typeKind == TypeKind.I16 || offRes.typeKind == TypeKind.I8 {
+            convReg: str = self.codegen.newReg
+            iT: str = llvmType offRes.typeKind
+            self.codegen.emit `${convReg} = sext ${iT} ${offReg} to i64`
+            offReg = convReg
+        }
+        gepReg: str = self.codegen.newReg
+        self.codegen.emit `${gepReg} = getelementptr inbounds i8, ptr ${baseReg}, i64 ${offReg}`
+        res: ExprResult = { reg: gepReg, typeKind: TypeKind.Ptr }
         -> res
     }
 

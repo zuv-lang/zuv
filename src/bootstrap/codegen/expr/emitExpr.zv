@@ -32,6 +32,7 @@ EmitExpr self: ExprCodegen, node: ASTNode :: ExprResult {
     NodeKind.NewExpr        => self.emitNew node
     NodeKind.BorrowExpr     => self.emitBorrow node
     NodeKind.SymExpr        => self.emitSym node
+    NodeKind.DerefExpr      => self.emitDeref node
     _                       => self.emitDefault node
     }
 }

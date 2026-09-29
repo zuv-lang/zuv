@@ -1,0 +1,54 @@
+/*
+ * =============================================================================
+ * Zuv Bootstrap Compiler — EmitDeref Expression Emitter
+ * Path: sub_projects/zuv/src/bootstrap/codegen/expr/emitDeref.zv
+ * =============================================================================
+ *
+ * Emits LLVM IR for pointer dereference expressions (*ptr).
+ * In an rvalue context this performs a `load i64, ptr %p` instruction.
+ * The result type is i64 (raw 64-bit word), matching how the C++ compiler
+ * represents dereferenced pointers — callers upcast as needed.
+ */
+
+imp TypeKind frm ../../types
+imp ASTNode frm ../../ast
+imp llvmType, isPointerType frm ../types
+imp ExprCodegen, ExprResult, ScopeSymbol frm ../expr
+
+/**
+ * Emits code for a DerefExpr node: load the value at the pointer address.
+ *
+ * @param {ExprCodegen} self - Expression code generator instance
+ * @param {ASTNode} node    - DerefExpr AST node (children[0] is the pointer expr)
+ * @returns {ExprResult}     - Result register holding the loaded value
+ */
+EmitDeref self: ExprCodegen, node: ASTNode :: ExprResult {
+    if node.children.ln == 0 {
+        res: ExprResult = { reg: "0", typeKind: TypeKind.I64 }
+        -> res
+    }
+
+    ptrNode: ASTNode = node.children[0]
+    ptrRes: ExprResult = self.emitExpr ptrNode
+
+    // Ensure we have an actual LLVM ptr type to load from
+    rawPtr: str = ptrRes.reg
+    if !(isPointerType ptrRes.typeKind) {
+        // Convert integer/double representation to ptr
+        convReg: str = self.codegen.newReg
+        if ptrRes.typeKind == TypeKind.Num {
+            iReg: str = self.codegen.newReg
+            self.codegen.emit `${iReg} = fptosi double ${ptrRes.reg} to i64`
+            self.codegen.emit `${convReg} = inttoptr i64 ${iReg} to ptr`
+        } els {
+            self.codegen.emit `${convReg} = inttoptr i64 ${ptrRes.reg} to ptr`
+        }
+        rawPtr = convReg
+    }
+
+    // Load a single 64-bit word from the pointer
+    loadReg: str = self.codegen.newReg
+    self.codegen.emit `${loadReg} = load i64, ptr ${rawPtr}`
+    res: ExprResult = { reg: loadReg, typeKind: TypeKind.I64 }
+    -> res
+}
