@@ -1,6 +1,7 @@
 // Implicit string + number coercion
 
-if ("Hello " + 5) == "Hello 5" {
+
+if ("Hello " + 2000000) == "Hello 2000000" {
     prnt "str + num ok"
 }
 
