@@ -203,7 +203,7 @@ enum StatusKind {
 ret_num_val(a: num, b: num): num {
     -> a + b
 }
-ret_num_arrow a: num, b: num -> num {
+ret_num_arrow a: num, b: num :: num {
     -> a * b
 }
 

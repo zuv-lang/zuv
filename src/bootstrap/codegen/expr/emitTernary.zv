@@ -7,7 +7,7 @@
 
 imp TypeKind frm ../../types
 imp ASTNode frm ../../ast
-imp llvmType, llvmStackType frm ../types
+imp llvmType, llvmStackType, isPointerType frm ../types
 imp ExprCodegen, ExprResult frm ../expr
 
 EmitTernary self: ExprCodegen, node: ASTNode :: ExprResult {
@@ -26,6 +26,8 @@ EmitTernary self: ExprCodegen, node: ASTNode :: ExprResult {
         cmpReg: str = self.codegen.newReg
         if condRes.typeKind == TypeKind.Num {
             self.codegen.emit `${cmpReg} = fcmp one double ${condReg}, 0.0`
+        } els if isPointerType(condRes.typeKind) || cType == "ptr" {
+            self.codegen.emit `${cmpReg} = icmp ne ptr ${condReg}, null`
         } els {
             self.codegen.emit `${cmpReg} = icmp ne ${cType} ${condReg}, 0`
         }
@@ -60,6 +62,27 @@ EmitTernary self: ExprCodegen, node: ASTNode :: ExprResult {
         extReg: str = self.codegen.newReg
         self.codegen.emit `${extReg} = zext i32 ${thenRes.reg} to i64`
         thenVal = extReg
+    } els if stType == "i64" && isPointerType(thenRes.typeKind) {
+        intReg: str = self.codegen.newReg
+        self.codegen.emit `${intReg} = ptrtoint ptr ${thenRes.reg} to i64`
+        thenVal = intReg
+    } els if stType == "ptr" && !(isPointerType(thenRes.typeKind)) {
+        ptrReg: str = self.codegen.newReg
+        self.codegen.emit `${ptrReg} = inttoptr i64 ${thenRes.reg} to ptr`
+        thenVal = ptrReg
+    } els if stType == "double" && thenRes.typeKind != TypeKind.Num {
+        numReg: str = self.codegen.newReg
+        tSrc: str = llvmType thenRes.typeKind
+        if thenRes.typeKind == TypeKind.Bool {
+            self.codegen.emit `${numReg} = uitofp i1 ${thenRes.reg} to double`
+        } els {
+            self.codegen.emit `${numReg} = sitofp ${tSrc} ${thenRes.reg} to double`
+        }
+        thenVal = numReg
+    } els if stType == "i64" && thenRes.typeKind == TypeKind.Num {
+        intReg: str = self.codegen.newReg
+        self.codegen.emit `${intReg} = fptosi double ${thenRes.reg} to i64`
+        thenVal = intReg
     }
     self.codegen.emit `store ${stType} ${thenVal}, ptr ${slotReg}`
     self.codegen.emit `br label %${mergeLbl}`
@@ -80,6 +103,27 @@ EmitTernary self: ExprCodegen, node: ASTNode :: ExprResult {
         extReg: str = self.codegen.newReg
         self.codegen.emit `${extReg} = zext i32 ${elseRes.reg} to i64`
         elseVal = extReg
+    } els if stType == "i64" && isPointerType(elseRes.typeKind) {
+        intReg: str = self.codegen.newReg
+        self.codegen.emit `${intReg} = ptrtoint ptr ${elseRes.reg} to i64`
+        elseVal = intReg
+    } els if stType == "ptr" && !(isPointerType(elseRes.typeKind)) {
+        ptrReg: str = self.codegen.newReg
+        self.codegen.emit `${ptrReg} = inttoptr i64 ${elseRes.reg} to ptr`
+        elseVal = ptrReg
+    } els if stType == "double" && elseRes.typeKind != TypeKind.Num {
+        numReg: str = self.codegen.newReg
+        tSrc: str = llvmType elseRes.typeKind
+        if elseRes.typeKind == TypeKind.Bool {
+            self.codegen.emit `${numReg} = uitofp i1 ${elseRes.reg} to double`
+        } els {
+            self.codegen.emit `${numReg} = sitofp ${tSrc} ${elseRes.reg} to double`
+        }
+        elseVal = numReg
+    } els if stType == "i64" && elseRes.typeKind == TypeKind.Num {
+        intReg: str = self.codegen.newReg
+        self.codegen.emit `${intReg} = fptosi double ${elseRes.reg} to i64`
+        elseVal = intReg
     }
     self.codegen.emit `store ${stType} ${elseVal}, ptr ${slotReg}`
     self.codegen.emit `br label %${mergeLbl}`

@@ -40,7 +40,13 @@ EmitFrIn self: StmtCodegen, node: ASTNode :: void {
             if condRes.typeKind != TypeKind.Bool {
                 cmpReg: str = self.codegen.newReg
                 itype: str = llvmType condRes.typeKind
-                self.codegen.emit `${cmpReg} = icmp ne ${itype} ${condRes.reg}, 0`
+                if condRes.typeKind == TypeKind.Num {
+                    self.codegen.emit `${cmpReg} = fcmp one double ${condRes.reg}, 0.0`
+                } els if isPointerType(condRes.typeKind) || itype == "ptr" {
+                    self.codegen.emit `${cmpReg} = icmp ne ptr ${condRes.reg}, null`
+                } els {
+                    self.codegen.emit `${cmpReg} = icmp ne ${itype} ${condRes.reg}, 0`
+                }
                 condI1 = cmpReg
             }
             self.codegen.emit `br i1 ${condI1}, label %${bodyLbl}, label %${endLbl}`

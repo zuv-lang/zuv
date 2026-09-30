@@ -45,6 +45,16 @@ EmitVarDecl self: StmtCodegen, node: ASTNode :: void {
                 effTypeName = cTypeAnn
             }
         }
+        if effTypeName.ln == 0 && node.children.ln > 0 && node.children[0].kind == NodeKind.CallExpr {
+            cNode: ASTNode = node.children[0]
+            cName: str = cNode.name.ln > 0 ? cNode.name : (cNode.children.ln > 0 ? cNode.children[0].name : "")
+            if cName.ln > 0 && self.exprGen.hasFunc(cName) {
+                cSig: FuncSignature = self.exprGen.findFunc(cName)
+                if cSig.retTypeName.ln > 0 {
+                    effTypeName = cSig.retTypeName
+                }
+            }
+        }
         if effTypeName.ln == 0 && node.children.ln > 0 && node.children[0].name.ln > 0 {
             effTypeName = node.children[0].name
         }

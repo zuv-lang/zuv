@@ -31,6 +31,61 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
     k = decl.kind
     if k == NodeKind.TypeDecl {
         tInfo = TypeInfo.createObject(decl.name)
+
+        hasAmp: bool = false
+        cIdx: num = 0
+        wh cIdx < decl.typeAnnotation.ln {
+            if decl.typeAnnotation[cIdx] == "&" {
+                hasAmp = true
+                brk
+            }
+            cIdx++
+        }
+        if hasAmp {
+            startPos: num = 0
+            tAnnLen: num = decl.typeAnnotation.ln
+            idx: num = 0
+            wh idx <= tAnnLen {
+                isEnd: bool = (idx == tAnnLen)
+                isSep: bool = false
+                if !isEnd {
+                    if decl.typeAnnotation[idx] == "&" {
+                        isSep = true
+                    }
+                }
+                if isEnd || isSep {
+                    part: str = decl.typeAnnotation.slc(startPos, idx)
+                    pStart: num = 0
+                    pEnd: num = part.ln
+                    wh pStart < pEnd {
+                        ch: str = part[pStart]
+                        if ch != " " && ch != "\t" && ch != "\r" && ch != "\n" {
+                            brk
+                        }
+                        pStart++
+                    }
+                    wh pEnd > pStart {
+                        ch: str = part[pEnd - 1]
+                        if ch != " " && ch != "\t" && ch != "\r" && ch != "\n" {
+                            brk
+                        }
+                        pEnd--
+                    }
+                    trimmedPart: str = part.slc(pStart, pEnd)
+                    if trimmedPart.ln > 0 && checker.hasType(trimmedPart) {
+                        refInfo: TypeInfo = checker.resolveType(trimmedPart)
+                        fr fldName, fIdx of refInfo.fields {
+                            if fIdx < refInfo.fieldTypes.ln {
+                                tInfo.addField(fldName, refInfo.fieldTypes[fIdx])
+                            }
+                        }
+                    }
+                    startPos = idx + 1
+                }
+                idx++
+            }
+        }
+
         fr fEntry of decl.fields {
             fKind = StrToTypeKind(fEntry.valStr)
             tInfo.addField(fEntry.name, fKind)
@@ -174,6 +229,8 @@ InferDeclaration checker: Checker, decl: ASTNode :: void {
         fr pItem of decl.params {
             if pItem.isRest {
                 paramTypeNames.psh("..." + pItem.typeAnnotation)
+            } els if pItem.isOptional || pItem.defaultVal.ln > 0 {
+                paramTypeNames.psh("?" + pItem.typeAnnotation)
             } els {
                 paramTypeNames.psh(pItem.typeAnnotation)
             }

@@ -8,6 +8,7 @@
 imp TypeKind frm ../../types
 imp ASTNode, NodeKind frm ../../ast
 imp llvmType, llvmStackType, isPointerType frm ../types
+imp StrEndsWith frm ../../../util/commonFunctions
 imp ExprCodegen, ExprResult, FuncSignature, ScopeSymbol frm ../expr
 
 EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
@@ -42,6 +43,35 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
         cRes: ExprResult = self.emitExpr child
         argRegs.psh cRes.reg
         argTypes.psh cRes.typeKind
+    }
+
+    if calleeName.ln > 0 && self.hasFunc(calleeName) {
+        calleeSig: FuncSignature = self.findFunc(calleeName)
+        if !(calleeSig.hasRest) && argRegs.ln < calleeSig.paramTypes.ln {
+            wh argRegs.ln < calleeSig.paramTypes.ln {
+                pIdx: num = argRegs.ln
+                pTypeStr: str = calleeSig.paramTypes[pIdx]
+                if pTypeStr == "ptr" {
+                    argRegs.psh "null"
+                    argTypes.psh TypeKind.Ptr
+                } els if pTypeStr == "double" {
+                    argRegs.psh "0.0"
+                    argTypes.psh TypeKind.Num
+                } els if pTypeStr == "i1" {
+                    argRegs.psh "0"
+                    argTypes.psh TypeKind.Bool
+                } els if pTypeStr == "i32" {
+                    argRegs.psh "0"
+                    argTypes.psh TypeKind.I32
+                } els if pTypeStr == "i8" {
+                    argRegs.psh "0"
+                    argTypes.psh TypeKind.I8
+                } els {
+                    argRegs.psh "0"
+                    argTypes.psh TypeKind.I64
+                }
+            }
+        }
     }
 
     argsStr: str = ""
@@ -625,29 +655,27 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
                     convReg: str = self.codegen.newReg
                     self.codegen.emit `${convReg} = zext i1 ${aReg} to i64`
                     passedReg = convReg
-                } els if expectedLLVM == "i64" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                } els if expectedLLVM == "i64" && (actualLLVM == "i8" || aType == TypeKind.I8 || actualLLVM == "i16" || aType == TypeKind.I16 || actualLLVM == "i32" || aType == TypeKind.I32) {
                     convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sext i32 ${aReg} to i64`
+                    srcT: str = (actualLLVM == "i8" || aType == TypeKind.I8) ? "i8" : ((actualLLVM == "i16" || aType == TypeKind.I16) ? "i16" : "i32")
+                    self.codegen.emit `${convReg} = sext ${srcT} ${aReg} to i64`
                     passedReg = convReg
                 } els if expectedLLVM == "i64" && (actualLLVM == "double" || aType == TypeKind.Num) {
                     convReg: str = self.codegen.newReg
                     self.codegen.emit `${convReg} = fptosi double ${aReg} to i64`
                     passedReg = convReg
-                } els if expectedLLVM == "double" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                } els if expectedLLVM == "double" && (actualLLVM == "i8" || aType == TypeKind.I8 || actualLLVM == "i16" || aType == TypeKind.I16 || actualLLVM == "i32" || aType == TypeKind.I32 || actualLLVM == "i64" || aType == TypeKind.I64) {
                     convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i64 ${aReg} to double`
+                    srcT: str = (actualLLVM == "i8" || aType == TypeKind.I8) ? "i8" : ((actualLLVM == "i16" || aType == TypeKind.I16) ? "i16" : ((actualLLVM == "i32" || aType == TypeKind.I32) ? "i32" : "i64"))
+                    self.codegen.emit `${convReg} = sitofp ${srcT} ${aReg} to double`
                     passedReg = convReg
-                } els if expectedLLVM == "double" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                } els if (expectedLLVM == "i8" || expectedLLVM == "i16" || expectedLLVM == "i32" || expectedLLVM == "i1") && (actualLLVM == "i64" || aType == TypeKind.I64) {
                     convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i32 ${aReg} to double`
+                    self.codegen.emit `${convReg} = trunc i64 ${aReg} to ${expectedLLVM}`
                     passedReg = convReg
-                } els if expectedLLVM == "i32" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                } els if (expectedLLVM == "i8" || expectedLLVM == "i16" || expectedLLVM == "i32") && (actualLLVM == "double" || aType == TypeKind.Num) {
                     convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = trunc i64 ${aReg} to i32`
-                    passedReg = convReg
-                } els if expectedLLVM == "i1" && (actualLLVM == "i64" || aType == TypeKind.I64) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = trunc i64 ${aReg} to i1`
+                    self.codegen.emit `${convReg} = fptosi double ${aReg} to ${expectedLLVM}`
                     passedReg = convReg
                 } els if expectedLLVM == "ptr" && (actualLLVM == "i64" || aType == TypeKind.I64) {
                     convReg: str = self.codegen.newReg
@@ -687,29 +715,27 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
                     convReg: str = self.codegen.newReg
                     self.codegen.emit `${convReg} = zext i1 ${aReg} to i64`
                     passedReg = convReg
-                } els if expectedLLVM == "i64" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                } els if expectedLLVM == "i64" && (actualLLVM == "i8" || aType == TypeKind.I8 || actualLLVM == "i16" || aType == TypeKind.I16 || actualLLVM == "i32" || aType == TypeKind.I32) {
                     convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sext i32 ${aReg} to i64`
+                    srcT: str = (actualLLVM == "i8" || aType == TypeKind.I8) ? "i8" : ((actualLLVM == "i16" || aType == TypeKind.I16) ? "i16" : "i32")
+                    self.codegen.emit `${convReg} = sext ${srcT} ${aReg} to i64`
                     passedReg = convReg
                 } els if expectedLLVM == "i64" && (actualLLVM == "double" || aType == TypeKind.Num) {
                     convReg: str = self.codegen.newReg
                     self.codegen.emit `${convReg} = fptosi double ${aReg} to i64`
                     passedReg = convReg
-                } els if expectedLLVM == "double" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                } els if expectedLLVM == "double" && (actualLLVM == "i8" || aType == TypeKind.I8 || actualLLVM == "i16" || aType == TypeKind.I16 || actualLLVM == "i32" || aType == TypeKind.I32 || actualLLVM == "i64" || aType == TypeKind.I64) {
                     convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i64 ${aReg} to double`
+                    srcT: str = (actualLLVM == "i8" || aType == TypeKind.I8) ? "i8" : ((actualLLVM == "i16" || aType == TypeKind.I16) ? "i16" : ((actualLLVM == "i32" || aType == TypeKind.I32) ? "i32" : "i64"))
+                    self.codegen.emit `${convReg} = sitofp ${srcT} ${aReg} to double`
                     passedReg = convReg
-                } els if expectedLLVM == "double" && (actualLLVM == "i32" || aType == TypeKind.I32) {
+                } els if (expectedLLVM == "i8" || expectedLLVM == "i16" || expectedLLVM == "i32" || expectedLLVM == "i1") && (actualLLVM == "i64" || aType == TypeKind.I64) {
                     convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = sitofp i32 ${aReg} to double`
+                    self.codegen.emit `${convReg} = trunc i64 ${aReg} to ${expectedLLVM}`
                     passedReg = convReg
-                } els if expectedLLVM == "i32" && (actualLLVM == "i64" || aType == TypeKind.I64) {
+                } els if (expectedLLVM == "i8" || expectedLLVM == "i16" || expectedLLVM == "i32") && (actualLLVM == "double" || aType == TypeKind.Num) {
                     convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = trunc i64 ${aReg} to i32`
-                    passedReg = convReg
-                } els if expectedLLVM == "i1" && (actualLLVM == "i64" || aType == TypeKind.I64) {
-                    convReg: str = self.codegen.newReg
-                    self.codegen.emit `${convReg} = trunc i64 ${aReg} to i1`
+                    self.codegen.emit `${convReg} = fptosi double ${aReg} to ${expectedLLVM}`
                     passedReg = convReg
                 } els if expectedLLVM == "ptr" && (actualLLVM == "i64" || aType == TypeKind.I64) {
                     convReg: str = self.codegen.newReg
@@ -743,7 +769,19 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
                 retKind = TypeKind.Str
             }
         } els if fnSig.retType == "i32" {
-            retKind = TypeKind.I32
+            retKind = (fnSig.retTypeName == "u32" || fnSig.retTypeKind == TypeKind.U32) ? TypeKind.U32 : TypeKind.I32
+        } els if fnSig.retType == "i8" {
+            retKind = (fnSig.retTypeName == "u8" || fnSig.retTypeKind == TypeKind.U8) ? TypeKind.U8 : TypeKind.I8
+        } els if fnSig.retType == "i16" {
+            retKind = (fnSig.retTypeName == "u16" || fnSig.retTypeKind == TypeKind.U16) ? TypeKind.U16 : TypeKind.I16
+        } els if fnSig.retTypeKind != TypeKind.Unknown && fnSig.retTypeKind != TypeKind.Void {
+            retKind = fnSig.retTypeKind
+        }
+        if node.inferredType == TypeKind.Str && retKind == TypeKind.I64 {
+            convReg: str = self.codegen.newReg
+            self.codegen.emit `${convReg} = inttoptr i64 ${callReg} to ptr`
+            callReg = convReg
+            retKind = TypeKind.Str
         }
         res: ExprResult = { reg: callReg, typeKind: retKind }
         -> res
@@ -879,6 +917,26 @@ EmitCall self: ExprCodegen, node: ASTNode :: ExprResult {
     }
 
     retType = node.inferredType
+    if calleeName.ln > 0 && self.hasFunc(calleeName) {
+        calleeSig: FuncSignature = self.findFunc(calleeName)
+        if calleeSig.retType == "void" {
+            retType = TypeKind.Void
+        } els if calleeSig.retType == "double" {
+            retType = TypeKind.Num
+        } els if calleeSig.retType == "i1" {
+            retType = TypeKind.Bool
+        } els if calleeSig.retType == "i32" {
+            retType = TypeKind.I32
+        } els if calleeSig.retType == "i8" {
+            retType = TypeKind.I8
+        } els if calleeSig.retType == "i16" {
+            retType = TypeKind.I16
+        } els if calleeSig.retType == "ptr" {
+            retType = (calleeSig.retTypeName == "str" ? TypeKind.Str : (calleeSig.retTypeName == "arr" || StrEndsWith(calleeSig.retTypeName, "[]") ? TypeKind.Arr : TypeKind.Obj))
+        } els if calleeSig.retTypeKind != TypeKind.Unknown && calleeSig.retTypeKind != TypeKind.Void {
+            retType = calleeSig.retTypeKind
+        }
+    }
     if retType == TypeKind.Unknown {
         retType = TypeKind.I64
     }

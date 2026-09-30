@@ -6,6 +6,7 @@
  */
 
 imp TypeKind frm ../../types
+imp llvmType frm ../types
 imp boxValueToI64 frm ../array
 imp ObjectCodegen, StructLayout frm ../decl
 
@@ -70,16 +71,18 @@ EmitObjectLit self: ObjectCodegen, typeName: str, fieldNames: str[], valRegs: st
             }
         }
 
-        if expectedFieldType == TypeKind.Num && valType != TypeKind.Num {
+        if expectedFieldType == TypeKind.Num && valType != TypeKind.Num && (valType == TypeKind.I8 || valType == TypeKind.I16 || valType == TypeKind.I32 || valType == TypeKind.I64 || valType == TypeKind.U8 || valType == TypeKind.U16 || valType == TypeKind.U32 || valType == TypeKind.U64) {
             convReg: str = self.codegen.newReg
-            self.codegen.emit `${convReg} = sitofp i64 ${valReg} to double`
+            srcT: str = llvmType valType
+            self.codegen.emit `${convReg} = sitofp ${srcT} ${valReg} to double`
             valReg = convReg
             valType = TypeKind.Num
-        } els if expectedFieldType == TypeKind.I64 && valType == TypeKind.Num {
+        } els if (expectedFieldType == TypeKind.I64 || expectedFieldType == TypeKind.I32) && valType == TypeKind.Num {
             convReg: str = self.codegen.newReg
-            self.codegen.emit `${convReg} = fptosi double ${valReg} to i64`
+            tgtT: str = llvmType expectedFieldType
+            self.codegen.emit `${convReg} = fptosi double ${valReg} to ${tgtT}`
             valReg = convReg
-            valType = TypeKind.I64
+            valType = expectedFieldType
         }
 
         if effTypeName.ln > 0 {

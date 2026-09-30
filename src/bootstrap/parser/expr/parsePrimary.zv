@@ -108,7 +108,7 @@ ParsePrimary parser: Parser :: ASTNode {
             curTok.kind == TokenType.TOK_NAN || curTok.kind == TokenType.TOK_INFINITY || curTok.kind == TokenType.TOK_INFO ||
             curTok.kind == TokenType.TOK_TYPE_NUM || curTok.kind == TokenType.TOK_TYPE_BOOL ||
             curTok.kind == TokenType.TOK_TYPE_STR || curTok.kind == TokenType.TOK_TYPE_VOID ||
-            curTok.kind == TokenType.TOK_ELLIPSIS || allowMinusArg) {
+            curTok.kind == TokenType.TOK_ELLIPSIS || (curTok.kind == TokenType.TOK_LBRACKET && idTok.col + idTok.len < curTok.col) || allowMinusArg) {
             argPrec: num = 1
             if idTok.val != "prnt" && idTok.val != "lg" && idTok.val != "wrn" && idTok.val != "panic" {
                 argPrec = 12

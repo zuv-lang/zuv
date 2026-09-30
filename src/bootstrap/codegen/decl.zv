@@ -295,15 +295,113 @@ obj StructLayoutRegistry {
         }
         builtFields: StructField[] = []
         curIdx: num = 0
-        fr fEntry of node.fields {
-            resolvedValStr: str = self.resolveAlias fEntry.valStr
-            fType: TypeKind = TypeKind.Unknown
-            if fEntry.valStr.ln > 0 && fEntry.valStr != fEntry.name && fEntry.valStr != "any" {
-                fType = resolveFieldTypeKind resolvedValStr
+
+        hasAmp: bool = false
+        cIdx: num = 0
+        wh cIdx < node.typeAnnotation.ln {
+            if node.typeAnnotation[cIdx] == "&" {
+                hasAmp = true
+                brk
             }
-            fDesc: StructField = createStructField fEntry.name, curIdx, fType, resolvedValStr
-            builtFields.psh fDesc
-            curIdx++
+            cIdx++
+        }
+
+        if hasAmp {
+            startPos: num = 0
+            tAnnLen: num = node.typeAnnotation.ln
+            idx: num = 0
+            wh idx <= tAnnLen {
+                isEnd: bool = (idx == tAnnLen)
+                isSep: bool = false
+                if !isEnd {
+                    if node.typeAnnotation[idx] == "&" {
+                        isSep = true
+                    }
+                }
+                if isEnd || isSep {
+                    part: str = node.typeAnnotation.slc(startPos, idx)
+                    pStart: num = 0
+                    pEnd: num = part.ln
+                    wh pStart < pEnd {
+                        ch: str = part[pStart]
+                        if ch != " " && ch != "\t" && ch != "\r" && ch != "\n" {
+                            brk
+                        }
+                        pStart++
+                    }
+                    wh pEnd > pStart {
+                        ch: str = part[pEnd - 1]
+                        if ch != " " && ch != "\t" && ch != "\r" && ch != "\n" {
+                            brk
+                        }
+                        pEnd--
+                    }
+                    trimmedPart: str = part.slc(pStart, pEnd)
+                    if trimmedPart.ln > 0 && self.hasType(trimmedPart) {
+                        refLayout: StructLayout = self.getLayout trimmedPart
+                        fr rf of refLayout.fields {
+                            alreadyHas: bool = false
+                            fr bf of builtFields {
+                                if bf.name == rf.name {
+                                    alreadyHas = true
+                                    brk
+                                }
+                            }
+                            if !alreadyHas {
+                                fDesc: StructField = createStructField rf.name, curIdx, rf.typeKind, rf.typeName
+                                builtFields.psh fDesc
+                                curIdx++
+                            }
+                        }
+                    }
+                    startPos = idx + 1
+                }
+                idx++
+            }
+
+            fr child of node.children {
+                if child.kind == NodeKind.TypeDecl {
+                    fr cf of child.fields {
+                        alreadyHas: bool = false
+                        fr bf of builtFields {
+                            if bf.name == cf.name {
+                                alreadyHas = true
+                                brk
+                            }
+                        }
+                        if !alreadyHas {
+                            resolvedValStr: str = self.resolveAlias cf.valStr
+                            fType: TypeKind = TypeKind.Unknown
+                            if cf.valStr.ln > 0 && cf.valStr != cf.name && cf.valStr != "any" {
+                                fType = resolveFieldTypeKind resolvedValStr
+                            }
+                            fDesc: StructField = createStructField cf.name, curIdx, fType, resolvedValStr
+                            builtFields.psh fDesc
+                            curIdx++
+                        }
+                    }
+                }
+            }
+        }
+
+        fr fEntry of node.fields {
+            alreadyHas: bool = false
+            fr bf of builtFields {
+                if bf.name == fEntry.name {
+                    alreadyHas = true
+                    brk
+                }
+            }
+            if !alreadyHas {
+                resolvedValStr: str = self.resolveAlias fEntry.valStr
+                fType: TypeKind = TypeKind.Unknown
+                if fEntry.valStr.ln > 0 && fEntry.valStr != fEntry.name && fEntry.valStr != "any" {
+                    fType = resolveFieldTypeKind resolvedValStr
+                }
+                fDesc: StructField = createStructField fEntry.name, curIdx, fType, resolvedValStr
+                builtFields.psh fDesc
+                curIdx++
+            }
         }
         layout: StructLayout = StructLayout.create node.name, builtFields
         self.layouts.psh layout

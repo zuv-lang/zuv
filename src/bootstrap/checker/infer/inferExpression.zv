@@ -594,11 +594,15 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                 fnInfo = checker.resolveType(fnSym.typeName)
                 if fnInfo.kind == TypeKind.Func {
                     hasRest: bool = false
-                    minParamCount: num = fnInfo.fields.ln
+                    minParamCount: num = 0
+                    maxParamCount: num = fnInfo.fields.ln
                     fr fld of fnInfo.fields {
                         if fld.ln >= 3 && fld[0] == "." && fld[1] == "." && fld[2] == "." {
                             hasRest = true
-                            minParamCount = fnInfo.fields.ln - 1
+                        } els if fld.ln >= 1 && fld[0] == "?" {
+                            // optional/default parameter
+                        } els {
+                            minParamCount = minParamCount + 1
                         }
                     }
                     if hasRest {
@@ -606,26 +610,46 @@ InferExpression checker: Checker, expr: ASTNode :: TypeKind {
                             checker.addError("E0308", "Function '" + calleeName + "' expects at least " + minParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
                         }
                     } els {
-                        expectedParamCount = fnInfo.fields.ln
-                        if argCount != expectedParamCount {
-                            checker.addError("E0308", "Function '" + calleeName + "' expects " + expectedParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                        if argCount < minParamCount || argCount > maxParamCount {
+                            if minParamCount == maxParamCount {
+                                checker.addError("E0308", "Function '" + calleeName + "' expects " + maxParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                            } els {
+                                checker.addError("E0308", "Function '" + calleeName + "' expects between " + minParamCount + " and " + maxParamCount + " arguments, but got " + argCount, expr.line, expr.col, calleeName.ln, "provide the expected number of arguments")
+                            }
                         }
                     }
                     fr fieldStr, pIdx of fnInfo.fields {
-                        if !(fieldStr.ln >= 3 && fieldStr[0] == "." && fieldStr[1] == "." && fieldStr[2] == ".") {
+                        cleanFieldStr: str = fieldStr
+                        if cleanFieldStr.ln >= 1 && cleanFieldStr[0] == "?" {
+                            cleanFieldStr = cleanFieldStr.slc(1, cleanFieldStr.ln)
+                        }
+                        if !(cleanFieldStr.ln >= 3 && cleanFieldStr[0] == "." && cleanFieldStr[1] == "." && cleanFieldStr[2] == ".") {
                             if pIdx < argCount {
-                                expectedKind = StrToTypeKind(fieldStr)
+                                expectedKind = StrToTypeKind(cleanFieldStr)
                                 argNode = expr.children[pIdx + 1]
-                                if !(AreTypesCompatible expectedKind, argNode.inferredType) && argNode.inferredType != TypeKind.Unknown {
+                                if !(AreTypesCompatible expectedKind, argNode.inferredType) && argNode.inferredType != TypeKind.Unknown && expectedKind != TypeKind.Unknown {
                                     checker.addError("E0306", "Argument " + (pIdx + 1) + " of '" + calleeName + "' expects " + (TypeKindToStr expectedKind) + ", got " + (TypeKindToStr argNode.inferredType), argNode.line, argNode.col, 1, "pass a compatible argument type")
                                 }
                             }
                         }
                     }
                     expr.inferredType = fnInfo.elemType
-                    -> fnInfo.elemType
+                    if fnInfo.elemTypeName.ln > 0 {
+                        expr.typeAnnotation = fnInfo.elemTypeName
+                    }
+                    if fnInfo.elemTypeName == "any" && argCount > 0 {
+                        firstArg = expr.children[1]
+                        if firstArg.inferredType == TypeKind.Str {
+                            expr.inferredType = TypeKind.Str
+                            expr.typeAnnotation = "str"
+                        }
+                    }
+                    -> expr.inferredType
                 }
                 expr.inferredType = fnSym.typeKind
+                if fnSym.typeName.ln > 0 {
+                    expr.typeAnnotation = fnSym.typeName
+                }
                 -> fnSym.typeKind
             }
         }

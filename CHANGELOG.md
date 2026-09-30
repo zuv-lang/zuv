@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+- **Diagnostic Source Coordinates**: Fixed line and column numbers displaying in scientific notation by resolving IEEE-754 bitcast and field typing mismatches in compiler codegen.
+- **Function Return & Array Type Lowering**: Fixed return type propagation (`u8`, `i8`, `i16`, `any`), array element typing, and condition coercions for self-host compiler bootstrap (`tests/types_functions.test.zv`).
+
 
 ## [0.14.0]
 

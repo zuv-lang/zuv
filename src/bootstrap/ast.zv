@@ -67,6 +67,7 @@ type Param = {
     typeAnnotation: str;
     isRest: bool;
     isOptional: bool;
+    defaultVal: str;
     line: num;
     col: num;
 };
@@ -608,6 +609,7 @@ obj ASTNode {
                 typeAnnotation: "",
                 isRest: false,
                 isOptional: false,
+                defaultVal: "",
                 line: line,
                 col: col
             }

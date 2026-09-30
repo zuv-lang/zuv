@@ -28,17 +28,104 @@ imp ParseStatement, ParseBlockStmt frm stmt
 IsFuncDecl parser: Parser :: bool {
     cTok: Token = parser.cur
     curLine: num = cTok.line
+
+    firstTok: Token = parser.peekAhead 1
+    if firstTok.kind == TokenType.TOK_EOF || firstTok.line != curLine {
+        -> false
+    }
+
+    // 1. Variable assignment: ident = ...
+    if firstTok.kind == TokenType.TOK_ASSIGN {
+        -> false
+    }
+
+    // 2. Typed variable declaration: ident : Type = ...
+    if firstTok.kind == TokenType.TOK_COLON {
+        -> false
+    }
+
+    // 3. Array indexing statement: ident[...] = ...
+    if firstTok.kind == TokenType.TOK_LBRACKET {
+        -> false
+    }
+
+    // 4. Property assignment: ident.prop = ...
+    if firstTok.kind == TokenType.TOK_DOT {
+        t2: Token = parser.peekAhead 2
+        t3: Token = parser.peekAhead 3
+        if t2.kind == TokenType.TOK_IDENT && t3.kind == TokenType.TOK_ASSIGN {
+            -> false
+        }
+    }
+
+    // 5. Direct empty body or arrow: ident { ... } or ident => ...
+    if firstTok.kind == TokenType.TOK_LBRACE || firstTok.kind == TokenType.TOK_FAT_ARROW {
+        -> true
+    }
+
+    // 6. Parenthesized parameter list: ident(...) { ... } or ident(...) => ...
+    if firstTok.kind == TokenType.TOK_LPAREN {
+        pDepth: num = 1
+        pOff: num = 2
+        wh pDepth > 0 {
+            pTok: Token = parser.peekAhead pOff
+            if pTok.kind == TokenType.TOK_EOF || pTok.line != curLine {
+                brk
+            }
+            if pTok.kind == TokenType.TOK_LPAREN {
+                pDepth = pDepth + 1
+            } els if pTok.kind == TokenType.TOK_RPAREN {
+                pDepth = pDepth - 1
+            }
+            pOff = pOff + 1
+        }
+        if pDepth == 0 {
+            wh true {
+                nxtTok: Token = parser.peekAhead pOff
+                if nxtTok.kind == TokenType.TOK_EOF || nxtTok.line != curLine {
+                    brk
+                }
+                if nxtTok.kind == TokenType.TOK_LBRACE || nxtTok.kind == TokenType.TOK_FAT_ARROW {
+                    -> true
+                }
+                if nxtTok.kind == TokenType.TOK_SEMICOLON {
+                    brk
+                }
+                pOff = pOff + 1
+            }
+        }
+        -> false
+    }
+
+    // 7. Unparenthesized parameter list, extension methods, or return type:
+    // Scan ahead at statement depth 0 for { or => on the same line
+    pDepth: num = 0
+    bDepth: num = 0
     offset: num = 1
     wh true {
         tok: Token = parser.peekAhead offset
         if tok.kind == TokenType.TOK_EOF || tok.line != curLine {
             brk
         }
-        if tok.kind == TokenType.TOK_COLON_COLON || tok.kind == TokenType.TOK_ARROW || tok.kind == TokenType.TOK_FAT_ARROW || tok.kind == TokenType.TOK_LBRACE {
-            -> true
-        }
-        if tok.kind == TokenType.TOK_SEMICOLON || tok.kind == TokenType.TOK_ASSIGN || tok.kind == TokenType.TOK_STRING || tok.kind == TokenType.TOK_NUMBER {
-            brk
+        if tok.kind == TokenType.TOK_LPAREN {
+            pDepth = pDepth + 1
+        } els if tok.kind == TokenType.TOK_RPAREN {
+            if pDepth > 0 {
+                pDepth = pDepth - 1
+            }
+        } els if tok.kind == TokenType.TOK_LBRACKET {
+            bDepth = bDepth + 1
+        } els if tok.kind == TokenType.TOK_RBRACKET {
+            if bDepth > 0 {
+                bDepth = bDepth - 1
+            }
+        } els if pDepth == 0 && bDepth == 0 {
+            if tok.kind == TokenType.TOK_LBRACE || tok.kind == TokenType.TOK_FAT_ARROW {
+                -> true
+            }
+            if tok.kind == TokenType.TOK_SEMICOLON {
+                brk
+            }
         }
         offset = offset + 1
     }
@@ -72,7 +159,7 @@ ParseProgram parser: Parser :: ASTNode {
            curTok.kind == TokenType.TOK_FN || curTok.kind == TokenType.TOK_AT {
             declNode: ASTNode = ParseDeclaration parser
             progNode.children.psh declNode
-        } els if curTok.kind == TokenType.TOK_IDENT && (curTok.val == "obj" || (curTok.val == "ffi" && (parser.peek.kind == TokenType.TOK_STRING || parser.peek.kind == TokenType.TOK_LBRACE))) {
+        } els if curTok.kind == TokenType.TOK_IDENT && (curTok.val == "obj" || (curTok.val == "type" && parser.peek.kind == TokenType.TOK_IDENT && parser.peekAhead(2).kind == TokenType.TOK_ASSIGN) || (curTok.val == "ffi" && (parser.peek.kind == TokenType.TOK_STRING || parser.peek.kind == TokenType.TOK_LBRACE))) {
             declNode: ASTNode = ParseDeclaration parser
             progNode.children.psh declNode
         } els if curTok.kind == TokenType.TOK_IDENT && parser.isStructType(curTok.val) && !(parser.hasVar curTok.val) && parser.peek.kind == TokenType.TOK_DOT && parser.peekAhead(2).kind == TokenType.TOK_IDENT && parser.peekAhead(3).kind == TokenType.TOK_ASSIGN && parser.peekAhead(4).kind == TokenType.TOK_IDENT && (parser.peekAhead(5).kind == TokenType.TOK_SEMICOLON || parser.peekAhead(5).line != parser.peekAhead(4).line || parser.peekAhead(5).kind == TokenType.TOK_EOF) {
@@ -88,6 +175,7 @@ ParseProgram parser: Parser :: ASTNode {
                 typeAnnotation: typeNameTok.val,
                 isRest: false,
                 isOptional: false,
+                defaultVal: "",
                 line: typeNameTok.line,
                 col: typeNameTok.col
             }

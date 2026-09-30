@@ -41,6 +41,7 @@ ParseLambda parser: Parser, paramNames: str[], line: num, col: num :: ASTNode {
             typeAnnotation: "",
             isRest,
             isOptional: false,
+            defaultVal: "",
             line,
             col
         }

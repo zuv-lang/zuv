@@ -6,9 +6,10 @@
  */
 
 imp Token, TokenType frm ../../tokens
-imp Param frm ../../ast
+imp ASTNode, Param frm ../../ast
 imp Parser frm ../parser
 imp ParseTypeString frm parseTypeString
+imp ParseExpr frm ../stmt
 
 /**
  * Parses a parameter list for functions or methods.
@@ -54,11 +55,28 @@ ParseParamList parser: Parser :: Param[] {
             pType = ParseTypeString parser
         }
 
+        defaultVal: str = ""
+        if parser.matchToken TokenType.TOK_ASSIGN {
+            isOpt = true
+            curTok: Token = parser.cur
+            if curTok.kind == TokenType.TOK_STRING {
+                defaultVal = "\"" + curTok.val + "\""
+                parser.advance
+            } els if curTok.kind == TokenType.TOK_NUMBER || curTok.kind == TokenType.TOK_TRUE || curTok.kind == TokenType.TOK_FALSE || curTok.kind == TokenType.TOK_NIL || curTok.kind == TokenType.TOK_UND {
+                defaultVal = curTok.val
+                parser.advance
+            } els {
+                exprNode: ASTNode = ParseExpr parser
+                defaultVal = exprNode.val
+            }
+        }
+
         paramItem: Param = {
             name: pName,
             typeAnnotation: pType,
             isRest: isRest,
             isOptional: isOpt,
+            defaultVal: defaultVal,
             line: pTok.line,
             col: pTok.col
         }

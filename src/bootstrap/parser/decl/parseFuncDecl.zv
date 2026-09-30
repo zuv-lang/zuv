@@ -39,12 +39,12 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
     parser.curFuncName = name
 
     params: Param[] = []
-    if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_ARROW) && !(parser.check TokenType.TOK_FAT_ARROW) {
+    if !(parser.check TokenType.TOK_LBRACE) && !(parser.check TokenType.TOK_COLON_COLON) && !(parser.check TokenType.TOK_FAT_ARROW) {
         params = ParseParamList parser
     }
 
     returnType: str = ""
-    if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_ARROW) {
+    if (parser.matchToken TokenType.TOK_COLON_COLON) || (parser.matchToken TokenType.TOK_COLON) {
         returnType = ParseTypeString parser
     }
 
@@ -55,6 +55,7 @@ ParseFuncDecl parser: Parser, isPub: bool, isAsync: bool :: ASTNode {
             typeAnnotation: extTypeName,
             isRest: false,
             isOptional: false,
+            defaultVal: "",
             line: nameTok.line,
             col: nameTok.col
         }

@@ -335,6 +335,15 @@ obj Checker {
         -> unkType
     },
 
+    hasType: name: str :: bool => {
+        fr typeItem of self.types {
+            if typeItem.name == name {
+                -> true
+            }
+        }
+        -> false
+    },
+
     addError: code: str, msg: str, line: num, col: num, len: num, help: str :: void => {
         srcFile: str = self.file
         diag = Diagnostic.create code, msg, srcFile, line, col, len, help

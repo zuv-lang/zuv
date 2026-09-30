@@ -58,6 +58,9 @@ EmitIndex self: ExprCodegen, node: ASTNode :: ExprResult {
     isOpt: bool = (node.op == "?.")
     elemVal: str = self.arrGen.emitGetElement arrPtrReg, idxReg, isOpt, node.line
     targetKind = node.inferredType
+    if targetKind == TypeKind.Num {
+        targetKind = TypeKind.I64
+    }
     if targetKind == TypeKind.Unknown || targetKind == TypeKind.I64 {
         targetNode: ASTNode = node.children[0]
         if targetNode.kind == NodeKind.PropExpr {
@@ -93,7 +96,11 @@ EmitIndex self: ExprCodegen, node: ASTNode :: ExprResult {
                 resolvedType: str = self.objGen.registry.resolveAlias targetSym.typeName
                 elemKind: TypeKind = StrToElemTypeKind resolvedType
                 if elemKind != TypeKind.Unknown {
-                    targetKind = elemKind
+                    if elemKind == TypeKind.Num {
+                        targetKind = TypeKind.I64
+                    } els {
+                        targetKind = elemKind
+                    }
                 }
             }
         } els if targetNode.kind == NodeKind.IndexExpr && targetNode.children.ln >= 2 {

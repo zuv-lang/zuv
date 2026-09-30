@@ -36,6 +36,8 @@ InferProgram checker: Checker, program: ASTNode :: void {
                 fr pItem of child.params {
                     if pItem.isRest {
                         paramTypeNames.psh("..." + pItem.typeAnnotation)
+                    } els if pItem.isOptional || pItem.defaultVal.ln > 0 {
+                        paramTypeNames.psh("?" + pItem.typeAnnotation)
                     } els {
                         paramTypeNames.psh(pItem.typeAnnotation)
                     }
@@ -56,6 +58,8 @@ InferProgram checker: Checker, program: ASTNode :: void {
                     fr pItem of fnChild.params {
                         if pItem.isRest {
                             paramTypeNames.psh("..." + pItem.typeAnnotation)
+                        } els if pItem.isOptional || pItem.defaultVal.ln > 0 {
+                            paramTypeNames.psh("?" + pItem.typeAnnotation)
                         } els {
                             paramTypeNames.psh(pItem.typeAnnotation)
                         }
