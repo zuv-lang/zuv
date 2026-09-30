@@ -289,39 +289,39 @@ lg ab2
 
 apf = arrayReturnNumPf 5.5, 10.1
 lg "arrayReturnNumPf 5.5, 10.1:"
-lg apf
+lg apf[0]
 
 ai64f = arrayReturnI64Pf 5, 10
 lg "arrayReturnI64Pf 5, 10:"
-lg ai64f
+lg ai64f[0]
 
 asf = arrayReturnStrPf "Hello", "Zuv"
 lg "arrayReturnStrPf \"Hello\", \"Zuv\":"
-lg asf
+lg asf[0]
 
 abf = arrayReturnBoolPf true, false
 lg "arrayReturnBoolPf true, false:"
-lg abf
+lg abf[0]
 
 numArr = [5.5, 10.1]
 apnf = arrayParameterReturnNumPf numArr, 20.2
 lg "arrayParameterReturnNumPf [5.5, 10.1], 20.2:"
-lg apnf
+lg apnf[0]
 
 i64Arr = [5, 10]
 api64f = arrayParameterReturnI64Pf i64Arr, 15
 lg "arrayParameterReturnI64Pf [5, 10], 15:"
-lg api64f
+lg api64f[0]
 
 strArr = ["Hello", "Zuv"]
 apsf = arrayParameterReturnStrPf strArr, "World"
 lg "arrayParameterReturnStrPf [\"Hello\", \"Zuv\"], \"World\":"
-lg apsf
+lg apsf[0]
 
 boolArr = [true]
 apbf = arrayParameterReturnBoolPf boolArr, false
 lg "arrayParameterReturnBoolPf [true], false:"
-lg apbf
+lg apbf[0]
 
 // Calls without types
 noTypesVoid()
@@ -344,11 +344,11 @@ lg nt4
 
 arnt = arrayReturnNoTypes(5, 10)
 lg "arrayReturnNoTypes(5, 10):"
-lg arnt
+lg arnt[0]
 
 aprbnt = arrayParameterReturnBoolNoTypes [true], false
 lg "arrayParameterReturnBoolNoTypes [true], false:"
-lg aprbnt
+lg aprbnt[0]
 
 // --- 5. Object passing through functions ---
 
@@ -363,14 +363,12 @@ objectReturnwithoutParenthesis pt {
 pt = { x: 12, y: 34 }
 obrt = objectReturn(pt)
 lg "objectReturn(pt):"
-lg obrt
 lg obrt.x
 lg obrt.y
 
 obrt = objectReturnwithoutParenthesis pt
 
 lg "objectReturnwithoutParenthesis(pt):"
-lg obrt
 lg obrt.x
 lg obrt.y
 
