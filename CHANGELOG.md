@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🐛 Bug Fixes
 - **Diagnostic Source Coordinates**: Fixed line and column numbers displaying in scientific notation by resolving IEEE-754 bitcast and field typing mismatches in compiler codegen.
 - **Function Return & Array Type Lowering**: Fixed return type propagation (`u8`, `i8`, `i16`, `any`), array element typing, and condition coercions for self-host compiler bootstrap (`tests/types_functions.test.zv`).
+- **Integer & Float Types Coverage & Codegen**: Added comprehensive test coverage and compiler support for `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `i128`, `u128`, `f32` across typed variables, intersection types, function calls, and return types (`tests/types_functions.test.zv`).
+- **Type Aliases (`int` -> `i64`, `float` -> `num`)**: Added type alias support for `int` (aliased to `i64`) and `float` (aliased to `num`) across type annotations, struct fields, function parameters, and return types (`tests/types_functions.test.zv`).
 
 
 ## [0.14.0]

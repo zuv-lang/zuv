@@ -58,6 +58,14 @@ type Agedf32 = {
     age: f32
 }
 
+type AgedInt = {
+    age: int
+}
+
+type AgedFloat = {
+    age: float
+}
+
 type User = Named & Aged
 type Userwithagei8 = Named & Agedi8
 type Userwithageu8 = Named & Agedu8
@@ -70,6 +78,8 @@ type Userwithageu64 = Named & Agedu64
 type Userwithagei128 = Named & Agedi128
 type Userwithageu128 = Named & Agedu128
 type Userwithagef32 = Named & Agedf32
+type Userwithageint = Named & AgedInt
+type Userwithagefloat = Named & AgedFloat
 
 type UserWithId = Named & Aged & {
     id: num
@@ -167,6 +177,14 @@ create_user_f32_paren(name: str, age: f32): Userwithagef32 {
     -> { name, age }
 }
 
+create_user_int_paren(name: str, age: int): Userwithageint {
+    -> { name, age }
+}
+
+create_user_float_paren(name: str, age: float): Userwithagefloat {
+    -> { name, age }
+}
+
 create_user_num_paren(name: str, age: num): User {
     -> { name, age }
 }
@@ -213,6 +231,14 @@ create_user_u128 name: str, age: u128 :: Userwithageu128 {
 }
 
 create_user_f32 name: str, age: f32 :: Userwithagef32 {
+    -> { name, age }
+}
+
+create_user_int name: str, age: int :: Userwithageint {
+    -> { name, age }
+}
+
+create_user_float name: str, age: float :: Userwithagefloat {
     -> { name, age }
 }
 
@@ -263,6 +289,8 @@ uu64 = create_user_u64 "ZuvLang", 64
 ui128 = create_user_i128 "ZuvLang", 128
 uu128 = create_user_u128 "ZuvLang", 200
 uf32 = create_user_f32 "ZuvLang", 3.5
+uint = create_user_int "ZuvLang", 64
+ufloat = create_user_float "ZuvLang", 4.5
 
 print_user unum, 'num'
 print_user ui8, 'ui8'
@@ -276,6 +304,8 @@ print_user uu64, 'uu64'
 print_user ui128, 'ui128'
 print_user uu128, 'uu128'
 print_user uf32, 'f32'
+print_user uint, 'int'
+print_user ufloat, 'float'
 
 unump = create_user_num_paren "ZuvLang", 30
 ui8p = create_user_i8_paren "ZuvLang", 8
@@ -289,6 +319,8 @@ uu64p = create_user_u64_paren "ZuvLang", 64
 ui128p = create_user_i128_paren "ZuvLang", 128
 uu128p = create_user_u128_paren "ZuvLang", 200
 uf32p = create_user_f32_paren "ZuvLang", 3.5
+uintp = create_user_int_paren "ZuvLang", 64
+ufloatp = create_user_float_paren "ZuvLang", 4.5
 
 print_user unump, 'nump'
 print_user ui8p, 'ui8p'
@@ -302,6 +334,8 @@ print_user uu64p, 'uu64p'
 print_user ui128p, 'ui128p'
 print_user uu128p, 'uu128p'
 print_user uf32p, 'f32p'
+print_user uintp, 'intp'
+print_user ufloatp, 'floatp'
 
 u3 = new User { name: "Alice", age: 20 }
 print_user u3, 'new'
@@ -466,6 +500,20 @@ ret_f32_arrow x: f32 :: f32 {
     -> x
 }
 
+ret_int_val(x: int): int {
+    -> x
+}
+ret_int_arrow x: int :: int {
+    -> x
+}
+
+ret_float_val(x: float): float {
+    -> x
+}
+ret_float_arrow x: float :: float {
+    -> x
+}
+
 ret_num_arr(arr: num[]): num[] {
     -> arr
 }
@@ -555,6 +603,16 @@ lg 'ret_f32_val'
 lg ret_f32_val(1.5)
 lg 'ret_f32_arrow'
 lg ret_f32_arrow(2.5)
+
+lg 'ret_int_val'
+lg ret_int_val(500)
+lg 'ret_int_arrow'
+lg ret_int_arrow(600)
+
+lg 'ret_float_val'
+lg ret_float_val(7.5)
+lg 'ret_float_arrow'
+lg ret_float_arrow(8.5)
 lg 'ret_num_arr'
 numArr = ret_num_arr([100, 200, 300])
 lg numArr[0]

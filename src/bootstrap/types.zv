@@ -400,11 +400,13 @@ StrToTypeKind typeName: str :: TypeKind {
         "any"    => TypeKind.Unknown
         "unknown"=> TypeKind.Unknown
         "num"    => TypeKind.Num
+        "float"  => TypeKind.Num
         "f32"    => TypeKind.F32
         "i8"     => TypeKind.I8
         "i16"    => TypeKind.I16
         "i32"    => TypeKind.I32
         "i64"    => TypeKind.I64
+        "int"    => TypeKind.I64
         "i128"   => TypeKind.I128
         "u8"     => TypeKind.U8
         "u16"    => TypeKind.U16

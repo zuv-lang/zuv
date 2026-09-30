@@ -19,17 +19,20 @@ imp EmitExternDeclNode frm extern/emitExternDeclNode
 /**
  * Maps a Zuv or C type annotation to its corresponding LLVM IR type representation.
  *
- * @param {str} typeStr - High-level type name (e.g. "num", "str", "void", "i64", "double")
- * @returns {str} LLVM IR type string ("void", "i1", "i8", "i16", "i32", "i64", "double", "ptr")
+ * @param {str} typeStr - High-level type name (e.g. "num", "float", "f32", "str", "void", "i64", "int")
+ * @returns {str} LLVM IR type string ("void", "i1", "i8", "i16", "i32", "i64", "double", "float", "ptr")
  */
 ToLLVMExternType typeStr: str :: str {
     if typeStr == "void" {
         -> "void"
     }
-    if typeStr == "num" || typeStr == "double" || typeStr == "f64" || typeStr == "float" {
+    if typeStr == "num" || typeStr == "float" {
         -> "double"
     }
-    if typeStr == "i64" || typeStr == "int64" || typeStr == "size_t" || typeStr == "u64" {
+    if typeStr == "f32" {
+        -> "float"
+    }
+    if typeStr == "i64" || typeStr == "int" || typeStr == "int64" || typeStr == "size_t" || typeStr == "u64" {
         -> "i64"
     }
     if typeStr == "str" || typeStr == "ptr" || typeStr == "*byte" || typeStr == "any" {

@@ -629,7 +629,7 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
         fr topNode of prog.children {
             if topNode.kind == NodeKind.FuncDecl {
                 isPtrRet: bool = (topNode.typeAnnotation == "str" || topNode.typeAnnotation == "ptr" || topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") || regLayouts.hasType(topNode.typeAnnotation))
-                retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "double" ? "double" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" ? "i32" : (topNode.typeAnnotation == "i8" || topNode.typeAnnotation == "u8" ? "i8" : (topNode.typeAnnotation == "i16" || topNode.typeAnnotation == "u16" ? "i16" : "i64")))))))
+                retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "float" ? "double" : (topNode.typeAnnotation == "f32" ? "float" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" || topNode.typeAnnotation == "u32" ? "i32" : (topNode.typeAnnotation == "i8" || topNode.typeAnnotation == "u8" ? "i8" : (topNode.typeAnnotation == "i16" || topNode.typeAnnotation == "u16" ? "i16" : (topNode.typeAnnotation == "i128" || topNode.typeAnnotation == "u128" ? "i128" : "i64")))))))))
                 pTypes: str[] = []
                 fnHasRest: bool = false
                 isDecorated: bool = false
@@ -657,13 +657,17 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                             pLLVM = "ptr"
                         } els if p.typeAnnotation == "bool" {
                             pLLVM = "i1"
-                        } els if p.typeAnnotation == "i32" {
+                        } els if p.typeAnnotation == "i32" || p.typeAnnotation == "u32" {
                             pLLVM = "i32"
                         } els if p.typeAnnotation == "i8" || p.typeAnnotation == "u8" {
                             pLLVM = "i8"
                         } els if p.typeAnnotation == "i16" || p.typeAnnotation == "u16" {
                             pLLVM = "i16"
-                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                        } els if p.typeAnnotation == "i128" || p.typeAnnotation == "u128" {
+                            pLLVM = "i128"
+                        } els if p.typeAnnotation == "f32" {
+                            pLLVM = "float"
+                        } els if p.typeAnnotation == "num" || p.typeAnnotation == "float" {
                             pLLVM = "double"
                         }
                         pTypes.psh(pLLVM)
@@ -797,6 +801,8 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                             } els {
                                                 gType = TypeKind.Str
                                             }
+                                        } els if mSig.retTypeKind != TypeKind.Unknown && mSig.retTypeKind != TypeKind.Void {
+                                            gType = mSig.retTypeKind
                                         } els if mSig.retType == "void" {
                                             gType = TypeKind.Void
                                         } els if mSig.retType == "double" {
@@ -828,6 +834,8 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                         } els {
                                             gType = TypeKind.Str
                                         }
+                                    } els if cSig.retTypeKind != TypeKind.Unknown && cSig.retTypeKind != TypeKind.Void {
+                                        gType = cSig.retTypeKind
                                     } els if cSig.retType == "void" {
                                         gType = TypeKind.Void
                                     } els if cSig.retType == "double" {
@@ -994,7 +1002,7 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     isSoloRest: bool = (topNode.params.ln == 1 && topNode.params[0].isRest)
 
                     isPtrRet: bool = (topNode.typeAnnotation == "str" || topNode.typeAnnotation == "ptr" || topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") || regLayouts.hasType(topNode.typeAnnotation))
-                    retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "double" ? "double" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" ? "i32" : "i64")))))
+                    retLLVM: str = (topNode.typeAnnotation == "void" ? "void" : (isPtrRet ? "ptr" : (topNode.typeAnnotation == "num" || topNode.typeAnnotation == "float" ? "double" : (topNode.typeAnnotation == "f32" ? "float" : (topNode.typeAnnotation == "bool" ? "i1" : (topNode.typeAnnotation == "i32" || topNode.typeAnnotation == "u32" ? "i32" : (topNode.typeAnnotation == "i8" || topNode.typeAnnotation == "u8" ? "i8" : (topNode.typeAnnotation == "i16" || topNode.typeAnnotation == "u16" ? "i16" : (topNode.typeAnnotation == "i128" || topNode.typeAnnotation == "u128" ? "i128" : "i64")))))))))
                     if isDecorated {
                         retLLVM = "i64"
                     }
@@ -1018,13 +1026,17 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                 pLLVM = "ptr"
                             } els if p.typeAnnotation == "bool" {
                                 pLLVM = "i1"
-                            } els if p.typeAnnotation == "i32" {
+                            } els if p.typeAnnotation == "i32" || p.typeAnnotation == "u32" {
                                 pLLVM = "i32"
                             } els if p.typeAnnotation == "i8" || p.typeAnnotation == "u8" {
                                 pLLVM = "i8"
                             } els if p.typeAnnotation == "i16" || p.typeAnnotation == "u16" {
                                 pLLVM = "i16"
-                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                            } els if p.typeAnnotation == "i128" || p.typeAnnotation == "u128" {
+                                pLLVM = "i128"
+                            } els if p.typeAnnotation == "f32" {
+                                pLLVM = "float"
+                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "float" {
                                 pLLVM = "double"
                             }
                             if !isFirstP {
@@ -1036,28 +1048,48 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                     }
                     exportAttr: str = (topNode.isPub || isCdylib ? "dllexport " : "")
                     cg.startFunction("define " + exportAttr + retLLVM + " @" + topNode.name + "(" + paramsSig + ") {")
-                    if retLLVM == "void" {
+                    if topNode.typeAnnotation == "num" || topNode.typeAnnotation == "float" {
+                        stmtGen.setReturnType(TypeKind.Num)
+                    } els if topNode.typeAnnotation == "f32" {
+                        stmtGen.setReturnType(TypeKind.F32)
+                    } els if topNode.typeAnnotation == "void" || retLLVM == "void" {
                         stmtGen.setReturnType(TypeKind.Void)
-                    } els if retLLVM == "ptr" {
-                        if topNode.typeAnnotation == "str" {
-                            stmtGen.setReturnType(TypeKind.Str)
-                        } els if topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") {
-                            stmtGen.setReturnType(TypeKind.Arr)
-                        } els if regLayouts.hasType(topNode.typeAnnotation) {
-                            stmtGen.setReturnType(TypeKind.Obj)
-                        } els {
-                            stmtGen.setReturnType(TypeKind.Ptr)
-                        }
+                    } els if topNode.typeAnnotation == "str" {
+                        stmtGen.setReturnType(TypeKind.Str)
+                    } els if topNode.typeAnnotation == "arr" || StrEndsWith(topNode.typeAnnotation, "[]") {
+                        stmtGen.setReturnType(TypeKind.Arr)
+                    } els if regLayouts.hasType(topNode.typeAnnotation) {
+                        stmtGen.setReturnType(TypeKind.Obj)
+                    } els if topNode.typeAnnotation == "ptr" {
+                        stmtGen.setReturnType(TypeKind.Ptr)
+                    } els if topNode.typeAnnotation == "bool" {
+                        stmtGen.setReturnType(TypeKind.Bool)
+                    } els if topNode.typeAnnotation == "i8" {
+                        stmtGen.setReturnType(TypeKind.I8)
+                    } els if topNode.typeAnnotation == "u8" {
+                        stmtGen.setReturnType(TypeKind.U8)
+                    } els if topNode.typeAnnotation == "i16" {
+                        stmtGen.setReturnType(TypeKind.I16)
+                    } els if topNode.typeAnnotation == "u16" {
+                        stmtGen.setReturnType(TypeKind.U16)
+                    } els if topNode.typeAnnotation == "i32" {
+                        stmtGen.setReturnType(TypeKind.I32)
+                    } els if topNode.typeAnnotation == "u32" {
+                        stmtGen.setReturnType(TypeKind.U32)
+                    } els if topNode.typeAnnotation == "i64" || topNode.typeAnnotation == "int" {
+                        stmtGen.setReturnType(TypeKind.I64)
+                    } els if topNode.typeAnnotation == "u64" {
+                        stmtGen.setReturnType(TypeKind.U64)
+                    } els if topNode.typeAnnotation == "i128" {
+                        stmtGen.setReturnType(TypeKind.I128)
+                    } els if topNode.typeAnnotation == "u128" {
+                        stmtGen.setReturnType(TypeKind.U128)
                     } els if retLLVM == "double" {
                         stmtGen.setReturnType(TypeKind.Num)
+                    } els if retLLVM == "ptr" {
+                        stmtGen.setReturnType(TypeKind.Ptr)
                     } els if retLLVM == "i1" {
                         stmtGen.setReturnType(TypeKind.Bool)
-                    } els if retLLVM == "i32" {
-                        stmtGen.setReturnType(TypeKind.I32)
-                    } els if retLLVM == "i8" {
-                        stmtGen.setReturnType(TypeKind.I8)
-                    } els if retLLVM == "i16" {
-                        stmtGen.setReturnType(TypeKind.I16)
                     } els {
                         stmtGen.setReturnType(TypeKind.I64)
                     }
@@ -1090,7 +1122,7 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                 pKind = TypeKind.Bool
                             } els if p.typeAnnotation == "i32" {
                                 pKind = TypeKind.I32
-                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                            } els if p.typeAnnotation == "num" || p.typeAnnotation == "float" {
                                 pKind = TypeKind.Num
                             }
                             if pKind == TypeKind.Str || pKind == TypeKind.Arr || pKind == TypeKind.Obj || pKind == TypeKind.Ptr {
@@ -1174,16 +1206,25 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                 } els if p.typeAnnotation == "bool" {
                                     pLLVM = "i1"
                                     pKind = TypeKind.Bool
-                                } els if p.typeAnnotation == "i32" {
+                                } els if p.typeAnnotation == "i32" || p.typeAnnotation == "u32" {
                                     pLLVM = "i32"
-                                    pKind = TypeKind.I32
+                                    pKind = p.typeAnnotation == "u32" ? TypeKind.U32 : TypeKind.I32
                                 } els if p.typeAnnotation == "i8" || p.typeAnnotation == "u8" {
                                     pLLVM = "i8"
-                                    pKind = TypeKind.I8
+                                    pKind = p.typeAnnotation == "u8" ? TypeKind.U8 : TypeKind.I8
                                 } els if p.typeAnnotation == "i16" || p.typeAnnotation == "u16" {
                                     pLLVM = "i16"
-                                    pKind = TypeKind.I16
-                                } els if p.typeAnnotation == "num" || p.typeAnnotation == "double" {
+                                    pKind = p.typeAnnotation == "u16" ? TypeKind.U16 : TypeKind.I16
+                                } els if p.typeAnnotation == "i128" || p.typeAnnotation == "u128" {
+                                    pLLVM = "i128"
+                                    pKind = p.typeAnnotation == "u128" ? TypeKind.U128 : TypeKind.I128
+                                } els if p.typeAnnotation == "u64" {
+                                    pLLVM = "i64"
+                                    pKind = TypeKind.U64
+                                } els if p.typeAnnotation == "f32" {
+                                    pLLVM = "float"
+                                    pKind = TypeKind.F32
+                                } els if p.typeAnnotation == "num" || p.typeAnnotation == "float" {
                                     pLLVM = "double"
                                     pKind = TypeKind.Num
                                 }
@@ -1203,9 +1244,9 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                         selReg: str = cg.newReg
                                         cg.emit(`${selReg} = select i1 ${isNullReg}, ptr ${strConst}, ptr %arg_${p.name}`)
                                         cg.emit(`store ptr ${selReg}, ptr ${slotReg}`)
-                                    } els if pLLVM == "double" {
+                                    } els if pLLVM == "double" || pLLVM == "float" {
                                         isZeroReg: str = cg.newReg
-                                        cg.emit(`${isZeroReg} = fcmp oeq double %arg_${p.name}, 0.0`)
+                                        cg.emit(`${isZeroReg} = fcmp oeq ${pLLVM} %arg_${p.name}, 0.0`)
                                         numDef: str = p.defaultVal
                                         hasDot: bool = false
                                         dIdx: num = 0
@@ -1215,8 +1256,8 @@ HandleBuild file: str, outputFile: str, targetTriple: str, isRelease: bool, emit
                                         }
                                         if !hasDot { numDef = numDef + ".0" }
                                         selReg: str = cg.newReg
-                                        cg.emit(`${selReg} = select i1 ${isZeroReg}, double ${numDef}, double %arg_${p.name}`)
-                                        cg.emit(`store double ${selReg}, ptr ${slotReg}`)
+                                        cg.emit(`${selReg} = select i1 ${isZeroReg}, ${pLLVM} ${numDef}, ${pLLVM} %arg_${p.name}`)
+                                        cg.emit(`store ${pLLVM} ${selReg}, ptr ${slotReg}`)
                                     } els {
                                         isZeroReg: str = cg.newReg
                                         cg.emit(`${isZeroReg} = icmp eq ${pLLVM} %arg_${p.name}, 0`)

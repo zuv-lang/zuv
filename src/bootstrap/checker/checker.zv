@@ -147,9 +147,11 @@ obj Checker {
         // Primitive types registry
         initTypes: TypeInfo[] = []
         tNum = TypeInfo.createPrimitive TypeKind.Num, "num"
-        tDbl = TypeInfo.createPrimitive TypeKind.Num, "double"
+        tFlt = TypeInfo.createPrimitive TypeKind.Num, "float"
+        tF32 = TypeInfo.createPrimitive TypeKind.F32, "f32"
         tI32 = TypeInfo.createPrimitive TypeKind.I32, "i32"
         tI64 = TypeInfo.createPrimitive TypeKind.I64, "i64"
+        tInt = TypeInfo.createPrimitive TypeKind.I64, "int"
         tStr = TypeInfo.createPrimitive TypeKind.Str, "str"
         tBool = TypeInfo.createPrimitive TypeKind.Bool, "bool"
         tPtr = TypeInfo.createPrimitive TypeKind.Ptr, "ptr"
@@ -157,9 +159,11 @@ obj Checker {
         tNil = TypeInfo.createPrimitive TypeKind.Nil, "nil"
         tUnd = TypeInfo.createPrimitive TypeKind.Und, "und"
         initTypes.psh tNum
-        initTypes.psh tDbl
+        initTypes.psh tFlt
+        initTypes.psh tF32
         initTypes.psh tI32
         initTypes.psh tI64
+        initTypes.psh tInt
         initTypes.psh tStr
         initTypes.psh tBool
         initTypes.psh tPtr
