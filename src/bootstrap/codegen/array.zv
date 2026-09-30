@@ -95,8 +95,11 @@ arrayInitialCap :: num => 4
 selectZextOp typeKind: TypeKind :: str => sw typeKind {
     TypeKind.Bool => "zext i1"
     TypeKind.I8   => "zext i8"
+    TypeKind.U8   => "zext i8"
     TypeKind.I16  => "zext i16"
+    TypeKind.U16  => "zext i16"
     TypeKind.I32  => "zext i32"
+    TypeKind.U32  => "zext i32"
     _             => ""
 }
 
@@ -109,8 +112,11 @@ selectZextOp typeKind: TypeKind :: str => sw typeKind {
 selectTruncDst targetType: TypeKind :: str => sw targetType {
     TypeKind.Bool => "i1"
     TypeKind.I8   => "i8"
+    TypeKind.U8   => "i8"
     TypeKind.I16  => "i16"
+    TypeKind.U16  => "i16"
     TypeKind.I32  => "i32"
+    TypeKind.U32  => "i32"
     _             => ""
 }
 
@@ -123,12 +129,24 @@ selectTruncDst targetType: TypeKind :: str => sw targetType {
  * @returns {str} SSA register holding 64-bit boxed value
  */
 boxValueToI64 codegen: Codegen, valReg: str, typeKind: TypeKind :: str {
-    if typeKind == TypeKind.I64 {
+    if typeKind == TypeKind.I64 || typeKind == TypeKind.U64 {
         -> valReg
+    }
+    if typeKind == TypeKind.I128 || typeKind == TypeKind.U128 {
+        convReg: str = codegen.newReg
+        codegen.emit `${convReg} = trunc i128 ${valReg} to i64`
+        -> convReg
     }
     if typeKind == TypeKind.Num {
         convReg: str = codegen.newReg
         codegen.emit `${convReg} = bitcast double ${valReg} to i64`
+        -> convReg
+    }
+    if typeKind == TypeKind.F32 {
+        extReg: str = codegen.newReg
+        codegen.emit `${extReg} = fpext float ${valReg} to double`
+        convReg: str = codegen.newReg
+        codegen.emit `${convReg} = bitcast double ${extReg} to i64`
         -> convReg
     }
     if isPointerType typeKind {
@@ -154,13 +172,30 @@ boxValueToI64 codegen: Codegen, valReg: str, typeKind: TypeKind :: str {
  * @returns {str} SSA register holding unboxed native value
  */
 unboxValueFromI64 codegen: Codegen, valReg: str, targetType: TypeKind :: str {
-    if targetType == TypeKind.I64 {
+    if targetType == TypeKind.I64 || targetType == TypeKind.U64 {
         -> valReg
+    }
+    if targetType == TypeKind.I128 {
+        convReg: str = codegen.newReg
+        codegen.emit `${convReg} = sext i64 ${valReg} to i128`
+        -> convReg
+    }
+    if targetType == TypeKind.U128 {
+        convReg: str = codegen.newReg
+        codegen.emit `${convReg} = zext i64 ${valReg} to i128`
+        -> convReg
     }
     if targetType == TypeKind.Num {
         numReg: str = codegen.newReg
         codegen.emit `${numReg} = bitcast i64 ${valReg} to double`
         -> numReg
+    }
+    if targetType == TypeKind.F32 {
+        dblReg: str = codegen.newReg
+        codegen.emit `${dblReg} = bitcast i64 ${valReg} to double`
+        fltReg: str = codegen.newReg
+        codegen.emit `${fltReg} = fptrunc double ${dblReg} to float`
+        -> fltReg
     }
     if isPointerType targetType {
         ptrReg: str = codegen.newReg

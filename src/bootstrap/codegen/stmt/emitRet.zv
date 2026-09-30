@@ -51,54 +51,73 @@ EmitRet self: StmtCodegen, node: ASTNode :: void {
 
         if hasVal {
             retRes: ExprResult = self.exprGen.emitExpr node.children[0]
-            if self.returnType == TypeKind.I32 && retRes.typeKind == TypeKind.I64 {
+            retTypeStr: str = llvmType self.returnType
+            resTypeStr: str = llvmType retRes.typeKind
+            if retTypeStr == resTypeStr {
+                self.codegen.emit `ret ${retTypeStr} ${retRes.reg}`
+            } els if (self.returnType == TypeKind.I32 || self.returnType == TypeKind.U32) && (retRes.typeKind == TypeKind.I64 || retRes.typeKind == TypeKind.U64) {
                 tReg: str = self.codegen.newReg
                 self.codegen.emit `${tReg} = trunc i64 ${retRes.reg} to i32`
                 self.codegen.emit `ret i32 ${tReg}`
-            } els if self.returnType == TypeKind.I32 && retRes.typeKind == TypeKind.Num {
+            } els if (self.returnType == TypeKind.I16 || self.returnType == TypeKind.U16) && (retRes.typeKind == TypeKind.I64 || retRes.typeKind == TypeKind.U64 || retRes.typeKind == TypeKind.I32 || retRes.typeKind == TypeKind.U32) {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = trunc ${resTypeStr} ${retRes.reg} to i16`
+                self.codegen.emit `ret i16 ${tReg}`
+            } els if (self.returnType == TypeKind.I8 || self.returnType == TypeKind.U8) && (retRes.typeKind == TypeKind.I64 || retRes.typeKind == TypeKind.U64 || retRes.typeKind == TypeKind.I32 || retRes.typeKind == TypeKind.U32 || retRes.typeKind == TypeKind.I16 || retRes.typeKind == TypeKind.U16) {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = trunc ${resTypeStr} ${retRes.reg} to i8`
+                self.codegen.emit `ret i8 ${tReg}`
+            } els if (self.returnType == TypeKind.I32 || self.returnType == TypeKind.U32) && retRes.typeKind == TypeKind.Num {
                 tReg: str = self.codegen.newReg
                 self.codegen.emit `${tReg} = fptosi double ${retRes.reg} to i32`
                 self.codegen.emit `ret i32 ${tReg}`
-            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I8 {
+            } els if (self.returnType == TypeKind.I16 || self.returnType == TypeKind.U16) && retRes.typeKind == TypeKind.Num {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = fptosi double ${retRes.reg} to i16`
+                self.codegen.emit `ret i16 ${tReg}`
+            } els if (self.returnType == TypeKind.I8 || self.returnType == TypeKind.U8) && retRes.typeKind == TypeKind.Num {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = fptosi double ${retRes.reg} to i8`
+                self.codegen.emit `ret i8 ${tReg}`
+            } els if (self.returnType == TypeKind.I64 || self.returnType == TypeKind.U64) && (retRes.typeKind == TypeKind.I8 || retRes.typeKind == TypeKind.U8 || retRes.typeKind == TypeKind.I16 || retRes.typeKind == TypeKind.U16 || retRes.typeKind == TypeKind.I32 || retRes.typeKind == TypeKind.U32 || retRes.typeKind == TypeKind.Bool) {
                 wReg: str = self.codegen.newReg
-                self.codegen.emit `${wReg} = zext i8 ${retRes.reg} to i64`
+                self.codegen.emit `${wReg} = zext ${resTypeStr} ${retRes.reg} to i64`
                 self.codegen.emit `ret i64 ${wReg}`
-            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I16 {
+            } els if (self.returnType == TypeKind.I128 || self.returnType == TypeKind.U128) && (retRes.typeKind == TypeKind.I8 || retRes.typeKind == TypeKind.U8 || retRes.typeKind == TypeKind.I16 || retRes.typeKind == TypeKind.U16 || retRes.typeKind == TypeKind.I32 || retRes.typeKind == TypeKind.U32 || retRes.typeKind == TypeKind.I64 || retRes.typeKind == TypeKind.U64 || retRes.typeKind == TypeKind.Bool) {
                 wReg: str = self.codegen.newReg
-                self.codegen.emit `${wReg} = zext i16 ${retRes.reg} to i64`
-                self.codegen.emit `ret i64 ${wReg}`
-            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.I32 {
-                wReg: str = self.codegen.newReg
-                self.codegen.emit `${wReg} = zext i32 ${retRes.reg} to i64`
-                self.codegen.emit `ret i64 ${wReg}`
-            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.Bool {
-                wReg: str = self.codegen.newReg
-                self.codegen.emit `${wReg} = zext i1 ${retRes.reg} to i64`
-                self.codegen.emit `ret i64 ${wReg}`
-            } els if self.returnType == TypeKind.I64 && retRes.typeKind == TypeKind.Num {
+                self.codegen.emit `${wReg} = zext ${resTypeStr} ${retRes.reg} to i128`
+                self.codegen.emit `ret i128 ${wReg}`
+            } els if (self.returnType == TypeKind.I64 || self.returnType == TypeKind.U64) && retRes.typeKind == TypeKind.Num {
                 cReg: str = self.codegen.newReg
                 self.codegen.emit `${cReg} = fptosi double ${retRes.reg} to i64`
                 self.codegen.emit `ret i64 ${cReg}`
-            } els if self.returnType == TypeKind.Num && retRes.typeKind == TypeKind.I64 {
+            } els if self.returnType == TypeKind.Num && (retRes.typeKind == TypeKind.I64 || retRes.typeKind == TypeKind.U64 || retRes.typeKind == TypeKind.I32 || retRes.typeKind == TypeKind.U32 || retRes.typeKind == TypeKind.I16 || retRes.typeKind == TypeKind.U16 || retRes.typeKind == TypeKind.I8 || retRes.typeKind == TypeKind.U8) {
                 cReg: str = self.codegen.newReg
-                self.codegen.emit `${cReg} = sitofp i64 ${retRes.reg} to double`
+                self.codegen.emit `${cReg} = sitofp ${resTypeStr} ${retRes.reg} to double`
                 self.codegen.emit `ret double ${cReg}`
-            } els if self.returnType == TypeKind.Num && retRes.typeKind == TypeKind.I32 {
-                cReg: str = self.codegen.newReg
-                self.codegen.emit `${cReg} = sitofp i32 ${retRes.reg} to double`
-                self.codegen.emit `ret double ${cReg}`
-            } els if self.returnType == TypeKind.I64 && (retRes.typeKind == TypeKind.Str || retRes.typeKind == TypeKind.Ptr || retRes.typeKind == TypeKind.Arr || retRes.typeKind == TypeKind.Obj) {
+            } els if self.returnType == TypeKind.F32 && (retRes.typeKind == TypeKind.Num || retRes.typeKind == TypeKind.F32) {
+                if retRes.typeKind == TypeKind.Num {
+                    tReg: str = self.codegen.newReg
+                    self.codegen.emit `${tReg} = fptrunc double ${retRes.reg} to float`
+                    self.codegen.emit `ret float ${tReg}`
+                } els {
+                    self.codegen.emit `ret float ${retRes.reg}`
+                }
+            } els if self.returnType == TypeKind.Num && retRes.typeKind == TypeKind.F32 {
+                tReg: str = self.codegen.newReg
+                self.codegen.emit `${tReg} = fpext float ${retRes.reg} to double`
+                self.codegen.emit `ret double ${tReg}`
+            } els if (self.returnType == TypeKind.I64 || self.returnType == TypeKind.U64) && (retRes.typeKind == TypeKind.Str || retRes.typeKind == TypeKind.Ptr || retRes.typeKind == TypeKind.Arr || retRes.typeKind == TypeKind.Obj) {
                 cReg: str = self.codegen.newReg
                 self.codegen.emit `${cReg} = ptrtoint ptr ${retRes.reg} to i64`
                 self.codegen.emit `ret i64 ${cReg}`
-            } els if (self.returnType == TypeKind.Str || self.returnType == TypeKind.Ptr || self.returnType == TypeKind.Arr || self.returnType == TypeKind.Obj) && retRes.typeKind == TypeKind.I64 {
+            } els if (self.returnType == TypeKind.Str || self.returnType == TypeKind.Ptr || self.returnType == TypeKind.Arr || self.returnType == TypeKind.Obj) && (retRes.typeKind == TypeKind.I64 || retRes.typeKind == TypeKind.U64) {
                 cReg: str = self.codegen.newReg
                 self.codegen.emit `${cReg} = inttoptr i64 ${retRes.reg} to ptr`
                 self.codegen.emit `ret ptr ${cReg}`
             } els if self.returnType == TypeKind.Void {
                 self.codegen.emit `ret void`
             } els {
-                retTypeStr: str = llvmType self.returnType
                 self.codegen.emit `ret ${retTypeStr} ${retRes.reg}`
             }
         } els {

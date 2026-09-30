@@ -14,17 +14,62 @@ type Aged = {
     age: num
 }
 
+type Agedi8 = {
+    age: i8
+}
+
+type Agedu8 = {
+    age: u8
+}
+
+type Agedi16 = {
+    age: i16
+}
+
+type Agedu16 = {
+    age: u16
+}
+
 type Agedi32 = {
     age: i32
+}
+
+type Agedu32 = {
+    age: u32
 }
 
 type Agedi64 = {
     age: i64
 }
 
+type Agedu64 = {
+    age: u64
+}
+
+type Agedi128 = {
+    age: i128
+}
+
+type Agedu128 = {
+    age: u128
+}
+
+type Agedf32 = {
+    age: f32
+}
+
 type User = Named & Aged
+type Userwithagei8 = Named & Agedi8
+type Userwithageu8 = Named & Agedu8
+type Userwithagei16 = Named & Agedi16
+type Userwithageu16 = Named & Agedu16
 type Userwithagei32 = Named & Agedi32
+type Userwithageu32 = Named & Agedu32
 type Userwithagei64 = Named & Agedi64
+type Userwithageu64 = Named & Agedu64
+type Userwithagei128 = Named & Agedi128
+type Userwithageu128 = Named & Agedu128
+type Userwithagef32 = Named & Agedf32
 
 type UserWithId = Named & Aged & {
     id: num
@@ -78,11 +123,47 @@ print_user_optional_with_default user, type ='default' {
 
 
 // parenthises are optional in function calls
+create_user_i8_paren(name: str, age: i8): Userwithagei8 {
+    -> { name, age }
+}
+
+create_user_u8_paren(name: str, age: u8): Userwithageu8 {
+    -> { name, age }
+}
+
+create_user_i16_paren(name: str, age: i16): Userwithagei16 {
+    -> { name, age }
+}
+
+create_user_u16_paren(name: str, age: u16): Userwithageu16 {
+    -> { name, age }
+}
+
 create_user_i32_paren(name: str, age: i32): Userwithagei32 {
     -> { name, age }
 }
 
+create_user_u32_paren(name: str, age: u32): Userwithageu32 {
+    -> { name, age }
+}
+
 create_user_i64_paren(name: str, age: i64): Userwithagei64 {
+    -> { name, age }
+}
+
+create_user_u64_paren(name: str, age: u64): Userwithageu64 {
+    -> { name, age }
+}
+
+create_user_i128_paren(name: str, age: i128): Userwithagei128 {
+    -> { name, age }
+}
+
+create_user_u128_paren(name: str, age: u128): Userwithageu128 {
+    -> { name, age }
+}
+
+create_user_f32_paren(name: str, age: f32): Userwithagef32 {
     -> { name, age }
 }
 
@@ -91,11 +172,47 @@ create_user_num_paren(name: str, age: num): User {
 }
 
 // parenthises free
+create_user_i8 name: str, age: i8 :: Userwithagei8 {
+    -> { name, age }
+}
+
+create_user_u8 name: str, age: u8 :: Userwithageu8 {
+    -> { name, age }
+}
+
+create_user_i16 name: str, age: i16 :: Userwithagei16 {
+    -> { name, age }
+}
+
+create_user_u16 name: str, age: u16 :: Userwithageu16 {
+    -> { name, age }
+}
+
 create_user_i32 name: str, age: i32 :: Userwithagei32 {
     -> { name, age }
 }
 
+create_user_u32 name: str, age: u32 :: Userwithageu32 {
+    -> { name, age }
+}
+
 create_user_i64 name: str, age: i64 :: Userwithagei64 {
+    -> { name, age }
+}
+
+create_user_u64 name: str, age: u64 :: Userwithageu64 {
+    -> { name, age }
+}
+
+create_user_i128 name: str, age: i128 :: Userwithagei128 {
+    -> { name, age }
+}
+
+create_user_u128 name: str, age: u128 :: Userwithageu128 {
+    -> { name, age }
+}
+
+create_user_f32 name: str, age: f32 :: Userwithagef32 {
     -> { name, age }
 }
 
@@ -135,18 +252,56 @@ print_user_default user
 print_user_optional_without_type user
 print_user_optional_with_default user
 unum = create_user_num "ZuvLang", 30
+ui8 = create_user_i8 "ZuvLang", 8
+uu8 = create_user_u8 "ZuvLang", 18
+ui16 = create_user_i16 "ZuvLang", 16
+uu16 = create_user_u16 "ZuvLang", 26
 ui32 = create_user_i32 "ZuvLang", 30
+uu32 = create_user_u32 "ZuvLang", 32
 ui64 = create_user_i64 "ZuvLang", 30
+uu64 = create_user_u64 "ZuvLang", 64
+ui128 = create_user_i128 "ZuvLang", 128
+uu128 = create_user_u128 "ZuvLang", 200
+uf32 = create_user_f32 "ZuvLang", 3.5
 
 print_user unum, 'num'
+print_user ui8, 'ui8'
+print_user uu8, 'uu8'
+print_user ui16, 'ui16'
+print_user uu16, 'uu16'
 print_user ui32, 'ui32'
+print_user uu32, 'uu32'
 print_user ui64, 'ui64'
+print_user uu64, 'uu64'
+print_user ui128, 'ui128'
+print_user uu128, 'uu128'
+print_user uf32, 'f32'
+
 unump = create_user_num_paren "ZuvLang", 30
+ui8p = create_user_i8_paren "ZuvLang", 8
+uu8p = create_user_u8_paren "ZuvLang", 18
+ui16p = create_user_i16_paren "ZuvLang", 16
+uu16p = create_user_u16_paren "ZuvLang", 26
 ui32p = create_user_i32_paren "ZuvLang", 30
+uu32p = create_user_u32_paren "ZuvLang", 32
 ui64p = create_user_i64_paren "ZuvLang", 30
+uu64p = create_user_u64_paren "ZuvLang", 64
+ui128p = create_user_i128_paren "ZuvLang", 128
+uu128p = create_user_u128_paren "ZuvLang", 200
+uf32p = create_user_f32_paren "ZuvLang", 3.5
+
 print_user unump, 'nump'
+print_user ui8p, 'ui8p'
+print_user uu8p, 'uu8p'
+print_user ui16p, 'ui16p'
+print_user uu16p, 'uu16p'
 print_user ui32p, 'ui32p'
+print_user uu32p, 'uu32p'
 print_user ui64p, 'ui64p'
+print_user uu64p, 'uu64p'
+print_user ui128p, 'ui128p'
+print_user uu128p, 'uu128p'
+print_user uf32p, 'f32p'
 
 u3 = new User { name: "Alice", age: 20 }
 print_user u3, 'new'
@@ -247,16 +402,67 @@ ret_void_arrow msg: str :: void {
     lg "void arrow: " + msg
 }
 
-// 7. Additional Zuv types: i8, u8, i16, ptr, T[], enum, any
+// 7. Additional Zuv types: i8, u8, i16, u16, u32, u64, i128, u128, ptr, T[], enum, any
 ret_i8_val(x: i8): i8 {
+    -> x
+}
+ret_i8_arrow x: i8 :: i8 {
     -> x
 }
 
 ret_u8_val(x: u8): u8 {
     -> x
 }
+ret_u8_arrow x: u8 :: u8 {
+    -> x
+}
 
 ret_i16_val(x: i16): i16 {
+    -> x
+}
+ret_i16_arrow x: i16 :: i16 {
+    -> x
+}
+
+ret_u16_val(x: u16): u16 {
+    -> x
+}
+ret_u16_arrow x: u16 :: u16 {
+    -> x
+}
+
+ret_u32_val(x: u32): u32 {
+    -> x
+}
+ret_u32_arrow x: u32 :: u32 {
+    -> x
+}
+
+ret_u64_val(x: u64): u64 {
+    -> x
+}
+ret_u64_arrow x: u64 :: u64 {
+    -> x
+}
+
+ret_i128_val(x: i128): i128 {
+    -> x
+}
+ret_i128_arrow x: i128 :: i128 {
+    -> x
+}
+
+ret_u128_val(x: u128): u128 {
+    -> x
+}
+ret_u128_arrow x: u128 :: u128 {
+    -> x
+}
+
+ret_f32_val(x: f32): f32 {
+    -> x
+}
+ret_f32_arrow x: f32 :: f32 {
     -> x
 }
 
@@ -307,10 +513,48 @@ ret_void_arrow("executing void arrow")
 
 lg 'ret_i8_val'
 lg ret_i8_val(127)
+lg 'ret_i8_arrow'
+lg ret_i8_arrow(120)
+
 lg 'ret_u8_val'
 lg ret_u8_val(255)
+lg 'ret_u8_arrow'
+lg ret_u8_arrow(200)
+
 lg 'ret_i16_val'
 lg ret_i16_val(32000)
+lg 'ret_i16_arrow'
+lg ret_i16_arrow(31000)
+
+lg 'ret_u16_val'
+lg ret_u16_val(65000)
+lg 'ret_u16_arrow'
+lg ret_u16_arrow(64000)
+
+lg 'ret_u32_val'
+lg ret_u32_val(3000)
+lg 'ret_u32_arrow'
+lg ret_u32_arrow(3500)
+
+lg 'ret_u64_val'
+lg ret_u64_val(10000)
+lg 'ret_u64_arrow'
+lg ret_u64_arrow(12000)
+
+lg 'ret_i128_val'
+lg ret_i128_val(9000)
+lg 'ret_i128_arrow'
+lg ret_i128_arrow(9500)
+
+lg 'ret_u128_val'
+lg ret_u128_val(20000)
+lg 'ret_u128_arrow'
+lg ret_u128_arrow(25000)
+
+lg 'ret_f32_val'
+lg ret_f32_val(1.5)
+lg 'ret_f32_arrow'
+lg ret_f32_arrow(2.5)
 lg 'ret_num_arr'
 numArr = ret_num_arr([100, 200, 300])
 lg numArr[0]
